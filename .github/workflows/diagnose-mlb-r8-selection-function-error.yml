@@ -1,0 +1,97 @@
+name: Diagnose MLB R8 selection function error
+
+on:
+  push:
+    branches:
+      - diagnose/mlb-r8-selection-function-error-20260831
+    paths:
+      - .github/workflows/diagnose-mlb-r8-selection-function-error.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Invoke the isolated selection-capture path with a raw log tail
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-r8-selection-diagnostic
+          TRAINER_FN="$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id MLBMLTrainingFunction \
+            --region us-east-1 \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)"
+          test -n "$TRAINER_FN"
+          test "$TRAINER_FN" != "None"
+          PAYLOAD="{\"sport\":\"mlb\",\"mode\":\"selection_capture\",\"run\":\"selection_diagnostic_${GITHUB_RUN_ID}\"}"
+          set +e
+          aws lambda invoke \
+            --function-name "$TRAINER_FN" \
+            --region us-east-1 \
+            --cli-binary-format raw-in-base64-out \
+            --log-type Tail \
+            --payload "$PAYLOAD" \
+            /tmp/mlb-r8-selection-diagnostic/response.json \
+            > /tmp/mlb-r8-selection-diagnostic/invocation.json 2> /tmp/mlb-r8-selection-diagnostic/aws-stderr.txt
+          invoke_rc=$?
+          set -e
+          python - <<'PY'
+          from __future__ import annotations
+
+          import base64
+          import json
+          from pathlib import Path
+
+          root = Path('/tmp/mlb-r8-selection-diagnostic')
+          invocation = json.loads((root / 'invocation.json').read_text() or '{}')
+          raw_log = str(invocation.pop('LogResult', '') or '')
+          if raw_log:
+              (root / 'lambda-log-tail.txt').write_bytes(base64.b64decode(raw_log))
+          else:
+              (root / 'lambda-log-tail.txt').write_text('')
+          (root / 'invocation-redacted.json').write_text(
+              json.dumps(invocation, indent=2, sort_keys=True) + '\n'
+          )
+          response_text = (root / 'response.json').read_text(errors='replace')
+          try:
+              response = json.loads(response_text)
+          except Exception:
+              response = {'unparsedResponse': response_text[:4000]}
+          summary = {
+              'statusCode': invocation.get('StatusCode'),
+              'functionError': invocation.get('FunctionError'),
+              'executedVersion': invocation.get('ExecutedVersion'),
+              'response': response,
+          }
+          (root / 'summary.json').write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          print('--- lambda log tail ---')
+          print((root / 'lambda-log-tail.txt').read_text(errors='replace'))
+          PY
+          echo "$invoke_rc" > /tmp/mlb-r8-selection-diagnostic/aws-cli-exit-code.txt
+
+      - name: Upload complete diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-r8-selection-function-error-${{ github.run_id }}
+          path: /tmp/mlb-r8-selection-diagnostic
+          if-no-files-found: error
+          retention-days: 30
