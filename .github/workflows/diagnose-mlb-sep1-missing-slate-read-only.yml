@@ -1,0 +1,443 @@
+name: Diagnose MLB Sep 1 missing slate read-only
+
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: Resolve projected production trainer contract
+        id: production
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          trainer_arn=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region "$AWS_REGION_VALUE" \
+            --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" \
+            --output text)
+          test -n "$trainer_arn"
+          test "$trainer_arn" != None
+          projection_path=$(mktemp "$RUNNER_TEMP/mlb-sep1-env-projection.XXXXXX.json")
+          trap 'rm -f "$projection_path"' EXIT
+          aws lambda get-function-configuration \
+            --function-name "$trainer_arn" \
+            --region "$AWS_REGION_VALUE" \
+            --query '{Handler:Handler,SNAPSHOTS_TABLE:Environment.Variables.SNAPSHOTS_TABLE,OUTCOMES_TABLE:Environment.Variables.OUTCOMES_TABLE,MLB_ML_ARTIFACTS_BUCKET:Environment.Variables.MLB_ML_ARTIFACTS_BUCKET,MLB_ML_EXPERIMENT_ID:Environment.Variables.MLB_ML_EXPERIMENT_ID,MLB_ML_RELEASE_CONTRACT_ID:Environment.Variables.MLB_ML_RELEASE_CONTRACT_ID,MLB_ML_RELEASE_CUTOFF_UTC:Environment.Variables.MLB_ML_RELEASE_CUTOFF_UTC,MLB_ML_FEATURE_VECTOR_VERSION:Environment.Variables.MLB_ML_FEATURE_VECTOR_VERSION,INQSI_DEPLOY_GIT_SHA:Environment.Variables.INQSI_DEPLOY_GIT_SHA,INQSI_DEPLOY_TEMPLATE_SHA256:Environment.Variables.INQSI_DEPLOY_TEMPLATE_SHA256,INQSI_MLB_ML_AUTO_PROMOTE:Environment.Variables.INQSI_MLB_ML_AUTO_PROMOTE,INQSI_SLATE_TIMEZONE:Environment.Variables.INQSI_SLATE_TIMEZONE,MLB_R7_HISTORICAL_TRAINING_ENABLED:Environment.Variables.MLB_R7_HISTORICAL_TRAINING_ENABLED,MLB_R7_HISTORICAL_MAX_ROWS:Environment.Variables.MLB_R7_HISTORICAL_MAX_ROWS}' \
+            --output json > "$projection_path"
+          PROJECTION_PATH="$projection_path" python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          value = json.loads(Path(os.environ["PROJECTION_PATH"]).read_text())
+          required = {
+              "SNAPSHOTS_TABLE": r"[A-Za-z0-9_.-]{3,255}",
+              "OUTCOMES_TABLE": r"[A-Za-z0-9_.-]{3,255}",
+              "MLB_ML_ARTIFACTS_BUCKET": r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]",
+              "MLB_ML_EXPERIMENT_ID": r"[A-Za-z0-9._:-]{1,160}",
+              "MLB_ML_RELEASE_CONTRACT_ID": r"[A-Za-z0-9._:-]{1,160}",
+              "MLB_ML_RELEASE_CUTOFF_UTC": r"[0-9T:+.Z-]{10,40}",
+              "MLB_ML_FEATURE_VECTOR_VERSION": r"[A-Za-z0-9._:-]{1,200}",
+              "INQSI_DEPLOY_GIT_SHA": r"[0-9a-f]{40}",
+              "INQSI_DEPLOY_TEMPLATE_SHA256": r"[0-9a-f]{64}",
+              "INQSI_MLB_ML_AUTO_PROMOTE": r"false",
+              "MLB_R7_HISTORICAL_TRAINING_ENABLED": r"true",
+              "MLB_R7_HISTORICAL_MAX_ROWS": r"[0-9]{1,4}",
+          }
+          if value.get("Handler") != "mlb_ml_aws_training_v1_compat.lambda_handler":
+              raise SystemExit("production trainer handler is not the compatibility entrypoint")
+          projected = {}
+          value["INQSI_SLATE_TIMEZONE"] = str(
+              value.get("INQSI_SLATE_TIMEZONE") or "America/New_York"
+          )
+          required["INQSI_SLATE_TIMEZONE"] = r"[A-Za-z0-9_+./-]{1,80}"
+          for name, pattern in required.items():
+              candidate = str(value.get(name) or "")
+              if re.fullmatch(pattern, candidate) is None:
+                  raise SystemExit(f"invalid projected production field: {name}")
+              projected[name] = candidate
+          exact_contract = {
+              "MLB_ML_EXPERIMENT_ID": "mlb-v2-2026-08-31-historical-live-r8",
+              "MLB_ML_RELEASE_CONTRACT_ID": "mlb-v2-2026-08-31-historical-live-r8",
+              "MLB_ML_RELEASE_CUTOFF_UTC": "2026-08-31T04:00:00+00:00",
+              "MLB_ML_FEATURE_VECTOR_VERSION": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness",
+              "MLB_R7_HISTORICAL_TRAINING_ENABLED": "true",
+              "MLB_R7_HISTORICAL_MAX_ROWS": "500",
+              "INQSI_MLB_ML_AUTO_PROMOTE": "false",
+          }
+          for name, expected in exact_contract.items():
+              if projected[name] != expected:
+                  raise SystemExit(f"projected production contract mismatch: {name}")
+          with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as handle:
+              for name in sorted(projected):
+                  handle.write(f"{name}={projected[name]}\n")
+              handle.write("DEPLOYED_HANDLER_MATCHES=true\n")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
+              handle.write(f"deploy_sha={projected['INQSI_DEPLOY_GIT_SHA']}\n")
+          PY
+
+      - name: Checkout exact deployed production SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.production.outputs.deploy_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify exact deployed checkout
+        run: test "$(git rev-parse HEAD)" = "$INQSI_DEPLOY_GIT_SHA"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install read-only diagnostic dependencies
+        run: >-
+          python -m pip install --disable-pip-version-check
+          'boto3>=1.34,<2' 'requests>=2.31,<3'
+
+      - name: Read, compare, and sanitize missing slate evidence
+        id: diagnostic
+        continue-on-error: true
+        env:
+          REPORT_PATH: ${{ runner.temp }}/mlb-sep1-missing-slate-read-only.json
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$GITHUB_WORKSPACE/hello_world"
+          diagnostic_error_path=$(mktemp "$RUNNER_TEMP/mlb-sep1-diagnostic.XXXXXX.err")
+          trap 'rm -f "$diagnostic_error_path"' EXIT
+          set +e
+          python - <<'PY' > /dev/null 2>"$diagnostic_error_path"
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import os
+          import re
+          import subprocess
+          from collections import Counter
+          from decimal import Decimal
+          from pathlib import Path
+          from typing import Any, Mapping
+
+          import boto3
+          import mlb_ml_aws_training_v1_compat as compat
+          import mlb_r7_historical_walkforward_bridge as historical_bridge
+
+          TARGET_DATE = "2026-09-01"
+          DIGEST = re.compile(r"[0-9a-f]{64}")
+          DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+          ERROR = re.compile(
+              r"(OFFICIAL_SLATE_UNRESOLVED|OFFICIAL_SCHEDULE_UNPROVEN):"
+              r"([A-Za-z][A-Za-z0-9_]*)"
+          )
+          canonical = compat.canonical
+
+          def plain(value: Any) -> Any:
+              if isinstance(value, Decimal):
+                  return int(value) if value == value.to_integral_value() else float(value)
+              if isinstance(value, Mapping):
+                  return {str(key): plain(item) for key, item in value.items()}
+              if isinstance(value, list):
+                  return [plain(item) for item in value]
+              return value
+
+          def digest(value: Any) -> str:
+              material = json.dumps(
+                  plain(value), sort_keys=True, separators=(",", ":"), ensure_ascii=True
+              ).encode("utf-8")
+              return hashlib.sha256(material).hexdigest()
+
+          def safe_digest(value: Any) -> str:
+              candidate = str(value or "")
+              if DIGEST.fullmatch(candidate) is None:
+                  raise SystemExit("persisted digest contract is invalid")
+              return candidate
+
+          def safe_revision(value: Any) -> int:
+              if isinstance(value, bool) or not isinstance(value, int):
+                  raise SystemExit("persisted revision contract is invalid")
+              if value < 0:
+                  raise SystemExit("persisted revision contract is invalid")
+              return value
+
+          def safe_date(value: Any) -> str | None:
+              candidate = str(value or "")
+              return candidate if DATE.fullmatch(candidate) else None
+
+          def error_code(value: Any) -> dict[str, str] | None:
+              match = ERROR.match(str(value or ""))
+              if match is None:
+                  return None
+              return {"code": match.group(1), "exceptionType": match.group(2)}
+
+          def row_slate_date(row: Mapping[str, Any]) -> str | None:
+              for candidate in (
+                  row,
+                  row.get("featureSnapshot"),
+                  row.get("frozenFeatureVector"),
+              ):
+                  if isinstance(candidate, Mapping):
+                      value = safe_date(candidate.get("slateDateEt"))
+                      if value is not None:
+                          return value
+              return None
+
+          dynamodb = boto3.resource("dynamodb")
+          s3 = boto3.client("s3")
+          config = canonical.TrainingConfig.from_env()
+          store = canonical.AwsTrainingStore(
+              table_name=os.environ["SNAPSHOTS_TABLE"],
+              artifacts_bucket=config.artifacts_bucket,
+              dynamodb_resource=dynamodb,
+              s3_client=s3,
+          )
+          service = canonical.TrainingService(store, config)
+          optimizer_table = dynamodb.Table(os.environ["SNAPSHOTS_TABLE"])
+
+          def load_existing_manifest() -> dict[str, Any]:
+              manifest = service.store.load_manifest(config.experiment_id)
+              if not isinstance(manifest, Mapping) or not manifest:
+                  raise SystemExit("persisted experiment manifest is missing")
+              result = dict(manifest)
+              declared = safe_digest(result.get("manifestDigest"))
+              if canonical.experiment.manifest_digest(result) != declared:
+                  raise SystemExit("persisted experiment manifest digest is invalid")
+              safe_revision(result.get("revision"))
+              service._validate_manifest_contract(result)
+              return result
+
+          def optimizer_state_snapshot() -> dict[str, Any]:
+              response = optimizer_table.get_item(
+                  Key={
+                      "PK": historical_bridge.STATE_PK,
+                      "SK": historical_bridge.STATE_SK,
+                  },
+                  ConsistentRead=True,
+                  ProjectionExpression="#record_type,#revision,#data",
+                  ExpressionAttributeNames={
+                      "#record_type": "record_type",
+                      "#revision": "revision",
+                      "#data": "data",
+                  },
+              )
+              item = plain(response.get("Item") or {})
+              state = item.get("data")
+              if (
+                  item.get("record_type") != "mlb_historical_optimizer_state_v1"
+                  or not isinstance(state, Mapping)
+                  or not state
+              ):
+                  raise SystemExit("historical optimizer state is missing")
+              revision = safe_revision(item.get("revision"))
+              if safe_revision(state.get("revision")) != revision:
+                  raise SystemExit("historical optimizer state revision is invalid")
+              return {
+                  "revision": revision,
+                  "digest": digest(state),
+                  "snapshotDigest": digest(item),
+                  "envelope": item,
+              }
+
+          manifest_before = load_existing_manifest()
+          optimizer_before = optimizer_state_snapshot()
+          loaded_result = service.row_loader(config)
+          loaded_rows = list(loaded_result or [])
+          continuity = getattr(loaded_result, "continuity", None)
+          filtered = canonical.experiment.filter_records(loaded_rows, manifest_before)
+          accepted_rows = list(filtered.get("acceptedRows") or [])
+          optimizer_after = optimizer_state_snapshot()
+          manifest_after = load_existing_manifest()
+
+          expected_entry = None
+          for name in ("assignedSlateDates", "historicalDiagnosticSlateDates"):
+              entries = manifest_before.get(name) or {}
+              if isinstance(entries, Mapping) and TARGET_DATE in entries:
+                  candidate = entries[TARGET_DATE]
+                  if expected_entry is not None or not isinstance(candidate, Mapping):
+                      raise SystemExit("target slate manifest identity is ambiguous")
+                  expected_entry = candidate
+          if expected_entry is None:
+              raise SystemExit("target slate is not persisted in the manifest")
+          expected_fingerprint = safe_digest(expected_entry.get("slateFingerprint"))
+          expected_count = safe_revision(expected_entry.get("rowCount"))
+
+          loaded_target = [
+              row for row in loaded_rows
+              if isinstance(row, Mapping) and row_slate_date(row) == TARGET_DATE
+          ]
+          accepted_target = [
+              row for row in accepted_rows
+              if isinstance(row, Mapping) and row_slate_date(row) == TARGET_DATE
+          ]
+          rejected_reasons: Counter[str] = Counter()
+          rejected_target_count = 0
+          for rejected in filtered.get("rejectedRows") or []:
+              if not isinstance(rejected, Mapping) or rejected.get("slateDateEt") != TARGET_DATE:
+                  continue
+              rejected_target_count += 1
+              for reason in rejected.get("reasons") or []:
+                  code = str(reason or "").split(":", 1)[0]
+                  if re.fullmatch(r"[a-z][a-z0-9_]{0,127}", code) is None:
+                      code = "unknown_rejection_reason"
+                  rejected_reasons[code] += 1
+
+          loaded_fingerprint = (
+              canonical.experiment.slate_fingerprint(loaded_target)
+              if loaded_target else None
+          )
+          accepted_fingerprint = (
+              canonical.experiment.slate_fingerprint(accepted_target)
+              if accepted_target else None
+          )
+          continuity_value = continuity if isinstance(continuity, Mapping) else {}
+          skipped = sorted(
+              value for value in {
+                  safe_date(item)
+                  for item in continuity_value.get("skippedUnresolvedSlateDates") or []
+              } if value is not None
+          )
+          unresolved = continuity_value.get("unresolvedSlateErrors") or {}
+          unresolved_codes = {}
+          if isinstance(unresolved, Mapping):
+              for raw_date, raw_error in unresolved.items():
+                  date_value = safe_date(raw_date)
+                  code = error_code(raw_error)
+                  if date_value is not None and code is not None:
+                      unresolved_codes[date_value] = code
+          continuity_version = str(continuity_value.get("version") or "")
+          if not re.fullmatch(r"[A-Za-z0-9._:-]{1,160}", continuity_version):
+              continuity_version = "INVALID_CONTINUITY_VERSION"
+
+          manifest_before_revision = safe_revision(manifest_before.get("revision"))
+          manifest_after_revision = safe_revision(manifest_after.get("revision"))
+          manifest_before_digest = safe_digest(manifest_before.get("manifestDigest"))
+          manifest_after_digest = safe_digest(manifest_after.get("manifestDigest"))
+          manifest_before_snapshot_digest = digest(manifest_before)
+          manifest_after_snapshot_digest = digest(manifest_after)
+          bracket = {
+              "manifest": {
+                  "beforeRevision": manifest_before_revision,
+                  "afterRevision": manifest_after_revision,
+                  "revisionEqual": manifest_before_revision == manifest_after_revision,
+                  "beforeDigest": manifest_before_digest,
+                  "afterDigest": manifest_after_digest,
+                  "digestEqual": manifest_before_digest == manifest_after_digest,
+                  "beforeSnapshotDigest": manifest_before_snapshot_digest,
+                  "afterSnapshotDigest": manifest_after_snapshot_digest,
+                  "snapshotDigestEqual": (
+                      manifest_before_snapshot_digest
+                      == manifest_after_snapshot_digest
+                  ),
+                  "contentEqual": manifest_before == manifest_after,
+              },
+              "optimizerState": {
+                  "beforeRevision": optimizer_before["revision"],
+                  "afterRevision": optimizer_after["revision"],
+                  "revisionEqual": optimizer_before["revision"] == optimizer_after["revision"],
+                  "beforeDigest": optimizer_before["digest"],
+                  "afterDigest": optimizer_after["digest"],
+                  "digestEqual": optimizer_before["digest"] == optimizer_after["digest"],
+                  "beforeSnapshotDigest": optimizer_before["snapshotDigest"],
+                  "afterSnapshotDigest": optimizer_after["snapshotDigest"],
+                  "snapshotDigestEqual": (
+                      optimizer_before["snapshotDigest"]
+                      == optimizer_after["snapshotDigest"]
+                  ),
+                  "contentEqual": (
+                      optimizer_before["envelope"]
+                      == optimizer_after["envelope"]
+                  ),
+              },
+          }
+          checkout_sha = subprocess.run(
+              ["git", "rev-parse", "HEAD"],
+              check=True,
+              capture_output=True,
+              text=True,
+          ).stdout.strip()
+          report = {
+              "targetSlateDate": TARGET_DATE,
+              "deploymentIdentityMatches": bool(
+                  checkout_sha == config.deployment_git_sha
+                  and os.environ.get("DEPLOYED_HANDLER_MATCHES") == "true"
+              ),
+              "perDate": [{
+                  "slateDate": TARGET_DATE,
+                  "expectedRowCount": expected_count,
+                  "loadedRowCount": len(loaded_target),
+                  "acceptedRowCount": len(accepted_target),
+                  "rejectedRowCount": rejected_target_count,
+                  "expectedFingerprint": expected_fingerprint,
+                  "loadedFingerprint": loaded_fingerprint,
+                  "acceptedFingerprint": accepted_fingerprint,
+                  "loadedFingerprintMatchesExpected": loaded_fingerprint == expected_fingerprint,
+                  "acceptedFingerprintMatchesExpected": accepted_fingerprint == expected_fingerprint,
+                  "rejectionReasonCounts": dict(sorted(rejected_reasons.items())),
+              }],
+              "continuity": {
+                  "version": continuity_version,
+                  "ok": continuity_value.get("ok") if isinstance(continuity_value.get("ok"), bool) else None,
+                  "skippedUnresolvedSlateDates": skipped,
+                  "unresolvedSlateErrorCodes": dict(sorted(unresolved_codes.items())),
+                  "blockedSlateDate": safe_date(continuity_value.get("blockedSlateDate")),
+                  "blocker": error_code(continuity_value.get("blocker")),
+              },
+              "readOnlyBracket": bracket,
+          }
+          report_path = Path(os.environ["REPORT_PATH"])
+          report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+          report_path.chmod(0o600)
+          unchanged = all(
+              section[check]
+              for section in bracket.values()
+              for check in (
+                  "revisionEqual",
+                  "digestEqual",
+                  "snapshotDigestEqual",
+                  "contentEqual",
+              )
+          )
+          if not unchanged:
+              raise SystemExit("read-only diagnostic state bracket changed")
+          PY
+          diagnostic_status=$?
+          set -e
+          if [ "$diagnostic_status" -ne 0 ]; then
+            echo "Read-only MLB diagnostic failed; raw error details were suppressed." >&2
+            exit "$diagnostic_status"
+          fi
+
+      - name: Upload one sanitized diagnostic artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-sep1-missing-slate-read-only-${{ github.run_id }}
+          path: ${{ runner.temp }}/mlb-sep1-missing-slate-read-only.json
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Enforce read-only diagnostic success
+        if: always()
+        env:
+          DIAGNOSTIC_OUTCOME: ${{ steps.diagnostic.outcome }}
+          REPORT_PATH: ${{ runner.temp }}/mlb-sep1-missing-slate-read-only.json
+        run: |
+          set -euo pipefail
+          test "$DIAGNOSTIC_OUTCOME" = success
+          test -s "$REPORT_PATH"
