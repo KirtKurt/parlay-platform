@@ -191,11 +191,15 @@ def _lambda_configuration_query_is_allowlisted(command: str) -> bool:
         if re.search(pattern, query):
             return False
     without_leaf_references = re.sub(
-        r"Environment\.Variables\.[A-Za-z_][A-Za-z0-9_]*",
+        r"(?:Configuration\.)?Environment\.Variables\."
+        r"[A-Za-z_][A-Za-z0-9_]*",
         "",
         query,
     )
-    return "Environment.Variables" not in without_leaf_references
+    return (
+        "Environment.Variables" not in without_leaf_references
+        and "Configuration.Environment" not in without_leaf_references
+    )
 
 
 def _workflow_artifact_lambda_configuration_exposures(
@@ -219,7 +223,7 @@ def _workflow_artifact_lambda_configuration_exposures(
             if not operation:
                 continue
             redirect = re.search(
-                r"(?:^|\s)(?:[12]?>)\s*(?P<path>[^\s]+)",
+                r"(?:^|\s)(?:[12]?>>?)\s*(?P<path>[^\s]+)",
                 command,
             )
             if not redirect:
@@ -272,7 +276,6 @@ def _automatic_trigger_types(trigger_block: str) -> list[str]:
     if _push_enabled(trigger_block):
         trigger_types.append("push")
     return trigger_types
-
 
 
 def _all_automatic_trigger_types(trigger_block: str) -> list[str]:
