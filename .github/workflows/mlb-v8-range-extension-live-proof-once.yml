@@ -2,10 +2,6 @@ name: MLB V8 Range Extension Live Proof Once
 
 "on":
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/mlb-v8-range-extension-live-proof-once.yml'
 
 permissions:
   contents: write
@@ -50,7 +46,11 @@ jobs:
             set -euo pipefail
             FUNCTION_NAME=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
             test -n "$FUNCTION_NAME"; test "$FUNCTION_NAME" != None
-            aws lambda get-function-configuration --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --output json > /tmp/v8-live-config.json
+            aws lambda get-function-configuration \
+              --function-name "$FUNCTION_NAME" \
+              --region "$AWS_REGION_VALUE" \
+              --query '{FunctionName:FunctionName,Handler:Handler,Environment:{Variables:{INQSI_DEPLOY_GIT_SHA:Environment.Variables.INQSI_DEPLOY_GIT_SHA}}}' \
+              --output json > /tmp/v8-live-config.json
             aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"v8_live_proof_pre"}' /tmp/v8-live-pre.json >/tmp/v8-live-pre-meta.json
             aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"orchestrate","run":"v8_live_proof_execute"}' /tmp/v8-live-execute.json >/tmp/v8-live-execute-meta.json
             aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"v8_live_proof_post"}' /tmp/v8-live-post.json >/tmp/v8-live-post-meta.json
