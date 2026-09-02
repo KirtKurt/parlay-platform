@@ -76,6 +76,10 @@ def test_workflow_reads_only_three_exact_keys_with_an_explicit_projection() -> N
     assert '"--projection-expression"' in source
     assert EXPECTED_PROJECTION.replace("\n", "") in source.replace("\n", "")
     assert 'attribute_names = {"#version": "version"}' in source
+    assert source.count("aws cloudformation describe-stack-resource") == 1
+    assert source.count("aws cloudformation describe-stacks") == 1
+    assert source.count('"lambda",\n                  "invoke"') == 1
+    assert '{"sport": "mlb", "mode": "status"}' in source
 
 
 @pytest.mark.parametrize(
@@ -88,9 +92,14 @@ def test_workflow_reads_only_three_exact_keys_with_an_explicit_projection() -> N
         "transact-write-items",
         "dynamodb scan",
         "dynamodb query",
-        "lambda invoke",
         "invoke_mlb_trainer",
         '"mode":"scheduled"',
+        '"mode": "scheduled"',
+        '"mode":"training"',
+        '"mode": "training"',
+        "get-function-configuration",
+        "get-function",
+        "list-functions",
         "sam deploy",
         "cloudformation deploy",
         "contents: write",
@@ -114,6 +123,8 @@ def test_artifact_is_the_single_sanitized_report_not_raw_responses() -> None:
     assert "config.json" not in source
     assert "response.json" not in source
     assert "raw.json" not in source
+    assert "status_file.unlink(missing_ok=True)" in source
+    assert "get-function-configuration" not in source
 
 
 def test_runtime_sanitizes_owner_and_emits_only_allowlisted_lease_fields(
@@ -125,32 +136,77 @@ def test_runtime_sanitizes_owner_and_emits_only_allowlisted_lease_fields(
     report_path = tmp_path / "sanitized.json"
     monkeypatch.setenv("TABLE_NAME", "read-only-table")
     monkeypatch.setenv("AWS_REGION_VALUE", "us-east-1")
+    monkeypatch.setenv("TRAINER_ARN", "trainer-read-only")
     monkeypatch.setenv("REPORT_PATH", str(report_path))
     calls: list[list[str]] = []
 
     class Completed:
-        stdout = json.dumps(
-            {
-                "Item": {
-                    "record_type": {"S": "MLB_EXECUTION_LEASE"},
-                    "version": {"N": "2"},
-                    "lease_domain": {"S": "STATE_MUTATION"},
-                    "lease_owner": {"S": owner},
-                    "execution_mode": {"S": "scheduled"},
-                    "acquired_at": {"S": "2026-09-02T16:00:00Z"},
-                    "lease_expires_at": {"S": "2099-01-01T00:00:00Z"},
-                    "lease_expires_at_epoch": {"N": "4070908800"},
-                    "arbitrary_secret_field": {"S": "must-not-leak"},
-                    "credentials": {"S": "credential-canary"},
-                    "environment": {"S": "environment-canary"},
-                }
-            }
-        )
+        def __init__(self, stdout: str):
+            self.stdout = stdout
 
     def fake_run(command: list[str], **kwargs: object) -> Completed:
         calls.append(command)
         assert kwargs == {"check": True, "capture_output": True, "text": True}
-        return Completed()
+        if command[:3] == ["aws", "dynamodb", "get-item"]:
+            return Completed(
+                json.dumps(
+                    {
+                        "Item": {
+                            "record_type": {"S": "MLB_EXECUTION_LEASE"},
+                            "version": {"N": "2"},
+                            "lease_domain": {"S": "STATE_MUTATION"},
+                            "lease_owner": {"S": owner},
+                            "execution_mode": {"S": "scheduled"},
+                            "acquired_at": {"S": "2026-09-02T16:00:00Z"},
+                            "lease_expires_at": {
+                                "S": "2099-01-01T00:00:00Z"
+                            },
+                            "lease_expires_at_epoch": {"N": "4070908800"},
+                            "arbitrary_secret_field": {"S": "must-not-leak"},
+                            "credentials": {"S": "credential-canary"},
+                            "environment": {"S": "environment-canary"},
+                        }
+                    }
+                )
+            )
+        assert command[:3] == ["aws", "lambda", "invoke"]
+        status_path = Path(command[-1])
+        status_path.write_text(
+            json.dumps(
+                {
+                    "trainingHealth": {
+                        "deploymentIdentityMatches": True,
+                        "arbitraryHealthField": "must-not-leak",
+                        "latestRun": {
+                            "runId": "trainer-run-123",
+                            "status": "TRAINING_INVOCATION_FAILED",
+                            "acceptedRowCount": 425,
+                            "rejectedRowCount": 3,
+                            "partitionCounts": {
+                                "train": 300,
+                                "validation": 100,
+                                "prospectiveTest": 25,
+                                "arbitrary": 999,
+                            },
+                            "failure": {
+                                "type": "TrainingContractError",
+                                "message": (
+                                    "api_key=credential-canary "
+                                    "arn:aws:lambda:us-east-1:123456789012:"
+                                    "function:must-not-leak"
+                                ),
+                                "code": "must-not-leak",
+                            },
+                            "arbitraryRunField": "must-not-leak",
+                        },
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        return Completed(
+            json.dumps({"StatusCode": 200, "ExecutedVersion": "$LATEST"})
+        )
 
     monkeypatch.setattr("subprocess.run", fake_run)
     exec(compile(_diagnostic_program(), str(WORKFLOW), "exec"), {})
@@ -162,6 +218,7 @@ def test_runtime_sanitizes_owner_and_emits_only_allowlisted_lease_fields(
     assert "must-not-leak" not in report_text
     assert "credential-canary" not in report_text
     assert "environment-canary" not in report_text
+    assert "123456789012" not in report_text
     report = json.loads(report_text)
     assert report["readOnly"] is True
     assert len(report["leases"]) == 3
@@ -188,11 +245,42 @@ def test_runtime_sanitizes_owner_and_emits_only_allowlisted_lease_fields(
     expected_fingerprint = hashlib.sha256(owner.encode("utf-8")).hexdigest()[:16]
     assert all(row["ownerFingerprint"] == expected_fingerprint for row in report["leases"])
     assert all(len(row["ownerFingerprint"]) == 16 for row in report["leases"])
+    assert report["trainingHealth"] == {
+        "deploymentIdentityMatches": True,
+        "latestRun": {
+            "runId": "trainer-run-123",
+            "status": "TRAINING_INVOCATION_FAILED",
+            "counts": {
+                "acceptedRowCount": 425,
+                "rejectedRowCount": 3,
+                "partitionCounts": {
+                    "train": 300,
+                    "validation": 100,
+                    "prospectiveTest": 25,
+                },
+            },
+            "failure": {
+                "type": "TrainingContractError",
+                "message": "api_key=[REDACTED] [REDACTED_ARN]",
+            },
+        },
+    }
 
-    assert len(calls) == 3
+    assert len(calls) == 4
+    dynamodb_calls = [
+        command
+        for command in calls
+        if command[:3] == ["aws", "dynamodb", "get-item"]
+    ]
+    lambda_calls = [
+        command
+        for command in calls
+        if command[:3] == ["aws", "lambda", "invoke"]
+    ]
+    assert len(dynamodb_calls) == 3
+    assert len(lambda_calls) == 1
     observed_sort_keys = set()
-    for command in calls:
-        assert command[:3] == ["aws", "dynamodb", "get-item"]
+    for command in dynamodb_calls:
         assert "--consistent-read" in command
         projection_index = command.index("--projection-expression")
         assert command[projection_index + 1] == EXPECTED_PROJECTION
@@ -201,3 +289,10 @@ def test_runtime_sanitizes_owner_and_emits_only_allowlisted_lease_fields(
         assert key["PK"]["S"] == EXPERIMENT_PK
         observed_sort_keys.add(key["SK"]["S"])
     assert observed_sort_keys == EXPECTED_SORT_KEYS
+    status_command = lambda_calls[0]
+    payload_index = status_command.index("--payload")
+    assert json.loads(status_command[payload_index + 1]) == {
+        "sport": "mlb",
+        "mode": "status",
+    }
+    assert "--log-type" not in status_command
