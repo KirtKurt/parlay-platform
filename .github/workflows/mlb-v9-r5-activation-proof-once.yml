@@ -56,6 +56,7 @@ jobs:
             aws lambda get-function-configuration \
               --function-name "$TRAINER_ARN" \
               --region "$AWS_REGION_VALUE" \
+              --query '{State:State,LastUpdateStatus:LastUpdateStatus,Environment:{Variables:{INQSI_DEPLOY_GIT_SHA:Environment.Variables.INQSI_DEPLOY_GIT_SHA,INQSI_DEPLOY_TEMPLATE_SHA256:Environment.Variables.INQSI_DEPLOY_TEMPLATE_SHA256,MLB_ML_EXPERIMENT_ID:Environment.Variables.MLB_ML_EXPERIMENT_ID,MLB_ML_RELEASE_CONTRACT_ID:Environment.Variables.MLB_ML_RELEASE_CONTRACT_ID,MLB_ML_RELEASE_CUTOFF_UTC:Environment.Variables.MLB_ML_RELEASE_CUTOFF_UTC}}}' \
               --output json > /tmp/mlb-v9-r5-activation/config.json
             if python - <<'PY'
           import json, os, sys

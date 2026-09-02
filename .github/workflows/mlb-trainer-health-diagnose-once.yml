@@ -48,7 +48,9 @@ jobs:
           test -n "$TRAINER_FUNCTION" && test "$TRAINER_FUNCTION" != None
           echo "TRAINER_FUNCTION=$TRAINER_FUNCTION" >> "$GITHUB_ENV"
           aws lambda wait function-updated-v2 --function-name "$TRAINER_FUNCTION" --region "$AWS_REGION"
-          aws lambda get-function-configuration --function-name "$TRAINER_FUNCTION" --region "$AWS_REGION" > /tmp/config.json
+          aws lambda get-function-configuration --function-name "$TRAINER_FUNCTION" --region "$AWS_REGION" \
+            --query '{FunctionName:FunctionName,Handler:Handler,LastModified:LastModified,CodeSha256:CodeSha256}' \
+            --output json > /tmp/config.json
           PACKAGE_URL=$(aws lambda get-function --function-name "$TRAINER_FUNCTION" --region "$AWS_REGION" --query 'Code.Location' --output text)
           curl --fail --silent --show-error "$PACKAGE_URL" -o /tmp/trainer.zip
           unzip -l /tmp/trainer.zip | grep -F 'mlb_r7_source_honest_training_repair.py'

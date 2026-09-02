@@ -2,14 +2,6 @@ name: MLB V8 Incremental Range Extension Deploy
 
 "on":
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'hello_world/mlb_historical_incremental_range_extension_v1.py'
-      - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
-      - 'tests/unit/test_mlb_historical_incremental_range_extension_v1.py'
-      - 'mlb_historical_optimizer/template.yaml'
-      - '.github/workflows/mlb-v8-incremental-range-extension-deploy.yml'
 
 permissions:
   contents: write
@@ -159,7 +151,11 @@ jobs:
           PY
             FUNCTION_NAME=$(python -c "import json; print(json.load(open('/tmp/mlb-v8-runtime-resolution.json'))['functionName'])")
 
-            aws lambda get-function-configuration --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --output json > /tmp/mlb-v8-lambda-config.json
+            aws lambda get-function-configuration \
+              --function-name "$FUNCTION_NAME" \
+              --region "$AWS_REGION_VALUE" \
+              --query '{Handler:Handler,Environment:{Variables:{INQSI_DEPLOY_GIT_SHA:Environment.Variables.INQSI_DEPLOY_GIT_SHA,MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED:Environment.Variables.MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED}}}' \
+              --output json > /tmp/mlb-v8-lambda-config.json
             aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"v8_incremental_pre_deploy_status"}' /tmp/mlb-v8-pre-status.json >/tmp/mlb-v8-pre-invoke-meta.json
             aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"orchestrate","run":"v8_incremental_range_extension_deploy_verify"}' /tmp/mlb-v8-orchestrate.json >/tmp/mlb-v8-orchestrate-meta.json
             aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"v8_incremental_post_deploy_status"}' /tmp/mlb-v8-post-status.json >/tmp/mlb-v8-post-invoke-meta.json

@@ -1,23 +1,6 @@
 name: MLB V7 Settled Horizon Resume Deploy
 
 "on":
-  push:
-    branches: [main]
-    paths:
-      - 'hello_world/mlb_historical_incremental_range_extension_v1.py'
-      - 'hello_world/mlb_historical_state_integrity_v1.py'
-      - 'tests/unit/test_mlb_historical_incremental_range_extension_v1.py'
-      - 'tests/unit/test_mlb_historical_state_integrity_v1.py'
-      - 'tests/unit/test_mlb_v7_settled_horizon_resume_deploy_workflow.py'
-      - '.github/workflows/mlb-v7-settled-horizon-resume-deploy.yml'
-  pull_request:
-    paths:
-      - 'hello_world/mlb_historical_incremental_range_extension_v1.py'
-      - 'hello_world/mlb_historical_state_integrity_v1.py'
-      - 'tests/unit/test_mlb_historical_incremental_range_extension_v1.py'
-      - 'tests/unit/test_mlb_historical_state_integrity_v1.py'
-      - 'tests/unit/test_mlb_v7_settled_horizon_resume_deploy_workflow.py'
-      - '.github/workflows/mlb-v7-settled-horizon-resume-deploy.yml'
   workflow_dispatch:
 
 permissions:
@@ -183,6 +166,7 @@ jobs:
           aws lambda get-function-configuration \
             --function-name "$FUNCTION_NAME" \
             --region "${{ secrets.AWS_REGION }}" \
+            --query '{Handler:Handler,Environment:{Variables:{INQSI_DEPLOY_GIT_SHA:Environment.Variables.INQSI_DEPLOY_GIT_SHA}}}' \
             --output json > /tmp/mlb-v7-function-configuration.json
           python - <<'PY'
           import json, os

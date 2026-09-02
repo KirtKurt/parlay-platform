@@ -52,6 +52,7 @@ jobs:
           aws lambda get-function-configuration \
             --function-name "$TRAINER_ARN" \
             --region "$AWS_REGION_VALUE" \
+            --query '{Environment:{Variables:{INQSI_DEPLOY_GIT_SHA:Environment.Variables.INQSI_DEPLOY_GIT_SHA,INQSI_DEPLOY_TEMPLATE_SHA256:Environment.Variables.INQSI_DEPLOY_TEMPLATE_SHA256}}}' \
             --output json > /tmp/mlb-v9-trainer-diagnostic/config.json
           readarray -t IDENTITY < <(python - <<'PY'
           import json

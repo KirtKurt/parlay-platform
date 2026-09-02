@@ -20,6 +20,8 @@ on:
       - 'tests/unit/test_mlb_sportsdataio_sam_wiring.py'
       - 'tests/unit/test_reconcile_mlb_prospective_backlog_v5_settlement_replay.py'
       - 'tests/unit/test_unified_mlb_learning_ownership.py'
+      - '.github/workflows/*.yml'
+      - '.github/workflows/*.yaml'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/enable-sportsdataio.yml'
       - '.github/workflows/mlb-ml-promote-champion.yml'
@@ -63,6 +65,8 @@ on:
       - 'tests/unit/test_mlb_sportsdataio_sam_wiring.py'
       - 'tests/unit/test_reconcile_mlb_prospective_backlog_v5_settlement_replay.py'
       - 'tests/unit/test_unified_mlb_learning_ownership.py'
+      - '.github/workflows/*.yml'
+      - '.github/workflows/*.yaml'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/enable-sportsdataio.yml'
       - '.github/workflows/mlb-ml-promote-champion.yml'
@@ -155,6 +159,7 @@ jobs:
         run: |
           python scripts/verify_mlb_schedule_invariants.py
           python scripts/verify_mlb_workflow_authority.py
+          python scripts/verify_unified_mlb_learning_ownership.py
 
       - name: Verify active runtime has no BBD dependency
         env:
