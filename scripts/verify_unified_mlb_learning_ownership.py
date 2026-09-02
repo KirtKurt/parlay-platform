@@ -86,10 +86,14 @@ def _self_only_main_push(path: Path, trigger_block: str) -> bool:
 
 
 def _invokes_training(text: str) -> bool:
+    # Workflow shell payloads commonly escape JSON quotes (for example,
+    # {\"mode\":\"scheduled\"}). Normalize one-or-more escape characters
+    # before scanning so automatic owners cannot hide behind shell quoting.
+    payload_scan = re.sub(r"\\+(?=[\"'])", "", text)
     training_mode = bool(
         re.search(
             r"['\"]mode['\"]\s*:\s*['\"](?:scheduled|training)['\"]",
-            text,
+            payload_scan,
         )
     )
     trainer_identity = any(
