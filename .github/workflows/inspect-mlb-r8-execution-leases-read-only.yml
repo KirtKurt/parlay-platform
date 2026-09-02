@@ -38,15 +38,22 @@ jobs:
           test -n "$trainer_arn"
           test "$trainer_arn" != "None"
           report_path=/tmp/mlb-r8-execution-lease-readonly.json
-          TABLE_NAME="$table_name" TRAINER_ARN="$trainer_arn" REPORT_PATH="$report_path" python - <<'PY'
+          status_raw_path=$(mktemp /tmp/mlb-r8-trainer-status.XXXXXX.json)
+          cloudwatch_raw_path=$(mktemp /tmp/mlb-r8-cloudwatch-filter.XXXXXX.json)
+          trap 'rm -f "$status_raw_path" "$cloudwatch_raw_path"' EXIT
+          TABLE_NAME="$table_name" \
+          TRAINER_ARN="$trainer_arn" \
+          STATUS_RAW_PATH="$status_raw_path" \
+          CLOUDWATCH_RAW_PATH="$cloudwatch_raw_path" \
+          REPORT_PATH="$report_path" \
+          python - <<'PY'
           import hashlib
           import json
           import os
           import re
           import subprocess
-          import tempfile
           import time
-          from datetime import datetime, timezone
+          from datetime import datetime, timedelta, timezone
           from pathlib import Path
 
           experiment_pk = "MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2"
@@ -74,37 +81,56 @@ jobs:
               safe = re.sub(r"[^A-Za-z0-9._:/#@+-]", "_", compact)
               return safe[:limit] or None
 
-          def safe_message(value, limit=300):
-              if value is None or isinstance(value, (dict, list)):
+          def safe_timestamp(value):
+              if not isinstance(value, str):
                   return None
-              compact = " ".join(str(value).split())
-              compact = re.sub(
-                  r"(?i)\b(api[_-]?key|secret|token|password|credential)s?\b\s*[:=]\s*[^\s,;]+",
-                  r"\1=[REDACTED]",
-                  compact,
+              candidate = value.strip()
+              if not re.fullmatch(
+                  r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"
+                  r"(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})",
+                  candidate,
+              ):
+                  return None
+              return candidate
+
+          allowed_failure_types = frozenset(
+              {
+                  "ConditionalStateConflict",
+                  "ExecutionLeaseUnavailable",
+                  "FrozenPartitionConflict",
+                  "PermissionError",
+                  "TimeoutError",
+                  "TrainingContractError",
+              }
+          )
+          allowed_failure_messages = frozenset(
+              {
+                  "MLB ML conditional state changed",
+                  "MLB ML execution lease was unavailable",
+                  "MLB ML invocation failed",
+                  "MLB ML invocation lacked required permission",
+                  "MLB ML invocation timed out",
+                  "MLB ML training contract validation failed",
+              }
+          )
+
+          def safe_failure_type(value):
+              candidate = safe_identifier(value)
+              if candidate in allowed_failure_types:
+                  return candidate
+              return "UnknownFailure" if candidate else None
+
+          def safe_failure_message(value):
+              if not isinstance(value, str):
+                  return None
+              candidate = " ".join(value.split())
+              if candidate in allowed_failure_messages:
+                  return candidate
+              return (
+                  "MLB ML invocation failure details unavailable"
+                  if candidate
+                  else None
               )
-              compact = re.sub(
-                  r"(?i)\bbearer\s+[^\s,;]+",
-                  "Bearer [REDACTED]",
-                  compact,
-              )
-              compact = re.sub(
-                  r"arn:aws[a-zA-Z-]*:[^\s,;]+",
-                  "[REDACTED_ARN]",
-                  compact,
-              )
-              compact = re.sub(r"\b\d{12}\b", "[REDACTED_ACCOUNT]", compact)
-              compact = re.sub(
-                  r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b",
-                  "[REDACTED_ACCESS_KEY]",
-                  compact,
-              )
-              compact = re.sub(
-                  r"\b[A-Za-z0-9_+/=-]{40,}\b",
-                  "[REDACTED_TOKEN]",
-                  compact,
-              )
-              return compact[:limit] or None
 
           def safe_count(value):
               if value is None or isinstance(value, bool):
@@ -114,6 +140,189 @@ jobs:
               except (TypeError, ValueError):
                   return None
               return parsed if parsed >= 0 else None
+
+          def parse_utc(value):
+              if not isinstance(value, str) or not value.strip():
+                  return None
+              try:
+                  parsed = datetime.fromisoformat(
+                      value.strip().replace("Z", "+00:00")
+                  )
+              except ValueError:
+                  return None
+              if parsed.tzinfo is None:
+                  return None
+              return parsed.astimezone(timezone.utc)
+
+          def trainer_function_name(value):
+              match = re.fullmatch(
+                  r"arn:aws[a-zA-Z-]*:lambda:[^:]+:\d{12}:function:"
+                  r"([A-Za-z0-9_-]{1,64})(?::[A-Za-z0-9_-]+)?",
+                  str(value or ""),
+              )
+              return match.group(1) if match else None
+
+          frozen_conflict_patterns = (
+              (
+                  "FROZEN_SLATE_CHANGED",
+                  re.compile(
+                      r"FrozenPartitionConflict:\s*"
+                      r"(frozen slate \d{4}-\d{2}-\d{2} changed)\b"
+                  ),
+              ),
+              (
+                  "FROZEN_SLATE_DISAPPEARED",
+                  re.compile(
+                      r"FrozenPartitionConflict:\s*"
+                      r"(frozen slate \d{4}-\d{2}-\d{2} "
+                      r"disappeared from current authority)\b"
+                  ),
+              ),
+              (
+                  "DIAGNOSTIC_HISTORICAL_SLATE_CHANGED",
+                  re.compile(
+                      r"FrozenPartitionConflict:\s*"
+                      r"(diagnostic historical slate \d{4}-\d{2}-\d{2} "
+                      r"changed)\b"
+                  ),
+              ),
+              (
+                  "DIAGNOSTIC_HISTORICAL_SLATE_DISAPPEARED",
+                  re.compile(
+                      r"FrozenPartitionConflict:\s*"
+                      r"(diagnostic historical slate \d{4}-\d{2}-\d{2} "
+                      r"disappeared from current authority)\b"
+                  ),
+              ),
+              (
+                  "DIFFERENT_CHALLENGER_ALREADY_BOUND",
+                  re.compile(
+                      r"FrozenPartitionConflict:\s*"
+                      r"(a different challenger is already bound)\b"
+                  ),
+              ),
+              (
+                  "PROSPECTIVE_ARTIFACT_CONFLICT",
+                  re.compile(
+                      r"FrozenPartitionConflict:\s*"
+                      r"(prospective test was already evaluated with a "
+                      r"different artifact)\b"
+                  ),
+              ),
+          )
+          safe_stack_pattern = re.compile(
+              r'File "[^"\r\n]*/(?P<file>'
+              r'mlb_ml_experiment_v2\.py|'
+              r'mlb_ml_aws_training_v1\.py|'
+              r'mlb_ml_aws_training_v1_compat\.py)"'
+              r", line (?P<line>[1-9]\d{0,5})"
+          )
+
+          def cloudwatch_discriminator(latest):
+              raw_path = Path(os.environ["CLOUDWATCH_RAW_PATH"])
+              try:
+                  raw_run_id = latest.get("runId")
+                  run_id = (
+                      raw_run_id.strip()
+                      if isinstance(raw_run_id, str)
+                      else ""
+                  )
+                  if not re.fullmatch(
+                      r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
+                      r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                      r"[0-9a-fA-F]{12}",
+                      run_id,
+                  ):
+                      return None, "CLOUDWATCH_RUN_ID_UNAVAILABLE"
+                  created_at = parse_utc(latest.get("createdAtUtc"))
+                  if created_at is None:
+                      return None, "CLOUDWATCH_RUN_CREATED_AT_UNAVAILABLE"
+                  function_name = trainer_function_name(
+                      os.environ.get("TRAINER_ARN")
+                  )
+                  if function_name is None:
+                      return None, "CLOUDWATCH_LOG_GROUP_UNAVAILABLE"
+                  start_time = int(
+                      (created_at - timedelta(minutes=5)).timestamp() * 1000
+                  )
+                  end_time = int(
+                      (created_at + timedelta(minutes=5)).timestamp() * 1000
+                  )
+                  command = [
+                      "aws",
+                      "logs",
+                      "filter-log-events",
+                      "--log-group-name",
+                      f"/aws/lambda/{function_name}",
+                      "--start-time",
+                      str(start_time),
+                      "--end-time",
+                      str(end_time),
+                      "--filter-pattern",
+                      f'"{run_id}"',
+                      "--limit",
+                      "100",
+                      "--region",
+                      os.environ["AWS_REGION_VALUE"],
+                      "--output",
+                      "json",
+                      "--no-cli-pager",
+                  ]
+                  with raw_path.open("w", encoding="utf-8") as raw_output:
+                      completed = subprocess.run(
+                          command,
+                          check=False,
+                          stdout=raw_output,
+                          stderr=subprocess.DEVNULL,
+                          text=True,
+                      )
+                  if completed.returncode != 0:
+                      return None, "CLOUDWATCH_LOG_READ_UNAVAILABLE"
+                  try:
+                      raw = json.loads(raw_path.read_text().strip() or "{}")
+                  except (OSError, json.JSONDecodeError):
+                      return None, "CLOUDWATCH_LOG_READ_UNAVAILABLE"
+                  events = raw.get("events") if isinstance(raw, dict) else None
+                  if not isinstance(events, list):
+                      return None, "CLOUDWATCH_LOG_READ_UNAVAILABLE"
+                  messages = [
+                      event.get("message")[:5000]
+                      for event in events
+                      if isinstance(event, dict)
+                      and isinstance(event.get("message"), str)
+                  ]
+                  if not messages:
+                      return None, "CLOUDWATCH_RUN_LOG_MATCH_NOT_FOUND"
+                  combined = "\n".join(messages)
+                  classification = None
+                  message = None
+                  for candidate, pattern in frozen_conflict_patterns:
+                      match = pattern.search(combined)
+                      if match:
+                          classification = candidate
+                          message = match.group(1)
+                          break
+                  if classification is None:
+                      return None, "FROZEN_PARTITION_CONFLICT_NOT_FOUND"
+                  stack = []
+                  seen_stack = set()
+                  for match in safe_stack_pattern.finditer(combined):
+                      entry = (match.group("file"), int(match.group("line")))
+                      if entry in seen_stack:
+                          continue
+                      seen_stack.add(entry)
+                      stack.append({"file": entry[0], "line": entry[1]})
+                      if len(stack) == 12:
+                          break
+                  return {
+                      "classification": classification,
+                      "message": message,
+                      "stack": stack,
+                  }, None
+              except OSError:
+                  return None, "CLOUDWATCH_LOG_READ_UNAVAILABLE"
+              finally:
+                  raw_path.unlink(missing_ok=True)
 
           now_epoch = int(time.time())
           leases = []
@@ -168,13 +377,23 @@ jobs:
                   {
                       "leaseKey": lease_key,
                       "present": bool(item),
-                      "mode": scalar(item, "execution_mode"),
-                      "domain": scalar(item, "lease_domain"),
-                      "acquiredAt": scalar(item, "acquired_at"),
-                      "expiresAt": scalar(item, "lease_expires_at"),
+                      "mode": safe_identifier(
+                          scalar(item, "execution_mode")
+                      ),
+                      "domain": safe_identifier(
+                          scalar(item, "lease_domain")
+                      ),
+                      "acquiredAt": safe_timestamp(
+                          scalar(item, "acquired_at")
+                      ),
+                      "expiresAt": safe_timestamp(
+                          scalar(item, "lease_expires_at")
+                      ),
                       "expiresAtEpoch": expiry_epoch,
-                      "recordType": scalar(item, "record_type"),
-                      "version": scalar(item, "version"),
+                      "recordType": safe_identifier(
+                          scalar(item, "record_type")
+                      ),
+                      "version": safe_identifier(scalar(item, "version")),
                       "active": active,
                       "secondsRemaining": (
                           max(0, expiry_epoch - now_epoch)
@@ -189,14 +408,8 @@ jobs:
                   }
               )
 
-          status_file = None
+          status_file = Path(os.environ["STATUS_RAW_PATH"])
           try:
-              descriptor, status_name = tempfile.mkstemp(
-                  prefix="mlb-r8-trainer-status-",
-                  suffix=".json",
-              )
-              os.close(descriptor)
-              status_file = Path(status_name)
               status_request = json.dumps(
                   {"sport": "mlb", "mode": "status"},
                   separators=(",", ":"),
@@ -234,8 +447,7 @@ jobs:
               if not isinstance(status_payload, dict):
                   raise RuntimeError("MLB trainer status was not an object")
           finally:
-              if status_file is not None:
-                  status_file.unlink(missing_ok=True)
+              status_file.unlink(missing_ok=True)
 
           training_health = status_payload.get("trainingHealth")
           if not isinstance(training_health, dict):
@@ -277,11 +489,14 @@ jobs:
                       },
                   },
                   "failure": {
-                      "type": safe_identifier(failure.get("type")),
-                      "message": safe_message(failure.get("message")),
+                      "type": safe_failure_type(failure.get("type")),
+                      "message": safe_failure_message(
+                          failure.get("message")
+                      ),
                   },
               },
           }
+          frozen_conflict, log_blocker = cloudwatch_discriminator(latest_run)
 
           report = {
               "proofType": "MLB_R8_EXECUTION_LEASE_READ_ONLY",
@@ -291,6 +506,10 @@ jobs:
               "experimentPk": experiment_pk,
               "leases": leases,
               "trainingHealth": sanitized_training_health,
+              "logDiscriminator": {
+                  "frozenPartitionConflict": frozen_conflict,
+                  "blocker": log_blocker,
+              },
           }
           report_path = Path(os.environ["REPORT_PATH"])
           report_path.write_text(
