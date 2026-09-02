@@ -1,26 +1,33 @@
 {
   "awsCliError": "",
-  "createdAtUtc": "2026-08-02T05:02:53.389598+00:00",
-  "deployedGitSha": "028b0bb1497a855be9b3dab56be3b556f1aceaaf",
-  "deployedTemplateSha256": "34bf1452b473aba2e3b2d11d4a657f6546e908bebfe55f0939d8246d31cd6fbb",
+  "createdAtUtc": "2026-09-02T15:55:45.473467+00:00",
+  "deployedGitSha": "45c4172bd3d6a0353bc59862cdf0ccb8789d40ef",
+  "deployedTemplateSha256": "984524a516a644e299ecc5cdb0cd2bc75c2b6912be9d41dd59238643ebc91c18",
   "diagnosticRevision": "r7-runtime-3",
-  "errorMessage": "",
-  "errorType": "",
+  "errorMessage": "another MLB ML trainer invocation holds the execution lease",
+  "errorType": "ExecutionLeaseUnavailable",
   "executedVersion": "$LATEST",
-  "functionError": null,
+  "functionError": "Unhandled",
   "invokeExitCode": 0,
-  "ok": true,
+  "ok": false,
   "proofType": "MLB_TRAINER_FUNCTION_ERROR_DIAGNOSTIC",
   "responseSummary": {
-    "executionMode": "training",
-    "liveInferenceAuthority": false,
-    "modelTrained": false,
-    "ok": true,
-    "runId": "d7ddf2624bc072c39a5db737",
-    "status": "ACCUMULATING_TRAIN"
+    "executionMode": null,
+    "liveInferenceAuthority": null,
+    "modelTrained": null,
+    "ok": null,
+    "runId": null,
+    "status": null
   },
-  "sanitizedLogLines": [],
-  "sourceSha": "c30e6facd984d202c3662aa5a867dc5b9725d565",
-  "stackTrace": [],
+  "sanitizedLogLines": [
+    "[ERROR] ExecutionLeaseUnavailable: another MLB ML trainer invocation holds the execution lease",
+    "Traceback (most recent call last):"
+  ],
+  "sourceSha": "45c4172bd3d6a0353bc59862cdf0ccb8789d40ef",
+  "stackTrace": [
+    "  File \"/var/task/mlb_ml_aws_training_v1_compat.py\", line 173, in lambda_handler\n    return canonical.lambda_handler(event, context)\n",
+    "  File \"/var/task/mlb_ml_aws_training_v1.py\", line 3027, in lambda_handler\n    lease = service.store.acquire_execution_lease(\n",
+    "  File \"/var/task/mlb_ml_aws_training_v1.py\", line 731, in acquire_execution_lease\n    raise ExecutionLeaseUnavailable(\n"
+  ],
   "statusCode": 200
 }
