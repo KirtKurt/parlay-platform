@@ -94,6 +94,7 @@ def _invokes_training(text: str) -> bool:
         re.search(
             r"['\"]mode['\"]\s*:\s*['\"](?:scheduled|training)['\"]",
             payload_scan,
+            flags=re.IGNORECASE,
         )
     )
     trainer_identity = any(
