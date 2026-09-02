@@ -258,10 +258,8 @@ jobs:
                       str(start_time),
                       "--end-time",
                       str(end_time),
-                      "--filter-pattern",
-                      f'"{run_id}"',
                       "--limit",
-                      "100",
+                      "1000",
                       "--region",
                       os.environ["AWS_REGION_VALUE"],
                       "--output",
@@ -285,15 +283,83 @@ jobs:
                   events = raw.get("events") if isinstance(raw, dict) else None
                   if not isinstance(events, list):
                       return None, "CLOUDWATCH_LOG_READ_UNAVAILABLE"
-                  messages = [
-                      event.get("message")[:5000]
-                      for event in events
-                      if isinstance(event, dict)
-                      and isinstance(event.get("message"), str)
-                  ]
-                  if not messages:
+                  ordered_events = []
+                  for source_index, event in enumerate(events):
+                      if not isinstance(event, dict):
+                          continue
+                      message = event.get("message")
+                      stream = event.get("logStreamName")
+                      timestamp = event.get("timestamp")
+                      if (
+                          not isinstance(message, str)
+                          or not isinstance(stream, str)
+                          or not stream
+                          or isinstance(timestamp, bool)
+                          or not isinstance(timestamp, int)
+                      ):
+                          continue
+                      ordered_events.append(
+                          {
+                              "sourceIndex": source_index,
+                              "timestamp": timestamp,
+                              "stream": stream,
+                              "message": message[:5000],
+                          }
+                      )
+                  if not ordered_events:
                       return None, "CLOUDWATCH_RUN_LOG_MATCH_NOT_FOUND"
-                  combined = "\n".join(messages)
+                  ordered_events.sort(
+                      key=lambda event: (
+                          event["timestamp"],
+                          event["sourceIndex"],
+                      )
+                  )
+                  start_pattern = re.compile(
+                      rf"(?m)^START RequestId:\s*{re.escape(run_id)}(?:\s|$)"
+                  )
+                  boundary_pattern = re.compile(
+                      rf"(?m)^(?:END|REPORT) RequestId:\s*"
+                      rf"{re.escape(run_id)}(?:\s|$)"
+                  )
+                  start_events = [
+                      event
+                      for event in ordered_events
+                      if start_pattern.search(event["message"])
+                  ]
+                  if not start_events:
+                      return None, "CLOUDWATCH_RUN_START_NOT_FOUND"
+                  if len(start_events) != 1:
+                      return None, "CLOUDWATCH_RUN_START_AMBIGUOUS"
+                  start_event = start_events[0]
+                  stream_events = [
+                      event
+                      for event in ordered_events
+                      if event["stream"] == start_event["stream"]
+                  ]
+                  start_index = next(
+                      index
+                      for index, event in enumerate(stream_events)
+                      if event["sourceIndex"] == start_event["sourceIndex"]
+                  )
+                  boundary_index = next(
+                      (
+                          index
+                          for index in range(start_index + 1, len(stream_events))
+                          if boundary_pattern.search(
+                              stream_events[index]["message"]
+                          )
+                      ),
+                      None,
+                  )
+                  if boundary_index is None:
+                      return None, "CLOUDWATCH_RUN_BOUNDARY_NOT_FOUND"
+                  invocation_messages = [
+                      event["message"]
+                      for event in stream_events[
+                          start_index : boundary_index + 1
+                      ]
+                  ]
+                  combined = "\n".join(invocation_messages)
                   classification = None
                   message = None
                   for candidate, pattern in frozen_conflict_patterns:
