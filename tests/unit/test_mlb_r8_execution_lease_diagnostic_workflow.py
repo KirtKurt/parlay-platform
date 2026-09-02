@@ -92,7 +92,8 @@ def test_workflow_reads_only_three_exact_keys_with_an_explicit_projection() -> N
     ):
         assert sanitized_projection in source
     assert "allowed_failure_messages = frozenset(" in source
-    assert "safe_failure_message(failure.get(" in source
+    assert "safe_failure_message(" in source
+    assert 'failure.get("message")' in source
 
 
 @pytest.mark.parametrize(
