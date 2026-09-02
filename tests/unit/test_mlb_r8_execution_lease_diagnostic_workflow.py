@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -79,7 +80,19 @@ def test_workflow_reads_only_three_exact_keys_with_an_explicit_projection() -> N
     assert source.count("aws cloudformation describe-stack-resource") == 1
     assert source.count("aws cloudformation describe-stacks") == 1
     assert source.count('"lambda",\n                  "invoke"') == 1
+    assert source.count('"logs",\n                      "filter-log-events"') == 1
     assert '{"sport": "mlb", "mode": "status"}' in source
+    for sanitized_projection in (
+        '"mode": safe_identifier(',
+        '"domain": safe_identifier(',
+        '"acquiredAt": safe_timestamp(',
+        '"expiresAt": safe_timestamp(',
+        '"recordType": safe_identifier(',
+        '"version": safe_identifier(',
+    ):
+        assert sanitized_projection in source
+    assert "allowed_failure_messages = frozenset(" in source
+    assert "safe_failure_message(failure.get(" in source
 
 
 @pytest.mark.parametrize(
@@ -100,6 +113,11 @@ def test_workflow_reads_only_three_exact_keys_with_an_explicit_projection() -> N
         "get-function-configuration",
         "get-function",
         "list-functions",
+        "put-log-events",
+        "create-log-group",
+        "delete-log-group",
+        "put-retention-policy",
+        "start-query",
         "sam deploy",
         "cloudformation deploy",
         "contents: write",
@@ -124,6 +142,10 @@ def test_artifact_is_the_single_sanitized_report_not_raw_responses() -> None:
     assert "response.json" not in source
     assert "raw.json" not in source
     assert "status_file.unlink(missing_ok=True)" in source
+    assert "raw_path.unlink(missing_ok=True)" in source
+    assert "trap 'rm -f" in source
+    assert "CLOUDWATCH_LOG_READ_UNAVAILABLE" in source
+    assert "CLOUDWATCH_RUN_LOG_MATCH_NOT_FOUND" in source
     assert "get-function-configuration" not in source
 
 
@@ -136,18 +158,26 @@ def test_runtime_sanitizes_owner_and_emits_only_allowlisted_lease_fields(
     report_path = tmp_path / "sanitized.json"
     monkeypatch.setenv("TABLE_NAME", "read-only-table")
     monkeypatch.setenv("AWS_REGION_VALUE", "us-east-1")
-    monkeypatch.setenv("TRAINER_ARN", "trainer-read-only")
+    monkeypatch.setenv(
+        "TRAINER_ARN",
+        "arn:aws:lambda:us-east-1:123456789012:function:trainer-read-only",
+    )
+    status_raw_path = tmp_path / "raw-status.json"
+    cloudwatch_raw_path = tmp_path / "raw-cloudwatch.json"
+    monkeypatch.setenv("STATUS_RAW_PATH", str(status_raw_path))
+    monkeypatch.setenv("CLOUDWATCH_RAW_PATH", str(cloudwatch_raw_path))
     monkeypatch.setenv("REPORT_PATH", str(report_path))
     calls: list[list[str]] = []
 
     class Completed:
-        def __init__(self, stdout: str):
+        def __init__(self, stdout: str, returncode: int = 0):
             self.stdout = stdout
+            self.returncode = returncode
 
     def fake_run(command: list[str], **kwargs: object) -> Completed:
         calls.append(command)
-        assert kwargs == {"check": True, "capture_output": True, "text": True}
         if command[:3] == ["aws", "dynamodb", "get-item"]:
+            assert kwargs == {"check": True, "capture_output": True, "text": True}
             return Completed(
                 json.dumps(
                     {
@@ -169,44 +199,70 @@ def test_runtime_sanitizes_owner_and_emits_only_allowlisted_lease_fields(
                     }
                 )
             )
-        assert command[:3] == ["aws", "lambda", "invoke"]
-        status_path = Path(command[-1])
-        status_path.write_text(
+        if command[:3] == ["aws", "lambda", "invoke"]:
+            assert kwargs == {"check": True, "capture_output": True, "text": True}
+            status_path = Path(command[-1])
+            status_path.write_text(
+                json.dumps(
+                    {
+                        "trainingHealth": {
+                            "deploymentIdentityMatches": True,
+                            "arbitraryHealthField": "must-not-leak",
+                            "latestRun": {
+                                "runId": "12345678-1234-1234-1234-123456789abc",
+                                "createdAtUtc": "2026-09-02T16:00:00+00:00",
+                                "status": "TRAINING_INVOCATION_FAILED",
+                                "acceptedRowCount": 425,
+                                "rejectedRowCount": 3,
+                                "partitionCounts": {
+                                    "train": 300,
+                                    "validation": 100,
+                                    "prospectiveTest": 25,
+                                    "arbitrary": 999,
+                                },
+                                "failure": {
+                                    "type": "TrainingContractError",
+                                    "message": (
+                                        "api_key=credential-canary "
+                                        "arn:aws:lambda:us-east-1:123456789012:"
+                                        "function:must-not-leak"
+                                    ),
+                                    "code": "must-not-leak",
+                                },
+                                "arbitraryRunField": "must-not-leak",
+                            },
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return Completed(
+                json.dumps({"StatusCode": 200, "ExecutedVersion": "$LATEST"})
+            )
+        assert command[:3] == ["aws", "logs", "filter-log-events"]
+        assert kwargs["check"] is False
+        assert kwargs["stderr"] == subprocess.DEVNULL
+        assert kwargs["text"] is True
+        raw_output = kwargs["stdout"]
+        raw_output.write(
             json.dumps(
                 {
-                    "trainingHealth": {
-                        "deploymentIdentityMatches": True,
-                        "arbitraryHealthField": "must-not-leak",
-                        "latestRun": {
-                            "runId": "trainer-run-123",
-                            "status": "TRAINING_INVOCATION_FAILED",
-                            "acceptedRowCount": 425,
-                            "rejectedRowCount": 3,
-                            "partitionCounts": {
-                                "train": 300,
-                                "validation": 100,
-                                "prospectiveTest": 25,
-                                "arbitrary": 999,
-                            },
-                            "failure": {
-                                "type": "TrainingContractError",
-                                "message": (
-                                    "api_key=credential-canary "
-                                    "arn:aws:lambda:us-east-1:123456789012:"
-                                    "function:must-not-leak"
-                                ),
-                                "code": "must-not-leak",
-                            },
-                            "arbitraryRunField": "must-not-leak",
-                        },
-                    }
+                    "events": [
+                        {
+                            "message": (
+                                "12345678-1234-1234-1234-123456789abc "
+                                "FrozenPartitionConflict: frozen slate "
+                                "2026-07-21 changed\n"
+                                '  File "/var/task/mlb_ml_experiment_v2.py", '
+                                "line 812, in advance_manifest\n"
+                                "provider api_key=must-not-leak"
+                            )
+                        }
+                    ]
                 }
-            ),
-            encoding="utf-8",
+            )
         )
-        return Completed(
-            json.dumps({"StatusCode": 200, "ExecutedVersion": "$LATEST"})
-        )
+        return Completed("")
 
     monkeypatch.setattr("subprocess.run", fake_run)
     exec(compile(_diagnostic_program(), str(WORKFLOW), "exec"), {})
@@ -248,7 +304,7 @@ def test_runtime_sanitizes_owner_and_emits_only_allowlisted_lease_fields(
     assert report["trainingHealth"] == {
         "deploymentIdentityMatches": True,
         "latestRun": {
-            "runId": "trainer-run-123",
+            "runId": "12345678-1234-1234-1234-123456789abc",
             "status": "TRAINING_INVOCATION_FAILED",
             "counts": {
                 "acceptedRowCount": 425,
@@ -261,12 +317,22 @@ def test_runtime_sanitizes_owner_and_emits_only_allowlisted_lease_fields(
             },
             "failure": {
                 "type": "TrainingContractError",
-                "message": "api_key=[REDACTED] [REDACTED_ARN]",
+                "message": "MLB ML invocation failure details unavailable",
             },
         },
     }
+    assert report["logDiscriminator"] == {
+        "blocker": None,
+        "frozenPartitionConflict": {
+            "classification": "FROZEN_SLATE_CHANGED",
+            "message": "frozen slate 2026-07-21 changed",
+            "stack": [{"file": "mlb_ml_experiment_v2.py", "line": 812}],
+        },
+    }
+    assert not status_raw_path.exists()
+    assert not cloudwatch_raw_path.exists()
 
-    assert len(calls) == 4
+    assert len(calls) == 5
     dynamodb_calls = [
         command
         for command in calls
@@ -277,8 +343,14 @@ def test_runtime_sanitizes_owner_and_emits_only_allowlisted_lease_fields(
         for command in calls
         if command[:3] == ["aws", "lambda", "invoke"]
     ]
+    logs_calls = [
+        command
+        for command in calls
+        if command[:3] == ["aws", "logs", "filter-log-events"]
+    ]
     assert len(dynamodb_calls) == 3
     assert len(lambda_calls) == 1
+    assert len(logs_calls) == 1
     observed_sort_keys = set()
     for command in dynamodb_calls:
         assert "--consistent-read" in command
@@ -296,3 +368,53 @@ def test_runtime_sanitizes_owner_and_emits_only_allowlisted_lease_fields(
         "mode": "status",
     }
     assert "--log-type" not in status_command
+    logs_command = logs_calls[0]
+    pattern_index = logs_command.index("--filter-pattern")
+    assert logs_command[pattern_index + 1] == (
+        '"12345678-1234-1234-1234-123456789abc"'
+    )
+    start_index = logs_command.index("--start-time")
+    end_index = logs_command.index("--end-time")
+    assert int(logs_command[end_index + 1]) - int(logs_command[start_index + 1]) == 600_000
+
+
+def test_cloudwatch_read_failure_returns_stable_blocker_and_deletes_raw_temp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_path = tmp_path / "raw-cloudwatch.json"
+    monkeypatch.setenv("CLOUDWATCH_RAW_PATH", str(raw_path))
+    monkeypatch.setenv("AWS_REGION_VALUE", "us-east-1")
+    monkeypatch.setenv(
+        "TRAINER_ARN",
+        "arn:aws:lambda:us-east-1:123456789012:function:trainer-read-only",
+    )
+
+    class Completed:
+        returncode = 254
+
+    def unavailable(command: list[str], **kwargs: object) -> Completed:
+        assert command[:3] == ["aws", "logs", "filter-log-events"]
+        assert kwargs["check"] is False
+        assert kwargs["stderr"] == subprocess.DEVNULL
+        return Completed()
+
+    monkeypatch.setattr("subprocess.run", unavailable)
+    definitions = _diagnostic_program().split(
+        "\nnow_epoch = int(time.time())",
+        1,
+    )[0]
+    namespace: dict[str, object] = {}
+    exec(compile(definitions, str(WORKFLOW), "exec"), namespace)
+    discriminator = namespace["cloudwatch_discriminator"]
+
+    result, blocker = discriminator(
+        {
+            "runId": "12345678-1234-1234-1234-123456789abc",
+            "createdAtUtc": "2026-09-02T16:00:00+00:00",
+        }
+    )
+
+    assert result is None
+    assert blocker == "CLOUDWATCH_LOG_READ_UNAVAILABLE"
+    assert not raw_path.exists()
