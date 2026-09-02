@@ -148,8 +148,15 @@ jobs:
     write(
         "raw.yml",
         "aws lambda get-function-configuration --function-name fn "
-        "--output json > /tmp/proof/config.json",
+        "--output json >> /tmp/proof/config.json",
         "/tmp/proof",
+    )
+    write(
+        "configuration-map.yml",
+        "aws lambda get-function --function-name fn "
+        "--query '{Environment:Configuration.Environment}' --output json "
+        "> /tmp/configuration.json",
+        "/tmp/configuration.json",
     )
     write(
         "full-map.yml",
@@ -185,6 +192,7 @@ jobs:
     assert ownership._workflow_artifact_lambda_configuration_exposures(
         workflows.glob("*.yml")
     ) == [
+        "configuration-map.yml:get-function:/tmp/configuration.json",
         "full-map.yml:get-function-configuration:/tmp/full.json",
         "raw.yml:get-function-configuration:/tmp/proof/config.json",
         "sensitive.yml:get-function-configuration:/tmp/sensitive.json",
