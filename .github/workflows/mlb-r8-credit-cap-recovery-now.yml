@@ -1,10 +1,6 @@
 name: MLB R8 Credit Cap Recovery Now
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/mlb-r8-credit-cap-recovery-now.yml'
   workflow_dispatch:
 
 permissions:
@@ -127,7 +123,11 @@ jobs:
           FUNCTION_NAME=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
           test -n "$FUNCTION_NAME"; test "$FUNCTION_NAME" != None
           echo "$FUNCTION_NAME" >/tmp/function.txt
-          aws lambda get-function-configuration --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" >/tmp/config.json
+          aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION_VALUE" \
+            --query '{Handler:Handler,Environment:{Variables:{INQSI_DEPLOY_GIT_SHA:Environment.Variables.INQSI_DEPLOY_GIT_SHA,MLB_HISTORICAL_MAX_CREDITS:Environment.Variables.MLB_HISTORICAL_MAX_CREDITS,MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED:Environment.Variables.MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED,MLB_HISTORICAL_END_DATE:Environment.Variables.MLB_HISTORICAL_END_DATE}}}' \
+            --output json >/tmp/config.json
           python - <<'PY'
           import json, os
           c=json.load(open('/tmp/config.json')); e=(c.get('Environment') or {}).get('Variables') or {}

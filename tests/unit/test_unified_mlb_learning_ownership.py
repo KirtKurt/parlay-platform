@@ -123,6 +123,102 @@ jobs:
     ]
 
 
+def test_artifact_configuration_scanner_is_fail_closed(tmp_path: Path):
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+
+    def write(name: str, command: str, upload_path: str) -> None:
+        (workflows / name).write_text(
+            f'''name: proof
+"on":
+  workflow_dispatch:
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          {command}
+      - uses: actions/upload-artifact@v4
+        with:
+          path: {upload_path}
+''',
+            encoding="utf-8",
+        )
+
+    write(
+        "raw.yml",
+        "aws lambda get-function-configuration --function-name fn "
+        "--output json >> /tmp/proof/config.json",
+        "/tmp/proof",
+    )
+    write(
+        "configuration-map.yml",
+        "aws lambda get-function --function-name fn "
+        "--query '{Environment:Configuration.Environment}' --output json "
+        "> /tmp/configuration.json",
+        "/tmp/configuration.json",
+    )
+    write(
+        "full-map.yml",
+        "aws lambda get-function-configuration --function-name fn "
+        "--query '{Environment:Environment}' --output json "
+        "> /tmp/full.json",
+        "/tmp/full.json",
+    )
+    write(
+        "sensitive.yml",
+        "aws lambda get-function-configuration --function-name fn "
+        "--query '{Environment:{Variables:{ODDS_API_KEY:"
+        "Environment.Variables.ODDS_API_KEY}}}' --output json "
+        "> /tmp/sensitive.json",
+        "/tmp/sensitive.json",
+    )
+    write(
+        "update.yml",
+        "aws lambda update-function-configuration --function-name fn "
+        "--memory-size 4096 > /tmp/update.json",
+        "/tmp/update.json",
+    )
+    write(
+        "safe.yml",
+        "aws lambda get-function-configuration --function-name fn "
+        "--query '{Handler:Handler,Environment:{Variables:"
+        "{INQSI_DEPLOY_GIT_SHA:"
+        "Environment.Variables.INQSI_DEPLOY_GIT_SHA}}}' "
+        "--output json > /tmp/safe/config.json",
+        "/tmp/safe",
+    )
+
+    assert ownership._workflow_artifact_lambda_configuration_exposures(
+        workflows.glob("*.yml")
+    ) == [
+        "configuration-map.yml:get-function:/tmp/configuration.json",
+        "full-map.yml:get-function-configuration:/tmp/full.json",
+        "raw.yml:get-function-configuration:/tmp/proof/config.json",
+        "sensitive.yml:get-function-configuration:/tmp/sensitive.json",
+        "update.yml:update-function-configuration:/tmp/update.json",
+    ]
+
+
+def test_artifact_hardened_mutation_workflows_are_manual_only():
+    workflows = Path(".github/workflows")
+    for name in sorted(
+        ownership.MANUAL_ONLY_ARTIFACT_HARDENED_MUTATION_WORKFLOWS
+    ):
+        trigger = ownership._trigger_block(
+            (workflows / name).read_text(encoding="utf-8")
+        )
+        assert ownership._workflow_dispatch_enabled(trigger) is True, name
+        assert ownership._all_automatic_trigger_types(trigger) == [], name
+
+
+def test_repository_uploaded_lambda_configuration_is_allowlisted():
+    exposures = ownership._workflow_artifact_lambda_configuration_exposures(
+        Path(".github/workflows").glob("*.y*ml")
+    )
+    assert exposures == []
+
+
 def test_training_detector_recognizes_plain_and_shell_escaped_payloads():
     trainer = "python scripts/invoke_mlb_trainer_with_retry.py"
     plain = trainer + """ --payload '{"sport":"mlb","mode":"scheduled"}'"""
@@ -226,6 +322,8 @@ def test_repository_has_one_automatic_unified_mlb_training_owner():
     assert result["recoveryManualOnly"] is True
     assert result["recoveryPushSelfPathOnly"] is False
     assert result["automaticTrainerDispatchChains"] == []
+    assert result["workflowArtifactLambdaConfigurationExposures"] == []
+    assert result["manualOnlyMutationWorkflowErrors"] == []
     assert result["immutablePredictionRewriteAllowed"] is False
     assert result["postStartPredictionCreationAllowed"] is False
     assert result["automaticPromotionEnabled"] is False

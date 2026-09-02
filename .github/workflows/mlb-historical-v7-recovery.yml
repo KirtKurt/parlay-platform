@@ -3,23 +3,6 @@ name: MLB Historical V7 Selective Recovery
 
 "on":
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'hello_world/mlb_historical_feature_rematerialization_v1.py'
-      - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
-      - 'hello_world/mlb_historical_v7_selective_objective_v1.py'
-      - 'hello_world/mlb_historical_v7_selective_search_v2.py'
-      - 'hello_world/mlb_historical_round_extension_v1.py'
-      - 'hello_world/mlb_historical_derived_features_v1.py'
-      - 'hello_world/mlb_odds_pattern_features_v1.py'
-      - 'hello_world/mlb_historical_optimizer_entrypoint.py'
-      - 'hello_world/mlb_historical_optimizer_handler.py'
-      - 'tests/unit/test_mlb_historical_v7_selective_objective_v1.py'
-      - 'tests/unit/test_mlb_historical_v7_selective_search_v2.py'
-      - 'tests/unit/test_mlb_historical_v7_recovery_workflow.py'
-      - 'mlb_historical_optimizer/**'
-      - '.github/workflows/mlb-historical-v7-recovery.yml'
 
 permissions:
   contents: write
@@ -99,7 +82,11 @@ jobs:
             sam deploy --template-file .aws-sam-historical-v7/template.yaml --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --capabilities CAPABILITY_IAM --resolve-s3 --force-upload --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}" 'TargetSnapshotsTable=parlay_platform_snapshots' "HistoricalStartDate=${HISTORICAL_START_DATE}" "HistoricalEndDate=${HISTORICAL_END_DATE}" "HistoricalTargetGames=${HISTORICAL_TARGET_GAMES}" "HistoricalMaxCredits=${HISTORICAL_MAX_CREDITS}" 'HistoricalRequestsPerRun=20' "HistoricalMaxCandidates=${HISTORICAL_MAX_CANDIDATES}" "HistoricalMaxOptimizationRounds=${HISTORICAL_MAX_OPTIMIZATION_ROUNDS}" 'HistoricalFreshAuditIncrementGames=200' 'HistoricalRangeExtensionAuthorized=true' "DeployGitSha=${GITHUB_SHA}"
             FUNCTION_NAME=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
             test -n "$FUNCTION_NAME"; test "$FUNCTION_NAME" != None
-            aws lambda get-function-configuration --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --output json > /tmp/mlb-historical-lambda-config.json
+            aws lambda get-function-configuration \
+              --function-name "$FUNCTION_NAME" \
+              --region "$AWS_REGION_VALUE" \
+              --query '{Handler:Handler,Environment:{Variables:{INQSI_DEPLOY_GIT_SHA:Environment.Variables.INQSI_DEPLOY_GIT_SHA,MLB_HISTORICAL_END_DATE:Environment.Variables.MLB_HISTORICAL_END_DATE,MLB_HISTORICAL_MAX_CREDITS:Environment.Variables.MLB_HISTORICAL_MAX_CREDITS,MLB_HISTORICAL_MAX_OPTIMIZATION_ROUNDS:Environment.Variables.MLB_HISTORICAL_MAX_OPTIMIZATION_ROUNDS,MLB_HISTORICAL_FRESH_AUDIT_INCREMENT_GAMES:Environment.Variables.MLB_HISTORICAL_FRESH_AUDIT_INCREMENT_GAMES,MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED:Environment.Variables.MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED}}}' \
+              --output json > /tmp/mlb-historical-lambda-config.json
             FUNCTION_NAME="$FUNCTION_NAME" python - <<'PY'
           import json, os
           from pathlib import Path
