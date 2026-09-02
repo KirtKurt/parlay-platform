@@ -65,10 +65,6 @@ jobs:
           test "$TRAINER_ARN" != "None"
           echo "TRAINER_FN=$TRAINER_FN" >> "$GITHUB_ENV"
           echo "TRAINER_ARN=$TRAINER_ARN" >> "$GITHUB_ENV"
-          aws lambda get-function-configuration \
-            --function-name "$TRAINER_FN" \
-            --region "$AWS_REGION" \
-            --output json > /tmp/mlb-r8-cadence/trainer-config.json
 
       - name: Prove enabled EventBridge owners and exact targets
         run: |

@@ -3,11 +3,6 @@ run-name: Bootstrap MLB historical+live R8 ${{ github.run_id }}
 
 "on":
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/bootstrap-mlb-historical-live-r8.yml
 
 permissions:
   contents: read
@@ -71,19 +66,36 @@ jobs:
           test -n "$TRAINER_FN"
           test "$TRAINER_FN" != "None"
           echo "TRAINER_FN=$TRAINER_FN" >> "$GITHUB_ENV"
+          RUNTIME_CONFIG_TMP="$(mktemp /tmp/mlb-r8-runtime-config.XXXXXX.json)"
+          export RUNTIME_CONFIG_TMP
+          trap 'rm -f -- "$RUNTIME_CONFIG_TMP"' EXIT
           aws lambda get-function-configuration \
             --function-name "$TRAINER_FN" \
             --region "$AWS_REGION" \
-            --output json > /tmp/mlb-r8-bootstrap/trainer-config.json
+            --query '{FunctionName:FunctionName,State:State,LastUpdateStatus:LastUpdateStatus,Handler:Handler,Timeout:Timeout,MLB_ML_EXPERIMENT_ID:Environment.Variables.MLB_ML_EXPERIMENT_ID,MLB_ML_RELEASE_CONTRACT_ID:Environment.Variables.MLB_ML_RELEASE_CONTRACT_ID,MLB_ML_RELEASE_CUTOFF_UTC:Environment.Variables.MLB_ML_RELEASE_CUTOFF_UTC,MLB_R7_HISTORICAL_TRAINING_ENABLED:Environment.Variables.MLB_R7_HISTORICAL_TRAINING_ENABLED,MLB_R7_HISTORICAL_MAX_ROWS:Environment.Variables.MLB_R7_HISTORICAL_MAX_ROWS}' \
+            --output json > "$RUNTIME_CONFIG_TMP"
           python - <<'PY'
           import json
           import os
           from pathlib import Path
 
           value = json.loads(
-              Path('/tmp/mlb-r8-bootstrap/trainer-config.json').read_text()
+              Path(os.environ['RUNTIME_CONFIG_TMP']).read_text()
           )
-          variables = ((value.get('Environment') or {}).get('Variables') or {})
+          allowed_fields = {
+              'FunctionName',
+              'State',
+              'LastUpdateStatus',
+              'Handler',
+              'Timeout',
+              'MLB_ML_EXPERIMENT_ID',
+              'MLB_ML_RELEASE_CONTRACT_ID',
+              'MLB_ML_RELEASE_CUTOFF_UTC',
+              'MLB_R7_HISTORICAL_TRAINING_ENABLED',
+              'MLB_R7_HISTORICAL_MAX_ROWS',
+          }
+          assert set(value) == allowed_fields, set(value)
+          variables = value
           expected = {
               'MLB_ML_EXPERIMENT_ID': os.environ['EXPECTED_EXPERIMENT_ID'],
               'MLB_ML_RELEASE_CONTRACT_ID': os.environ[
