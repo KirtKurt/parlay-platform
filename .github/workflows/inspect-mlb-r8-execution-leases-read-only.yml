@@ -1,0 +1,158 @@
+name: Inspect MLB R8 execution leases read-only
+
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Read and sanitize exact MLB R8 execution leases
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          table_name=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id SnapshotsTable \
+            --region "$AWS_REGION_VALUE" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$table_name"
+          test "$table_name" != "None"
+          report_path=/tmp/mlb-r8-execution-lease-readonly.json
+          TABLE_NAME="$table_name" REPORT_PATH="$report_path" python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import subprocess
+          import time
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          experiment_pk = "MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2"
+          lease_keys = (
+              ("STATE_MUTATION", "EXECUTION_LEASE#STATE_MUTATION"),
+              ("SELECTION_CAPTURE", "EXECUTION_LEASE#SELECTION_CAPTURE"),
+              ("LEGACY_SENTINEL", "EXECUTION_LEASE"),
+          )
+          projection = "record_type,#version,lease_domain,lease_owner,execution_mode,acquired_at,lease_expires_at,lease_expires_at_epoch"
+          attribute_names = {"#version": "version"}
+
+          def scalar(item, name):
+              node = item.get(name)
+              if not isinstance(node, dict):
+                  return None
+              for data_type in ("S", "N", "BOOL"):
+                  if data_type in node:
+                      return node[data_type]
+              return None
+
+          now_epoch = int(time.time())
+          leases = []
+          for lease_key, sort_key in lease_keys:
+              command = [
+                  "aws",
+                  "dynamodb",
+                  "get-item",
+                  "--table-name",
+                  os.environ["TABLE_NAME"],
+                  "--consistent-read",
+                  "--key",
+                  json.dumps(
+                      {
+                          "PK": {"S": experiment_pk},
+                          "SK": {"S": sort_key},
+                      },
+                      separators=(",", ":"),
+                  ),
+                  "--projection-expression",
+                  projection,
+                  "--expression-attribute-names",
+                  json.dumps(attribute_names, separators=(",", ":")),
+                  "--region",
+                  os.environ["AWS_REGION_VALUE"],
+                  "--output",
+                  "json",
+                  "--no-cli-pager",
+              ]
+              completed = subprocess.run(
+                  command,
+                  check=True,
+                  capture_output=True,
+                  text=True,
+              )
+              response = json.loads(completed.stdout.strip() or "{}")
+              item = response.get("Item")
+              if not isinstance(item, dict):
+                  item = {}
+              owner = str(scalar(item, "lease_owner") or "")
+              raw_expiry_epoch = scalar(item, "lease_expires_at_epoch")
+              try:
+                  expiry_epoch = (
+                      int(str(raw_expiry_epoch))
+                      if raw_expiry_epoch is not None
+                      else None
+                  )
+              except (TypeError, ValueError):
+                  expiry_epoch = None
+              active = expiry_epoch is not None and expiry_epoch > now_epoch
+              leases.append(
+                  {
+                      "leaseKey": lease_key,
+                      "present": bool(item),
+                      "mode": scalar(item, "execution_mode"),
+                      "domain": scalar(item, "lease_domain"),
+                      "acquiredAt": scalar(item, "acquired_at"),
+                      "expiresAt": scalar(item, "lease_expires_at"),
+                      "expiresAtEpoch": expiry_epoch,
+                      "recordType": scalar(item, "record_type"),
+                      "version": scalar(item, "version"),
+                      "active": active,
+                      "secondsRemaining": (
+                          max(0, expiry_epoch - now_epoch)
+                          if expiry_epoch is not None
+                          else 0
+                      ),
+                      "ownerFingerprint": (
+                          hashlib.sha256(owner.encode("utf-8")).hexdigest()[:16]
+                          if owner
+                          else None
+                      ),
+                  }
+              )
+
+          report = {
+              "proofType": "MLB_R8_EXECUTION_LEASE_READ_ONLY",
+              "readOnly": True,
+              "generatedAtUtc": datetime.now(timezone.utc).isoformat(),
+              "observedAtEpoch": now_epoch,
+              "experimentPk": experiment_pk,
+              "leases": leases,
+          }
+          report_path = Path(os.environ["REPORT_PATH"])
+          report_path.write_text(
+              json.dumps(report, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+          test -s "$report_path"
+
+      - name: Upload sanitized MLB R8 execution lease report only
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-r8-execution-lease-readonly-${{ github.run_id }}
+          path: /tmp/mlb-r8-execution-lease-readonly.json
+          if-no-files-found: error
+          retention-days: 3
