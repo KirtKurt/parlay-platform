@@ -143,6 +143,25 @@ def _vector_fingerprint(row: Dict[str, Any]) -> Optional[str]:
     return value or None
 
 
+MARKET_PROBABILITY_PROJECTION_FIELDS = (
+    "homeMarketDeVigProbability",
+    "awayMarketDeVigProbability",
+    "marketProbability",
+    "marketProbabilitySourceAtUtc",
+    "marketProbabilityVersion",
+    "marketProbabilityFingerprint",
+)
+
+
+def _market_probability_projection(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Project exact immutable lock values without reconstructing a pair."""
+    return {
+        field: copy.deepcopy(row.get(field))
+        for field in MARKET_PROBABILITY_PROJECTION_FIELDS
+        if field in row and row.get(field) not in (None, "")
+    }
+
+
 def _training_verdict(row: Dict[str, Any]) -> Tuple[bool, List[str]]:
     authority = row.get("canonicalLockAuthority") or {}
     freeze = row.get("mlFeatureFreeze") or {}
@@ -1243,6 +1262,7 @@ def _joined_training_row(
         "predictedWinner": locked.get("predictedWinner"),
         "predictedSide": locked.get("predictedSide"),
         "lockedAmericanOdds": locked.get("lockedAmericanOdds", locked.get("americanOdds")),
+        **_market_probability_projection(locked),
         "predictionPersistedAtUtc": locked.get("predictionPersistedAtUtc"),
         "trainingEligible": training_eligible,
         "trainingExclusionReasons": sorted(exclusions),
@@ -1463,6 +1483,7 @@ def load_canonical_locked_rows_without_labels(
                     "predictedWinner": locked.get("predictedWinner"),
                     "predictedSide": locked.get("predictedSide"),
                     "lockedAmericanOdds": locked.get("lockedAmericanOdds", locked.get("americanOdds")),
+                    **_market_probability_projection(locked),
                     "predictionPersistedAtUtc": locked.get("predictionPersistedAtUtc"),
                     "frozenFeatureVector": vector,
                     "featureSnapshot": copy.deepcopy(vector),
