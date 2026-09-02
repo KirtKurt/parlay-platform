@@ -81,6 +81,10 @@ def test_workflow_reads_only_three_exact_keys_with_an_explicit_projection() -> N
     assert source.count("aws cloudformation describe-stacks") == 1
     assert source.count('"lambda",\n                  "invoke"') == 1
     assert source.count('"logs",\n                      "filter-log-events"') == 1
+    assert '"--filter-pattern"' not in source
+    assert '"--limit",\n                      "1000"' in source
+    assert 'event["stream"] == start_event["stream"]' in source
+    assert "CLOUDWATCH_RUN_BOUNDARY_NOT_FOUND" in source
     assert '{"sport": "mlb", "mode": "status"}' in source
     for sanitized_projection in (
         '"mode": safe_identifier(',
@@ -150,7 +154,7 @@ def test_artifact_is_the_single_sanitized_report_not_raw_responses() -> None:
     assert "get-function-configuration" not in source
 
 
-def test_runtime_sanitizes_owner_and_emits_only_allowlisted_lease_fields(
+def test_runtime_sanitizes_owner_and_isolates_exact_invocation_log_block(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -250,15 +254,60 @@ def test_runtime_sanitizes_owner_and_emits_only_allowlisted_lease_fields(
                 {
                     "events": [
                         {
+                            "timestamp": 2300,
+                            "logStreamName": "target-stream",
                             "message": (
+                                "FrozenPartitionConflict: frozen slate "
+                                "2026-09-01 changed"
+                            ),
+                        },
+                        {
+                            "timestamp": 2100,
+                            "logStreamName": "concurrent-stream",
+                            "message": (
+                                "FrozenPartitionConflict: frozen slate "
+                                "2026-06-01 changed\n"
+                                '  File "/var/task/mlb_ml_experiment_v2.py", '
+                                "line 999, in advance_manifest"
+                            ),
+                        },
+                        {
+                            "timestamp": 2200,
+                            "logStreamName": "target-stream",
+                            "message": (
+                                "END RequestId: "
+                                "12345678-1234-1234-1234-123456789abc"
+                            ),
+                        },
+                        {
+                            "timestamp": 2000,
+                            "logStreamName": "target-stream",
+                            "message": (
+                                "START RequestId: "
                                 "12345678-1234-1234-1234-123456789abc "
+                                "Version: $LATEST"
+                            ),
+                        },
+                        {
+                            "timestamp": 1900,
+                            "logStreamName": "concurrent-stream",
+                            "message": (
+                                "START RequestId: "
+                                "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee "
+                                "Version: $LATEST"
+                            ),
+                        },
+                        {
+                            "timestamp": 2050,
+                            "logStreamName": "target-stream",
+                            "message": (
                                 "FrozenPartitionConflict: frozen slate "
                                 "2026-07-21 changed\n"
                                 '  File "/var/task/mlb_ml_experiment_v2.py", '
                                 "line 812, in advance_manifest\n"
                                 "provider api_key=must-not-leak"
-                            )
-                        }
+                            ),
+                        },
                     ]
                 }
             )
@@ -370,10 +419,9 @@ def test_runtime_sanitizes_owner_and_emits_only_allowlisted_lease_fields(
     }
     assert "--log-type" not in status_command
     logs_command = logs_calls[0]
-    pattern_index = logs_command.index("--filter-pattern")
-    assert logs_command[pattern_index + 1] == (
-        '"12345678-1234-1234-1234-123456789abc"'
-    )
+    assert "--filter-pattern" not in logs_command
+    limit_index = logs_command.index("--limit")
+    assert logs_command[limit_index + 1] == "1000"
     start_index = logs_command.index("--start-time")
     end_index = logs_command.index("--end-time")
     assert int(logs_command[end_index + 1]) - int(logs_command[start_index + 1]) == 600_000
@@ -418,4 +466,70 @@ def test_cloudwatch_read_failure_returns_stable_blocker_and_deletes_raw_temp(
 
     assert result is None
     assert blocker == "CLOUDWATCH_LOG_READ_UNAVAILABLE"
+    assert not raw_path.exists()
+
+
+def test_cloudwatch_missing_end_boundary_is_a_stable_non_raw_blocker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_path = tmp_path / "raw-cloudwatch.json"
+    monkeypatch.setenv("CLOUDWATCH_RAW_PATH", str(raw_path))
+    monkeypatch.setenv("AWS_REGION_VALUE", "us-east-1")
+    monkeypatch.setenv(
+        "TRAINER_ARN",
+        "arn:aws:lambda:us-east-1:123456789012:function:trainer-read-only",
+    )
+
+    class Completed:
+        returncode = 0
+
+    def boundary_missing(command: list[str], **kwargs: object) -> Completed:
+        assert command[:3] == ["aws", "logs", "filter-log-events"]
+        raw_output = kwargs["stdout"]
+        raw_output.write(
+            json.dumps(
+                {
+                    "events": [
+                        {
+                            "timestamp": 1000,
+                            "logStreamName": "target-stream",
+                            "message": (
+                                "START RequestId: "
+                                "12345678-1234-1234-1234-123456789abc "
+                                "Version: $LATEST"
+                            ),
+                        },
+                        {
+                            "timestamp": 1100,
+                            "logStreamName": "target-stream",
+                            "message": (
+                                "FrozenPartitionConflict: frozen slate "
+                                "2026-07-21 changed"
+                            ),
+                        },
+                    ]
+                }
+            )
+        )
+        return Completed()
+
+    monkeypatch.setattr("subprocess.run", boundary_missing)
+    definitions = _diagnostic_program().split(
+        "\nnow_epoch = int(time.time())",
+        1,
+    )[0]
+    namespace: dict[str, object] = {}
+    exec(compile(definitions, str(WORKFLOW), "exec"), namespace)
+    discriminator = namespace["cloudwatch_discriminator"]
+
+    result, blocker = discriminator(
+        {
+            "runId": "12345678-1234-1234-1234-123456789abc",
+            "createdAtUtc": "2026-09-02T16:00:00+00:00",
+        }
+    )
+
+    assert result is None
+    assert blocker == "CLOUDWATCH_RUN_BOUNDARY_NOT_FOUND"
     assert not raw_path.exists()
