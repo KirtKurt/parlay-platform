@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from scripts import verify_unified_mlb_learning_ownership as ownership
@@ -122,7 +123,6 @@ jobs:
     ]
 
 
-
 def test_training_detector_recognizes_plain_and_shell_escaped_payloads():
     trainer = "python scripts/invoke_mlb_trainer_with_retry.py"
     plain = trainer + """ --payload '{"sport":"mlb","mode":"scheduled"}'"""
@@ -149,7 +149,23 @@ def test_bootstrap_is_manual_only_and_never_uploads_raw_lambda_configuration():
     resolve_step = text.split(
         "- name: Resolve and attest the exact R8 trainer runtime", 1
     )[1].split("- name: Capture the exact pre-bootstrap R8 baseline", 1)[0]
-    query = resolve_step.split("--query", 1)[1].split("--output json", 1)[0]
+    lambda_config = resolve_step.split(
+        "aws lambda get-function-configuration", 1
+    )[1]
+    query = lambda_config.split("--query", 1)[1].split("--output json", 1)[0]
+    projected_fields = set(re.findall(r"([A-Za-z0-9_]+):", query))
+    assert projected_fields == {
+        "FunctionName",
+        "State",
+        "LastUpdateStatus",
+        "Handler",
+        "Timeout",
+        "MLB_ML_EXPERIMENT_ID",
+        "MLB_ML_RELEASE_CONTRACT_ID",
+        "MLB_ML_RELEASE_CUTOFF_UTC",
+        "MLB_R7_HISTORICAL_TRAINING_ENABLED",
+        "MLB_R7_HISTORICAL_MAX_ROWS",
+    }
     assert "Environment:Environment" not in query
     assert "Variables:Environment.Variables" not in query
     assert "ODDS_API_KEY" not in query
@@ -163,7 +179,6 @@ def test_bootstrap_is_manual_only_and_never_uploads_raw_lambda_configuration():
     assert "path: /tmp/mlb-r8-bootstrap" in text
 
 
-
 def test_recurring_cadence_never_uploads_raw_lambda_configuration():
     text = Path(
         ".github/workflows/prove-mlb-r8-recurring-cadence.yml"
@@ -173,11 +188,13 @@ def test_recurring_cadence_never_uploads_raw_lambda_configuration():
     assert "/tmp/mlb-r8-cadence/trainer-config.json" not in text
     assert "path: /tmp/mlb-r8-cadence" in text
 
+
 def test_deploy_is_verify_only_and_never_invokes_training():
     deploy = Path(".github/workflows/deploy.yml").read_text(encoding="utf-8")
 
     assert ownership._invokes_training(deploy) is False
     assert "UNIFIED_MLB_LEARNING_OWNER=eventbridge_schedule" in deploy
+
 
 def test_repository_has_one_automatic_unified_mlb_training_owner():
     result = ownership.verify(Path("."))
