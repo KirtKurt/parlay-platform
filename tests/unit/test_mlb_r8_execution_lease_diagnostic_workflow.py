@@ -200,7 +200,7 @@ def test_runtime_sanitizes_owner_and_emits_only_allowlisted_lease_fields(
                 )
             )
         if command[:3] == ["aws", "lambda", "invoke"]:
-            assert kwargs == {"check": True, "capture_output": True, "text": True}
+            assert kwargs == {"check": False, "capture_output": True, "text": True}
             status_path = Path(command[-1])
             status_path.write_text(
                 json.dumps(
