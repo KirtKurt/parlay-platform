@@ -142,6 +142,14 @@ def exact_locked_row():
         "officialGamePk": OFFICIAL_GAME_PK,
         "slateDateEt": "2026-08-24",
         "commenceTime": "2026-08-24T23:00:00+00:00",
+        "homeMarketDeVigProbability": 0.6125,
+        "awayMarketDeVigProbability": 0.3875,
+        "marketProbability": 0.6125,
+        "marketProbabilitySourceAtUtc": SOURCE_AT,
+        "marketProbabilityVersion": (
+            "MLB-MARKET-DEVIG-BASELINE-v1-canonical-pull-slot"
+        ),
+        "marketProbabilityFingerprint": "immutable-market-fingerprint",
         "predictionPersistedAtUtc": PERSISTED_AT,
         "lockedPrediction": True,
         "immutablePerGameStage": True,
@@ -285,6 +293,11 @@ def fake_labels_module():
                 "lockedAmericanOdds",
                 locked.get("americanOdds"),
             ),
+            **{
+                field: copy.deepcopy(locked[field])
+                for field in repair.MARKET_PROBABILITY_PROJECTION_FIELDS
+                if field in locked and locked[field] not in (None, "")
+            },
             "predictionPersistedAtUtc": locked["predictionPersistedAtUtc"],
             "featureSnapshot": vector,
             "frozenFeatureVector": copy.deepcopy(vector),
@@ -424,6 +437,13 @@ def test_production_compat_install_order_binds_read_repair_and_advances_r7():
     assert safe is True, reasons
     assert reasons == []
     assert masks == joined["r7SourceHonestMissingnessMasks"]
+    assert {
+        field: joined[field]
+        for field in repair.MARKET_PROBABILITY_PROJECTION_FIELDS
+    } == {
+        field: locked[field]
+        for field in repair.MARKET_PROBABILITY_PROJECTION_FIELDS
+    }
 
     manifest = production_manifest()
     valid, validation_reasons = experiment.validate_record(joined, manifest)
@@ -450,6 +470,30 @@ def test_production_compat_install_order_binds_read_repair_and_advances_r7():
     assert tamper_safe is False
     assert "r7_joined_trusted_receipt_material_mismatch" in tamper_reasons
     assert tamper_masks == {}
+
+
+def test_joined_receipt_binds_exact_market_projection_without_reconstruction():
+    labels = fake_labels_module()
+    locked = exact_locked_row()
+    locked.pop("awayMarketDeVigProbability")
+    repair._install_label_patch(labels)
+
+    joined = labels._joined_training_row(
+        "2026-08-24",
+        exact_label(locked),
+        locked,
+        slate_finalized=True,
+    )
+
+    assert "awayMarketDeVigProbability" not in joined
+    assert repair.row_is_source_honest_training_safe(joined)[0] is True
+
+    tampered = copy.deepcopy(joined)
+    tampered["marketProbabilityFingerprint"] = "changed-market-fingerprint"
+    safe, reasons, masks = repair.row_is_source_honest_training_safe(tampered)
+    assert safe is False
+    assert reasons == ["r7_joined_trusted_receipt_material_mismatch"]
+    assert masks == {}
 
 
 def test_exact_read_repair_annotation_without_installed_wrapper_fails_closed():
