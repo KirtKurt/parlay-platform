@@ -65,7 +65,8 @@ jobs:
           echo "name=$fn" >> "$GITHUB_OUTPUT"
           mkdir -p /tmp/mlb-auto-audit
           aws lambda get-function-configuration --function-name "$fn" --region "$AWS_REGION" \
-            > /tmp/mlb-auto-audit/function.json
+            --query '{FunctionName:FunctionName,Handler:Handler,State:State,LastUpdateStatus:LastUpdateStatus}' \
+            --output json > /tmp/mlb-auto-audit/function.json
       - name: Resolve production MLB authority Lambda
         id: authority_function
         run: |
