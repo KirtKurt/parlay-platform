@@ -77,6 +77,9 @@ STATUS_RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 TRAINING_STATUS_MAX_AGE = timedelta(hours=8)
 SELECTION_CAPTURE_STATUS_MAX_AGE = timedelta(minutes=10)
 SLATE_TZ = ZoneInfo(os.environ.get("INQSI_SLATE_TIMEZONE", "America/New_York"))
+CANONICAL_SLATE_CONTINUITY_VERSION = (
+    "MLB-ML-CANONICAL-SLATE-CONTINUITY-v2-exact-official-game-set"
+)
 
 
 class TrainingContractError(RuntimeError):
@@ -345,6 +348,131 @@ def _movement_coverage(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
             if count
         },
     }
+
+
+def _canonical_slate_date(value: Any) -> str:
+    text = str(value or "").strip()
+    try:
+        parsed = datetime.fromisoformat(text).date().isoformat()
+        return text if parsed == text else ""
+    except Exception:
+        return ""
+
+
+def _release_cutoff_slate_date(manifest: Mapping[str, Any]) -> str:
+    try:
+        value = datetime.fromisoformat(
+            str(manifest.get("releaseCutoffUtc") or "").replace("Z", "+00:00")
+        )
+        if value.tzinfo is None:
+            return ""
+        return value.astimezone(SLATE_TZ).date().isoformat()
+    except Exception:
+        return ""
+
+
+def _row_slate_date(row: Mapping[str, Any]) -> str:
+    vector = row.get("featureSnapshot") or row.get("frozenFeatureVector") or {}
+    if not isinstance(vector, Mapping):
+        vector = {}
+    return str(row.get("slateDateEt") or vector.get("slateDateEt") or "")
+
+
+def _continuity_attributable_missing_persisted_slates(
+    manifest: Mapping[str, Any],
+    loaded_rows: Sequence[Mapping[str, Any]],
+    accepted_rows: Sequence[Mapping[str, Any]],
+    continuity: Any,
+) -> List[str]:
+    """Return missing persisted dates only when continuity explains every gap."""
+    if (
+        not isinstance(continuity, Mapping)
+        or continuity.get("version") != CANONICAL_SLATE_CONTINUITY_VERSION
+        or not isinstance(continuity.get("ok"), bool)
+    ):
+        return []
+    assignments = manifest.get("assignedSlateDates") or {}
+    diagnostics = manifest.get("historicalDiagnosticSlateDates") or {}
+    if not isinstance(assignments, Mapping) or not isinstance(diagnostics, Mapping):
+        return []
+    expected_fingerprints: Dict[str, str] = {}
+    for entries in (assignments, diagnostics):
+        for raw_date, entry in entries.items():
+            if not isinstance(entry, Mapping):
+                return []
+            slate_date = str(raw_date)
+            fingerprint = str(entry.get("slateFingerprint") or "")
+            if (
+                slate_date in expected_fingerprints
+                or re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None
+            ):
+                return []
+            expected_fingerprints[slate_date] = fingerprint
+
+    accepted_by_date: Dict[str, List[Mapping[str, Any]]] = {}
+    for row in accepted_rows:
+        if isinstance(row, Mapping):
+            accepted_by_date.setdefault(_row_slate_date(row), []).append(row)
+    for slate_date, rows in accepted_by_date.items():
+        if (
+            slate_date in expected_fingerprints
+            and experiment.slate_fingerprint(rows)
+            != expected_fingerprints[slate_date]
+        ):
+            return []
+
+    persisted_dates = set(expected_fingerprints)
+    observed_dates = set(accepted_by_date)
+    missing_dates = persisted_dates - observed_dates
+    if not missing_dates:
+        return []
+    loaded_dates = {
+        _row_slate_date(row)
+        for row in loaded_rows
+        if isinstance(row, Mapping)
+    }
+    if missing_dates & loaded_dates:
+        return []
+
+    release_cutoff_date = _release_cutoff_slate_date(manifest)
+    if not release_cutoff_date:
+        return []
+
+    skipped_values = continuity.get("skippedUnresolvedSlateDates")
+    skipped_dates = (
+        {str(value) for value in skipped_values}
+        if isinstance(skipped_values, (list, tuple, set))
+        else set()
+    )
+    unresolved_errors = continuity.get("unresolvedSlateErrors")
+    if not isinstance(unresolved_errors, Mapping):
+        unresolved_errors = {}
+    blocked_date = _canonical_slate_date(continuity.get("blockedSlateDate"))
+    blocker = str(continuity.get("blocker") or "")
+    attributable = {
+        value
+        for value in missing_dates
+        if _canonical_slate_date(value) == value
+        and value >= release_cutoff_date
+        and (
+            (
+                value in skipped_dates
+                and str(unresolved_errors.get(value) or "").startswith(
+                    "OFFICIAL_SLATE_UNRESOLVED:"
+                )
+            )
+            or (
+                continuity.get("ok") is False
+                and bool(blocked_date)
+                and blocked_date >= release_cutoff_date
+                and value >= blocked_date
+                and blocker.startswith("OFFICIAL_SCHEDULE_UNPROVEN:")
+            )
+        )
+    }
+    if attributable != missing_dates:
+        return []
+    return sorted(attributable)
 
 
 def _status_fingerprint(status: Mapping[str, Any]) -> str:
@@ -1584,7 +1712,7 @@ def _contiguous_finalized_slate_prefix(
         processed.append(slate_date)
     return game_dates, {
         "ok": blocked_date is None,
-        "version": "MLB-ML-CANONICAL-SLATE-CONTINUITY-v2-exact-official-game-set",
+        "version": CANONICAL_SLATE_CONTINUITY_VERSION,
         "processedSlateDates": processed,
         "processedThroughSlateDate": processed[-1] if processed else None,
         "provenZeroGameSlateDates": zero_game_dates,
@@ -2572,6 +2700,60 @@ class TrainingService:
         filtered = experiment.filter_records(loaded_rows, manifest)
         accepted = filtered["acceptedRows"]
         movement_coverage = _movement_coverage(accepted)
+
+        def save_continuity_wait(continuity: Mapping[str, Any]) -> Dict[str, Any]:
+            counts = {
+                name: int((manifest["partitions"][name]).get("rowCount") or 0)
+                for name in experiment.PARTITION_ORDER
+            }
+            return self._save_run_status(
+                {
+                    "ok": False,
+                    "status": "CANONICAL_SLATE_CONTINUITY_BLOCKED",
+                    "executionMode": "training",
+                    "partitionCounts": counts,
+                    "acceptedRowCount": filtered["acceptedRowCount"],
+                    "rejectedRowCount": filtered["rejectedRowCount"],
+                    "rejectionReasonCounts": filtered["rejectionReasonCounts"],
+                    "movementCoverage": movement_coverage,
+                    "rowsRequired": experiment.PARTITION_MINIMUMS,
+                    "canonicalSlateContinuity": continuity,
+                    "milestones": experiment.milestone_status(
+                        manifest,
+                        integrity_clean_row_count=len(accepted),
+                        settled_selected_recommendation_count=0,
+                        integrity_clean_rows=accepted,
+                        official_finalized_slate_authorities=(
+                            continuity.get("finalizedSlateAuthorities") or {}
+                        ),
+                    ),
+                    "modelTrained": False,
+                    "championChanged": False,
+                }
+            )
+
+        continuity_missing_dates = (
+            _continuity_attributable_missing_persisted_slates(
+                manifest,
+                loaded_rows,
+                accepted,
+                slate_continuity,
+            )
+        )
+        if continuity_missing_dates:
+            continuity_wait = copy.deepcopy(slate_continuity)
+            continuity_wait.update(
+                {
+                    "ok": False,
+                    "persistedSlateAuthorityReady": False,
+                    "missingPersistedSlateDates": continuity_missing_dates,
+                    "missingPersistedSlateDateCount": len(
+                        continuity_missing_dates
+                    ),
+                    "missingPersistedSlateRowIdentitiesIncluded": False,
+                }
+            )
+            return save_continuity_wait(continuity_wait)
         today_et = self.now().astimezone(SLATE_TZ).date().isoformat()
         finalized_dates = sorted(
             {
@@ -2597,35 +2779,7 @@ class TrainingService:
         )
         partition_rows = experiment.rows_by_partition(manifest, accepted)
         if isinstance(slate_continuity, dict) and slate_continuity.get("ok") is not True:
-            counts = {
-                name: int((manifest["partitions"][name]).get("rowCount") or 0)
-                for name in experiment.PARTITION_ORDER
-            }
-            return self._save_run_status(
-                {
-                    "ok": False,
-                    "status": "CANONICAL_SLATE_CONTINUITY_BLOCKED",
-                    "executionMode": "training",
-                    "partitionCounts": counts,
-                    "acceptedRowCount": filtered["acceptedRowCount"],
-                    "rejectedRowCount": filtered["rejectedRowCount"],
-                    "rejectionReasonCounts": filtered["rejectionReasonCounts"],
-                    "movementCoverage": movement_coverage,
-                    "rowsRequired": experiment.PARTITION_MINIMUMS,
-                    "canonicalSlateContinuity": slate_continuity,
-                    "milestones": experiment.milestone_status(
-                        manifest,
-                        integrity_clean_row_count=len(accepted),
-                        settled_selected_recommendation_count=0,
-                        integrity_clean_rows=accepted,
-                        official_finalized_slate_authorities=(
-                            slate_continuity.get("finalizedSlateAuthorities") or {}
-                        ),
-                    ),
-                    "modelTrained": False,
-                    "championChanged": False,
-                }
-            )
+            return save_continuity_wait(slate_continuity)
 
         challenger: Optional[Dict[str, Any]] = None
         challenger_pointer: Optional[Dict[str, Any]] = None

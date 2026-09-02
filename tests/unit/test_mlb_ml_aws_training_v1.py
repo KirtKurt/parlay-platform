@@ -166,6 +166,48 @@ def new_manifest(sealed=False):
     return value
 
 
+def manifest_with_persisted_slate(
+    slate_date,
+    *,
+    scope="assigned_prospective",
+):
+    value = new_manifest()
+    identity = f"{slate_date}|persisted-game|{'c' * 64}"
+    slate_fingerprint = experiment.digest([identity])
+    if scope == "assigned_prospective":
+        partition = value["partitions"]["prospectiveTest"]
+        partition["slateDates"] = [slate_date]
+        partition["slates"] = {
+            slate_date: {
+                "rowCount": 1,
+                "rowIdentities": [identity],
+                "slateFingerprint": slate_fingerprint,
+            }
+        }
+        partition["rowCount"] = 1
+        value["assignedSlateDates"] = {
+            slate_date: {
+                "partition": "prospectiveTest",
+                "rowCount": 1,
+                "slateFingerprint": slate_fingerprint,
+            }
+        }
+    elif scope == "historical_diagnostic":
+        value["historicalDiagnosticSlateDates"] = {
+            slate_date: {
+                "rowCount": 1,
+                "slateFingerprint": slate_fingerprint,
+                "reason": "not_finalized_after_persisted_challenger_cutover",
+                "trainingAuthority": False,
+                "prospectiveAuthority": False,
+            }
+        }
+    else:
+        raise AssertionError(f"unsupported persisted slate scope: {scope}")
+    value["manifestDigest"] = experiment.manifest_digest(value)
+    return value
+
+
 def trained_bundle(manifest):
     return {
         "ok": True,
@@ -502,6 +544,394 @@ def service(
         if lease_mode is not None
         else training
     )
+
+
+def continuity_rows(rows=(), **overrides):
+    continuity = {
+        "ok": True,
+        "version": aws_training.CANONICAL_SLATE_CONTINUITY_VERSION,
+        "processedSlateDates": [],
+        "finalizedGameSlateDates": [],
+        "finalizedSlateAuthorities": {},
+        "skippedUnresolvedSlateDates": [],
+        "unresolvedSlateErrors": {},
+        "blockedSlateDate": None,
+        "blocker": None,
+    }
+    continuity.update(overrides)
+    if (
+        continuity["skippedUnresolvedSlateDates"]
+        and "unresolvedSlateErrors" not in overrides
+    ):
+        continuity["unresolvedSlateErrors"] = {
+            value: "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:test"
+            for value in continuity["skippedUnresolvedSlateDates"]
+        }
+    return aws_training.CanonicalTrainingRows(list(rows), continuity)
+
+
+def test_run_waits_before_advance_for_explicitly_skipped_persisted_slate(
+    monkeypatch,
+):
+    slate_date = "2026-09-01"
+    manifest = manifest_with_persisted_slate(slate_date)
+    original = copy.deepcopy(manifest)
+    store = FakeStore(manifest)
+    monkeypatch.setattr(
+        experiment,
+        "advance_manifest",
+        lambda *_args, **_kwargs: pytest.fail("manifest must not advance"),
+    )
+    monkeypatch.setattr(
+        store,
+        "save_manifest",
+        lambda *_args, **_kwargs: pytest.fail("manifest must not save"),
+    )
+    training = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: continuity_rows(
+            skippedUnresolvedSlateDates=[slate_date],
+        ),
+        now=lambda: NOW,
+    )
+    attest_test_execution_lease(training)
+
+    result = training.run()
+
+    assert result["status"] == "CANONICAL_SLATE_CONTINUITY_BLOCKED"
+    assert result["ok"] is False
+    telemetry = result["canonicalSlateContinuity"]
+    assert telemetry["missingPersistedSlateDates"] == [slate_date]
+    assert telemetry["missingPersistedSlateDateCount"] == 1
+    assert telemetry["persistedSlateAuthorityReady"] is False
+    assert telemetry["missingPersistedSlateRowIdentitiesIncluded"] is False
+    assert store.manifest == original
+    assert store.statuses == [result]
+
+
+def test_run_waits_before_advance_for_persisted_slate_after_blocker(
+    monkeypatch,
+):
+    slate_date = "2026-09-01"
+    manifest = manifest_with_persisted_slate(slate_date)
+    original = copy.deepcopy(manifest)
+    store = FakeStore(manifest)
+    monkeypatch.setattr(
+        experiment,
+        "advance_manifest",
+        lambda *_args, **_kwargs: pytest.fail("manifest must not advance"),
+    )
+    monkeypatch.setattr(
+        store,
+        "save_manifest",
+        lambda *_args, **_kwargs: pytest.fail("manifest must not save"),
+    )
+    training = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: continuity_rows(
+            ok=False,
+            blockedSlateDate="2026-08-31",
+            blocker="OFFICIAL_SCHEDULE_UNPROVEN:RuntimeError:test",
+        ),
+        now=lambda: NOW,
+    )
+    attest_test_execution_lease(training)
+
+    result = training.run()
+
+    assert result["status"] == "CANONICAL_SLATE_CONTINUITY_BLOCKED"
+    assert result["canonicalSlateContinuity"]["missingPersistedSlateDates"] == [
+        slate_date
+    ]
+    assert store.manifest == original
+
+
+def test_run_keeps_advancing_after_unassigned_date_local_skip(monkeypatch):
+    skipped_date = "2026-08-30"
+    finalized_date = "2026-08-31"
+    row = {
+        "slateDateEt": finalized_date,
+        "gameId": "later-finalized-game",
+        "slateFinalized": True,
+        "featureSnapshot": {"fingerprint": "e" * 64},
+    }
+    monkeypatch.setattr(
+        experiment,
+        "filter_records",
+        lambda rows, _manifest: {
+            "acceptedRows": list(rows),
+            "acceptedRowCount": len(rows),
+            "rejectedRows": [],
+            "rejectedRowCount": 0,
+            "rejectionReasonCounts": {},
+        },
+    )
+    store = FakeStore(new_manifest())
+    training = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: continuity_rows(
+            [row],
+            processedSlateDates=[skipped_date, finalized_date],
+            finalizedGameSlateDates=[finalized_date],
+            skippedUnresolvedSlateDates=[skipped_date],
+        ),
+        now=lambda: NOW,
+    )
+    attest_test_execution_lease(training)
+
+    result = training.run()
+
+    assert result["status"] == "ACCUMULATING_TRAIN"
+    assert result["canonicalSlateContinuity"]["ok"] is True
+    assert result["canonicalSlateContinuity"]["skippedUnresolvedSlateDates"] == [
+        skipped_date
+    ]
+    assert (
+        store.manifest["assignedSlateDates"][finalized_date]["partition"]
+        == "train"
+    )
+
+
+@pytest.mark.parametrize(
+    "continuity",
+    [
+        {"ok": True},
+        {
+            "ok": True,
+            "skippedUnresolvedSlateDates": ["2026-09-02"],
+        },
+        {
+            "ok": True,
+            "version": "MLB-ML-CANONICAL-SLATE-CONTINUITY-unknown",
+            "skippedUnresolvedSlateDates": ["2026-09-01"],
+        },
+        {
+            "ok": True,
+            "skippedUnresolvedSlateDates": ["2026-09-01"],
+            "unresolvedSlateErrors": {},
+        },
+        {
+            "ok": None,
+            "blockedSlateDate": "2026-08-31",
+            "blocker": "OFFICIAL_SCHEDULE_UNPROVEN:RuntimeError:test",
+        },
+    ],
+)
+def test_run_preserves_hard_conflict_without_trusted_continuity_attribution(
+    monkeypatch,
+    continuity,
+):
+    slate_date = "2026-09-01"
+    manifest = manifest_with_persisted_slate(slate_date)
+    original = copy.deepcopy(manifest)
+    store = FakeStore(manifest)
+    monkeypatch.setattr(
+        store,
+        "save_manifest",
+        lambda *_args, **_kwargs: pytest.fail("manifest must not save"),
+    )
+    loaded = continuity_rows(**continuity)
+    training = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: loaded,
+        now=lambda: NOW,
+    )
+    attest_test_execution_lease(training)
+
+    with pytest.raises(
+        experiment.FrozenPartitionConflict,
+        match="frozen slate 2026-09-01 disappeared from current authority",
+    ):
+        training.run()
+
+    assert store.manifest == original
+    assert store.statuses == []
+
+
+def test_run_preserves_hard_conflict_for_malformed_persisted_fingerprint(
+    monkeypatch,
+):
+    slate_date = "2026-09-01"
+    manifest = manifest_with_persisted_slate(slate_date)
+    manifest["assignedSlateDates"][slate_date]["slateFingerprint"] = "invalid"
+    manifest["manifestDigest"] = experiment.manifest_digest(manifest)
+    store = FakeStore(manifest)
+    monkeypatch.setattr(
+        store,
+        "save_manifest",
+        lambda *_args, **_kwargs: pytest.fail("manifest must not save"),
+    )
+    training = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: continuity_rows(
+            skippedUnresolvedSlateDates=[slate_date],
+        ),
+        now=lambda: NOW,
+    )
+    attest_test_execution_lease(training)
+
+    with pytest.raises(
+        experiment.FrozenPartitionConflict,
+        match="frozen slate 2026-09-01 disappeared from current authority",
+    ):
+        training.run()
+
+    assert store.statuses == []
+
+
+def test_run_does_not_attribute_loaded_but_rejected_persisted_slate(
+    monkeypatch,
+):
+    slate_date = "2026-09-01"
+    manifest = manifest_with_persisted_slate(slate_date)
+    original = copy.deepcopy(manifest)
+    store = FakeStore(manifest)
+    loaded_row = {"slateDateEt": slate_date, "gameId": "rejected-game"}
+    monkeypatch.setattr(
+        experiment,
+        "filter_records",
+        lambda _rows, _manifest: {
+            "acceptedRows": [],
+            "acceptedRowCount": 0,
+            "rejectedRows": [
+                {
+                    "slateDateEt": slate_date,
+                    "gameId": "rejected-game",
+                    "reasons": ["hostile_test_rejection"],
+                }
+            ],
+            "rejectedRowCount": 1,
+            "rejectionReasonCounts": {"hostile_test_rejection": 1},
+        },
+    )
+    monkeypatch.setattr(
+        store,
+        "save_manifest",
+        lambda *_args, **_kwargs: pytest.fail("manifest must not save"),
+    )
+    training = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: continuity_rows(
+            [loaded_row],
+            skippedUnresolvedSlateDates=[slate_date],
+        ),
+        now=lambda: NOW,
+    )
+    attest_test_execution_lease(training)
+
+    with pytest.raises(
+        experiment.FrozenPartitionConflict,
+        match="frozen slate 2026-09-01 disappeared from current authority",
+    ):
+        training.run()
+
+    assert store.manifest == original
+    assert store.statuses == []
+
+
+def test_run_does_not_mask_changed_slate_with_other_attributed_missing_slate(
+    monkeypatch,
+):
+    changed_date = "2026-08-31"
+    missing_date = "2026-09-01"
+    manifest = manifest_with_persisted_slate(changed_date)
+    missing_manifest = manifest_with_persisted_slate(missing_date)
+    manifest["assignedSlateDates"].update(
+        missing_manifest["assignedSlateDates"]
+    )
+    prospective = manifest["partitions"]["prospectiveTest"]
+    prospective["slateDates"].append(missing_date)
+    prospective["slates"].update(
+        missing_manifest["partitions"]["prospectiveTest"]["slates"]
+    )
+    prospective["rowCount"] = 2
+    manifest["manifestDigest"] = experiment.manifest_digest(manifest)
+    original = copy.deepcopy(manifest)
+    store = FakeStore(manifest)
+    changed_row = {
+        "slateDateEt": changed_date,
+        "gameId": "persisted-game",
+        "featureSnapshot": {"fingerprint": "d" * 64},
+    }
+    monkeypatch.setattr(
+        experiment,
+        "filter_records",
+        lambda rows, _manifest: {
+            "acceptedRows": list(rows),
+            "acceptedRowCount": len(rows),
+            "rejectedRows": [],
+            "rejectedRowCount": 0,
+            "rejectionReasonCounts": {},
+        },
+    )
+    monkeypatch.setattr(
+        store,
+        "save_manifest",
+        lambda *_args, **_kwargs: pytest.fail("manifest must not save"),
+    )
+    training = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: continuity_rows(
+            [changed_row],
+            skippedUnresolvedSlateDates=[missing_date],
+        ),
+        now=lambda: NOW,
+    )
+    attest_test_execution_lease(training)
+
+    with pytest.raises(
+        experiment.FrozenPartitionConflict,
+        match="frozen slate 2026-08-31 changed",
+    ):
+        training.run()
+
+    assert store.manifest == original
+    assert store.statuses == []
+
+
+def test_run_never_attributes_pre_cutoff_historical_gap_to_live_continuity(
+    monkeypatch,
+):
+    slate_date = "2025-05-08"
+    manifest = manifest_with_persisted_slate(
+        slate_date,
+        scope="historical_diagnostic",
+    )
+    original = copy.deepcopy(manifest)
+    store = FakeStore(manifest)
+    monkeypatch.setattr(
+        store,
+        "save_manifest",
+        lambda *_args, **_kwargs: pytest.fail("manifest must not save"),
+    )
+    training = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: continuity_rows(
+            skippedUnresolvedSlateDates=[slate_date],
+        ),
+        now=lambda: NOW,
+    )
+    attest_test_execution_lease(training)
+
+    with pytest.raises(
+        experiment.FrozenPartitionConflict,
+        match=(
+            "diagnostic historical slate 2025-05-08 disappeared "
+            "from current authority"
+        ),
+    ):
+        training.run()
+
+    assert store.manifest == original
+    assert store.statuses == []
 
 
 def patch_sealed_training(monkeypatch):
@@ -2123,6 +2553,7 @@ def test_partial_prior_et_slate_cannot_freeze_or_deadlock_manifest(monkeypatch):
     assert requested == ["2026-08-03"]
     assert partial["status"] == "ACCUMULATING_TRAIN"
     assert partial["acceptedRowCount"] == 0
+    assert partial["canonicalSlateContinuity"]["ok"] is True
     assert partial["canonicalSlateContinuity"]["skippedUnresolvedSlateDates"] == ["2026-08-03"]
     assert "2026-08-03" in partial["canonicalSlateContinuity"]["unresolvedSlateErrors"]
     assert store.manifest["assignedSlateDates"] == {}
