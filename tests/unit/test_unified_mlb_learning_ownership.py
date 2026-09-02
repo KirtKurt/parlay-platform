@@ -128,7 +128,7 @@ def test_training_detector_recognizes_plain_and_shell_escaped_payloads():
     plain = trainer + """ --payload '{"sport":"mlb","mode":"scheduled"}'"""
     shell_escaped = (
         trainer
-        + r''' --payload "{\"sport\":\"mlb\",\"mode\":\"scheduled\"}"'''
+        + r''' --payload "{\"sport\":\"mlb\",\"mode\":\"SCHEDULED\"}"'''
     )
 
     assert ownership._invokes_training(plain) is True
@@ -162,6 +162,16 @@ def test_bootstrap_is_manual_only_and_never_uploads_raw_lambda_configuration():
     assert '--output json > "$RUNTIME_CONFIG_TMP"' in resolve_step
     assert "path: /tmp/mlb-r8-bootstrap" in text
 
+
+
+def test_recurring_cadence_never_uploads_raw_lambda_configuration():
+    text = Path(
+        ".github/workflows/prove-mlb-r8-recurring-cadence.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "get-function-configuration" not in text
+    assert "/tmp/mlb-r8-cadence/trainer-config.json" not in text
+    assert "path: /tmp/mlb-r8-cadence" in text
 
 def test_deploy_is_verify_only_and_never_invokes_training():
     deploy = Path(".github/workflows/deploy.yml").read_text(encoding="utf-8")
