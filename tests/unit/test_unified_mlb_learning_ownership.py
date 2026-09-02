@@ -189,6 +189,24 @@ def test_recurring_cadence_never_uploads_raw_lambda_configuration():
     assert "path: /tmp/mlb-r8-cadence" in text
 
 
+def test_auto_read_only_audit_uploads_only_allowlisted_lambda_configuration():
+    text = Path(
+        ".github/workflows/audit-mlb-auto-today-read-only.yml"
+    ).read_text(encoding="utf-8")
+    config = text.split("aws lambda get-function-configuration", 1)[1]
+    query = config.split("--query", 1)[1].split("--output json", 1)[0]
+
+    assert set(re.findall(r"([A-Za-z0-9_]+):", query)) == {
+        "FunctionName",
+        "Handler",
+        "State",
+        "LastUpdateStatus",
+    }
+    assert "Environment" not in query
+    assert "> /tmp/mlb-auto-audit/function.json" in config
+    assert "path: /tmp/mlb-auto-audit" in text
+
+
 def test_deploy_is_verify_only_and_never_invokes_training():
     deploy = Path(".github/workflows/deploy.yml").read_text(encoding="utf-8")
 
