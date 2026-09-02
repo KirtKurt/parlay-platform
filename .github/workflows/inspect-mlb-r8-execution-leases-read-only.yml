@@ -433,10 +433,12 @@ jobs:
               ]
               status_completed = subprocess.run(
                   status_command,
-                  check=True,
+                  check=False,
                   capture_output=True,
                   text=True,
               )
+              if status_completed.returncode != 0:
+                  raise RuntimeError("MLB trainer status read failed")
               invocation = json.loads(status_completed.stdout.strip() or "{}")
               if (
                   invocation.get("StatusCode") != 200
