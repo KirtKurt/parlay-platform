@@ -30,12 +30,21 @@ jobs:
             --output text)
           test -n "$table_name"
           test "$table_name" != "None"
+          trainer_arn=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region "$AWS_REGION_VALUE" \
+            --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" \
+            --output text)
+          test -n "$trainer_arn"
+          test "$trainer_arn" != "None"
           report_path=/tmp/mlb-r8-execution-lease-readonly.json
-          TABLE_NAME="$table_name" REPORT_PATH="$report_path" python - <<'PY'
+          TABLE_NAME="$table_name" TRAINER_ARN="$trainer_arn" REPORT_PATH="$report_path" python - <<'PY'
           import hashlib
           import json
           import os
+          import re
           import subprocess
+          import tempfile
           import time
           from datetime import datetime, timezone
           from pathlib import Path
@@ -57,6 +66,54 @@ jobs:
                   if data_type in node:
                       return node[data_type]
               return None
+
+          def safe_identifier(value, limit=128):
+              if value is None or isinstance(value, (dict, list)):
+                  return None
+              compact = " ".join(str(value).split())
+              safe = re.sub(r"[^A-Za-z0-9._:/#@+-]", "_", compact)
+              return safe[:limit] or None
+
+          def safe_message(value, limit=300):
+              if value is None or isinstance(value, (dict, list)):
+                  return None
+              compact = " ".join(str(value).split())
+              compact = re.sub(
+                  r"(?i)\b(api[_-]?key|secret|token|password|credential)s?\b\s*[:=]\s*[^\s,;]+",
+                  r"\1=[REDACTED]",
+                  compact,
+              )
+              compact = re.sub(
+                  r"(?i)\bbearer\s+[^\s,;]+",
+                  "Bearer [REDACTED]",
+                  compact,
+              )
+              compact = re.sub(
+                  r"arn:aws[a-zA-Z-]*:[^\s,;]+",
+                  "[REDACTED_ARN]",
+                  compact,
+              )
+              compact = re.sub(r"\b\d{12}\b", "[REDACTED_ACCOUNT]", compact)
+              compact = re.sub(
+                  r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b",
+                  "[REDACTED_ACCESS_KEY]",
+                  compact,
+              )
+              compact = re.sub(
+                  r"\b[A-Za-z0-9_+/=-]{40,}\b",
+                  "[REDACTED_TOKEN]",
+                  compact,
+              )
+              return compact[:limit] or None
+
+          def safe_count(value):
+              if value is None or isinstance(value, bool):
+                  return None
+              try:
+                  parsed = int(value)
+              except (TypeError, ValueError):
+                  return None
+              return parsed if parsed >= 0 else None
 
           now_epoch = int(time.time())
           leases = []
@@ -132,6 +189,100 @@ jobs:
                   }
               )
 
+          status_file = None
+          try:
+              descriptor, status_name = tempfile.mkstemp(
+                  prefix="mlb-r8-trainer-status-",
+                  suffix=".json",
+              )
+              os.close(descriptor)
+              status_file = Path(status_name)
+              status_request = json.dumps(
+                  {"sport": "mlb", "mode": "status"},
+                  separators=(",", ":"),
+              )
+              status_command = [
+                  "aws",
+                  "lambda",
+                  "invoke",
+                  "--function-name",
+                  os.environ["TRAINER_ARN"],
+                  "--region",
+                  os.environ["AWS_REGION_VALUE"],
+                  "--cli-binary-format",
+                  "raw-in-base64-out",
+                  "--payload",
+                  status_request,
+                  "--output",
+                  "json",
+                  "--no-cli-pager",
+                  str(status_file),
+              ]
+              status_completed = subprocess.run(
+                  status_command,
+                  check=True,
+                  capture_output=True,
+                  text=True,
+              )
+              invocation = json.loads(status_completed.stdout.strip() or "{}")
+              if (
+                  invocation.get("StatusCode") != 200
+                  or invocation.get("FunctionError")
+              ):
+                  raise RuntimeError("MLB trainer status read failed")
+              status_payload = json.loads(status_file.read_text().strip() or "{}")
+              if not isinstance(status_payload, dict):
+                  raise RuntimeError("MLB trainer status was not an object")
+          finally:
+              if status_file is not None:
+                  status_file.unlink(missing_ok=True)
+
+          training_health = status_payload.get("trainingHealth")
+          if not isinstance(training_health, dict):
+              training_health = {}
+          latest_run = training_health.get("latestRun")
+          if not isinstance(latest_run, dict):
+              latest_run = {}
+          failure = latest_run.get("failure")
+          if not isinstance(failure, dict):
+              failure = {}
+          partition_counts = latest_run.get("partitionCounts")
+          if not isinstance(partition_counts, dict):
+              partition_counts = {}
+          sanitized_training_health = {
+              "deploymentIdentityMatches": (
+                  training_health.get("deploymentIdentityMatches")
+                  if isinstance(
+                      training_health.get("deploymentIdentityMatches"), bool
+                  )
+                  else None
+              ),
+              "latestRun": {
+                  "runId": safe_identifier(latest_run.get("runId")),
+                  "status": safe_identifier(latest_run.get("status")),
+                  "counts": {
+                      "acceptedRowCount": safe_count(
+                          latest_run.get("acceptedRowCount")
+                      ),
+                      "rejectedRowCount": safe_count(
+                          latest_run.get("rejectedRowCount")
+                      ),
+                      "partitionCounts": {
+                          name: safe_count(partition_counts.get(name))
+                          for name in (
+                              "train",
+                              "validation",
+                              "prospectiveTest",
+                          )
+                      },
+                  },
+                  "failure": {
+                      "type": safe_identifier(failure.get("type")),
+                      "message": safe_message(failure.get("message")),
+                  },
+              },
+          }
+
           report = {
               "proofType": "MLB_R8_EXECUTION_LEASE_READ_ONLY",
               "readOnly": True,
@@ -139,6 +290,7 @@ jobs:
               "observedAtEpoch": now_epoch,
               "experimentPk": experiment_pk,
               "leases": leases,
+              "trainingHealth": sanitized_training_health,
           }
           report_path = Path(os.environ["REPORT_PATH"])
           report_path.write_text(
