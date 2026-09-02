@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Iterable
 
@@ -10,6 +11,13 @@ RECOVERY_WORKFLOW = Path(".github/workflows/unified-mlb-learning-recovery-once.y
 DEPLOY_WORKFLOW = Path(".github/workflows/deploy.yml")
 WORKFLOW_ROOT = Path(".github/workflows")
 TEMPLATE = Path("template.yaml")
+MANUAL_ONLY_ARTIFACT_HARDENED_MUTATION_WORKFLOWS = {
+    "mlb-historical-v7-recovery.yml",
+    "mlb-r8-credit-cap-recovery-now.yml",
+    "mlb-v7-settled-horizon-resume-deploy.yml",
+    "mlb-v8-incremental-range-extension-deploy.yml",
+    "mlb-v8-range-extension-live-proof-once.yml",
+}
 
 
 def _trigger_block(text: str) -> str:
@@ -85,6 +93,150 @@ def _self_only_main_push(path: Path, trigger_block: str) -> bool:
     )
 
 
+
+_SECRET_BEARING_LAMBDA_CONFIGURATION_OPERATIONS = (
+    "get-function-configuration",
+    "update-function-configuration",
+    "update-function-code",
+    "get-function",
+)
+
+
+def _continued_shell_commands(text: str) -> list[str]:
+    lines = text.splitlines()
+    commands: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index].strip()
+        if "aws lambda " not in line:
+            index += 1
+            continue
+        parts = [line.removesuffix("\\").rstrip()]
+        while line.endswith("\\") and index + 1 < len(lines):
+            index += 1
+            line = lines[index].strip()
+            parts.append(line.removesuffix("\\").rstrip())
+        commands.append(" ".join(parts))
+        index += 1
+    return commands
+
+
+def _uploaded_artifact_paths(text: str) -> set[str]:
+    lines = text.splitlines()
+    uploaded: set[str] = set()
+    for index, line in enumerate(lines):
+        if not re.search(r"\buses:\s*actions/upload-artifact@", line):
+            continue
+        step_indent = len(line) - len(line.lstrip())
+        cursor = index + 1
+        while cursor < len(lines):
+            candidate = lines[cursor]
+            stripped = candidate.strip()
+            indent = len(candidate) - len(candidate.lstrip())
+            if stripped.startswith("- ") and indent <= step_indent:
+                break
+            path_match = re.match(r"\s*path:\s*(.*?)\s*$", candidate)
+            if not path_match:
+                cursor += 1
+                continue
+            value = path_match.group(1).strip()
+            if value in {"|", "|-", ">", ">-"}:
+                path_indent = indent
+                cursor += 1
+                while cursor < len(lines):
+                    item = lines[cursor]
+                    item_indent = len(item) - len(item.lstrip())
+                    if item.strip() and item_indent <= path_indent:
+                        break
+                    item_value = item.strip()
+                    if item_value and not item_value.startswith(("#", "!")):
+                        uploaded.add(item_value.strip("'\""))
+                    cursor += 1
+                continue
+            if value and not value.startswith("!"):
+                uploaded.add(value.strip("'\""))
+            cursor += 1
+    return uploaded
+
+
+def _artifact_path_contains(output_path: str, upload_path: str) -> bool:
+    output = output_path.strip("'\"").rstrip("/")
+    uploaded = upload_path.strip("'\"").rstrip("/")
+    if not output or not uploaded:
+        return False
+    if any(marker in uploaded for marker in ("*", "?", "[")):
+        return fnmatch(output, uploaded)
+    return output == uploaded or output.startswith(uploaded + "/")
+
+
+def _lambda_configuration_query_is_allowlisted(command: str) -> bool:
+    match = re.search(
+        r"(?:^|\s)--query\s+(?P<query>'[^']*'|\"[^\"]*\"|[^\s]+)",
+        command,
+    )
+    if not match:
+        return False
+    query = match.group("query").strip("'\"")
+    if re.fullmatch(
+        r"(?i)(?:Configuration(?:\.Environment)?|Environment(?:\.Variables)?)",
+        query,
+    ):
+        return False
+    for pattern in (
+        r"(?i)(?:^|[{,])\s*Configuration\s*:\s*Configuration\s*(?:[,}]|$)",
+        r"(?i)(?:^|[{,])\s*Environment\s*:\s*Environment\s*(?:[,}]|$)",
+        r"(?i)(?:^|[{,])\s*Variables\s*:\s*Environment\.Variables\s*(?:[,}]|$)",
+        r"(?i)(?:api[_-]?key|secret|token|password|credential)",
+    ):
+        if re.search(pattern, query):
+            return False
+    without_leaf_references = re.sub(
+        r"Environment\.Variables\.[A-Za-z_][A-Za-z0-9_]*",
+        "",
+        query,
+    )
+    return "Environment.Variables" not in without_leaf_references
+
+
+def _workflow_artifact_lambda_configuration_exposures(
+    paths: Iterable[Path],
+) -> list[str]:
+    exposures: list[str] = []
+    operation_pattern = "|".join(
+        re.escape(value)
+        for value in _SECRET_BEARING_LAMBDA_CONFIGURATION_OPERATIONS
+    )
+    for path in sorted(paths):
+        text = path.read_text(encoding="utf-8")
+        uploaded = _uploaded_artifact_paths(text)
+        if not uploaded:
+            continue
+        for command in _continued_shell_commands(text):
+            operation = re.search(
+                rf"\baws\s+lambda\s+(?P<operation>{operation_pattern})\b",
+                command,
+            )
+            if not operation:
+                continue
+            redirect = re.search(
+                r"(?:^|\s)(?:[12]?>)\s*(?P<path>[^\s]+)",
+                command,
+            )
+            if not redirect:
+                continue
+            output_path = redirect.group("path").strip("'\"")
+            if not any(
+                _artifact_path_contains(output_path, upload_path)
+                for upload_path in uploaded
+            ):
+                continue
+            if _lambda_configuration_query_is_allowlisted(command):
+                continue
+            exposures.append(
+                f"{path.name}:{operation.group('operation')}:{output_path}"
+            )
+    return sorted(exposures)
+
 def _invokes_training(text: str) -> bool:
     # Workflow shell payloads commonly escape JSON quotes (for example,
     # {\"mode\":\"scheduled\"}). Normalize one-or-more escape characters
@@ -121,6 +273,38 @@ def _automatic_trigger_types(trigger_block: str) -> list[str]:
         trigger_types.append("push")
     return trigger_types
 
+
+
+def _all_automatic_trigger_types(trigger_block: str) -> list[str]:
+    return sorted(
+        {
+            match.group(1)
+            for match in re.finditer(
+                r"(?m)^  ([A-Za-z_][A-Za-z0-9_-]*):\s*$",
+                trigger_block,
+            )
+            if match.group(1) != "workflow_dispatch"
+        }
+    )
+
+
+def _manual_only_mutation_workflow_errors(paths: Iterable[Path]) -> list[str]:
+    workflows = {path.name: path for path in paths}
+    errors: list[str] = []
+    for name in sorted(MANUAL_ONLY_ARTIFACT_HARDENED_MUTATION_WORKFLOWS):
+        path = workflows.get(name)
+        if path is None:
+            errors.append(f"manual_only_mutation_workflow_missing:{name}")
+            continue
+        trigger = _trigger_block(path.read_text(encoding="utf-8"))
+        if not _workflow_dispatch_enabled(trigger):
+            errors.append(f"manual_only_mutation_dispatch_missing:{name}")
+        automatic = _all_automatic_trigger_types(trigger)
+        if automatic:
+            errors.append(
+                f"automatic_mutation_trigger:{name}:{'+'.join(automatic)}"
+            )
+    return errors
 
 def _workflow_dispatch_targets(text: str, known_workflows: set[str]) -> set[str]:
     """Resolve static workflow-dispatch targets used by repository workflows."""
@@ -303,10 +487,22 @@ def verify(root: Path = Path(".")) -> dict[str, object]:
             if required not in recovery:
                 errors.append(f"recovery_acceptance_contract_missing:{required}")
 
+        workflow_paths = list(WORKFLOW_ROOT.glob("*.y*ml"))
         workflow_errors, manual_trainer_count, automatic_chains = _workflow_errors(
-            WORKFLOW_ROOT.glob("*.y*ml")
+            workflow_paths
         )
         errors.extend(workflow_errors)
+        artifact_configuration_exposures = (
+            _workflow_artifact_lambda_configuration_exposures(workflow_paths)
+        )
+        errors.extend(
+            "workflow_artifact_lambda_configuration_exposure:" + exposure
+            for exposure in artifact_configuration_exposures
+        )
+        manual_only_mutation_errors = (
+            _manual_only_mutation_workflow_errors(workflow_paths)
+        )
+        errors.extend(manual_only_mutation_errors)
 
         for required in (
             "MLBMLTrainingEvery6Hours",
@@ -329,6 +525,12 @@ def verify(root: Path = Path(".")) -> dict[str, object]:
             ),
             "githubManualTrainerWorkflowCount": manual_trainer_count,
             "automaticTrainerDispatchChains": automatic_chains,
+            "workflowArtifactLambdaConfigurationExposures": (
+                artifact_configuration_exposures
+            ),
+            "manualOnlyMutationWorkflowErrors": (
+                manual_only_mutation_errors
+            ),
             "recoveryManualOnly": bool(
                 _workflow_dispatch_enabled(recovery_trigger)
                 and not _automatic_trigger_types(recovery_trigger)
