@@ -61,6 +61,14 @@ _JOINED_RECEIPT_ID_FIELD = "r7SourceHonestTrustedReceiptId"
 _PROSPECTIVE_READ_REPAIR_VERSION_FIELD = (
     "prospectiveTrainerReadRepairVersion"
 )
+MARKET_PROBABILITY_PROJECTION_FIELDS = (
+    "homeMarketDeVigProbability",
+    "awayMarketDeVigProbability",
+    "marketProbability",
+    "marketProbabilitySourceAtUtc",
+    "marketProbabilityVersion",
+    "marketProbabilityFingerprint",
+)
 _JOINED_RECEIPT_REGISTRY_MAX_ITEMS = 4096
 _JOINED_RECEIPT_REGISTRY: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 _JOINED_RECEIPT_REGISTRY_LOCK = threading.RLock()
@@ -352,6 +360,18 @@ def _locked_snapshot_reference(locked: Mapping[str, Any]) -> Dict[str, Any]:
     return copy.deepcopy(dict(value)) if isinstance(value, Mapping) else {}
 
 
+def _trusted_market_probability_projection(
+    locked: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Copy only the exact immutable market fields emitted by the join."""
+
+    return {
+        field: copy.deepcopy(locked.get(field))
+        for field in MARKET_PROBABILITY_PROJECTION_FIELDS
+        if field in locked and locked.get(field) not in (None, "")
+    }
+
+
 def _installed_prospective_join_version(
     labels: Any,
     original_join: Any,
@@ -465,6 +485,7 @@ def _trusted_join_material(
             "lockedAmericanOdds",
             locked.get("americanOdds"),
         ),
+        **_trusted_market_probability_projection(locked),
         "predictionPersistedAtUtc": locked.get(
             "predictionPersistedAtUtc"
         ),

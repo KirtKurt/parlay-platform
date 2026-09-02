@@ -14,6 +14,7 @@ if str(HELLO_WORLD) not in sys.path:
 
 import mlb_canonical_final_labels_v1 as canonical
 import mlb_ml_dual_model_v2 as dual_model
+import mlb_r7_source_honest_training_repair as source_honest_repair
 
 
 def _unlabeled_row() -> dict:
@@ -58,6 +59,16 @@ def test_both_canonical_loader_projections_restore_the_exact_lock_fields() -> No
         for field in canonical.MARKET_PROBABILITY_PROJECTION_FIELDS
     }
     assert projected is not locked
+
+
+def test_canonical_and_trusted_receipt_market_projections_stay_identical() -> None:
+    assert source_honest_repair.MARKET_PROBABILITY_PROJECTION_FIELDS == (
+        canonical.MARKET_PROBABILITY_PROJECTION_FIELDS
+    )
+    locked = _unlabeled_row()
+    assert source_honest_repair._trusted_market_probability_projection(
+        locked
+    ) == canonical._market_probability_projection(locked)
 
 
 def test_exact_top_level_pair_is_consumed_without_mutating_the_vector() -> None:
