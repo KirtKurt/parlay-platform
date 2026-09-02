@@ -80,8 +80,12 @@ jobs:
           test -n "$TRAINER_FN" && test "$TRAINER_FN" != None
           echo "pull_fn=$PULL_FN" >> "$GITHUB_OUTPUT"
           echo "trainer_fn=$TRAINER_FN" >> "$GITHUB_OUTPUT"
-          aws lambda get-function-configuration --function-name "$PULL_FN" --region "$AWS_REGION" > /tmp/pull-before.json
-          aws lambda get-function-configuration --function-name "$TRAINER_FN" --region "$AWS_REGION" > /tmp/trainer-before.json
+          aws lambda get-function-configuration --function-name "$PULL_FN" --region "$AWS_REGION" \
+            --query '{FunctionName:FunctionName,CodeSha256:CodeSha256}' \
+            --output json > /tmp/pull-before.json
+          aws lambda get-function-configuration --function-name "$TRAINER_FN" --region "$AWS_REGION" \
+            --query '{FunctionName:FunctionName}' \
+            --output json > /tmp/trainer-before.json
 
       - name: Package and deploy only MLB audited-pull code
         env:
@@ -95,9 +99,13 @@ jobs:
             --function-name "$PULL_FN" \
             --zip-file fileb:///tmp/mlb-r7-feature-repair/mlb-audited-pull.zip \
             --region "$AWS_REGION" \
+            --query '{FunctionName:FunctionName,CodeSha256:CodeSha256}' \
+            --output json \
             > /tmp/mlb-r7-feature-repair/evidence/pull-update.json
           aws lambda wait function-updated-v2 --function-name "$PULL_FN" --region "$AWS_REGION"
           aws lambda get-function-configuration --function-name "$PULL_FN" --region "$AWS_REGION" \
+            --query '{FunctionName:FunctionName,Handler:Handler,State:State,LastUpdateStatus:LastUpdateStatus,CodeSha256:CodeSha256}' \
+            --output json \
             > /tmp/mlb-r7-feature-repair/evidence/pull-after.json
           python - <<'PY'
           import json
@@ -120,9 +128,13 @@ jobs:
             --function-name "$TRAINER_FN" \
             --memory-size 4096 \
             --region "$AWS_REGION" \
+            --query '{FunctionName:FunctionName,MemorySize:MemorySize}' \
+            --output json \
             > /tmp/mlb-r7-feature-repair/evidence/trainer-capacity-update.json
           aws lambda wait function-updated-v2 --function-name "$TRAINER_FN" --region "$AWS_REGION"
           aws lambda get-function-configuration --function-name "$TRAINER_FN" --region "$AWS_REGION" \
+            --query '{FunctionName:FunctionName,Handler:Handler,MemorySize:MemorySize,State:State,LastUpdateStatus:LastUpdateStatus}' \
+            --output json \
             > /tmp/mlb-r7-feature-repair/evidence/trainer-after.json
           python - <<'PY'
           import json
