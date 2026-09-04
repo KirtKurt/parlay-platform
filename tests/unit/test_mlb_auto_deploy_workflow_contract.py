@@ -51,3 +51,13 @@ def test_prospective_deploy_preserves_accuracy_and_valid_yaml() -> None:
     assert "TargetDailyAccuracy='0.80'" in source
     assert "AWS_ML_RANKED_ENSEMBLE" in source
     assert "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble" in source
+
+
+def test_deploy_uses_exact_trigger_sha_and_runs_repair_contracts() -> None:
+    source = _source()
+
+    assert "ref: ${{ github.sha }}" in source
+    assert 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in source
+    assert "tests/unit/test_mlb_auto_decision_evidence.py" in source
+    assert "tests/unit/test_mlb_auto_pregame_odds_replay.py" in source
+    assert "mlb_auto_llm/decision_evidence.py" in source
