@@ -499,6 +499,17 @@ _DEPLOYMENT_DECIMAL_ODDS_SMOKE_EVENT = {
     "mode": DEPLOYMENT_DECIMAL_ODDS_SMOKE_MODE,
     "contractVersion": DEPLOYMENT_DECIMAL_ODDS_SMOKE_CONTRACT,
 }
+_DEPLOYMENT_DECISION_MAX_ATTEMPTS = 3
+_DEPLOYMENT_RETRYABLE_DECISION_ERRORS = {
+    "BEDROCK_AUTHORITY_UNAVAILABLE",
+    "LLM_WINNER_NOT_EXACT_TEAM",
+    "DEPLOYMENT_SMOKE_DECIMAL_ODDS_FAVORITE_NOT_SELECTED",
+    "DEPLOYMENT_SMOKE_LOSER_CONTRACT_INVALID",
+    "DEPLOYMENT_SMOKE_MARKET_FAVORITE_INTERPRETATION_INVALID",
+    "DEPLOYMENT_SMOKE_MARKET_FAVORITE_PRICE_MISSING",
+    "DEPLOYMENT_SMOKE_MARKET_FAVORITE_PRICE_INVALID",
+    "DEPLOYMENT_SMOKE_DECIMAL_ODDS_INTERPRETATION_MISSING",
+}
 
 
 def _deployment_decimal_odds_decision_smoke(
@@ -589,32 +600,47 @@ def _deployment_decimal_odds_decision_smoke(
         )
 
     base._put = reject_write
+    decision: Dict[str, Any] = {}
+    model_validation_errors: List[str] = []
+    model_validation_attempts = 0
     try:
-        decision = _strict_bedrock_decision(
-            game,
-            {
-                "targetDailyAccuracy": base.TARGET_ACCURACY,
-                "recentDays": 0,
-                "recentGradedPicks": 0,
-                "recentCorrectPicks": 0,
-                "recentAccuracy": None,
-                "decisionWeights": {
-                    "liveBaseballContext": 0.0,
-                    "historicalModelFindings": 0.0,
-                    "moneylineMovement": 0.0,
-                    "currentMarketLevel": 1.0,
-                },
-                "marketFavoriteFallbackAllowed": False,
-                "policy": (
-                    "Deployment contract: only normalized h2h consensus is "
-                    "available, so select its market favorite."
-                ),
-            },
-            deployment_smoke_contract={
-                "expectedMarketFavorite": away,
-                "expectedMarketFavoritePrice": away_price,
-            },
-        )
+        for attempt in range(1, _DEPLOYMENT_DECISION_MAX_ATTEMPTS + 1):
+            model_validation_attempts = attempt
+            try:
+                decision = _strict_bedrock_decision(
+                    game,
+                    {
+                        "targetDailyAccuracy": base.TARGET_ACCURACY,
+                        "recentDays": 0,
+                        "recentGradedPicks": 0,
+                        "recentCorrectPicks": 0,
+                        "recentAccuracy": None,
+                        "decisionWeights": {
+                            "liveBaseballContext": 0.0,
+                            "historicalModelFindings": 0.0,
+                            "moneylineMovement": 0.0,
+                            "currentMarketLevel": 1.0,
+                        },
+                        "marketFavoriteFallbackAllowed": False,
+                        "policy": (
+                            "Deployment contract: only normalized h2h consensus is "
+                            "available, so select its market favorite."
+                        ),
+                    },
+                    deployment_smoke_contract={
+                        "expectedMarketFavorite": away,
+                        "expectedMarketFavoritePrice": away_price,
+                    },
+                )
+                break
+            except RuntimeError as exc:
+                code = str(exc).split(":", 1)[0]
+                if (
+                    code not in _DEPLOYMENT_RETRYABLE_DECISION_ERRORS
+                    or attempt == _DEPLOYMENT_DECISION_MAX_ATTEMPTS
+                ):
+                    raise
+                model_validation_errors.append(code)
     finally:
         base._put = original_put
 
@@ -644,6 +670,8 @@ def _deployment_decimal_odds_decision_smoke(
         "cardMutationAttempted": False,
         "historyMutationAttempted": False,
         "mlFallbackAttempted": False,
+        "modelValidationAttempts": model_validation_attempts,
+        "modelValidationErrorsBeforeSuccess": model_validation_errors,
         "decisionAuthority": decision.get("authority"),
         "modelId": decision.get("modelId"),
         "winner": decision.get("winner"),
