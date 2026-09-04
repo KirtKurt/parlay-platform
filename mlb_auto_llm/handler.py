@@ -20,7 +20,7 @@ ET = ZoneInfo("America/New_York")
 TABLE_NAME = os.environ.get("MLB_AUTO_TABLE", "")
 ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
 BBS_SECRET_ARN = os.environ.get("BBS_API_SECRET_ARN", "")
-TARGET_ACCURACY = float(os.environ.get("MLB_AUTO_TARGET_DAILY_ACCURACY", "0.70"))
+TARGET_ACCURACY = float(os.environ.get("MLB_AUTO_TARGET_DAILY_ACCURACY", "0.80"))
 CARD_LEAD_MINUTES = int(os.environ.get("MLB_AUTO_CARD_LEAD_MINUTES_BEFORE_SECOND_GAME", "45"))
 FIRST_GAME_SAFETY_MINUTES = int(os.environ.get("MLB_AUTO_FIRST_GAME_SAFETY_MINUTES", "10"))
 FINAL_WINDOW_MINUTES = int(os.environ.get("MLB_AUTO_FINAL_COLLECTION_WINDOW_MINUTES", "20"))
@@ -617,15 +617,25 @@ def _recent_accuracy_state() -> Dict[str, Any]:
     graded = sum(int(row.get("graded") or 0) for row in rows)
     correct = sum(int(row.get("correct") or 0) for row in rows)
     aggregate = correct / graded if graded else None
-    market_anchor = 0.72 if aggregate is not None and aggregate < TARGET_ACCURACY else 0.55
     return {
         "targetDailyAccuracy": TARGET_ACCURACY,
+        "targetRole": "long_term_goal_not_a_decision_weight_or_advancement_gate",
         "recentDays": len(rows),
         "recentGradedPicks": graded,
         "recentCorrectPicks": correct,
         "recentAccuracy": round(aggregate, 6) if aggregate is not None else None,
-        "marketAnchorWeight": market_anchor,
-        "policy": "If recent accuracy is below target, constrain the LLM more tightly to multi-book market consensus while still considering independent baseball context.",
+        "decisionWeights": {
+            "liveBaseballContext": 0.40,
+            "historicalModelFindings": 0.30,
+            "moneylineMovement": 0.20,
+            "currentMarketLevel": 0.10,
+        },
+        "marketFavoriteFallbackAllowed": False,
+        "policy": (
+            "Recent accuracy is diagnostic only. Decisions use immutable pregame "
+            "live context, historical model findings, moneyline movement, and the "
+            "current market level; missing evidence fails closed."
+        ),
     }
 
 
@@ -666,6 +676,7 @@ def _bedrock_decision(game: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, 
             "consensus": game.get("marketConsensus"),
         },
         "bigBallsDataPro": game.get("bbs"),
+        "decisionEvidence": game.get("decisionEvidence"),
         "autonomyState": state,
     }
     prompt = (
@@ -674,7 +685,10 @@ def _bedrock_decision(game: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, 
         "The Odds API (multi-book prices, movement and all available markets/props), and Big Balls Sports Data Pro "
         "(lineups, odds, stats, form/context and other returned baseball intelligence). Never invent missing data. "
         f"The long-run operational goal is at least {TARGET_ACCURACY:.0%} correct daily picks, but do not fake confidence or claim a guarantee. "
-        f"When evidence conflicts, use the marketAnchorWeight={state.get('marketAnchorWeight')} as the default weight on normalized multi-book h2h consensus. "
+        "Use the fixed decisionEvidence weights for live baseball context, "
+        "historical model findings, pregame moneyline movement, and current "
+        "market level. Recent accuracy is diagnostic only. Never default to the "
+        "market favorite. "
         "Return ONLY JSON with keys winner, loser, probability, confidence, rationale, source_weights, disagreements. "
         f"winner must be exactly {home!r} or {away!r}; loser must be the other team; probability must be between 0.50 and 0.95.\n"
         "DATA=" + json.dumps(_compact_for_llm(packet), separators=(",", ":"), default=str)
@@ -711,24 +725,10 @@ def _bedrock_decision(game: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, 
             }
         except Exception as exc:
             errors.append({"modelId": model_id, "error": type(exc).__name__})
-    consensus = game.get("marketConsensus") or {}
-    if consensus.get("available"):
-        winner = str(consensus.get("marketFavorite"))
-        loser = away if winner == home else home
-        return {
-            "ok": True,
-            "authority": "FALLBACK_MARKET_CONSENSUS",
-            "modelId": None,
-            "winner": winner,
-            "loser": loser,
-            "probability": float(consensus.get("marketFavoriteProbability") or 0.5),
-            "confidence": "FALLBACK",
-            "rationale": "All configured Bedrock models failed; used normalized multi-book h2h consensus so the autonomous full card is not silently omitted.",
-            "sourceWeights": {"theOddsApiConsensus": 1.0},
-            "disagreements": [],
-            "llmErrors": errors,
-        }
-    raise RuntimeError("NO_LLM_OR_MARKET_FALLBACK_AVAILABLE")
+    raise RuntimeError(
+        "BEDROCK_DECISION_UNAVAILABLE_NO_MARKET_FAVORITE_FALLBACK:"
+        + json.dumps(errors, sort_keys=True, separators=(",", ":"))
+    )
 
 
 def _assemble(slate: str, *, expanded: bool) -> Dict[str, Any]:

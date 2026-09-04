@@ -151,6 +151,7 @@ def test_replays_only_real_pregame_odds_snapshot():
     status = result["sourceStatus"]["theOddsApi"]
     assert status["persistedPregameRecoveryCount"] == 1
     assert status["postStartOddsFabricationAllowed"] is False
+    assert namespace.TABLE.calls[0]["ConsistentRead"] is True
 
 
 def test_rejects_packet_captured_after_first_pitch():

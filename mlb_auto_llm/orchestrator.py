@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Set
 
@@ -95,6 +96,116 @@ def _league_context() -> Dict[str, Any]:
     }
 
 
+def _official_bullpen_context(slate: str, games: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Measure recent relief workload from official MLB boxscores."""
+
+    slate_date = datetime.strptime(slate, "%Y-%m-%d").date()
+    start_date = slate_date - timedelta(days=3)
+    team_ids = {
+        str((game.get(side) or {}).get("id"))
+        for game in games
+        for side in ("home", "away")
+        if (game.get(side) or {}).get("id")
+    }
+    summaries: Dict[str, Dict[str, Any]] = {
+        team_id: {
+            "available": True,
+            "source": "MLB Stats API official final boxscores",
+            "windowStartDate": start_date.isoformat(),
+            "windowEndDate": (slate_date - timedelta(days=1)).isoformat(),
+            "reliefPitches1d": 0,
+            "reliefPitches3d": 0,
+            "relieverAppearances1d": 0,
+            "relieverAppearances3d": 0,
+            "relievers": {},
+        }
+        for team_id in team_ids
+    }
+    params = base.urllib.parse.urlencode(
+        {
+            "sportId": "1",
+            "startDate": start_date.strftime("%m/%d/%Y"),
+            "endDate": (slate_date - timedelta(days=1)).strftime("%m/%d/%Y"),
+            "hydrate": "team",
+        }
+    )
+    payload, _ = base._http_json(
+        "https://statsapi.mlb.com/api/v1/schedule?" + params,
+        timeout=20,
+    )
+    completed = [
+        raw
+        for date_row in payload.get("dates") or []
+        for raw in date_row.get("games") or []
+        if str(((raw.get("status") or {}).get("abstractGameState") or "")).upper()
+        == "FINAL"
+    ]
+
+    def fetch(raw: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        game_pk = str(raw.get("gamePk") or "")
+        boxscore, _ = base._http_json(
+            f"https://statsapi.mlb.com/api/v1/game/{game_pk}/boxscore",
+            timeout=15,
+        )
+        return raw, boxscore
+
+    results: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
+    if completed:
+        with ThreadPoolExecutor(max_workers=min(12, len(completed))) as pool:
+            futures = [pool.submit(fetch, raw) for raw in completed]
+            for future in as_completed(futures):
+                results.append(future.result())
+
+    yesterday = (slate_date - timedelta(days=1)).isoformat()
+    for raw, boxscore in results:
+        game_date = str(raw.get("officialDate") or "")
+        for side in ("home", "away"):
+            team = ((raw.get("teams") or {}).get(side) or {}).get("team") or {}
+            team_id = str(team.get("id") or "")
+            if team_id not in summaries:
+                continue
+            box_team = ((boxscore.get("teams") or {}).get(side) or {})
+            players = box_team.get("players") or {}
+            for pitcher_id in box_team.get("pitchers") or []:
+                player = players.get(f"ID{pitcher_id}") or {}
+                pitching = ((player.get("stats") or {}).get("pitching") or {})
+                if int(pitching.get("gamesStarted") or 0) > 0:
+                    continue
+                pitches = int(pitching.get("numberOfPitches") or 0)
+                if pitches <= 0:
+                    continue
+                summary = summaries[team_id]
+                summary["reliefPitches3d"] += pitches
+                summary["relieverAppearances3d"] += 1
+                if game_date == yesterday:
+                    summary["reliefPitches1d"] += pitches
+                    summary["relieverAppearances1d"] += 1
+                relievers = summary["relievers"]
+                key = str(pitcher_id)
+                entry = relievers.setdefault(
+                    key,
+                    {
+                        "id": key,
+                        "name": ((player.get("person") or {}).get("fullName")),
+                        "pitches1d": 0,
+                        "pitches3d": 0,
+                        "appearances3d": 0,
+                    },
+                )
+                entry["pitches3d"] += pitches
+                entry["appearances3d"] += 1
+                if game_date == yesterday:
+                    entry["pitches1d"] += pitches
+    for summary in summaries.values():
+        summary["relievers"] = sorted(
+            summary["relievers"].values(),
+            key=lambda row: (-row["pitches3d"], str(row["id"])),
+        )
+        summary["completedGamesObserved"] = len(results)
+        summary["postStartDataIncluded"] = False
+    return summaries
+
+
 def _record_id(value: Any) -> str:
     if not isinstance(value, dict):
         return ""
@@ -164,8 +275,17 @@ def _assemble_with_full_bbd(slate: str, *, expanded: bool) -> Dict[str, Any]:
     packet = _ORIGINAL_ASSEMBLE(slate, expanded=expanded)
     if expanded:
         league = _league_context()
+        bullpen = _official_bullpen_context(slate, packet.get("games") or [])
         for game in packet.get("games") or []:
             game["bbsLeagueContext"] = copy.deepcopy(league)
+            game["officialBullpenContext"] = {
+                "home": copy.deepcopy(
+                    bullpen.get(str((game.get("home") or {}).get("id"))) or {}
+                ),
+                "away": copy.deepcopy(
+                    bullpen.get(str((game.get("away") or {}).get("id"))) or {}
+                ),
+            }
         packet.setdefault("sourceStatus", {}).setdefault("bigBallsDataPro", {})["expandedCoverage"] = {
             "matchDetail": True,
             "matchOdds": True,

@@ -10,6 +10,9 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import handler as base
 import model_gateway as legacy_gateway
 import production_model_gateway as production_gateway
+import decision_evidence
+import ml_authority
+import pregame_odds_replay
 
 
 def _invoke_endpoint_native_chain(*args: Any, **kwargs: Any) -> Dict[str, Any]:
@@ -213,6 +216,21 @@ def _model_card(packet: Dict[str, Any]) -> Dict[str, Any]:
         return build_ml_card(packet, bedrock_failure=str(exc))
 
 
+def _attach_decision_evidence(packet: Dict[str, Any]) -> Dict[str, Any]:
+    slate = str(packet.get("slateDateEt") or "")
+    historical_payload = ml_authority.fetch_predictions(slate)
+    history = pregame_odds_replay._packet_history(base, slate)
+    return decision_evidence.attach(
+        packet,
+        historical_payload=historical_payload,
+        packet_history=history,
+        normalize=base._normalize,
+        parse=base._parse,
+        iso=base._iso,
+        market_consensus=base._market_consensus,
+    )
+
+
 def _build_card_three_source_model(packet: Dict[str, Any]) -> Dict[str, Any]:
     packet = production._apply_source_coverage(packet)
     missing = production._missing_three_source_games(packet)
@@ -220,6 +238,17 @@ def _build_card_three_source_model(packet: Dict[str, Any]) -> Dict[str, Any]:
         raise RuntimeError(
             "THREE_SOURCE_GAME_COVERAGE_INCOMPLETE:"
             + json.dumps(missing, sort_keys=True, separators=(",", ":"))
+        )
+
+    packet = _attach_decision_evidence(packet)
+    if packet.get("decisionEvidenceComplete") is not True:
+        raise RuntimeError(
+            "MLB_DECISION_EVIDENCE_INCOMPLETE:"
+            + json.dumps(
+                packet.get("decisionEvidenceMissingByGame") or [],
+                sort_keys=True,
+                separators=(",", ":"),
+            )
         )
 
     card = _model_card(packet)
@@ -251,6 +280,19 @@ def _build_card_three_source_model(packet: Dict[str, Any]) -> Dict[str, Any]:
     card["mlAuthorityComplete"] = authorities == {ML_AUTHORITY}
     card["decisionAuthority"] = next(iter(authorities))
     card["sourcePresenceByGamePk"] = packet.get("sourcePresenceByGamePk") or {}
+    champion_qualified = packet.get("qualifiedHistoricalChampionForEveryGame") is True
+    card["decisionEvidenceVersion"] = packet.get("decisionEvidenceVersion")
+    card["decisionEvidenceComplete"] = True
+    card["historicalChampionQualified"] = champion_qualified
+    card["officialProductionPickCount"] = len(picks) if champion_qualified else 0
+    card["productionAuthorityBlocked"] = not champion_qualified
+    card["productionAuthorityState"] = (
+        "QUALIFIED_HISTORICAL_CHAMPION"
+        if champion_qualified
+        else "SHADOW_CANDIDATES_ONLY_NO_QUALIFIED_CHAMPION"
+    )
+    for pick in picks:
+        pick["officialProductionPick"] = champion_qualified
     return card
 
 
