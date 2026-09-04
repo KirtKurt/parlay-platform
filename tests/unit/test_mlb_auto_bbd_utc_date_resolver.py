@@ -110,49 +110,82 @@ def test_bbd_match_rows_accept_the_documented_array_contract() -> None:
     assert base._bbs_payload_rows({"data": [], "meta": {}, "error": None}) == []
 
 
-def test_bbd_match_rows_accept_observed_scores_value_envelope() -> None:
+def test_bbd_match_rows_quarantine_scores_value_as_non_match_data() -> None:
     payload = {
-        "data": {"scores": {"value": [{"match_id": "one"}]}},
+        "data": {
+            "scores": {
+                "value": [
+                    {
+                        "match_id": "one",
+                        "home": 4,
+                        "away": 2,
+                        "status": "final",
+                        "updated_at": "2026-09-05T22:40:00Z",
+                    }
+                ]
+            }
+        },
         "meta": {},
         "error": None,
     }
 
-    rows = base._bbs_payload_rows(payload)
-
-    assert rows == [{"match_id": "one"}]
-    assert rows[0] is not payload["data"]["scores"]["value"][0]
-    assert base._bbs_payload_envelope(payload) == "data.scores.value"
+    assert base._bbs_is_scores_field_envelope(payload) is True
+    with pytest.raises(RuntimeError, match="BBS_MATCHES_NOT_LIST"):
+        base._bbs_payload_rows(payload)
 
 
-def test_bbd_resolver_crosswalks_observed_scores_value_rows(monkeypatch) -> None:
+def test_bbd_resolver_uses_stored_catalogue_for_scores_field_envelope(
+    monkeypatch,
+) -> None:
     official = {
         "games": [
             _game("1", "2026-09-05T22:40:00Z", "Away One", "Home One")
         ]
     }
-    provider_row = {
-        "match_id": "event-1",
-        "scheduled_at": "2026-09-05T22:40:00Z",
-        "away": {"name": "Away One"},
-        "home": {"name": "Home One"},
-    }
-
-    monkeypatch.setattr(
-        base,
-        "_bbs_get",
-        lambda path, params: {
-            "data": {"scores": {"value": [provider_row]}},
-            "meta": {},
-            "error": None,
-        },
+    provider_row = _event(
+        "event-1", "2026-09-05T22:40:00Z", "Away One", "Home One"
     )
+    calls = []
+
+    def fake_get(path, params):
+        calls.append((path, dict(params)))
+        if path == "/v1/matches":
+            return {
+                "data": {
+                    "scores": {
+                        "value": [
+                            {
+                                "match_id": "event-1",
+                                "home": None,
+                                "away": None,
+                                "status": "scheduled",
+                                "updated_at": "2026-09-05T00:00:00Z",
+                            }
+                        ]
+                    }
+                },
+                "meta": {},
+                "error": None,
+            }
+        assert path == "/v1/stored/matches"
+        return {"data": [provider_row], "meta": {}, "error": None}
+
+    monkeypatch.setattr(base, "_bbs_get", fake_get)
 
     result = base._bbs_matches("2026-09-05", official)
 
     assert result["events"] == [provider_row]
     assert result["meta"]["matchedOfficialGameCount"] == 1
     assert result["meta"]["missingOfficialGamePks"] == []
-    assert result["meta"]["queries"][0]["responseEnvelope"] == "data.scores.value"
+    assert result["meta"]["storedCatalogueFallbackUsed"] is True
+    assert result["meta"]["queries"][0]["responsePath"] == "/v1/stored/matches"
+    assert result["meta"]["queries"][0]["liveEnvelopeQuarantined"] == (
+        "data.scores.value"
+    )
+    assert [path for path, _ in calls] == [
+        "/v1/matches",
+        "/v1/stored/matches",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -226,6 +259,31 @@ def test_bbd_get_requires_the_standard_live_envelope(
 
     with pytest.raises(RuntimeError, match=f"BBS_RESPONSE_INVALID:{reason}"):
         base._bbs_get("/v1/matches", {"sport": "baseball"})
+
+
+def test_bbd_get_accepts_catalogue_envelope_only_on_stored_route(
+    monkeypatch,
+) -> None:
+    payload = {
+        "data": [],
+        "pagination": {"limit": 200, "offset": 0, "total": 0},
+    }
+    monkeypatch.setattr(
+        base,
+        "_http_json",
+        lambda *args, **kwargs: (payload, {}),
+    )
+    monkeypatch.setattr(base, "_bbs_key", lambda: "secret")
+
+    stored = base._bbs_get(
+        "/v1/stored/matches", {"sport": "baseball", "league": "mlb"}
+    )
+
+    assert stored["data"] == []
+    assert stored["error"] is None
+    assert stored["meta"]["catalogueContract"] == "data_plus_pagination"
+    with pytest.raises(RuntimeError, match="BBS_RESPONSE_INVALID:ENVELOPE_KEYS"):
+        base._bbs_get("/v1/matches", {"sport": "baseball", "league": "mlb"})
 
 
 def test_bbd_resolver_rejects_partial_slate_when_one_utc_page_drifts(

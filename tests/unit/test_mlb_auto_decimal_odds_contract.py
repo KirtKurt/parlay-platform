@@ -342,6 +342,37 @@ def test_deployment_smoke_runs_deployed_strict_decision_without_mutation(
     assert result["cardMutationAttempted"] is False
     assert result["historyMutationAttempted"] is False
     assert result["mlFallbackAttempted"] is False
+    assert result["modelValidationAttempts"] == 1
+    assert result["modelValidationErrorsBeforeSuccess"] == []
+
+
+def test_deployment_smoke_retries_invalid_model_shape_without_mutation(
+    monkeypatch,
+) -> None:
+    responses = [
+        {
+            "ok": True,
+            "modelId": "mantle::us-east-1::test-bedrock-model",
+            "text": "not valid decision JSON",
+        },
+        _deployment_smoke_model_response(),
+    ]
+    original_put = subject.base._put
+    monkeypatch.setattr(
+        subject,
+        "invoke_chain_text",
+        lambda *_args, **_kwargs: responses.pop(0),
+    )
+
+    result = subject.lambda_handler(_deployment_smoke_event(), None)
+
+    assert responses == []
+    assert result["modelValidationAttempts"] == 2
+    assert result["modelValidationErrorsBeforeSuccess"] == [
+        "LLM_WINNER_NOT_EXACT_TEAM"
+    ]
+    assert result["persistenceAttempted"] is False
+    assert subject.base._put is original_put
 
 
 def test_deployment_smoke_event_is_closed_not_configurable(monkeypatch) -> None:

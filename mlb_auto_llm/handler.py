@@ -343,15 +343,30 @@ def _bbs_get(path: str, params: Optional[Dict[str, Any]] = None) -> Any:
     payload, _ = _http_json(url, headers={"Authorization": f"Bearer {_bbs_key()}"}, timeout=15)
     if not isinstance(payload, dict):
         raise RuntimeError("BBS_RESPONSE_INVALID:NOT_OBJECT")
-    required = {"data", "meta", "error"}
-    if not required.issubset(payload):
-        keys = ",".join(sorted(str(key) for key in payload)[:12])
-        raise RuntimeError(f"BBS_RESPONSE_INVALID:ENVELOPE_KEYS[{keys}]")
     if payload.get("error") is not None:
         raise RuntimeError("BBS_RESPONSE_INVALID:REPORTED_ERROR")
-    if not isinstance(payload.get("meta"), dict):
-        raise RuntimeError("BBS_RESPONSE_INVALID:META_NOT_OBJECT")
-    return payload
+    required = {"data", "meta", "error"}
+    if required.issubset(payload):
+        if not isinstance(payload.get("meta"), dict):
+            raise RuntimeError("BBS_RESPONSE_INVALID:META_NOT_OBJECT")
+        return payload
+    # The provider's dedicated stored-match catalogue uses the separately
+    # observed `{data, pagination}` contract. Scope this exception to that
+    # exact endpoint and synthesize explicit provenance for downstream audit.
+    if (
+        path == "/v1/stored/matches"
+        and isinstance(payload.get("data"), list)
+        and isinstance(payload.get("pagination"), dict)
+    ):
+        value = copy.deepcopy(payload)
+        value["meta"] = {
+            "source": "stored-catalogue",
+            "catalogueContract": "data_plus_pagination",
+        }
+        value.setdefault("error", None)
+        return value
+    keys = ",".join(sorted(str(key) for key in payload)[:12])
+    raise RuntimeError(f"BBS_RESPONSE_INVALID:ENVELOPE_KEYS[{keys}]")
 
 
 def _bbs_shape(value: Any) -> str:
@@ -372,13 +387,6 @@ def _bbs_shape(value: Any) -> str:
 def _bbs_payload_rows(payload: Any) -> List[Dict[str, Any]]:
     data = payload.get("data") if isinstance(payload, dict) else None
     rows = data
-    # BBS's documented route returns data as an array. Its live score adapter
-    # also emits the observed provider-value envelope data.scores.value. Admit
-    # only that exact alternate path; do not recursively hunt for arbitrary
-    # lists or guess at matches/items/results wrappers.
-    if isinstance(data, dict) and set(data) == {"scores"}:
-        scores = data.get("scores")
-        rows = scores.get("value") if isinstance(scores, dict) else None
     if not isinstance(rows, list):
         meta = payload.get("meta") if isinstance(payload, dict) else None
         diagnostic = {
@@ -411,9 +419,15 @@ def _bbs_payload_rows(payload: Any) -> List[Dict[str, Any]]:
     return copy.deepcopy(rows)
 
 
-def _bbs_payload_envelope(payload: Any) -> str:
+def _bbs_is_scores_field_envelope(payload: Any) -> bool:
     data = payload.get("data") if isinstance(payload, dict) else None
-    return "data.array" if isinstance(data, list) else "data.scores.value"
+    scores = data.get("scores") if isinstance(data, dict) else None
+    return (
+        isinstance(data, dict)
+        and set(data) == {"scores"}
+        and isinstance(scores, dict)
+        and isinstance(scores.get("value"), list)
+    )
 
 
 def _bbs_event_identity(row: Dict[str, Any]) -> str:
@@ -494,14 +508,25 @@ def _bbs_matches(
     provider_meta: List[Dict[str, Any]] = []
 
     def collect(label: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
-        payload = _bbs_get("/v1/matches", params)
+        response_path = "/v1/matches"
+        payload = _bbs_get(response_path, params)
+        live_envelope_quarantined = None
+        if _bbs_is_scores_field_envelope(payload):
+            # This value contains score records, not match catalogue rows with
+            # team/start identity. Never award it BBS matchup coverage. Resolve
+            # identities through BBS's dedicated stored-match catalogue.
+            live_envelope_quarantined = "data.scores.value"
+            response_path = "/v1/stored/matches"
+            payload = _bbs_get(response_path, params)
         found = _bbs_payload_rows(payload)
         rows.extend(found)
         queries.append({
             "label": label,
             "params": copy.deepcopy(params),
             "count": len(found),
-            "responseEnvelope": _bbs_payload_envelope(payload),
+            "responsePath": response_path,
+            "responseEnvelope": "data.array",
+            "liveEnvelopeQuarantined": live_envelope_quarantined,
         })
         meta = payload.get("meta") if isinstance(payload, dict) else None
         if isinstance(meta, dict):
@@ -556,6 +581,10 @@ def _bbs_matches(
             "officialUtcDates": utc_dates,
             "queries": queries,
             "providerMeta": provider_meta,
+            "storedCatalogueFallbackUsed": any(
+                query.get("responsePath") == "/v1/stored/matches"
+                for query in queries
+            ),
             "unfilteredFallbackUsed": fallback_used,
             "expectedOfficialGameCount": len(official.get("games") or []),
             "matchedOfficialGameCount": len(matched),
