@@ -370,11 +370,22 @@ def _bbs_shape(value: Any) -> str:
 
 
 def _bbs_payload_rows(payload: Any) -> List[Dict[str, Any]]:
-    rows = payload.get("data") if isinstance(payload, dict) else None
+    data = payload.get("data") if isinstance(payload, dict) else None
+    rows = data
+    # BBS's documented route returns data as an array. Its live score adapter
+    # also emits the observed provider-value envelope data.scores.value. Admit
+    # only that exact alternate path; do not recursively hunt for arbitrary
+    # lists or guess at matches/items/results wrappers.
+    if isinstance(data, dict) and set(data) == {"scores"}:
+        scores = data.get("scores")
+        rows = scores.get("value") if isinstance(scores, dict) else None
     if not isinstance(rows, list):
         meta = payload.get("meta") if isinstance(payload, dict) else None
         diagnostic = {
-            "dataShape": _bbs_shape(rows),
+            "dataShape": _bbs_shape(data),
+            "scoresShape": _bbs_shape(data.get("scores"))
+            if isinstance(data, dict) and "scores" in data
+            else "missing",
             "metaKeys": sorted(str(key) for key in meta)[:12]
             if isinstance(meta, dict)
             else [],
@@ -398,6 +409,11 @@ def _bbs_payload_rows(payload: Any) -> List[Dict[str, Any]]:
             )
         )
     return copy.deepcopy(rows)
+
+
+def _bbs_payload_envelope(payload: Any) -> str:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    return "data.array" if isinstance(data, list) else "data.scores.value"
 
 
 def _bbs_event_identity(row: Dict[str, Any]) -> str:
@@ -485,6 +501,7 @@ def _bbs_matches(
             "label": label,
             "params": copy.deepcopy(params),
             "count": len(found),
+            "responseEnvelope": _bbs_payload_envelope(payload),
         })
         meta = payload.get("meta") if isinstance(payload, dict) else None
         if isinstance(meta, dict):
@@ -585,7 +602,13 @@ def _match_event(game: Dict[str, Any], rows: Iterable[Dict[str, Any]], *, provid
         else:
             rh = _team_name(row.get("home") or row.get("home_team"))
             ra = _team_name(row.get("away") or row.get("away_team"))
-            start_value = row.get("kickoff_utc") or row.get("start_time") or row.get("commence_time")
+            start_value = (
+                row.get("kickoff_utc")
+                or row.get("start_time")
+                or row.get("commence_time")
+                or row.get("scheduled_at")
+                or row.get("scheduledAt")
+            )
         if _normalize(rh) != home or _normalize(ra) != away:
             continue
         provider_start = _parse(start_value)

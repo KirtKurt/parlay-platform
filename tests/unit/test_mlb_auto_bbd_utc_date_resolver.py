@@ -99,7 +99,7 @@ def test_bbd_resolver_uses_bounded_crosswalk_fallback_and_deduplicates(
     assert any("date" not in params for _, params in calls)
 
 
-def test_bbd_match_rows_accept_only_the_documented_array_contract() -> None:
+def test_bbd_match_rows_accept_the_documented_array_contract() -> None:
     payload = {"data": [{"id": "one"}], "meta": {}, "error": None}
 
     rows = base._bbs_payload_rows(payload)
@@ -110,6 +110,51 @@ def test_bbd_match_rows_accept_only_the_documented_array_contract() -> None:
     assert base._bbs_payload_rows({"data": [], "meta": {}, "error": None}) == []
 
 
+def test_bbd_match_rows_accept_observed_scores_value_envelope() -> None:
+    payload = {
+        "data": {"scores": {"value": [{"match_id": "one"}]}},
+        "meta": {},
+        "error": None,
+    }
+
+    rows = base._bbs_payload_rows(payload)
+
+    assert rows == [{"match_id": "one"}]
+    assert rows[0] is not payload["data"]["scores"]["value"][0]
+    assert base._bbs_payload_envelope(payload) == "data.scores.value"
+
+
+def test_bbd_resolver_crosswalks_observed_scores_value_rows(monkeypatch) -> None:
+    official = {
+        "games": [
+            _game("1", "2026-09-05T22:40:00Z", "Away One", "Home One")
+        ]
+    }
+    provider_row = {
+        "match_id": "event-1",
+        "scheduled_at": "2026-09-05T22:40:00Z",
+        "away": {"name": "Away One"},
+        "home": {"name": "Home One"},
+    }
+
+    monkeypatch.setattr(
+        base,
+        "_bbs_get",
+        lambda path, params: {
+            "data": {"scores": {"value": [provider_row]}},
+            "meta": {},
+            "error": None,
+        },
+    )
+
+    result = base._bbs_matches("2026-09-05", official)
+
+    assert result["events"] == [provider_row]
+    assert result["meta"]["matchedOfficialGameCount"] == 1
+    assert result["meta"]["missingOfficialGamePks"] == []
+    assert result["meta"]["queries"][0]["responseEnvelope"] == "data.scores.value"
+
+
 @pytest.mark.parametrize(
     "payload,shape",
     [
@@ -118,6 +163,18 @@ def test_bbd_match_rows_accept_only_the_documented_array_contract() -> None:
         ({"data": None, "meta": {}, "error": None}, "null"),
         ({"data": "matches", "meta": {}, "error": None}, "string"),
         ({"data": {"matches": []}, "meta": {}, "error": None}, "object[matches]"),
+        (
+            {"data": {"scores": {"items": []}}, "meta": {}, "error": None},
+            "object[scores]",
+        ),
+        (
+            {
+                "data": {"scores": {"value": []}, "matches": []},
+                "meta": {},
+                "error": None,
+            },
+            "object[matches,scores]",
+        ),
     ],
 )
 def test_bbd_match_rows_reject_undocumented_envelopes(payload, shape) -> None:
@@ -198,7 +255,7 @@ def test_bbd_resolver_rejects_partial_slate_when_one_utc_page_drifts(
                 "error": None,
             }
         return {
-            "data": {"scores": {"value": []}},
+            "data": {"scores": {"items": []}},
             "meta": {"source": "drifted"},
             "error": None,
         }
