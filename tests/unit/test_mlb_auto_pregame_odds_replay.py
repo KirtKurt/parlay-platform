@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 import pregame_odds_replay as replay
 
 
@@ -194,3 +196,86 @@ def test_install_uses_current_slate_evidence_without_late_publication():
     assert result["latePublicationPrevented"] is True
     assert result["postStartPredictionCreationAllowed"] is False
     assert validation and validation[0] is result
+
+
+def test_install_falls_back_to_strict_future_slate_probe_on_provider_drift():
+    namespace = base("2026-08-24T20:00:00+00:00")
+    namespace.ET = timezone.utc
+    namespace._now = lambda: datetime(2026, 8, 25, 2, 10, tzinfo=timezone.utc)
+    namespace._get = lambda pk, sk: None
+    namespace._official_schedule = lambda slate: {
+        "games": [packet()["games"][0]["official"]]
+    }
+    namespace._deadline = lambda schedule: {
+        "publishDeadlineUtc": "2026-08-24T22:30:00+00:00"
+    }
+
+    def broken_current_slate(slate, expanded):
+        raise RuntimeError("BBS_MATCHES_NOT_LIST")
+
+    future_result = {
+        "ok": True,
+        "status": "COLLECTING",
+        "requestedSlateDateEt": SLATE,
+        "slateDateEt": "2026-08-25",
+        "providerProbeUsedFutureSlate": True,
+        "latePublicationPrevented": True,
+    }
+    delegated = []
+
+    def strict_future_guard(payload):
+        delegated.append(payload)
+        return dict(future_result)
+
+    production = SimpleNamespace(
+        _assemble_with_full_bbd=broken_current_slate,
+        _apply_source_coverage=apply_coverage,
+        _validate_deployment_smoke=lambda result: None,
+    )
+    strict = SimpleNamespace(_late_guard=strict_future_guard)
+
+    replay.install(namespace, production, strict, match_event=match_event)
+    request = {"mode": "deployment_provider_smoke", "slate_date": SLATE}
+    result = strict._late_guard(request)
+
+    assert delegated == [request]
+    assert result["slateDateEt"] == "2026-08-25"
+    assert result["providerProbeUsedFutureSlate"] is True
+    assert result["currentSlateProbeFallback"] is True
+    assert result["currentSlateProbeErrorType"] == "RuntimeError"
+    assert result["providerProbeUsedPersistedPregameEvidence"] is False
+    assert result["postStartPredictionCreationAllowed"] is False
+    assert result["postStartOddsFabricationAllowed"] is False
+
+
+def test_install_does_not_hide_programming_errors_behind_future_probe():
+    namespace = base("2026-08-24T20:00:00+00:00")
+    namespace.ET = timezone.utc
+    namespace._now = lambda: datetime(2026, 8, 25, 2, 10, tzinfo=timezone.utc)
+    namespace._get = lambda pk, sk: None
+    namespace._official_schedule = lambda slate: {
+        "games": [packet()["games"][0]["official"]]
+    }
+    namespace._deadline = lambda schedule: {
+        "publishDeadlineUtc": "2026-08-24T22:30:00+00:00"
+    }
+
+    def broken_code(slate, expanded):
+        raise KeyError("unexpected-code-defect")
+
+    delegated = []
+    production = SimpleNamespace(
+        _assemble_with_full_bbd=broken_code,
+        _apply_source_coverage=apply_coverage,
+        _validate_deployment_smoke=lambda result: None,
+    )
+    strict = SimpleNamespace(_late_guard=lambda payload: delegated.append(payload))
+
+    replay.install(namespace, production, strict, match_event=match_event)
+
+    with pytest.raises(KeyError, match="unexpected-code-defect"):
+        strict._late_guard(
+            {"mode": "deployment_provider_smoke", "slate_date": SLATE}
+        )
+
+    assert delegated == []

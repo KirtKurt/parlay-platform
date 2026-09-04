@@ -1,11 +1,28 @@
 from __future__ import annotations
 
 import copy
+import json
+import urllib.error
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
 
 VERSION = "MLB-AUTO-PREGAME-ODDS-REPLAY-v1-immutable-evidence-only"
 CORE_MARKETS = {"h2h", "spreads", "totals"}
+
+
+def _provider_probe_fallback_allowed(error: Exception) -> bool:
+    if isinstance(
+        error,
+        (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError),
+    ):
+        return True
+    return isinstance(error, RuntimeError) and str(error).startswith(
+        (
+            "BBS_",
+            "ODDS_",
+            "THREE_SOURCE_GAME_COVERAGE_INCOMPLETE:",
+        )
+    )
 
 
 def _event_has_real_core_odds(event: Any) -> bool:
@@ -176,25 +193,44 @@ def install(
         if deadline_dt is None or now <= deadline_dt:
             return original_late_guard(payload)
 
-        packet = assemble(slate, expanded=False)
-        result = {
-            "ok": True,
-            "status": "COLLECTING",
-            "requestedSlateDateEt": slate,
-            "slateDateEt": slate,
-            "deadline": deadline,
-            "sourceStatus": packet.get("sourceStatus") or {},
-            "threeSourceCoverageComplete": packet.get("threeSourceCoverageComplete"),
-            "latePublicationPrevented": True,
-            "providerProbeUsedFutureSlate": False,
-            "providerProbeUsedPersistedPregameEvidence": bool(
-                packet.get("pregameOddsReplayApplied")
-            ),
-            "postStartPredictionCreationAllowed": False,
-            "postStartOddsFabricationAllowed": False,
-        }
-        production._validate_deployment_smoke(result)
-        return result
+        try:
+            packet = assemble(slate, expanded=False)
+            result = {
+                "ok": True,
+                "status": "COLLECTING",
+                "requestedSlateDateEt": slate,
+                "slateDateEt": slate,
+                "deadline": deadline,
+                "sourceStatus": packet.get("sourceStatus") or {},
+                "threeSourceCoverageComplete": packet.get("threeSourceCoverageComplete"),
+                "latePublicationPrevented": True,
+                "providerProbeUsedFutureSlate": False,
+                "providerProbeUsedPersistedPregameEvidence": bool(
+                    packet.get("pregameOddsReplayApplied")
+                ),
+                "postStartPredictionCreationAllowed": False,
+                "postStartOddsFabricationAllowed": False,
+            }
+            production._validate_deployment_smoke(result)
+            return result
+        except Exception as current_slate_error:
+            # A live provider may no longer serve the completed/current slate,
+            # even though its immutable pregame Odds snapshot is recoverable.
+            # The strict guard already has a read-only future-slate probe for
+            # this exact post-cutoff case. Delegate to it instead of weakening
+            # any live-provider response contract or manufacturing evidence.
+            if not _provider_probe_fallback_allowed(current_slate_error):
+                raise
+            fallback = original_late_guard(payload)
+            if isinstance(fallback, dict):
+                fallback["currentSlateProbeFallback"] = True
+                fallback["currentSlateProbeErrorType"] = type(
+                    current_slate_error
+                ).__name__
+                fallback["providerProbeUsedPersistedPregameEvidence"] = False
+                fallback["postStartPredictionCreationAllowed"] = False
+                fallback["postStartOddsFabricationAllowed"] = False
+            return fallback
 
     production._assemble_with_full_bbd = assemble
     production._pregame_odds_replay_installed = True

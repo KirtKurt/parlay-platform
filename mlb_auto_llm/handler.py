@@ -341,16 +341,63 @@ def _bbs_get(path: str, params: Optional[Dict[str, Any]] = None) -> Any:
     query = urllib.parse.urlencode({k: v for k, v in (params or {}).items() if v is not None})
     url = f"{BBS_BASE_URL}{path}" + (f"?{query}" if query else "")
     payload, _ = _http_json(url, headers={"Authorization": f"Bearer {_bbs_key()}"}, timeout=15)
-    if not isinstance(payload, dict) or payload.get("error"):
-        raise RuntimeError("BBS_RESPONSE_INVALID")
+    if not isinstance(payload, dict):
+        raise RuntimeError("BBS_RESPONSE_INVALID:NOT_OBJECT")
+    required = {"data", "meta", "error"}
+    if not required.issubset(payload):
+        keys = ",".join(sorted(str(key) for key in payload)[:12])
+        raise RuntimeError(f"BBS_RESPONSE_INVALID:ENVELOPE_KEYS[{keys}]")
+    if payload.get("error") is not None:
+        raise RuntimeError("BBS_RESPONSE_INVALID:REPORTED_ERROR")
+    if not isinstance(payload.get("meta"), dict):
+        raise RuntimeError("BBS_RESPONSE_INVALID:META_NOT_OBJECT")
     return payload
+
+
+def _bbs_shape(value: Any) -> str:
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        keys = ",".join(sorted(str(key) for key in value)[:12])
+        return f"object[{keys}]"
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    return "string"
 
 
 def _bbs_payload_rows(payload: Any) -> List[Dict[str, Any]]:
     rows = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
-        raise RuntimeError("BBS_MATCHES_NOT_LIST")
-    return [copy.deepcopy(row) for row in rows if isinstance(row, dict)]
+        meta = payload.get("meta") if isinstance(payload, dict) else None
+        diagnostic = {
+            "dataShape": _bbs_shape(rows),
+            "metaKeys": sorted(str(key) for key in meta)[:12]
+            if isinstance(meta, dict)
+            else [],
+            "metaShape": _bbs_shape(meta),
+            "topLevelKeys": sorted(str(key) for key in payload)[:12]
+            if isinstance(payload, dict)
+            else [],
+        }
+        raise RuntimeError(
+            "BBS_MATCHES_NOT_LIST:"
+            + json.dumps(diagnostic, sort_keys=True, separators=(",", ":"))
+        )
+    invalid = [index for index, row in enumerate(rows) if not isinstance(row, dict)]
+    if invalid:
+        raise RuntimeError(
+            "BBS_MATCH_ROW_NOT_OBJECT:"
+            + json.dumps(
+                {"indexes": invalid[:12], "rowCount": len(rows)},
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+    return copy.deepcopy(rows)
 
 
 def _bbs_event_identity(row: Dict[str, Any]) -> str:
