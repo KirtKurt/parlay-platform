@@ -149,6 +149,28 @@ def test_bbd_get_rejects_falsey_error_objects(monkeypatch) -> None:
         base._bbs_get("/v1/matches", {"sport": "baseball"})
 
 
+@pytest.mark.parametrize(
+    "payload,reason",
+    [
+        ([], "NOT_OBJECT"),
+        ({"data": [], "meta": {}}, "ENVELOPE_KEYS"),
+        ({"data": [], "meta": None, "error": None}, "META_NOT_OBJECT"),
+    ],
+)
+def test_bbd_get_requires_the_standard_live_envelope(
+    monkeypatch, payload, reason
+) -> None:
+    monkeypatch.setattr(
+        base,
+        "_http_json",
+        lambda *args, **kwargs: (payload, {}),
+    )
+    monkeypatch.setattr(base, "_bbs_key", lambda: "secret")
+
+    with pytest.raises(RuntimeError, match=f"BBS_RESPONSE_INVALID:{reason}"):
+        base._bbs_get("/v1/matches", {"sport": "baseball"})
+
+
 def test_bbd_resolver_rejects_partial_slate_when_one_utc_page_drifts(
     monkeypatch,
 ) -> None:

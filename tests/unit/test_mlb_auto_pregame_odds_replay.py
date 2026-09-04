@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 import pregame_odds_replay as replay
 
 
@@ -244,3 +246,36 @@ def test_install_falls_back_to_strict_future_slate_probe_on_provider_drift():
     assert result["providerProbeUsedPersistedPregameEvidence"] is False
     assert result["postStartPredictionCreationAllowed"] is False
     assert result["postStartOddsFabricationAllowed"] is False
+
+
+def test_install_does_not_hide_programming_errors_behind_future_probe():
+    namespace = base("2026-08-24T20:00:00+00:00")
+    namespace.ET = timezone.utc
+    namespace._now = lambda: datetime(2026, 8, 25, 2, 10, tzinfo=timezone.utc)
+    namespace._get = lambda pk, sk: None
+    namespace._official_schedule = lambda slate: {
+        "games": [packet()["games"][0]["official"]]
+    }
+    namespace._deadline = lambda schedule: {
+        "publishDeadlineUtc": "2026-08-24T22:30:00+00:00"
+    }
+
+    def broken_code(slate, expanded):
+        raise KeyError("unexpected-code-defect")
+
+    delegated = []
+    production = SimpleNamespace(
+        _assemble_with_full_bbd=broken_code,
+        _apply_source_coverage=apply_coverage,
+        _validate_deployment_smoke=lambda result: None,
+    )
+    strict = SimpleNamespace(_late_guard=lambda payload: delegated.append(payload))
+
+    replay.install(namespace, production, strict, match_event=match_event)
+
+    with pytest.raises(KeyError, match="unexpected-code-defect"):
+        strict._late_guard(
+            {"mode": "deployment_provider_smoke", "slate_date": SLATE}
+        )
+
+    assert delegated == []

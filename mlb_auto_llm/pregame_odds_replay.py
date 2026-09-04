@@ -1,11 +1,28 @@
 from __future__ import annotations
 
 import copy
+import json
+import urllib.error
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
 
 VERSION = "MLB-AUTO-PREGAME-ODDS-REPLAY-v1-immutable-evidence-only"
 CORE_MARKETS = {"h2h", "spreads", "totals"}
+
+
+def _provider_probe_fallback_allowed(error: Exception) -> bool:
+    if isinstance(
+        error,
+        (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError),
+    ):
+        return True
+    return isinstance(error, RuntimeError) and str(error).startswith(
+        (
+            "BBS_",
+            "ODDS_",
+            "THREE_SOURCE_GAME_COVERAGE_INCOMPLETE:",
+        )
+    )
 
 
 def _event_has_real_core_odds(event: Any) -> bool:
@@ -202,6 +219,8 @@ def install(
             # The strict guard already has a read-only future-slate probe for
             # this exact post-cutoff case. Delegate to it instead of weakening
             # any live-provider response contract or manufacturing evidence.
+            if not _provider_probe_fallback_allowed(current_slate_error):
+                raise
             fallback = original_late_guard(payload)
             if isinstance(fallback, dict):
                 fallback["currentSlateProbeFallback"] = True

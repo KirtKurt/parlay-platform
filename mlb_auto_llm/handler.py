@@ -341,8 +341,16 @@ def _bbs_get(path: str, params: Optional[Dict[str, Any]] = None) -> Any:
     query = urllib.parse.urlencode({k: v for k, v in (params or {}).items() if v is not None})
     url = f"{BBS_BASE_URL}{path}" + (f"?{query}" if query else "")
     payload, _ = _http_json(url, headers={"Authorization": f"Bearer {_bbs_key()}"}, timeout=15)
-    if not isinstance(payload, dict) or payload.get("error") is not None:
-        raise RuntimeError("BBS_RESPONSE_INVALID")
+    if not isinstance(payload, dict):
+        raise RuntimeError("BBS_RESPONSE_INVALID:NOT_OBJECT")
+    required = {"data", "meta", "error"}
+    if not required.issubset(payload):
+        keys = ",".join(sorted(str(key) for key in payload)[:12])
+        raise RuntimeError(f"BBS_RESPONSE_INVALID:ENVELOPE_KEYS[{keys}]")
+    if payload.get("error") is not None:
+        raise RuntimeError("BBS_RESPONSE_INVALID:REPORTED_ERROR")
+    if not isinstance(payload.get("meta"), dict):
+        raise RuntimeError("BBS_RESPONSE_INVALID:META_NOT_OBJECT")
     return payload
 
 
@@ -367,10 +375,10 @@ def _bbs_payload_rows(payload: Any) -> List[Dict[str, Any]]:
         meta = payload.get("meta") if isinstance(payload, dict) else None
         diagnostic = {
             "dataShape": _bbs_shape(rows),
-            "metaCoverage": meta.get("coverage") if isinstance(meta, dict) else None,
-            "metaSource": str(meta.get("source") or "")[:40]
+            "metaKeys": sorted(str(key) for key in meta)[:12]
             if isinstance(meta, dict)
-            else "",
+            else [],
+            "metaShape": _bbs_shape(meta),
             "topLevelKeys": sorted(str(key) for key in payload)[:12]
             if isinstance(payload, dict)
             else [],
