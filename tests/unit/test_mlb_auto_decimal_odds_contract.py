@@ -153,6 +153,7 @@ def test_bedrock_prompt_cannot_reverse_decimal_price_direction(monkeypatch) -> N
                     "winner": "Boston Red Sox",
                     "loser": "Miami Marlins",
                     "probability": 0.55,
+                    "live_baseball_home_probability": 0.45,
                     "confidence": "medium",
                     "rationale": "Normalized no-vig consensus favors Boston.",
                     "source_weights": {"normalized_market_consensus": 0.72},
@@ -200,6 +201,7 @@ def test_oversized_provider_payload_cannot_truncate_decimal_odds_authority(
                     "winner": "Boston Red Sox",
                     "loser": "Miami Marlins",
                     "probability": 0.55,
+                    "live_baseball_home_probability": 0.45,
                     "confidence": "medium",
                     "rationale": "Normalized consensus favors Boston.",
                     "source_weights": {
@@ -239,6 +241,7 @@ def test_weighted_pregame_evidence_can_select_market_underdog(monkeypatch) -> No
                     "winner": "Miami Marlins",
                     "loser": "Boston Red Sox",
                     "probability": 0.60,
+                    "live_baseball_home_probability": 0.60,
                     "confidence": "arbitrary-model-label",
                     "rationale": (
                         "Live context, historical findings, and five pregame "
@@ -349,30 +352,203 @@ def test_deployment_smoke_runs_deployed_strict_decision_without_mutation(
 def test_deployment_smoke_retries_invalid_model_shape_without_mutation(
     monkeypatch,
 ) -> None:
-    responses = [
-        {
-            "ok": True,
-            "modelId": "mantle::us-east-1::test-bedrock-model",
-            "text": "not valid decision JSON",
-        },
-        _deployment_smoke_model_response(),
-    ]
+    routes = ["semantic-route-a", "semantic-route-b"]
+    calls = []
+
+    def invoke(prompt, *, models, **kwargs):
+        calls.append(
+            {
+                "models": list(models),
+                "temperature": kwargs.get("temperature"),
+                "prompt": prompt,
+            }
+        )
+        if len(calls) == 1:
+            return {
+                "ok": True,
+                "routeId": routes[0],
+                "modelId": "schema-invalid-model",
+                "attemptedModelIds": [routes[0]],
+                "text": "not valid decision JSON",
+            }
+        response = _deployment_smoke_model_response()
+        response.update(
+            {
+                "routeId": routes[1],
+                "attemptedModelIds": [routes[1]],
+            }
+        )
+        return response
+
     original_put = subject.base._put
-    monkeypatch.setattr(
-        subject,
-        "invoke_chain_text",
-        lambda *_args, **_kwargs: responses.pop(0),
-    )
+    monkeypatch.setattr(subject, "configured_models", lambda: routes)
+    monkeypatch.setattr(subject, "invoke_chain_text", invoke)
 
     result = subject.lambda_handler(_deployment_smoke_event(), None)
 
-    assert responses == []
+    assert [call["models"] for call in calls] == [routes, [routes[1]]]
+    assert [call["temperature"] for call in calls] == [0.0, 0.0]
+    assert calls[0]["prompt"].count("Return ONLY JSON with") == 1
+    assert "market_favorite_price, market_interpretation" in calls[0]["prompt"]
     assert result["modelValidationAttempts"] == 2
     assert result["modelValidationErrorsBeforeSuccess"] == [
         "LLM_WINNER_NOT_EXACT_TEAM"
     ]
+    assert result["modelValidationRoutesRejected"] == [
+        {
+            "routeId": routes[0],
+            "errorCode": "LLM_WINNER_NOT_EXACT_TEAM",
+        }
+    ]
     assert result["persistenceAttempted"] is False
     assert subject.base._put is original_put
+
+
+def test_production_decision_semantically_fails_over_without_changing_weights(
+    monkeypatch,
+) -> None:
+    routes = ["production-route-a", "production-route-b"]
+    calls = []
+
+    def invoke(_prompt, *, models, **kwargs):
+        calls.append(
+            {"models": list(models), "temperature": kwargs.get("temperature")}
+        )
+        if len(calls) == 1:
+            return {
+                "ok": True,
+                "routeId": routes[0],
+                "modelId": "schema-invalid-model",
+                "attemptedModelIds": [routes[0]],
+                "text": "not valid decision JSON",
+            }
+        return {
+            "ok": True,
+            "routeId": routes[1],
+            "modelId": "strict-json-model",
+            "attemptedModelIds": [routes[1]],
+            "text": json.dumps(
+                {
+                    "winner": "Boston Red Sox",
+                    "loser": "Miami Marlins",
+                    "probability": 0.59,
+                    "live_baseball_home_probability": 0.41,
+                    "confidence": "medium",
+                    "rationale": "The weighted pregame evidence favors Boston.",
+                    "source_weights": DECISION_WEIGHTS,
+                    "disagreements": [],
+                }
+            ),
+        }
+
+    monkeypatch.setattr(subject, "configured_models", lambda: routes)
+    monkeypatch.setattr(subject, "invoke_chain_text", invoke)
+
+    result = subject._strict_bedrock_decision(_game(), _state())
+
+    assert [call["models"] for call in calls] == [routes, [routes[1]]]
+    assert [call["temperature"] for call in calls] == [0.15, 0.15]
+    assert result["winner"] == "Boston Red Sox"
+    assert result["sourceWeights"] == DECISION_WEIGHTS
+    assert result["modelValidationAttempts"] == 2
+    assert result["modelValidationErrorsBeforeSuccess"] == [
+        "LLM_WINNER_NOT_EXACT_TEAM"
+    ]
+
+
+def test_production_decision_exhausts_distinct_invalid_routes_fail_closed(
+    monkeypatch,
+) -> None:
+    routes = ["invalid-route-a", "invalid-route-b", "invalid-route-c"]
+    calls = []
+
+    def invoke(_prompt, *, models, **_kwargs):
+        selected = models[0]
+        calls.append(list(models))
+        return {
+            "ok": True,
+            "routeId": selected,
+            "modelId": selected,
+            "attemptedModelIds": [selected],
+            "text": "not valid decision JSON",
+        }
+
+    monkeypatch.setattr(subject, "configured_models", lambda: routes)
+    monkeypatch.setattr(subject, "invoke_chain_text", invoke)
+
+    with pytest.raises(RuntimeError) as error:
+        subject._strict_bedrock_decision(_game(), _state())
+
+    assert str(error.value).startswith("LLM_WINNER_NOT_EXACT_TEAM:")
+    assert calls == [routes, routes[1:], routes[2:]]
+    detail = json.loads(str(error.value).split(":", 1)[1])
+    assert detail["modelValidationAttempts"] == 3
+    assert [row["routeId"] for row in detail["rejectedRoutes"]] == routes
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid_value", "expected_error"),
+    [
+        ("probability", None, "LLM_PROBABILITY_INVALID"),
+        ("probability", True, "LLM_PROBABILITY_INVALID"),
+        ("probability", float("nan"), "LLM_PROBABILITY_INVALID"),
+        ("probability", 0.99, "LLM_PROBABILITY_INVALID"),
+        (
+            "live_baseball_home_probability",
+            None,
+            "LLM_LIVE_BASEBALL_PROBABILITY_INVALID",
+        ),
+        (
+            "live_baseball_home_probability",
+            50,
+            "LLM_LIVE_BASEBALL_PROBABILITY_INVALID",
+        ),
+    ],
+)
+def test_invalid_model_probabilities_advance_to_a_distinct_route(
+    monkeypatch,
+    field,
+    invalid_value,
+    expected_error,
+) -> None:
+    routes = ["invalid-probability-route", "valid-probability-route"]
+    calls = []
+
+    def response(route, **updates):
+        body = {
+            "winner": "Boston Red Sox",
+            "loser": "Miami Marlins",
+            "probability": 0.59,
+            "live_baseball_home_probability": 0.41,
+            "confidence": "medium",
+            "rationale": "The weighted pregame evidence favors Boston.",
+            "source_weights": DECISION_WEIGHTS,
+            "disagreements": [],
+        }
+        body.update(updates)
+        return {
+            "ok": True,
+            "routeId": route,
+            "modelId": route,
+            "attemptedModelIds": [route],
+            "text": json.dumps(body),
+        }
+
+    def invoke(_prompt, *, models, **_kwargs):
+        selected = models[0]
+        calls.append(list(models))
+        if selected == routes[0]:
+            return response(selected, **{field: invalid_value})
+        return response(selected)
+
+    monkeypatch.setattr(subject, "configured_models", lambda: routes)
+    monkeypatch.setattr(subject, "invoke_chain_text", invoke)
+
+    result = subject._strict_bedrock_decision(_game(), _state())
+
+    assert calls == [routes, routes[1:]]
+    assert result["modelValidationAttempts"] == 2
+    assert result["modelValidationErrorsBeforeSuccess"] == [expected_error]
 
 
 def test_deployment_smoke_event_is_closed_not_configurable(monkeypatch) -> None:
@@ -410,7 +586,7 @@ def test_deployment_smoke_fails_if_model_reverses_decimal_favorite(
     try:
         subject.lambda_handler(_deployment_smoke_event(), None)
     except RuntimeError as exc:
-        assert str(exc) == (
+        assert str(exc).startswith(
             "DEPLOYMENT_SMOKE_DECIMAL_ODDS_FAVORITE_NOT_SELECTED"
         )
     else:
@@ -431,7 +607,7 @@ def test_deployment_smoke_fails_on_parse_or_interpretation_contract_error(
     try:
         subject.lambda_handler(_deployment_smoke_event(), None)
     except RuntimeError as exc:
-        assert str(exc) == (
+        assert str(exc).startswith(
             "DEPLOYMENT_SMOKE_DECIMAL_ODDS_INTERPRETATION_MISSING"
         )
     else:
@@ -452,7 +628,7 @@ def test_deployment_smoke_fails_on_non_json_model_output(monkeypatch) -> None:
     try:
         subject.lambda_handler(_deployment_smoke_event(), None)
     except RuntimeError as exc:
-        assert str(exc) == "LLM_WINNER_NOT_EXACT_TEAM"
+        assert str(exc).startswith("LLM_WINNER_NOT_EXACT_TEAM:")
     else:
         raise AssertionError("non-JSON model output was accepted")
 

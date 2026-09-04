@@ -60,7 +60,31 @@ def test_deploy_uses_exact_trigger_sha_and_runs_repair_contracts() -> None:
     assert 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in source
     assert "tests/unit/test_mlb_auto_bbd_utc_date_resolver.py" in source
     assert "tests/unit/test_mlb_auto_decision_evidence.py" in source
+    assert "tests/unit/test_mlb_auto_production_model_gateway.py" in source
+    assert "tests/unit/test_mlb_auto_provider_smoke_read_only.py" in source
     assert "tests/unit/test_mlb_auto_pregame_odds_replay.py" in source
     assert "mlb_auto_llm/decision_evidence.py" in source
     assert "mlb_auto_llm/handler.py" in source
     assert "mlb_auto_llm/pregame_odds_replay.py" in source
+    assert "mlb_auto_llm/production_model_gateway.py" in source
+
+
+def test_provider_probe_runs_after_later_failure_only_when_deploy_succeeded() -> None:
+    document = yaml.load(_source(), Loader=yaml.BaseLoader)
+    steps = document["jobs"]["verify-deploy"]["steps"]
+    deploy = next(
+        step
+        for step in steps
+        if step.get("name") == "Deploy prospective-only MLB Auto authority"
+    )
+    probe = next(
+        step
+        for step in steps
+        if step.get("name") == "Probe runtime without allowing retired fallback"
+    )
+
+    assert deploy["id"] == "deploy_stack"
+    assert probe["if"] == (
+        "${{ always() && steps.deploy_stack.outcome == 'success' }}"
+    )
+    assert steps.index(deploy) < steps.index(probe)

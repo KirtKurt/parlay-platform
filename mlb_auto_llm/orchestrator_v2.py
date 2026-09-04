@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import math
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -211,6 +212,25 @@ def _strict_bedrock_decision(
     expected_market_favorite = ""
     expected_market_favorite_price: Optional[float] = None
     smoke_prompt = ""
+    response_fields = (
+        "winner, loser, probability, live_baseball_home_probability, "
+        "confidence, rationale, source_weights, disagreements"
+    )
+    decision_policy_prompt = (
+        "Apply the exact weights in decisionEvidence.weights: live baseball "
+        "context 40%, immutable historical-model findings 30%, observed pregame "
+        "moneyline movement 20%, and current market level 10%. Recent accuracy "
+        "is diagnostic and MUST NOT change those weights. The market favorite is "
+        "not a fallback or default. A historical model marked advisoryOnly may "
+        "inform the calculation but is not production authority. Explain which "
+        "actual supplied signals control the weighted conclusion. "
+    )
+    probability_prompt = (
+        "probability is your selected side's live-context estimate; "
+        "live_baseball_home_probability must be the home team's probability from "
+        "the supplied MLB/BBD context before the server blends other signals and "
+        "must be between 0.05 and 0.95. "
+    )
     if deployment_smoke_contract is not None:
         if set(deployment_smoke_contract) != {
             "expectedMarketFavorite",
@@ -230,10 +250,26 @@ def _strict_bedrock_decision(
             raise RuntimeError(
                 "DEPLOYMENT_SMOKE_MARKET_FAVORITE_PRICE_INVALID"
             ) from exc
+        if (
+            not math.isfinite(expected_market_favorite_price)
+            or expected_market_favorite_price <= 1.0
+        ):
+            raise RuntimeError(
+                "DEPLOYMENT_SMOKE_MARKET_FAVORITE_PRICE_INVALID"
+            )
+        response_fields = (
+            "winner, loser, probability, market_favorite, "
+            "market_favorite_price, market_interpretation"
+        )
+        decision_policy_prompt = (
+            "This closed deployment probe intentionally supplies only normalized "
+            "market evidence; it does not run the production four-signal blend. "
+        )
+        probability_prompt = ""
         smoke_prompt = (
             " This is a no-write deployment decision-contract probe with no "
             "non-market evidence. You MUST select the normalized market favorite "
-            f"{expected_market_favorite!r}. Also return market_favorite exactly "
+            f"{expected_market_favorite!r}. Return market_favorite exactly "
             f"{expected_market_favorite!r}, market_favorite_price as "
             f"{expected_market_favorite_price}, and market_interpretation as a "
             "short statement explicitly saying that the lower decimal price means "
@@ -248,19 +284,12 @@ def _strict_bedrock_decision(
         "with the higher decimal price the favorite. Use the supplied "
         "theOddsApi.normalizedH2hConsensus probabilities and marketFavorite "
         "instead of recomputing or guessing the favorite from raw prices. "
-        "Apply the exact weights in decisionEvidence.weights: live baseball "
-        "context 40%, immutable historical-model findings 30%, observed pregame "
-        "moneyline movement 20%, and current market level 10%. Recent accuracy "
-        "is diagnostic and MUST NOT change those weights. The market favorite is "
-        "not a fallback or default. A historical model marked advisoryOnly may "
-        "inform the calculation but is not production authority. Explain which "
-        "actual supplied signals control the weighted conclusion. "
-        "Return ONLY JSON with winner, loser, probability, "
-        "live_baseball_home_probability, confidence, rationale, source_weights, "
-        "disagreements. probability is your selected side's live-context estimate; "
-        "live_baseball_home_probability must be the home team's probability from "
-        "the supplied MLB/BBD context before the server blends other signals. "
-        f"winner must be exactly {home!r} or {away!r}; loser must be the other team; "
+        + decision_policy_prompt
+        + "Return ONLY JSON with "
+        + response_fields
+        + ". "
+        + probability_prompt
+        + f"winner must be exactly {home!r} or {away!r}; loser must be the other team; "
         "probability must be between 0.50 and 0.95."
         + smoke_prompt
         + "\n"
@@ -271,65 +300,205 @@ def _strict_bedrock_decision(
             default=str,
         )
     )
-    response = invoke_chain_text(
-        prompt,
-        models=configured_models(),
-        max_tokens=900,
-        temperature=0.15,
-    )
-    if response.get("ok") is not True:
-        raise RuntimeError(
-            "BEDROCK_AUTHORITY_UNAVAILABLE:"
-            + base.json.dumps(
-                response,
-                sort_keys=True,
-                separators=(",", ":"),
-                default=str,
-            )[:12000]
+    # A transport-successful model is not yet a decision-successful model.
+    # Reject malformed semantic output before trying a distinct route; otherwise
+    # the gateway's preferred-route cache can pin every retry to the same model.
+    candidate_routes = []
+    for configured_route in configured_models():
+        route = str(configured_route or "").strip()
+        if route and route not in candidate_routes:
+            candidate_routes.append(route)
+    if not candidate_routes:
+        raise RuntimeError("BEDROCK_AUTHORITY_UNAVAILABLE:NO_CONFIGURED_MODELS")
+
+    retryable_contract_errors = {
+        "LLM_WINNER_NOT_EXACT_TEAM",
+        "LLM_PROBABILITY_INVALID",
+        "LLM_LIVE_BASEBALL_PROBABILITY_INVALID",
+        "LLM_DISAGREEMENTS_NOT_LIST",
+        "DEPLOYMENT_SMOKE_DECIMAL_ODDS_FAVORITE_NOT_SELECTED",
+        "DEPLOYMENT_SMOKE_LOSER_CONTRACT_INVALID",
+        "DEPLOYMENT_SMOKE_MARKET_FAVORITE_INTERPRETATION_INVALID",
+        "DEPLOYMENT_SMOKE_MARKET_FAVORITE_PRICE_MISSING",
+        "DEPLOYMENT_SMOKE_MARKET_FAVORITE_PRICE_INVALID",
+        "DEPLOYMENT_SMOKE_DECIMAL_ODDS_INTERPRETATION_MISSING",
+    }
+    remaining_routes = list(candidate_routes)
+    validation_limit = min(8, len(remaining_routes))
+    validation_errors: List[str] = []
+    rejected_routes: List[Dict[str, str]] = []
+    response: Dict[str, Any] = {}
+    parsed: Dict[str, Any] = {}
+    winner = ""
+    loser = ""
+    model_probability = 0.5
+    parsed_market_favorite_price: Optional[float] = None
+    model_live_home_probability: Optional[float] = None
+    validation_attempts = 0
+
+    while remaining_routes and validation_attempts < validation_limit:
+        response = invoke_chain_text(
+            prompt,
+            models=remaining_routes,
+            max_tokens=900,
+            temperature=0.0 if deployment_smoke_contract is not None else 0.15,
         )
-    parsed = base._extract_json(str(response.get("text") or ""))
-    winner = str(parsed.get("winner") or "")
-    if winner not in {home, away}:
-        raise RuntimeError("LLM_WINNER_NOT_EXACT_TEAM")
-    loser = away if winner == home else home
-    if deployment_smoke_contract is not None:
-        if winner != expected_market_favorite:
+        if response.get("ok") is not True:
             raise RuntimeError(
-                "DEPLOYMENT_SMOKE_DECIMAL_ODDS_FAVORITE_NOT_SELECTED"
+                "BEDROCK_AUTHORITY_UNAVAILABLE:"
+                + base.json.dumps(
+                    {
+                        "gateway": response,
+                        "modelValidationErrors": rejected_routes,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                )[:12000]
             )
-        if str(parsed.get("loser") or "") != loser:
-            raise RuntimeError("DEPLOYMENT_SMOKE_LOSER_CONTRACT_INVALID")
-        if str(parsed.get("market_favorite") or "") != expected_market_favorite:
-            raise RuntimeError(
-                "DEPLOYMENT_SMOKE_MARKET_FAVORITE_INTERPRETATION_INVALID"
-            )
+
+        validation_attempts += 1
+        attempted_routes = [
+            str(value or "").strip()
+            for value in (response.get("attemptedModelIds") or [])
+            if str(value or "").strip()
+        ]
+        response_route = str(
+            response.get("routeId") or response.get("modelId") or ""
+        ).strip()
+        removable_routes = {
+            route for route in attempted_routes if route in remaining_routes
+        }
+        if response_route in remaining_routes:
+            removable_routes.add(response_route)
+        if not removable_routes:
+            # Unit adapters and older gateways may omit route metadata. They
+            # still receive an ordered candidate list, so the first route is
+            # the only safe route to retire after a semantic rejection.
+            removable_routes.add(remaining_routes[0])
+        rejected_route = response_route or next(iter(removable_routes))
+
         try:
-            parsed_market_favorite_price = float(
-                parsed.get("market_favorite_price")
+            parsed_market_favorite_price = None
+            model_live_home_probability = None
+            parsed = base._extract_json(str(response.get("text") or ""))
+            winner = str(parsed.get("winner") or "")
+            if winner not in {home, away}:
+                raise RuntimeError("LLM_WINNER_NOT_EXACT_TEAM")
+            loser = away if winner == home else home
+            if deployment_smoke_contract is not None:
+                if winner != expected_market_favorite:
+                    raise RuntimeError(
+                        "DEPLOYMENT_SMOKE_DECIMAL_ODDS_FAVORITE_NOT_SELECTED"
+                    )
+                if str(parsed.get("loser") or "") != loser:
+                    raise RuntimeError("DEPLOYMENT_SMOKE_LOSER_CONTRACT_INVALID")
+                if (
+                    str(parsed.get("market_favorite") or "")
+                    != expected_market_favorite
+                ):
+                    raise RuntimeError(
+                        "DEPLOYMENT_SMOKE_MARKET_FAVORITE_INTERPRETATION_INVALID"
+                    )
+                try:
+                    if isinstance(parsed.get("market_favorite_price"), bool):
+                        raise TypeError("boolean price")
+                    parsed_market_favorite_price = float(
+                        parsed.get("market_favorite_price")
+                    )
+                except (TypeError, ValueError) as exc:
+                    raise RuntimeError(
+                        "DEPLOYMENT_SMOKE_MARKET_FAVORITE_PRICE_MISSING"
+                    ) from exc
+                if (
+                    expected_market_favorite_price is None
+                    or not math.isfinite(parsed_market_favorite_price)
+                    or abs(
+                        parsed_market_favorite_price
+                        - expected_market_favorite_price
+                    )
+                    > 0.000001
+                ):
+                    raise RuntimeError(
+                        "DEPLOYMENT_SMOKE_MARKET_FAVORITE_PRICE_INVALID"
+                    )
+                market_interpretation = str(
+                    parsed.get("market_interpretation") or ""
+                ).lower()
+                if not all(
+                    token in market_interpretation
+                    for token in ("lower", "decimal", "higher", "probability")
+                ):
+                    raise RuntimeError(
+                        "DEPLOYMENT_SMOKE_DECIMAL_ODDS_INTERPRETATION_MISSING"
+                    )
+            try:
+                raw_probability = parsed.get("probability")
+                if raw_probability is None or isinstance(raw_probability, bool):
+                    raise TypeError("missing or boolean probability")
+                raw_model_probability = float(raw_probability)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError("LLM_PROBABILITY_INVALID") from exc
+            if (
+                not math.isfinite(raw_model_probability)
+                or raw_model_probability < 0.50
+                or raw_model_probability > 0.95
+            ):
+                raise RuntimeError("LLM_PROBABILITY_INVALID")
+            model_probability = raw_model_probability
+            raw_live_home = parsed.get("live_baseball_home_probability")
+            if deployment_smoke_contract is None and raw_live_home is None:
+                raise RuntimeError("LLM_LIVE_BASEBALL_PROBABILITY_INVALID")
+            if raw_live_home is not None:
+                try:
+                    if isinstance(raw_live_home, bool):
+                        raise TypeError("boolean live probability")
+                    model_live_home_probability = float(raw_live_home)
+                except (TypeError, ValueError) as exc:
+                    raise RuntimeError(
+                        "LLM_LIVE_BASEBALL_PROBABILITY_INVALID"
+                    ) from exc
+                if (
+                    not math.isfinite(model_live_home_probability)
+                    or model_live_home_probability < 0.05
+                    or model_live_home_probability > 0.95
+                ):
+                    raise RuntimeError(
+                        "LLM_LIVE_BASEBALL_PROBABILITY_INVALID"
+                    )
+            disagreements = parsed.get("disagreements")
+            if disagreements is not None and not isinstance(disagreements, list):
+                raise RuntimeError("LLM_DISAGREEMENTS_NOT_LIST")
+            break
+        except RuntimeError as exc:
+            code = str(exc).split(":", 1)[0]
+            if code not in retryable_contract_errors:
+                raise
+            validation_errors.append(code)
+            rejected_routes.append(
+                {"routeId": rejected_route, "errorCode": code}
             )
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError(
-                "DEPLOYMENT_SMOKE_MARKET_FAVORITE_PRICE_MISSING"
-            ) from exc
-        if (
-            expected_market_favorite_price is None
-            or abs(parsed_market_favorite_price - expected_market_favorite_price)
-            > 0.000001
-        ):
-            raise RuntimeError(
-                "DEPLOYMENT_SMOKE_MARKET_FAVORITE_PRICE_INVALID"
-            )
-        market_interpretation = str(
-            parsed.get("market_interpretation") or ""
-        ).lower()
-        if not all(
-            token in market_interpretation
-            for token in ("lower", "decimal", "higher", "probability")
-        ):
-            raise RuntimeError(
-                "DEPLOYMENT_SMOKE_DECIMAL_ODDS_INTERPRETATION_MISSING"
-            )
-    model_probability = min(max(float(parsed.get("probability") or 0.5), 0.50), 0.95)
+            remaining_routes = [
+                route
+                for route in remaining_routes
+                if route not in removable_routes
+            ]
+            if not remaining_routes or validation_attempts >= validation_limit:
+                raise RuntimeError(
+                    code
+                    + ":"
+                    + base.json.dumps(
+                        {
+                            "modelValidationAttempts": validation_attempts,
+                            "rejectedRoutes": rejected_routes,
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                ) from exc
+    else:  # pragma: no cover - guarded by the final rejection above
+        raise RuntimeError("BEDROCK_DECISION_MODEL_VALIDATION_EXHAUSTED")
+
     analyst_winner = winner
     calculation: Dict[str, Any] = {}
     if deployment_smoke_contract is None:
@@ -360,7 +529,7 @@ def _strict_bedrock_decision(
         reversals = max(0, int(movement.get("reversalCount") or 0))
         movement_home = 0.5 + max(-0.20, min(0.20, movement_delta * 3.0))
         movement_home = 0.5 + (movement_home - 0.5) / (1.0 + 0.5 * reversals)
-        live_home = parsed.get("live_baseball_home_probability")
+        live_home = model_live_home_probability
         if live_home is None:
             live_home = (
                 model_probability
@@ -419,6 +588,9 @@ def _strict_bedrock_decision(
         ),
         "decisionCalculation": calculation,
         "errorsBeforeSuccess": response.get("errorsBeforeSuccess") or [],
+        "modelValidationAttempts": validation_attempts,
+        "modelValidationErrorsBeforeSuccess": validation_errors,
+        "modelValidationRoutesRejected": rejected_routes,
     }
     if deployment_smoke_contract is not None:
         result["marketFavorite"] = str(parsed.get("market_favorite") or "")
@@ -495,23 +667,15 @@ DEPLOYMENT_DECIMAL_ODDS_SMOKE_MODE = (
 DEPLOYMENT_DECIMAL_ODDS_SMOKE_CONTRACT = (
     "MLB-AUTO-DEPLOYMENT-DECIMAL-ODDS-SMOKE-v1"
 )
+DEPLOYMENT_PROVIDER_SMOKE_MODE = "deployment_provider_smoke"
 _DEPLOYMENT_DECIMAL_ODDS_SMOKE_EVENT = {
     "mode": DEPLOYMENT_DECIMAL_ODDS_SMOKE_MODE,
     "contractVersion": DEPLOYMENT_DECIMAL_ODDS_SMOKE_CONTRACT,
 }
-_DEPLOYMENT_DECISION_MAX_ATTEMPTS = 3
-_DEPLOYMENT_RETRYABLE_DECISION_ERRORS = {
-    "BEDROCK_AUTHORITY_UNAVAILABLE",
-    "LLM_WINNER_NOT_EXACT_TEAM",
-    "DEPLOYMENT_SMOKE_DECIMAL_ODDS_FAVORITE_NOT_SELECTED",
-    "DEPLOYMENT_SMOKE_LOSER_CONTRACT_INVALID",
-    "DEPLOYMENT_SMOKE_MARKET_FAVORITE_INTERPRETATION_INVALID",
-    "DEPLOYMENT_SMOKE_MARKET_FAVORITE_PRICE_MISSING",
-    "DEPLOYMENT_SMOKE_MARKET_FAVORITE_PRICE_INVALID",
-    "DEPLOYMENT_SMOKE_DECIMAL_ODDS_INTERPRETATION_MISSING",
+_DEPLOYMENT_PROVIDER_SMOKE_EVENT = {
+    "mode": DEPLOYMENT_PROVIDER_SMOKE_MODE,
+    "force_publish": False,
 }
-
-
 def _deployment_decimal_odds_decision_smoke(
     event: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -600,47 +764,32 @@ def _deployment_decimal_odds_decision_smoke(
         )
 
     base._put = reject_write
-    decision: Dict[str, Any] = {}
-    model_validation_errors: List[str] = []
-    model_validation_attempts = 0
     try:
-        for attempt in range(1, _DEPLOYMENT_DECISION_MAX_ATTEMPTS + 1):
-            model_validation_attempts = attempt
-            try:
-                decision = _strict_bedrock_decision(
-                    game,
-                    {
-                        "targetDailyAccuracy": base.TARGET_ACCURACY,
-                        "recentDays": 0,
-                        "recentGradedPicks": 0,
-                        "recentCorrectPicks": 0,
-                        "recentAccuracy": None,
-                        "decisionWeights": {
-                            "liveBaseballContext": 0.0,
-                            "historicalModelFindings": 0.0,
-                            "moneylineMovement": 0.0,
-                            "currentMarketLevel": 1.0,
-                        },
-                        "marketFavoriteFallbackAllowed": False,
-                        "policy": (
-                            "Deployment contract: only normalized h2h consensus is "
-                            "available, so select its market favorite."
-                        ),
-                    },
-                    deployment_smoke_contract={
-                        "expectedMarketFavorite": away,
-                        "expectedMarketFavoritePrice": away_price,
-                    },
-                )
-                break
-            except RuntimeError as exc:
-                code = str(exc).split(":", 1)[0]
-                if (
-                    code not in _DEPLOYMENT_RETRYABLE_DECISION_ERRORS
-                    or attempt == _DEPLOYMENT_DECISION_MAX_ATTEMPTS
-                ):
-                    raise
-                model_validation_errors.append(code)
+        decision = _strict_bedrock_decision(
+            game,
+            {
+                "targetDailyAccuracy": base.TARGET_ACCURACY,
+                "recentDays": 0,
+                "recentGradedPicks": 0,
+                "recentCorrectPicks": 0,
+                "recentAccuracy": None,
+                "decisionWeights": {
+                    "liveBaseballContext": 0.0,
+                    "historicalModelFindings": 0.0,
+                    "moneylineMovement": 0.0,
+                    "currentMarketLevel": 1.0,
+                },
+                "marketFavoriteFallbackAllowed": False,
+                "policy": (
+                    "Deployment contract: only normalized h2h consensus is "
+                    "available, so select its market favorite."
+                ),
+            },
+            deployment_smoke_contract={
+                "expectedMarketFavorite": away,
+                "expectedMarketFavoritePrice": away_price,
+            },
+        )
     finally:
         base._put = original_put
 
@@ -670,8 +819,13 @@ def _deployment_decimal_odds_decision_smoke(
         "cardMutationAttempted": False,
         "historyMutationAttempted": False,
         "mlFallbackAttempted": False,
-        "modelValidationAttempts": model_validation_attempts,
-        "modelValidationErrorsBeforeSuccess": model_validation_errors,
+        "modelValidationAttempts": decision.get("modelValidationAttempts"),
+        "modelValidationErrorsBeforeSuccess": decision.get(
+            "modelValidationErrorsBeforeSuccess"
+        ) or [],
+        "modelValidationRoutesRejected": decision.get(
+            "modelValidationRoutesRejected"
+        ) or [],
         "decisionAuthority": decision.get("authority"),
         "modelId": decision.get("modelId"),
         "winner": decision.get("winner"),
@@ -750,6 +904,99 @@ def _next_future_provider_probe(
     return None
 
 
+def _deployment_provider_smoke(event: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate all live providers without entering a prediction write path."""
+
+    if event != _DEPLOYMENT_PROVIDER_SMOKE_EVENT:
+        raise RuntimeError("DEPLOYMENT_PROVIDER_SMOKE_EVENT_REJECTED")
+
+    original_put = base._put
+    write_attempts: List[Dict[str, str]] = []
+
+    def reject_write(pk: str, sk: str, *_args: Any, **_kwargs: Any) -> bool:
+        write_attempts.append({"pk": str(pk), "sk": str(sk)})
+        raise RuntimeError(
+            "DEPLOYMENT_PROVIDER_SMOKE_WRITE_FORBIDDEN:"
+            + str(pk)
+            + ":"
+            + str(sk)
+        )
+
+    base._put = reject_write
+    try:
+        now = base._now()
+        requested_slate = now.astimezone(base.ET).date().isoformat()
+        requested_schedule = base._official_schedule(requested_slate)
+        requested_deadline = (
+            base._deadline(requested_schedule)
+            if requested_schedule.get("games")
+            else {}
+        )
+        requested_deadline_dt = base._parse(
+            requested_deadline.get("publishDeadlineUtc")
+        )
+
+        if (
+            requested_schedule.get("games")
+            and requested_deadline_dt is not None
+            and now < requested_deadline_dt
+        ):
+            probe_slate = requested_slate
+            probe_deadline = requested_deadline
+            probe_deadline_dt = requested_deadline_dt
+        else:
+            probe = _next_future_provider_probe(requested_slate, now)
+            if probe is None:
+                raise RuntimeError(
+                    "NO_FUTURE_PRE_CUTOFF_SLATE_FOR_PROVIDER_SMOKE:"
+                    + base.json.dumps(
+                        {
+                            "requestedSlateDateEt": requested_slate,
+                            "nowUtc": base._iso(now),
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                )
+            probe_slate = str(probe["slate"])
+            probe_deadline = probe["deadline"]
+            probe_deadline_dt = probe["deadlineDt"]
+
+        packet = production._assemble_with_full_bbd(
+            probe_slate,
+            expanded=False,
+        )
+        result = {
+            "ok": True,
+            "status": "COLLECTING",
+            "requestedSlateDateEt": requested_slate,
+            "slateDateEt": probe_slate,
+            "deadline": probe_deadline,
+            "nextFinalWindowAtUtc": base._iso(
+                probe_deadline_dt - timedelta(minutes=base.FINAL_WINDOW_MINUTES)
+            ),
+            "sourceStatus": packet.get("sourceStatus") or {},
+            "threeSourceCoverageComplete": packet.get(
+                "threeSourceCoverageComplete"
+            ),
+            "providerProbeUsedFutureSlate": probe_slate != requested_slate,
+            "readOnlyProviderProbe": True,
+            "writeGuardArmed": True,
+            "persistenceAttempted": False,
+            "cardMutationAttempted": False,
+            "historyMutationAttempted": False,
+            "postStartPredictionCreationAllowed": False,
+            "postStartOddsFabricationAllowed": False,
+        }
+        production._validate_deployment_smoke(result)
+    finally:
+        base._put = original_put
+
+    if write_attempts:
+        raise RuntimeError("DEPLOYMENT_PROVIDER_SMOKE_WRITE_ATTEMPTED")
+    return result
+
+
 def _late_guard(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     now = base._now()
     slate = str(
@@ -821,6 +1068,11 @@ def _late_guard(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 def lambda_handler(event: Any, context: Any) -> Any:
     if (
         isinstance(event, dict)
+        and event.get("mode") == DEPLOYMENT_PROVIDER_SMOKE_MODE
+    ):
+        return _deployment_provider_smoke(event)
+    if (
+        isinstance(event, dict)
         and event.get("mode") == DEPLOYMENT_DECIMAL_ODDS_SMOKE_MODE
     ):
         return _deployment_decimal_odds_decision_smoke(event)
@@ -831,6 +1083,10 @@ def lambda_handler(event: Any, context: Any) -> Any:
             if payload.get("mode") == DEPLOYMENT_DECIMAL_ODDS_SMOKE_MODE:
                 raise RuntimeError(
                     "DEPLOYMENT_DECIMAL_ODDS_SMOKE_DIRECT_INVOKE_REQUIRED"
+                )
+            if payload.get("mode") == DEPLOYMENT_PROVIDER_SMOKE_MODE:
+                raise RuntimeError(
+                    "DEPLOYMENT_PROVIDER_SMOKE_DIRECT_INVOKE_REQUIRED"
                 )
             guarded = _late_guard(payload)
             if guarded is not None:

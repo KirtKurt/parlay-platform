@@ -253,3 +253,35 @@ def test_configured_models_prefers_endpoint_native_mantle_catalog(monkeypatch) -
     ]
     assert "global.openai.gpt-5.6-luna" not in models
     assert models.count("openai.gpt-oss-20b-1:0") == 1
+
+
+def test_v3_wrapper_preserves_route_identity_for_semantic_failover(
+    monkeypatch,
+) -> None:
+    import orchestrator_v3 as runtime
+
+    gateway_result = {
+        "ok": True,
+        "routeId": "mantle::us-east-1::strict-route",
+        "modelId": "strict-provider-model",
+        "attemptedModelIds": [
+            "mantle::us-east-1::transport-failed-route",
+            "mantle::us-east-1::strict-route",
+        ],
+        "text": '{"winner":"Boston Red Sox"}',
+    }
+    monkeypatch.setattr(
+        runtime.production_gateway,
+        "invoke_chain_text",
+        lambda *_args, **_kwargs: gateway_result,
+    )
+
+    result = runtime._invoke_endpoint_native_chain(
+        "prompt",
+        models=gateway_result["attemptedModelIds"],
+    )
+
+    assert result["routeId"] == "mantle::us-east-1::strict-route"
+    assert result["modelId"] == "mantle::us-east-1::strict-route"
+    assert result["resolvedModelId"] == "strict-provider-model"
+    assert result["attemptedModelIds"] == gateway_result["attemptedModelIds"]
