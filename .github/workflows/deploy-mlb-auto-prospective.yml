@@ -53,6 +53,8 @@ jobs:
             tests/unit/test_mlb_auto_ml_authority.py \
             tests/unit/test_mlb_auto_direct_read.py \
             tests/unit/test_mlb_auto_model_gateway.py \
+            tests/unit/test_mlb_auto_production_model_gateway.py \
+            tests/unit/test_mlb_auto_provider_smoke_read_only.py \
             tests/unit/test_mlb_auto_pregame_odds_replay.py
           python -m py_compile \
             mlb_auto_llm/decision_evidence.py \
@@ -60,7 +62,8 @@ jobs:
             mlb_auto_llm/orchestrator.py \
             mlb_auto_llm/orchestrator_v2.py \
             mlb_auto_llm/orchestrator_v3.py \
-            mlb_auto_llm/pregame_odds_replay.py
+            mlb_auto_llm/pregame_odds_replay.py \
+            mlb_auto_llm/production_model_gateway.py
           grep -q 'AUTHORITY = "AWS_ML_PROSPECTIVE_R7"' mlb_auto_llm/ml_authority.py
           grep -q 'MLB_ML_RETIRED_AUTHORITY_REJECTED' mlb_auto_llm/ml_authority.py
           grep -q 'INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble' mlb_auto_llm/ml_authority.py
@@ -80,6 +83,7 @@ jobs:
         run: sam build --no-cached --template-file mlb-auto-llm-template.yaml
 
       - name: Deploy prospective-only MLB Auto authority
+        id: deploy_stack
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
           BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
@@ -241,6 +245,7 @@ jobs:
           PY
 
       - name: Probe runtime without allowing retired fallback
+        if: ${{ always() && steps.deploy_stack.outcome == 'success' }}
         run: |
           set -euo pipefail
           function_name=$(aws cloudformation describe-stack-resource \
