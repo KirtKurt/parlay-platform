@@ -58,6 +58,9 @@ def test_deploy_uses_exact_trigger_sha_and_runs_repair_contracts() -> None:
 
     assert "ref: ${{ github.sha }}" in source
     assert 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in source
+    assert "tests/unit/test_mlb_auto_bbd_utc_date_resolver.py" in source
     assert "tests/unit/test_mlb_auto_decision_evidence.py" in source
     assert "tests/unit/test_mlb_auto_pregame_odds_replay.py" in source
     assert "mlb_auto_llm/decision_evidence.py" in source
+    assert "mlb_auto_llm/handler.py" in source
+    assert "mlb_auto_llm/pregame_odds_replay.py" in source
