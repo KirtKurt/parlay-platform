@@ -31,6 +31,7 @@ def _packet_history(base: Any, slate: str, *, limit: int = 300) -> List[Dict[str
         "KeyConditionExpression": "PK = :pk",
         "ExpressionAttributeValues": {":pk": f"PACKET#{slate}"},
         "ScanIndexForward": False,
+        "ConsistentRead": True,
         "Limit": min(max(limit, 1), 500),
     }
     for _ in range(5):

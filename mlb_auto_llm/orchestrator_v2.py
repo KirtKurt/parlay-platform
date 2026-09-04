@@ -93,6 +93,11 @@ def _compact_bbs(game: Dict[str, Any]) -> Dict[str, Any]:
         "odds": value.get("odds"),
         "statistics": value.get("statistics"),
         "lineups": value.get("lineups"),
+        "teamForm": value.get("teamForm"),
+        "players": value.get("players"),
+        "events": value.get("events"),
+        "weather": value.get("weather"),
+        "leagueContext": game.get("bbsLeagueContext"),
     }
     return compact
 
@@ -112,6 +117,9 @@ def _strict_packet(game: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any
     }
     return {
         "officialMlb": safe_official,
+        "officialBullpenContext": copy.deepcopy(
+            game.get("officialBullpenContext") or {}
+        ),
         "theOddsApi": {
             **_core_market_summary(game),
             # Do not ask a language model to rediscover decimal-odds direction
@@ -132,6 +140,7 @@ def _strict_packet(game: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any
             },
         },
         "bigBallsDataPro": _compact_bbs(game),
+        "decisionEvidence": copy.deepcopy(game.get("decisionEvidence") or {}),
         "autonomyState": state,
     }
 
@@ -163,6 +172,10 @@ def _strict_prompt_packet(
         ),
         "autonomyState": base._compact_for_llm(packet["autonomyState"], 2500),
         "officialMlb": base._compact_for_llm(packet["officialMlb"], 4000),
+        "officialBullpenContext": {
+            side: base._compact_for_llm(value, 2200)
+            for side, value in packet["officialBullpenContext"].items()
+        },
         "theOddsApi": {
             # These two objects are deliberately outside every truncation
             # boundary.  They are the deterministic authority for interpreting
@@ -176,9 +189,13 @@ def _strict_prompt_packet(
                 9000,
             ),
         },
-        "bigBallsDataPro": base._compact_for_llm(
-            packet["bigBallsDataPro"],
-            9000,
+        "bigBallsDataPro": {
+            key: base._compact_for_llm(value, 2200 if key == "lineups" else 1200)
+            for key, value in packet["bigBallsDataPro"].items()
+        },
+        "decisionEvidence": base._compact_for_llm(
+            packet["decisionEvidence"],
+            7000,
         ),
     }
 
@@ -231,13 +248,18 @@ def _strict_bedrock_decision(
         "with the higher decimal price the favorite. Use the supplied "
         "theOddsApi.normalizedH2hConsensus probabilities and marketFavorite "
         "instead of recomputing or guessing the favorite from raw prices. "
-        f"Give normalized consensus at least autonomyState.marketAnchorWeight="
-        f"{state.get('marketAnchorWeight')} of the decision weight. If choosing "
-        "the normalized market underdog, identify concrete, quantified pregame "
-        "evidence strong enough to overcome that anchor in disagreements; "
-        "otherwise select the normalized market favorite. "
-        "Return ONLY JSON with winner, loser, probability, confidence, rationale, "
-        "source_weights, disagreements. "
+        "Apply the exact weights in decisionEvidence.weights: live baseball "
+        "context 40%, immutable historical-model findings 30%, observed pregame "
+        "moneyline movement 20%, and current market level 10%. Recent accuracy "
+        "is diagnostic and MUST NOT change those weights. The market favorite is "
+        "not a fallback or default. A historical model marked advisoryOnly may "
+        "inform the calculation but is not production authority. Explain which "
+        "actual supplied signals control the weighted conclusion. "
+        "Return ONLY JSON with winner, loser, probability, "
+        "live_baseball_home_probability, confidence, rationale, source_weights, "
+        "disagreements. probability is your selected side's live-context estimate; "
+        "live_baseball_home_probability must be the home team's probability from "
+        "the supplied MLB/BBD context before the server blends other signals. "
         f"winner must be exactly {home!r} or {away!r}; loser must be the other team; "
         "probability must be between 0.50 and 0.95."
         + smoke_prompt
@@ -307,7 +329,73 @@ def _strict_bedrock_decision(
             raise RuntimeError(
                 "DEPLOYMENT_SMOKE_DECIMAL_ODDS_INTERPRETATION_MISSING"
             )
-    probability = min(max(float(parsed.get("probability") or 0.5), 0.50), 0.95)
+    model_probability = min(max(float(parsed.get("probability") or 0.5), 0.50), 0.95)
+    analyst_winner = winner
+    calculation: Dict[str, Any] = {}
+    if deployment_smoke_contract is None:
+        evidence = game.get("decisionEvidence") or {}
+        weights = evidence.get("weights") or state.get("decisionWeights") or {}
+        required = (
+            "liveBaseballContext",
+            "historicalModelFindings",
+            "moneylineMovement",
+            "currentMarketLevel",
+        )
+        if any(
+            (evidence.get(name) or {}).get("available") is not True
+            for name in required
+        ):
+            raise RuntimeError("MLB_DECISION_EVIDENCE_INCOMPLETE_AT_DECISION")
+        if set(weights) != set(required) or abs(
+            sum(float(weights[name]) for name in required) - 1.0
+        ) > 0.000001:
+            raise RuntimeError("MLB_DECISION_WEIGHTS_INVALID")
+
+        historical_home = float(
+            evidence["historicalModelFindings"]["homeWinProbability"]
+        )
+        market_home = float(evidence["currentMarketLevel"]["homeProbability"])
+        movement = evidence["moneylineMovement"]
+        movement_delta = float(movement.get("homeProbabilityDelta") or 0.0)
+        reversals = max(0, int(movement.get("reversalCount") or 0))
+        movement_home = 0.5 + max(-0.20, min(0.20, movement_delta * 3.0))
+        movement_home = 0.5 + (movement_home - 0.5) / (1.0 + 0.5 * reversals)
+        live_home = parsed.get("live_baseball_home_probability")
+        if live_home is None:
+            live_home = (
+                model_probability
+                if analyst_winner == home
+                else 1.0 - model_probability
+            )
+        live_home = min(max(float(live_home), 0.05), 0.95)
+        components = {
+            "liveBaseballContext": live_home,
+            "historicalModelFindings": historical_home,
+            "moneylineMovement": movement_home,
+            "currentMarketLevel": market_home,
+        }
+        home_probability = sum(
+            float(weights[name]) * components[name] for name in required
+        )
+        home_probability = min(max(home_probability, 0.05), 0.95)
+        winner = home if home_probability >= 0.5 else away
+        loser = away if winner == home else home
+        probability = home_probability if winner == home else 1.0 - home_probability
+        calculation = {
+            "method": "server_side_weighted_home_win_probability",
+            "weights": copy.deepcopy(weights),
+            "homeWinProbabilityBySignal": {
+                name: round(value, 6) for name, value in components.items()
+            },
+            "finalHomeWinProbability": round(home_probability, 6),
+            "analystWinner": analyst_winner,
+            "analystProbability": round(model_probability, 6),
+            "movementSensitivity": 3.0,
+            "movementReversalShrinkageApplied": reversals > 0,
+        }
+    else:
+        probability = model_probability
+    confidence = "HIGH" if probability >= 0.64 else "MEDIUM" if probability >= 0.57 else "LOW"
     result = {
         "ok": True,
         "authority": "BEDROCK_LLM",
@@ -315,10 +403,21 @@ def _strict_bedrock_decision(
         "winner": winner,
         "loser": loser,
         "probability": round(probability, 6),
-        "confidence": str(parsed.get("confidence") or "MODEL"),
+        "confidence": confidence,
         "rationale": parsed.get("rationale"),
-        "sourceWeights": parsed.get("source_weights") or {},
-        "disagreements": parsed.get("disagreements") or [],
+        "sourceWeights": copy.deepcopy(
+            (game.get("decisionEvidence") or {}).get("weights")
+            or state.get("decisionWeights")
+            or {}
+        ),
+        "modelReportedSourceWeights": parsed.get("source_weights") or {},
+        "disagreements": list(parsed.get("disagreements") or [])
+        + (
+            ["weighted calculation overrode analyst direction"]
+            if winner != analyst_winner
+            else []
+        ),
+        "decisionCalculation": calculation,
         "errorsBeforeSuccess": response.get("errorsBeforeSuccess") or [],
     }
     if deployment_smoke_contract is not None:
@@ -350,6 +449,8 @@ def _build_strict_bedrock_card(packet: Dict[str, Any]) -> Dict[str, Any]:
                 "rationale": decision.get("rationale"),
                 "sourceWeights": decision.get("sourceWeights"),
                 "disagreements": decision.get("disagreements"),
+                "decisionEvidence": copy.deepcopy(game.get("decisionEvidence") or {}),
+                "decisionCalculation": decision.get("decisionCalculation") or {},
                 "sourcePresence": {
                     "mlbStatsApi": bool(game.get("official")),
                     "theOddsApi": bool(game.get("oddsCore")),
@@ -497,7 +598,13 @@ def _deployment_decimal_odds_decision_smoke(
                 "recentGradedPicks": 0,
                 "recentCorrectPicks": 0,
                 "recentAccuracy": None,
-                "marketAnchorWeight": 1.0,
+                "decisionWeights": {
+                    "liveBaseballContext": 0.0,
+                    "historicalModelFindings": 0.0,
+                    "moneylineMovement": 0.0,
+                    "currentMarketLevel": 1.0,
+                },
+                "marketFavoriteFallbackAllowed": False,
                 "policy": (
                     "Deployment contract: only normalized h2h consensus is "
                     "available, so select its market favorite."

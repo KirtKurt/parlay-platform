@@ -6,6 +6,23 @@ import orchestrator_v2 as subject
 import pytest
 
 
+DECISION_WEIGHTS = {
+    "liveBaseballContext": 0.40,
+    "historicalModelFindings": 0.30,
+    "moneylineMovement": 0.20,
+    "currentMarketLevel": 0.10,
+}
+
+
+def _state() -> dict:
+    return {
+        "targetDailyAccuracy": 0.80,
+        "targetRole": "long_term_goal_not_a_decision_weight_or_advancement_gate",
+        "decisionWeights": DECISION_WEIGHTS,
+        "marketFavoriteFallbackAllowed": False,
+    }
+
+
 @pytest.fixture(autouse=True)
 def _fixed_model_catalog(monkeypatch):
     monkeypatch.setattr(
@@ -54,12 +71,45 @@ def _game() -> dict:
             "marketFavorite": "Boston Red Sox",
             "marketFavoriteProbability": 0.5465,
         },
-        "bbs": {"match": {"id": "bbs-event"}},
+        "bbs": {
+            "match": {"id": "bbs-event"},
+            "lineups": {"ok": True, "data": [{"battingOrder": 1}]},
+            "statistics": {"ok": True, "data": {"reliefEra": 3.5}},
+            "teamForm": {"home": {"ok": True, "data": {"games": 10}}},
+            "players": [{"id": "reliever-1", "rollingStats": {"pitches": 28}}],
+            "events": {"ok": True, "data": []},
+            "weather": {"ok": True, "data": {"temperature": 72}},
+        },
+        "bbsLeagueContext": {
+            "standings": {"ok": True, "data": [{"team": "Miami"}]},
+            "injuries": {"ok": True, "data": []},
+        },
+        "decisionEvidence": {
+            "weights": DECISION_WEIGHTS,
+            "liveBaseballContext": {"available": True},
+            "historicalModelFindings": {
+                "available": True,
+                "advisoryOnly": True,
+                "predictedWinner": "Boston Red Sox",
+                "homeWinProbability": 0.41,
+            },
+            "moneylineMovement": {
+                "available": True,
+                "homeProbabilityDelta": -0.04,
+                "observationCount": 5,
+            },
+            "currentMarketLevel": {
+                "available": True,
+                "homeProbability": 0.4535,
+                "awayProbability": 0.5465,
+            },
+            "immutablePregameOnly": True,
+        },
     }
 
 
 def test_strict_packet_exposes_normalized_consensus_and_decimal_direction() -> None:
-    packet = subject._strict_packet(_game(), {"marketAnchorWeight": 0.72})
+    packet = subject._strict_packet(_game(), _state())
     odds = packet["theOddsApi"]
 
     assert odds["normalizedH2hConsensus"]["marketFavorite"] == "Boston Red Sox"
@@ -72,6 +122,11 @@ def test_strict_packet_exposes_normalized_consensus_and_decimal_direction() -> N
         "rawImpliedProbabilityFormula": "1 / decimal_price",
         "favoriteAuthority": "normalizedH2hConsensus.marketFavorite",
     }
+    assert packet["decisionEvidence"]["weights"] == DECISION_WEIGHTS
+    assert packet["bigBallsDataPro"]["lineups"]["data"]
+    assert packet["bigBallsDataPro"]["teamForm"]["home"]["data"]
+    assert packet["bigBallsDataPro"]["players"][0]["rollingStats"]
+    assert packet["bigBallsDataPro"]["leagueContext"]["standings"]["data"]
 
 
 def test_normalizer_treats_lower_decimal_price_as_the_favorite() -> None:
@@ -107,9 +162,7 @@ def test_bedrock_prompt_cannot_reverse_decimal_price_direction(monkeypatch) -> N
         }
 
     monkeypatch.setattr(subject, "invoke_chain_text", invoke)
-    result = subject._strict_bedrock_decision(
-        _game(), {"marketAnchorWeight": 0.72}
-    )
+    result = subject._strict_bedrock_decision(_game(), _state())
 
     assert result["winner"] == "Boston Red Sox"
     assert "LOWER decimal price means a HIGHER raw implied win probability" in captured[
@@ -123,6 +176,8 @@ def test_bedrock_prompt_cannot_reverse_decimal_price_direction(monkeypatch) -> N
         prompt_packet["theOddsApi"]["normalizedH2hConsensus"]["marketFavorite"]
         == "Boston Red Sox"
     )
+    assert "The market favorite is not a fallback or default" in captured["prompt"]
+    assert result["sourceWeights"] == DECISION_WEIGHTS
 
 
 def test_oversized_provider_payload_cannot_truncate_decimal_odds_authority(
@@ -156,14 +211,11 @@ def test_oversized_provider_payload_cannot_truncate_decimal_odds_authority(
         }
 
     monkeypatch.setattr(subject, "invoke_chain_text", invoke)
-    subject._strict_bedrock_decision(
-        game,
-        {"marketAnchorWeight": 0.72},
-    )
+    subject._strict_bedrock_decision(game, _state())
 
     packet = captured["packet"]
     assert packet.get("truncated") is not True
-    assert packet["bigBallsDataPro"]["truncated"] is True
+    assert packet["bigBallsDataPro"]["statistics"]["truncated"] is True
     assert (
         packet["theOddsApi"]["normalizedH2hConsensus"]["marketFavorite"]
         == "Boston Red Sox"
@@ -175,6 +227,44 @@ def test_oversized_provider_payload_cannot_truncate_decimal_odds_authority(
         "favoriteAuthority": "normalizedH2hConsensus.marketFavorite",
     }
     assert len(json.dumps(packet, separators=(",", ":"))) < 30000
+
+
+def test_weighted_pregame_evidence_can_select_market_underdog(monkeypatch) -> None:
+    def invoke(_prompt, **_kwargs):
+        return {
+            "ok": True,
+            "modelId": "us.amazon.nova-2-lite-v1:0",
+            "text": json.dumps(
+                {
+                    "winner": "Miami Marlins",
+                    "loser": "Boston Red Sox",
+                    "probability": 0.60,
+                    "confidence": "arbitrary-model-label",
+                    "rationale": (
+                        "Live context, historical findings, and five pregame "
+                        "movement observations outweigh the 10% market input."
+                    ),
+                    "source_weights": {"normalized_market_consensus": 0.99},
+                    "disagreements": ["current market favors Boston"],
+                }
+            ),
+        }
+
+    monkeypatch.setattr(subject, "invoke_chain_text", invoke)
+    game = _game()
+    game["decisionEvidence"]["historicalModelFindings"].update(
+        {"predictedWinner": "Miami Marlins", "homeWinProbability": 0.59}
+    )
+    game["decisionEvidence"]["moneylineMovement"]["homeProbabilityDelta"] = 0.04
+    result = subject._strict_bedrock_decision(game, _state())
+
+    assert result["winner"] == "Miami Marlins"
+    assert result["sourceWeights"] == DECISION_WEIGHTS
+    assert result["modelReportedSourceWeights"] == {
+        "normalized_market_consensus": 0.99
+    }
+    assert result["confidence"] == "MEDIUM"
+    assert result["decisionCalculation"]["finalHomeWinProbability"] > 0.5
 
 
 def _deployment_smoke_model_response(
