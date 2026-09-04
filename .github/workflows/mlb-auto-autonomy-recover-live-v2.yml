@@ -1,0 +1,192 @@
+name: MLB AUTO Autonomy Recover Live V2
+
+on:
+  push:
+    branches: ["agent/mlb-auto-autonomy-chain-20260814"]
+    paths:
+      - ".github/workflows/mlb-auto-autonomy-recover-live-v2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: mlb-auto-autonomy-recover-live-v2
+  cancel-in-progress: false
+
+jobs:
+  recover-and-prove:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --quiet "boto3>=1.34,<2"
+      - name: Dispatch current main deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          MAIN_SHA=$(git rev-parse HEAD)
+          echo "MAIN_SHA=$MAIN_SHA" >> "$GITHUB_ENV"
+          gh workflow run deploy.yml --ref main || true
+          for attempt in $(seq 1 140); do
+            LINE=$(gh run list --workflow deploy.yml --branch main --limit 30 --json databaseId,headSha,status,conclusion \
+              --jq ".[] | select(.headSha == \"$MAIN_SHA\")" | head -n 1)
+            if [ -n "$LINE" ]; then
+              RUN_ID=$(printf '%s' "$LINE" | jq -r '.databaseId')
+              STATUS=$(printf '%s' "$LINE" | jq -r '.status')
+              CONCLUSION=$(printf '%s' "$LINE" | jq -r '.conclusion // ""')
+              echo "Deploy $RUN_ID status=$STATUS conclusion=$CONCLUSION"
+              if [ "$STATUS" = "completed" ]; then
+                echo "DEPLOY_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+                echo "DEPLOY_CONCLUSION=$CONCLUSION" >> "$GITHUB_ENV"
+                break
+              fi
+            fi
+            sleep 15
+          done
+          test "${DEPLOY_CONCLUSION:-}" = "success"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Run trainer twice to consume reconciled rows
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          TRAINER=$(aws cloudformation describe-stack-resource --stack-name parlay-platform-dev --region "$AWS_REGION" --logical-resource-id MLBMLTrainingFunction --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          LLM=$(aws cloudformation describe-stack-resource --stack-name parlay-platform-dev --region "$AWS_REGION" --logical-resource-id MLBLLMHypothesisFunction --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          echo "TRAINER_FUNCTION=$TRAINER" >> "$GITHUB_ENV"
+          echo "LLM_FUNCTION=$LLM" >> "$GITHUB_ENV"
+          for ROUND in 1 2; do
+            aws lambda invoke --function-name "$TRAINER" --region "$AWS_REGION" --cli-binary-format raw-in-base64-out \
+              --payload '{"execution_mode":"training","executionMode":"training","mode":"training","continueAfterUnresolved":true,"reconcileBacklog":true}' \
+              "/tmp/training_${ROUND}.json" >/dev/null
+          done
+          aws lambda invoke --function-name "$TRAINER" --region "$AWS_REGION" --cli-binary-format raw-in-base64-out \
+            --payload '{"execution_mode":"selection_capture","executionMode":"selection_capture","mode":"selection_capture"}' \
+            /tmp/selection.json >/dev/null
+          aws lambda invoke --function-name "$TRAINER" --region "$AWS_REGION" --cli-binary-format raw-in-base64-out \
+            --payload '{"execution_mode":"status","executionMode":"status","mode":"status"}' \
+            /tmp/status.json >/dev/null
+          aws lambda invoke --function-name "$LLM" --region "$AWS_REGION" --cli-binary-format raw-in-base64-out \
+            --payload '{"researchContext":{"weakPatterns":["high reversal count","agreement without steam or run-line confirmation","late acceleration instability"],"latestMetrics":{"targetAccuracyPct":90},"currentFeatureCoverage":{"immutableT45":true},"currentModelFamilies":["elastic_net_logistic","gradient_boosted_trees","regime_mixture"]}}' \
+            /tmp/llm.json >/dev/null
+
+      - name: Build final live proof
+        run: |
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def load(path):
+              value = json.load(open(path, encoding="utf-8"))
+              if isinstance(value, dict) and isinstance(value.get("body"), str):
+                  try:
+                      body = json.loads(value["body"])
+                      if isinstance(body, dict): return body
+                  except Exception: pass
+              return value
+
+          first = load('/tmp/training_1.json')
+          training = load('/tmp/training_2.json')
+          selection = load('/tmp/selection.json')
+          status = load('/tmp/status.json')
+          llm = load('/tmp/llm.json')
+          chain = training.get('mlbAutoAutonomyChain') or {}
+          bridge = training.get('mlbT45TrainingEnvelopeBridge') or chain.get('trainingEnvelopeBridge') or {}
+          continuity = training.get('canonicalSlateContinuity') or {}
+          consumer = status.get('v2InferenceConsumer') or (status.get('mlbAutoAutonomyChain') or {}).get('v2InferenceConsumer') or {}
+          accepted = int(training.get('acceptedRowCount') or 0)
+          first_accepted = int(first.get('acceptedRowCount') or 0)
+          identities = {}
+          for name, payload in [('training', training), ('selectionCapture', selection), ('status', status)]:
+              identities[name] = payload.get('deploymentIdentity') or (payload.get('mlbAutoAutonomyChain') or {}).get('deploymentIdentity') or {}
+          blockers = []
+          if os.environ.get('DEPLOY_CONCLUSION') != 'success': blockers.append('deploy_not_successful')
+          if accepted <= 0: blockers.append('accepted_row_count_not_above_zero')
+          if bridge.get('installed') is not True: blockers.append('t45_training_envelope_bridge_not_installed')
+          if not bridge.get('wrappedValidators'): blockers.append('canonical_eligibility_validator_not_wrapped')
+          if continuity.get('unresolvedSlateStopsLaterEvaluation') is not False: blockers.append('unresolved_slate_still_blocks_later_dates')
+          if chain.get('automaticPromotionEnabled') is not True: blockers.append('automatic_promotion_disabled')
+          if chain.get('firstPromotionRequiresManualReview') is not False: blockers.append('manual_first_promotion_required')
+          if chain.get('learningContinuesBelow90Pct') is not True: blockers.append('continuous_learning_below_90_disabled')
+          if chain.get('accuracyTargetAffectsCandidateTraining') is not False: blockers.append('90pct_still_blocks_candidate_training')
+          if consumer.get('installed') is not True: blockers.append('v2_inference_consumer_not_installed')
+          if llm.get('ok') is not True or int(llm.get('hypothesisCount') or 0) <= 0: blockers.append('bedrock_llm_hypothesis_generation_not_proven')
+          if llm.get('productionAuthority') is not False: blockers.append('llm_has_direct_production_authority')
+          valid_identities = [value for value in identities.values() if value.get('gitSha') and value.get('templateSha256')]
+          if len(valid_identities) != 3: blockers.append('deployment_identity_missing')
+          elif len({(x.get('gitSha'), x.get('templateSha256')) for x in valid_identities}) != 1: blockers.append('training_selection_inference_identity_mismatch')
+          proof = {
+              'ok': not blockers,
+              'proofType': 'MLB_AUTO_AUTONOMY_CHAIN_LIVE_FINAL',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'mainGitSha': os.environ.get('MAIN_SHA'),
+              'deployRunId': os.environ.get('DEPLOY_RUN_ID'),
+              'deployConclusion': os.environ.get('DEPLOY_CONCLUSION'),
+              'trainerFunction': os.environ.get('TRAINER_FUNCTION'),
+              'llmFunction': os.environ.get('LLM_FUNCTION'),
+              'acceptedRowCountFirstRun': first_accepted,
+              'acceptedRowCount': accepted,
+              'trainingStatus': training.get('status'),
+              'partitionCounts': training.get('partitionCounts'),
+              'canonicalSlateContinuity': continuity,
+              'trainingEnvelopeBridge': bridge,
+              'deploymentIdentities': identities,
+              'automaticPromotionEnabled': chain.get('automaticPromotionEnabled'),
+              'firstPromotionRequiresManualReview': chain.get('firstPromotionRequiresManualReview'),
+              'learningContinuesBelow90Pct': chain.get('learningContinuesBelow90Pct'),
+              'accuracyTargetAffectsCandidateTraining': chain.get('accuracyTargetAffectsCandidateTraining'),
+              'accuracyTargetAffectsProductionAuthorityOnly': chain.get('accuracyTargetAffectsProductionAuthorityOnly'),
+              'v2InferenceConsumer': consumer,
+              'llmHypothesis': {
+                  'ok': llm.get('ok'),
+                  'status': llm.get('status'),
+                  'hypothesisCount': llm.get('hypothesisCount'),
+                  'modelId': llm.get('modelId'),
+                  'productionAuthority': llm.get('productionAuthority'),
+                  'errorType': llm.get('errorType'),
+              },
+              'blockers': blockers,
+              'secretExposed': False,
+          }
+          Path('runtime_reports/mlb_auto_autonomy_chain_live_final_latest.json').write_text(json.dumps(proof, indent=2, default=str) + '\n', encoding='utf-8')
+          print(json.dumps(proof, indent=2, default=str))
+          PY
+
+      - name: Publish final live proof to verification branch
+        if: always()
+        run: |
+          cp runtime_reports/mlb_auto_autonomy_chain_live_final_latest.json /tmp/final-proof.json
+          git fetch origin agent/mlb-auto-autonomy-chain-20260814
+          git checkout -B agent/mlb-auto-autonomy-chain-20260814 origin/agent/mlb-auto-autonomy-chain-20260814
+          mkdir -p runtime_reports
+          cp /tmp/final-proof.json runtime_reports/mlb_auto_autonomy_chain_live_final_latest.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/mlb_auto_autonomy_chain_live_final_latest.json
+          git commit -m "Publish final MLB AUTO autonomy live proof [skip ci]" || true
+          git push origin HEAD:agent/mlb-auto-autonomy-chain-20260814 || true
+
+      - name: Enforce final live proof
+        run: |
+          python - <<'PY'
+          import json
+          proof = json.load(open('runtime_reports/mlb_auto_autonomy_chain_live_final_latest.json', encoding='utf-8'))
+          if proof.get('ok') is not True:
+              raise SystemExit('MLB AUTO autonomy final live proof failed: ' + json.dumps(proof.get('blockers')))
+          PY
