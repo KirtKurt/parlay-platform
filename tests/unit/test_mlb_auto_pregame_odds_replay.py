@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -33,8 +34,9 @@ EVENT = {
 
 
 class Table:
-    def __init__(self, captured_at):
+    def __init__(self, captured_at, event=EVENT):
         self.captured_at = captured_at
+        self.event = event
         self.calls = []
 
     def query(self, **kwargs):
@@ -48,7 +50,7 @@ class Table:
                         "games": [
                             {
                                 "gamePk": "824235",
-                                "oddsCore": EVENT,
+                                "oddsCore": self.event,
                             }
                         ],
                     }
@@ -128,14 +130,27 @@ def packet():
     }
 
 
-def base(captured_at):
+def base(captured_at, event=EVENT):
     return SimpleNamespace(
-        TABLE=Table(captured_at),
+        TABLE=Table(captured_at, event),
         _plain=lambda value: value,
         _parse=parse,
         _iso=iso,
         _market_consensus=market_consensus,
     )
+
+
+def replay_marked_event(captured_at):
+    event = copy.deepcopy(EVENT)
+    event["_inqsiPregameEvidence"] = {
+        "version": replay.VERSION,
+        "source": "The Odds API",
+        "capturedAtUtc": captured_at,
+        "capturedBeforeGameStart": True,
+        "replayedAfterLiveEndpointRemoval": True,
+        "eventId": EVENT["id"],
+    }
+    return event
 
 
 def test_replays_only_real_pregame_odds_snapshot():
@@ -156,6 +171,51 @@ def test_replays_only_real_pregame_odds_snapshot():
     assert namespace.TABLE.calls[0]["ConsistentRead"] is True
 
 
+def test_replay_chain_preserves_original_provider_capture_time():
+    original_capture = "2026-08-24T20:00:00+00:00"
+    replay_copy = replay_marked_event(original_capture)
+    namespace = base("2026-08-24T21:00:00+00:00", replay_copy)
+    production = SimpleNamespace(_apply_source_coverage=apply_coverage)
+
+    result = replay.recover_persisted_pregame_odds(
+        namespace, production, match_event, packet()
+    )
+
+    marker = result["games"][0]["oddsCore"]["_inqsiPregameEvidence"]
+    assert marker["capturedAtUtc"] == original_capture
+    assert result["sourceStatus"]["theOddsApi"][
+        "persistedPregameEvidenceByGamePk"
+    ]["824235"]["capturedAtUtc"] == original_capture
+
+
+@pytest.mark.parametrize(
+    "marker_capture",
+    [
+        "not-a-timestamp",
+        "2026-08-24T21:30:00+00:00",
+        GAME_START,
+        "2026-08-24T23:00:00+00:00",
+    ],
+    ids=("invalid", "future-relative-to-packet", "at-start", "post-start"),
+)
+def test_replay_chain_rejects_invalid_future_or_post_start_marker_time(
+    marker_capture,
+):
+    replay_copy = replay_marked_event(marker_capture)
+    namespace = base("2026-08-24T21:00:00+00:00", replay_copy)
+    production = SimpleNamespace(_apply_source_coverage=apply_coverage)
+
+    result = replay.recover_persisted_pregame_odds(
+        namespace, production, match_event, packet()
+    )
+
+    assert result["games"][0]["oddsCore"] is None
+    assert result["threeSourceCoverageComplete"] is False
+    assert result["sourceStatus"]["theOddsApi"][
+        "persistedPregameRecoveryCount"
+    ] == 0
+
+
 def test_rejects_packet_captured_after_first_pitch():
     namespace = base("2026-08-24T23:00:00+00:00")
     production = SimpleNamespace(_apply_source_coverage=apply_coverage)
@@ -167,6 +227,61 @@ def test_rejects_packet_captured_after_first_pitch():
     assert result["games"][0]["oddsCore"] is None
     assert result["threeSourceCoverageComplete"] is False
     assert result["sourceStatus"]["theOddsApi"]["persistedPregameRecoveryCount"] == 0
+
+
+@pytest.mark.parametrize(
+    "markets",
+    [
+        [
+            {
+                "key": "spreads",
+                "outcomes": [
+                    {"name": "Detroit Tigers", "price": 1.91, "point": -1.5},
+                    {"name": "Tampa Bay Rays", "price": 1.91, "point": 1.5},
+                ],
+            }
+        ],
+        [
+            {
+                "key": "totals",
+                "outcomes": [
+                    {"name": "Over", "price": 1.91, "point": 8.5},
+                    {"name": "Under", "price": 1.91, "point": 8.5},
+                ],
+            }
+        ],
+        [
+            {
+                "key": "h2h",
+                "outcomes": [
+                    {"name": "Detroit Tigers", "price": 1.80},
+                ],
+            }
+        ],
+    ],
+    ids=("spread-only", "total-only", "one-sided-h2h"),
+)
+def test_persisted_replay_rejects_snapshots_without_two_sided_h2h(markets):
+    invalid_event = {
+        **EVENT,
+        "id": "invalid-core-event",
+        "bookmakers": [{"key": "book", "markets": markets}],
+    }
+    namespace = base("2026-08-24T20:00:00+00:00", invalid_event)
+    production = SimpleNamespace(_apply_source_coverage=apply_coverage)
+
+    result = replay.recover_persisted_pregame_odds(
+        namespace,
+        production,
+        match_event,
+        packet(),
+    )
+
+    assert result["games"][0]["oddsCore"] is None
+    assert result["threeSourceCoverageComplete"] is False
+    status = result["sourceStatus"]["theOddsApi"]
+    assert status["persistedPregameRecoveryCount"] == 0
+    assert status["persistedPregameRecoveredGamePks"] == []
 
 
 def test_install_uses_current_slate_evidence_without_late_publication():

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import functools
 import json
 import math
 import os
@@ -53,6 +54,7 @@ ODDS_MARKETS = [
 ]
 
 BBS_MATCH_FIELDS = "scores,odds,lineups,stats,events"
+ODDS_MATCH_MAX_DRIFT_SECONDS = 12 * 3600
 
 
 def _now() -> datetime:
@@ -274,22 +276,146 @@ def _official_schedule(slate: str) -> Dict[str, Any]:
     return {"source": "MLB Stats API", "url": url, "totalGames": len(games), "games": games}
 
 
-def _odds_core() -> Dict[str, Any]:
+def _odds_api_timestamp(value: datetime) -> str:
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _odds_slate_bounds(slate: str) -> Tuple[str, str]:
+    """Return the exact inclusive UTC interval for one Eastern slate date."""
+
+    slate_date = datetime.strptime(slate, "%Y-%m-%d").date()
+    start_et = datetime.combine(slate_date, datetime.min.time(), tzinfo=ET)
+    next_start_et = datetime.combine(
+        slate_date + timedelta(days=1),
+        datetime.min.time(),
+        tzinfo=ET,
+    )
+    end_et = next_start_et - timedelta(seconds=1)
+    return _odds_api_timestamp(start_et), _odds_api_timestamp(end_et)
+
+
+def _bounded_odds_rows(
+    rows: Any,
+    start_utc: str,
+    end_utc: str,
+) -> List[Dict[str, Any]]:
+    """Enforce the provider's inclusive bounds locally as a second guard."""
+
+    start = _parse(start_utc)
+    end = _parse(end_utc)
+    if start is None or end is None:
+        raise RuntimeError("ODDS_SLATE_BOUNDS_INVALID")
+    bounded: List[Dict[str, Any]] = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        commence = _parse(row.get("commence_time") or row.get("commenceTime"))
+        if commence is None or commence < start or commence > end:
+            continue
+        bounded.append(copy.deepcopy(row))
+    return bounded
+
+
+def _validated_odds_event_rows(payload: Any, *, label: str) -> List[Dict[str, Any]]:
+    if not isinstance(payload, list):
+        raise RuntimeError(f"{label}_NOT_LIST")
+    rows: List[Dict[str, Any]] = []
+    seen_ids = set()
+    for index, row in enumerate(payload):
+        if not isinstance(row, dict):
+            raise RuntimeError(f"{label}_ROW_NOT_OBJECT:{index}")
+        event_id = str(row.get("id") or "").strip()
+        home = _normalize(row.get("home_team") or row.get("homeTeam"))
+        away = _normalize(row.get("away_team") or row.get("awayTeam"))
+        start = _parse(row.get("commence_time") or row.get("commenceTime"))
+        if not event_id or not home or not away or home == away or start is None:
+            raise RuntimeError(f"{label}_ROW_IDENTITY_INVALID:{index}")
+        if event_id in seen_ids:
+            raise RuntimeError(f"{label}_DUPLICATE_EVENT_ID:{event_id}")
+        seen_ids.add(event_id)
+        rows.append(copy.deepcopy(row))
+    return rows
+
+
+def _odds_core(slate: str) -> Dict[str, Any]:
     if not ODDS_API_KEY:
         raise RuntimeError("ODDS_API_KEY_MISSING")
-    base = "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/"
+    api_base = "https://api.the-odds-api.com/v4/sports/baseball_mlb"
+    start_utc, end_utc = _odds_slate_bounds(slate)
+    bounds = {
+        "commenceTimeFrom": start_utc,
+        "commenceTimeTo": end_utc,
+    }
+
+    # /events is quota-free and distinguishes a healthy provider/catalog
+    # integration from a fixture whose sportsbooks have not posted lines yet.
+    catalog_params = urllib.parse.urlencode(
+        {
+            "apiKey": ODDS_API_KEY,
+            "dateFormat": "iso",
+            **bounds,
+        }
+    )
+    catalog_payload: List[Dict[str, Any]] = []
+    catalog_request_ok = False
+    catalog_error: Optional[str] = None
+    try:
+        raw_catalog, _ = _http_json(
+            f"{api_base}/events?{catalog_params}",
+            timeout=25,
+        )
+        catalog_payload = _validated_odds_event_rows(
+            raw_catalog,
+            label="ODDS_EVENTS",
+        )
+        catalog_request_ok = True
+    except Exception as exc:
+        # The quota-free catalogue improves diagnostics but is not price
+        # authority.  A schema-valid /odds response carries sufficient exact
+        # identity/time data and must remain usable when /events is transiently
+        # unavailable.
+        catalog_error = type(exc).__name__
+
     last_error: Optional[Exception] = None
     for regions in ("us,us2,uk,eu,au", "us,uk,eu,au", "us"):
         params = urllib.parse.urlencode({
-            "apiKey": ODDS_API_KEY, "regions": regions, "markets": "h2h,spreads,totals",
-            "oddsFormat": "decimal", "dateFormat": "iso",
+            "apiKey": ODDS_API_KEY,
+            "regions": regions,
+            "markets": "h2h,spreads,totals",
+            "oddsFormat": "decimal",
+            "dateFormat": "iso",
+            **bounds,
         })
         try:
-            payload, headers = _http_json(f"{base}?{params}", timeout=25)
-            if not isinstance(payload, list):
-                raise RuntimeError("ODDS_CORE_NOT_LIST")
+            payload, headers = _http_json(
+                f"{api_base}/odds?{params}",
+                timeout=25,
+            )
+            price_rows = _validated_odds_event_rows(
+                payload,
+                label="ODDS_CORE",
+            )
             return {
-                "source": "The Odds API", "regions": regions, "events": payload,
+                "source": "The Odds API",
+                "regions": regions,
+                "events": _bounded_odds_rows(
+                    price_rows,
+                    start_utc,
+                    end_utc,
+                ),
+                "catalogEvents": _bounded_odds_rows(
+                    catalog_payload,
+                    start_utc,
+                    end_utc,
+                ),
+                "slateDateEt": slate,
+                "slateBoundsUtc": {
+                    "fromInclusive": start_utc,
+                    "toInclusive": end_utc,
+                },
+                "oddsRequestOk": True,
+                "catalogRequestOk": catalog_request_ok,
+                "catalogError": catalog_error,
                 "quota": {
                     "remaining": headers.get("x-requests-remaining"),
                     "used": headers.get("x-requests-used"),
@@ -299,6 +425,224 @@ def _odds_core() -> Dict[str, Any]:
         except Exception as exc:
             last_error = exc
     raise RuntimeError(f"ODDS_CORE_FAILED:{type(last_error).__name__}")
+
+
+def _odds_exact_h2h_pairs(
+    event: Any,
+    home: Any,
+    away: Any,
+) -> List[Tuple[float, float]]:
+    """Return at most one validated (home, away) decimal pair per book."""
+
+    if not isinstance(event, dict) or not str(event.get("id") or "").strip():
+        return []
+    expected_home = _normalize(home)
+    expected_away = _normalize(away)
+    if not expected_home or not expected_away or expected_home == expected_away:
+        return []
+    if (
+        _normalize(event.get("home_team") or event.get("homeTeam"))
+        != expected_home
+        or _normalize(event.get("away_team") or event.get("awayTeam"))
+        != expected_away
+    ):
+        return []
+    pairs: List[Tuple[float, float]] = []
+    for bookmaker in event.get("bookmakers") or []:
+        if not isinstance(bookmaker, dict):
+            continue
+        for market in bookmaker.get("markets") or []:
+            if not isinstance(market, dict) or market.get("key") != "h2h":
+                continue
+            prices: Dict[str, float] = {}
+            for outcome in market.get("outcomes") or []:
+                if not isinstance(outcome, dict):
+                    continue
+                price = outcome.get("price")
+                if isinstance(price, bool):
+                    continue
+                try:
+                    numeric = float(price)
+                except (TypeError, ValueError):
+                    continue
+                if not math.isfinite(numeric) or numeric <= 1.0:
+                    continue
+                prices[_normalize(outcome.get("name"))] = numeric
+            if expected_home in prices and expected_away in prices:
+                pairs.append((prices[expected_home], prices[expected_away]))
+                break
+    return pairs
+
+
+def _odds_has_exact_h2h(event: Any, home: Any, away: Any) -> bool:
+    """Require one bookmaker with usable prices for both exact MLB teams."""
+
+    return bool(_odds_exact_h2h_pairs(event, home, away))
+
+
+def _odds_match_drift_seconds(
+    game: Dict[str, Any],
+    event: Dict[str, Any],
+) -> Optional[int]:
+    if not str(event.get("id") or "").strip():
+        return None
+    home = _normalize((game.get("home") or {}).get("name"))
+    away = _normalize((game.get("away") or {}).get("name"))
+    if (
+        _normalize(event.get("home_team") or event.get("homeTeam")) != home
+        or _normalize(event.get("away_team") or event.get("awayTeam")) != away
+    ):
+        return None
+    official_start = _parse(game.get("gameDate"))
+    provider_start = _parse(
+        event.get("commence_time") or event.get("commenceTime")
+    )
+    if official_start is None or provider_start is None:
+        return None
+    if official_start.astimezone(ET).date() != provider_start.astimezone(ET).date():
+        return None
+    drift = abs(int((provider_start - official_start).total_seconds()))
+    return drift if drift <= ODDS_MATCH_MAX_DRIFT_SECONDS else None
+
+
+def _assign_odds_events(
+    official_games: Iterable[Dict[str, Any]],
+    rows: Iterable[Dict[str, Any]],
+    *,
+    require_h2h: bool,
+) -> Dict[str, Dict[str, Any]]:
+    """Assign unique ordered-team events at maximum coverage/minimum drift."""
+
+    games_by_pair: Dict[Tuple[str, str], List[Tuple[int, Dict[str, Any]]]] = {}
+    for index, game in enumerate(official_games or []):
+        if not isinstance(game, dict) or not str(game.get("gamePk") or ""):
+            continue
+        pair = (
+            _normalize((game.get("home") or {}).get("name")),
+            _normalize((game.get("away") or {}).get("name")),
+        )
+        if not all(pair):
+            continue
+        games_by_pair.setdefault(pair, []).append((index, game))
+
+    events_by_pair: Dict[Tuple[str, str], List[Tuple[int, Dict[str, Any]]]] = {}
+    seen_event_ids = set()
+    for index, event in enumerate(rows or []):
+        if not isinstance(event, dict):
+            continue
+        event_id = str(event.get("id") or "").strip()
+        if not event_id or event_id in seen_event_ids:
+            continue
+        seen_event_ids.add(event_id)
+        pair = (
+            _normalize(event.get("home_team") or event.get("homeTeam")),
+            _normalize(event.get("away_team") or event.get("awayTeam")),
+        )
+        if not all(pair):
+            continue
+        events_by_pair.setdefault(pair, []).append((index, event))
+
+    assigned: Dict[str, Dict[str, Any]] = {}
+    for pair, indexed_games in games_by_pair.items():
+        indexed_events = events_by_pair.get(pair) or []
+        if not indexed_events:
+            continue
+        indexed_games.sort(
+            key=lambda item: (
+                _parse(item[1].get("gameDate"))
+                or datetime.max.replace(tzinfo=timezone.utc),
+                str(item[1].get("gamePk") or ""),
+                item[0],
+            )
+        )
+        indexed_events.sort(
+            key=lambda item: (
+                _parse(
+                    item[1].get("commence_time")
+                    or item[1].get("commenceTime")
+                )
+                or datetime.max.replace(tzinfo=timezone.utc),
+                str(item[1].get("id") or ""),
+                item[0],
+            )
+        )
+        games = [item[1] for item in indexed_games]
+        events = [item[1] for item in indexed_events]
+        drift_by_edge: Dict[Tuple[int, int], int] = {}
+        for game_index, game in enumerate(games):
+            for event_index, event in enumerate(events):
+                drift = _odds_match_drift_seconds(game, event)
+                if drift is None:
+                    continue
+                if require_h2h and not _odds_has_exact_h2h(
+                    event,
+                    (game.get("home") or {}).get("name"),
+                    (game.get("away") or {}).get("name"),
+                ):
+                    continue
+                drift_by_edge[(game_index, event_index)] = drift
+
+        def choice_key(
+            value: Tuple[int, int, Tuple[Optional[int], ...]],
+        ) -> Tuple[int, int, Tuple[int, ...]]:
+            count, drift, choices = value
+            sentinel = len(events) + 1
+            return (
+                -count,
+                drift,
+                tuple(sentinel if item is None else item for item in choices),
+            )
+
+        @functools.lru_cache(maxsize=None)
+        def solve(
+            game_index: int,
+            used_mask: int,
+        ) -> Tuple[int, int, Tuple[Optional[int], ...]]:
+            if game_index >= len(games):
+                return 0, 0, ()
+            tail = solve(game_index + 1, used_mask)
+            best = (tail[0], tail[1], (None,) + tail[2])
+            for event_index in range(len(events)):
+                bit = 1 << event_index
+                edge = (game_index, event_index)
+                if used_mask & bit or edge not in drift_by_edge:
+                    continue
+                tail = solve(game_index + 1, used_mask | bit)
+                candidate = (
+                    tail[0] + 1,
+                    tail[1] + drift_by_edge[edge],
+                    (event_index,) + tail[2],
+                )
+                if choice_key(candidate) < choice_key(best):
+                    best = candidate
+            return best
+
+        _, _, choices = solve(0, 0)
+        for game, event_index in zip(games, choices):
+            if event_index is not None:
+                assigned[str(game.get("gamePk"))] = copy.deepcopy(
+                    events[event_index]
+                )
+    return assigned
+
+
+def _odds_catalog_identity(
+    event: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(event, dict):
+        return None
+    return {
+        key: copy.deepcopy(event.get(key))
+        for key in (
+            "id",
+            "sport_key",
+            "sport_title",
+            "commence_time",
+            "home_team",
+            "away_team",
+        )
+        if event.get(key) is not None
+    }
 
 
 def _odds_event_markets(event_id: str) -> Dict[str, Any]:
@@ -457,6 +801,112 @@ def _bbs_event_identity(row: Dict[str, Any]) -> str:
     )
 
 
+def _bbs_provider_event_id(row: Dict[str, Any]) -> str:
+    for key in (
+        "id", "match_id", "matchId", "event_id", "eventId",
+        "fixture_id", "fixtureId", "game_id", "gameId", "uuid",
+    ):
+        if row.get(key):
+            return str(row[key]).strip()
+    return ""
+
+
+def _bbs_provider_team_name(row: Dict[str, Any], side: str) -> str:
+    for key in (
+        side,
+        side + "_team",
+        side + "Team",
+        side + "_team_name",
+        side + "TeamName",
+        side + "_name",
+        side + "Name",
+    ):
+        if row.get(key) is None:
+            continue
+        value = row.get(key)
+        if isinstance(value, dict) and isinstance(value.get("team"), dict):
+            value = value.get("team")
+        return _team_name(value)
+    return ""
+
+
+def _bbs_provider_start(row: Dict[str, Any]) -> Any:
+    for key in (
+        "kickoff_utc",
+        "start_time",
+        "startTime",
+        "commence_time",
+        "commenceTime",
+        "scheduled_at",
+        "scheduledAt",
+        "scheduled",
+        "game_date",
+        "gameDate",
+        "date",
+    ):
+        if not row.get(key):
+            continue
+        value = row.get(key)
+        if isinstance(value, dict):
+            value = value.get("utc") or value.get("dateTime") or value.get("value")
+        return value
+    return None
+
+
+def _canonical_bbs_event(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": _bbs_provider_event_id(row),
+        "home_team": _bbs_provider_team_name(row, "home"),
+        "away_team": _bbs_provider_team_name(row, "away"),
+        "commence_time": _bbs_provider_start(row),
+    }
+
+
+def _bbs_event_on_slate(row: Dict[str, Any], slate: str) -> bool:
+    start = _parse(_bbs_provider_start(row))
+    return bool(
+        _bbs_provider_event_id(row)
+        and start is not None
+        and start.astimezone(ET).date().isoformat() == slate
+    )
+
+
+def _bbs_match_drift_seconds(
+    game: Dict[str, Any],
+    event: Dict[str, Any],
+) -> Optional[int]:
+    return _odds_match_drift_seconds(game, _canonical_bbs_event(event))
+
+
+def _assign_bbs_events(
+    official_games: Iterable[Dict[str, Any]],
+    rows: Iterable[Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    """Use the same exact, unique minimum-drift assignment as Odds."""
+
+    originals: Dict[str, Dict[str, Any]] = {}
+    canonical: List[Dict[str, Any]] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        normalized = _canonical_bbs_event(row)
+        event_id = str(normalized.get("id") or "")
+        if not event_id or event_id in originals:
+            continue
+        originals[event_id] = row
+        canonical.append(normalized)
+    assignments = _assign_odds_events(
+        official_games,
+        canonical,
+        require_h2h=False,
+    )
+    return {
+        game_pk: copy.deepcopy(originals[str(event.get("id"))])
+        for game_pk, event in assignments.items()
+        if str(event.get("id") or "") in originals
+    }
+
+
 def _dedupe_bbs_events(rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     events: List[Dict[str, Any]] = []
     seen = set()
@@ -485,16 +935,20 @@ def _official_utc_dates(slate: str, official: Dict[str, Any]) -> List[str]:
 def _bbs_official_coverage(
     official: Dict[str, Any], rows: Iterable[Dict[str, Any]]
 ) -> Tuple[List[str], List[str]]:
-    matched: List[str] = []
-    missing: List[str] = []
-    for game in official.get("games") or []:
-        if not isinstance(game, dict):
-            continue
-        game_pk = str(game.get("gamePk") or "")
-        if _match_event(game, rows, provider="bbs") is not None:
-            matched.append(game_pk)
-        else:
-            missing.append(game_pk)
+    games = [
+        game for game in official.get("games") or [] if isinstance(game, dict)
+    ]
+    assignments = _assign_bbs_events(games, rows)
+    matched = [
+        str(game.get("gamePk") or "")
+        for game in games
+        if str(game.get("gamePk") or "") in assignments
+    ]
+    missing = [
+        str(game.get("gamePk") or "")
+        for game in games
+        if str(game.get("gamePk") or "") not in assignments
+    ]
     return matched, missing
 
 
@@ -548,7 +1002,11 @@ def _bbs_matches(
             },
         )
 
-    events = _dedupe_bbs_events(rows)
+    events = [
+        row
+        for row in _dedupe_bbs_events(rows)
+        if _bbs_event_on_slate(row, slate)
+    ]
     matched, missing = _bbs_official_coverage(official, events)
     fallback_used = False
 
@@ -568,16 +1026,22 @@ def _bbs_matches(
                 "offset": offset,
             },
         )
-        events = _dedupe_bbs_events(rows)
+        events = [
+            row
+            for row in _dedupe_bbs_events(rows)
+            if _bbs_event_on_slate(row, slate)
+        ]
         matched, missing = _bbs_official_coverage(official, events)
         if len(found) < 200:
             break
 
+    assignments = _assign_bbs_events(official.get("games") or [], events)
     return {
         "source": "Big Balls Sports Data",
         "events": events,
+        "assignments": assignments,
         "meta": {
-            "resolver": "official_utc_date_union_v1",
+            "resolver": "official_utc_date_union_exact_et_unique_v2",
             "officialUtcDates": utc_dates,
             "queries": queries,
             "providerMeta": provider_meta,
@@ -587,8 +1051,15 @@ def _bbs_matches(
             ),
             "unfilteredFallbackUsed": fallback_used,
             "expectedOfficialGameCount": len(official.get("games") or []),
-            "matchedOfficialGameCount": len(matched),
-            "missingOfficialGamePks": missing,
+            "matchedOfficialGameCount": len(assignments),
+            "missingOfficialGamePks": sorted(
+                {
+                    str(game.get("gamePk") or "")
+                    for game in official.get("games") or []
+                    if isinstance(game, dict)
+                }
+                - set(assignments)
+            ),
         },
     }
 
@@ -604,7 +1075,7 @@ def _safe_bbs(path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, A
 
 
 def _bbs_event_bundle(event: Dict[str, Any]) -> Dict[str, Any]:
-    match_id = str(event.get("id") or event.get("match_id") or "").strip()
+    match_id = _bbs_provider_event_id(event)
     if not match_id:
         return {"ok": False, "error": "BBS_MATCH_ID_MISSING"}
     quoted = urllib.parse.quote(match_id, safe="")
@@ -619,32 +1090,18 @@ def _bbs_event_bundle(event: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _match_event(game: Dict[str, Any], rows: Iterable[Dict[str, Any]], *, provider: str) -> Optional[Dict[str, Any]]:
-    home = _normalize((game.get("home") or {}).get("name"))
-    away = _normalize((game.get("away") or {}).get("name"))
     matches: List[Tuple[int, Dict[str, Any]]] = []
-    official_start = _parse(game.get("gameDate"))
     for row in rows or []:
         if not isinstance(row, dict):
             continue
         if provider == "odds":
-            rh, ra, start_value = row.get("home_team"), row.get("away_team"), row.get("commence_time")
+            drift = _odds_match_drift_seconds(game, row)
         else:
-            rh = _team_name(row.get("home") or row.get("home_team"))
-            ra = _team_name(row.get("away") or row.get("away_team"))
-            start_value = (
-                row.get("kickoff_utc")
-                or row.get("start_time")
-                or row.get("commence_time")
-                or row.get("scheduled_at")
-                or row.get("scheduledAt")
-            )
-        if _normalize(rh) != home or _normalize(ra) != away:
-            continue
-        provider_start = _parse(start_value)
-        drift = abs(int((provider_start - official_start).total_seconds())) if provider_start and official_start else 999999
-        matches.append((drift, row))
+            drift = _bbs_match_drift_seconds(game, row)
+        if drift is not None:
+            matches.append((drift, row))
     matches.sort(key=lambda item: item[0])
-    return copy.deepcopy(matches[0][1]) if matches and matches[0][0] <= 12 * 3600 else None
+    return copy.deepcopy(matches[0][1]) if matches else None
 
 
 def _market_consensus(game: Dict[str, Any]) -> Dict[str, Any]:
@@ -653,23 +1110,11 @@ def _market_consensus(game: Dict[str, Any]) -> Dict[str, Any]:
     event = game.get("oddsCore") or {}
     home_probs: List[float] = []
     away_probs: List[float] = []
-    for book in event.get("bookmakers") or []:
-        for market in book.get("markets") or []:
-            if market.get("key") != "h2h":
-                continue
-            prices: Dict[str, float] = {}
-            for outcome in market.get("outcomes") or []:
-                try:
-                    prices[_normalize(outcome.get("name"))] = float(outcome.get("price"))
-                except Exception:
-                    continue
-            hp = prices.get(_normalize(home))
-            ap = prices.get(_normalize(away))
-            if hp and ap and hp > 1 and ap > 1:
-                raw_h, raw_a = 1.0 / hp, 1.0 / ap
-                total = raw_h + raw_a
-                home_probs.append(raw_h / total)
-                away_probs.append(raw_a / total)
+    for home_price, away_price in _odds_exact_h2h_pairs(event, home, away):
+        raw_h, raw_a = 1.0 / home_price, 1.0 / away_price
+        total = raw_h + raw_a
+        home_probs.append(raw_h / total)
+        away_probs.append(raw_a / total)
     home_p = sum(home_probs) / len(home_probs) if home_probs else None
     away_p = sum(away_probs) / len(away_probs) if away_probs else None
     if home_p is None or away_p is None:
@@ -832,12 +1277,32 @@ def _bedrock_decision(game: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, 
 
 def _assemble(slate: str, *, expanded: bool) -> Dict[str, Any]:
     official = _official_schedule(slate)
-    odds = _odds_core()
+    odds = _odds_core(slate)
     bbs = _bbs_matches(slate, official)
+    official_games = [
+        row for row in official.get("games") or [] if isinstance(row, dict)
+    ]
+    odds_assignments = _assign_odds_events(
+        official_games,
+        odds.get("events") or [],
+        require_h2h=True,
+    )
+    catalog_assignments = _assign_odds_events(
+        official_games,
+        odds.get("catalogEvents") or [],
+        require_h2h=False,
+    )
+    bbs_assignments = (
+        bbs.get("assignments")
+        if isinstance(bbs.get("assignments"), dict)
+        else _assign_bbs_events(official_games, bbs.get("events") or [])
+    )
     games: List[Dict[str, Any]] = []
-    for official_game in official.get("games") or []:
-        odds_event = _match_event(official_game, odds.get("events") or [], provider="odds")
-        bbs_event = _match_event(official_game, bbs.get("events") or [], provider="bbs")
+    for official_game in official_games:
+        game_pk = str(official_game.get("gamePk") or "")
+        odds_event = odds_assignments.get(game_pk)
+        catalog_event = catalog_assignments.get(game_pk)
+        bbs_event = bbs_assignments.get(game_pk)
         detailed_odds = _odds_event_markets(str((odds_event or {}).get("id"))) if expanded and (odds_event or {}).get("id") else None
         detailed_bbs = _bbs_event_bundle(bbs_event) if expanded and bbs_event else ({"match": bbs_event} if bbs_event else None)
         row = {
@@ -847,6 +1312,8 @@ def _assemble(slate: str, *, expanded: bool) -> Dict[str, Any]:
             "away": copy.deepcopy(official_game.get("away") or {}),
             "official": copy.deepcopy(official_game),
             "oddsCore": odds_event,
+            # /events is an identity catalogue, never moneyline evidence.
+            "oddsCatalogEvent": _odds_catalog_identity(catalog_event),
             "oddsExpanded": detailed_odds,
             "bbs": detailed_bbs,
         }
@@ -859,9 +1326,50 @@ def _assemble(slate: str, *, expanded: bool) -> Dict[str, Any]:
         "expanded": expanded,
         "deadline": _deadline(official),
         "sourceStatus": {
-            "mlbStatsApi": {"ok": True, "games": official.get("totalGames")},
-            "theOddsApi": {"ok": True, "events": len(odds.get("events") or []), "quota": odds.get("quota")},
-            "bigBallsDataPro": {"ok": True, "events": len(bbs.get("events") or [])},
+            "mlbStatsApi": {
+                "ok": True,
+                "integrationOk": True,
+                "games": official.get("totalGames"),
+            },
+            "theOddsApi": {
+                "ok": len(odds_assignments) == len(official_games),
+                "integrationOk": odds.get("oddsRequestOk") is True,
+                "lineReadinessComplete": len(odds_assignments)
+                == len(official_games),
+                "catalogCoverageComplete": len(catalog_assignments)
+                == len(official_games),
+                "oddsRequestOk": odds.get("oddsRequestOk") is True,
+                "catalogRequestOk": odds.get("catalogRequestOk") is True,
+                "events": len(odds.get("events") or []),
+                "catalogEvents": len(odds.get("catalogEvents") or []),
+                "slateBoundsUtc": copy.deepcopy(
+                    odds.get("slateBoundsUtc") or {}
+                ),
+                "catalogMatchedGames": len(catalog_assignments),
+                "catalogMissingGamePks": sorted(
+                    {
+                        str(game.get("gamePk") or "")
+                        for game in official_games
+                    }
+                    - set(catalog_assignments)
+                ),
+                "lineReadyGames": len(odds_assignments),
+                "lineMissingGamePks": sorted(
+                    {
+                        str(game.get("gamePk") or "")
+                        for game in official_games
+                    }
+                    - set(odds_assignments)
+                ),
+                "catalogOnlyIsMoneylineEvidence": False,
+                "catalogError": odds.get("catalogError"),
+                "quota": odds.get("quota"),
+            },
+            "bigBallsDataPro": {
+                "ok": True,
+                "integrationOk": True,
+                "events": len(bbs.get("events") or []),
+            },
         },
         "games": games,
     }

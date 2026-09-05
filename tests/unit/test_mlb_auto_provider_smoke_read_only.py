@@ -31,9 +31,9 @@ def _packet(slate: str) -> dict:
     return {
         "slateDateEt": slate,
         "sourceStatus": {
-            "mlbStatsApi": {"ok": True},
-            "theOddsApi": {"ok": True},
-            "bigBallsDataPro": {"ok": True},
+            "mlbStatsApi": {"ok": True, "integrationOk": True},
+            "theOddsApi": {"ok": True, "integrationOk": True},
+            "bigBallsDataPro": {"ok": True, "integrationOk": True},
         },
         "threeSourceCoverageComplete": True,
     }
