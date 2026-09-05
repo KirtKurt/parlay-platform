@@ -966,8 +966,20 @@ def _deployment_provider_smoke(event: Dict[str, Any]) -> Dict[str, Any]:
             probe_slate,
             expanded=False,
         )
+        source_status = packet.get("sourceStatus") or {}
+        provider_integration_complete = all(
+            (source_status.get(name) or {}).get("integrationOk") is True
+            for name in ("mlbStatsApi", "theOddsApi", "bigBallsDataPro")
+        )
+        line_readiness_complete = (
+            (source_status.get("theOddsApi") or {}).get(
+                "lineReadinessComplete"
+            )
+            is True
+        )
+        publication_ready = packet.get("threeSourceCoverageComplete") is True
         result = {
-            "ok": True,
+            "ok": provider_integration_complete,
             "status": "COLLECTING",
             "requestedSlateDateEt": requested_slate,
             "slateDateEt": probe_slate,
@@ -975,10 +987,13 @@ def _deployment_provider_smoke(event: Dict[str, Any]) -> Dict[str, Any]:
             "nextFinalWindowAtUtc": base._iso(
                 probe_deadline_dt - timedelta(minutes=base.FINAL_WINDOW_MINUTES)
             ),
-            "sourceStatus": packet.get("sourceStatus") or {},
+            "sourceStatus": source_status,
             "threeSourceCoverageComplete": packet.get(
                 "threeSourceCoverageComplete"
             ),
+            "providerIntegrationComplete": provider_integration_complete,
+            "lineReadinessComplete": line_readiness_complete,
+            "publicationReady": publication_ready,
             "providerProbeUsedFutureSlate": probe_slate != requested_slate,
             "readOnlyProviderProbe": True,
             "writeGuardArmed": True,
@@ -1031,8 +1046,20 @@ def _late_guard(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         probe_deadline = probe["deadline"]
         probe_deadline_dt = probe["deadlineDt"]
         packet = production._assemble_with_full_bbd(probe_slate, expanded=False)
+        source_status = packet.get("sourceStatus") or {}
+        provider_integration_complete = all(
+            (source_status.get(name) or {}).get("integrationOk") is True
+            for name in ("mlbStatsApi", "theOddsApi", "bigBallsDataPro")
+        )
+        line_readiness_complete = (
+            (source_status.get("theOddsApi") or {}).get(
+                "lineReadinessComplete"
+            )
+            is True
+        )
+        publication_ready = packet.get("threeSourceCoverageComplete") is True
         result = {
-            "ok": True,
+            "ok": provider_integration_complete,
             "status": "COLLECTING",
             "requestedSlateDateEt": slate,
             "slateDateEt": probe_slate,
@@ -1040,10 +1067,13 @@ def _late_guard(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             "nextFinalWindowAtUtc": base._iso(
                 probe_deadline_dt - timedelta(minutes=base.FINAL_WINDOW_MINUTES)
             ),
-            "sourceStatus": packet.get("sourceStatus") or {},
+            "sourceStatus": source_status,
             "threeSourceCoverageComplete": packet.get(
                 "threeSourceCoverageComplete"
             ),
+            "providerIntegrationComplete": provider_integration_complete,
+            "lineReadinessComplete": line_readiness_complete,
+            "publicationReady": publication_ready,
             "latePublicationPrevented": True,
             "providerProbeUsedFutureSlate": True,
         }

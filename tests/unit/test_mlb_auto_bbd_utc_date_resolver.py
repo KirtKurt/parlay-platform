@@ -327,3 +327,150 @@ def test_bbd_resolver_rejects_partial_slate_when_one_utc_page_drifts(
         "2026-08-24",
         "2026-08-25",
     ]
+
+
+def test_bbd_utc_union_excludes_same_series_event_on_next_eastern_day(
+    monkeypatch,
+) -> None:
+    official = {
+        "games": [
+            _game(
+                "1",
+                "2026-09-06T01:40:00Z",
+                "Chicago Cubs",
+                "Miami Marlins",
+            )
+        ]
+    }
+    current = _event(
+        "current",
+        "2026-09-06T01:40:00Z",
+        "Chicago Cubs",
+        "Miami Marlins",
+    )
+    next_et_day = _event(
+        "next-et-day",
+        "2026-09-06T17:00:00Z",
+        "Chicago Cubs",
+        "Miami Marlins",
+    )
+
+    monkeypatch.setattr(
+        base,
+        "_bbs_get",
+        lambda _path, _params: {
+            "data": [current, next_et_day],
+            "meta": {},
+            "error": None,
+        },
+    )
+
+    result = base._bbs_matches("2026-09-05", official)
+
+    assert [row["id"] for row in result["events"]] == ["current"]
+    assert result["assignments"]["1"]["id"] == "current"
+    assert result["meta"]["matchedOfficialGameCount"] == 1
+    assert result["meta"]["missingOfficialGamePks"] == []
+
+
+def test_one_bbd_event_cannot_cover_two_official_games() -> None:
+    official = [
+        _game("1", "2026-09-05T17:10:00Z", "Away", "Home"),
+        _game("2", "2026-09-05T23:40:00Z", "Away", "Home"),
+    ]
+    rows = [_event("only", "2026-09-05T17:12:00Z", "Away", "Home")]
+
+    assigned = base._assign_bbs_events(official, rows)
+
+    assert assigned["1"]["id"] == "only"
+    assert "2" not in assigned
+    assert len({row["id"] for row in assigned.values()}) == 1
+
+
+def test_shuffled_bbd_doubleheader_rows_pair_to_nearest_unique_games() -> None:
+    official = [
+        _game("1", "2026-09-05T17:10:00Z", "Away", "Home"),
+        _game("2", "2026-09-05T23:40:00Z", "Away", "Home"),
+    ]
+    rows = [
+        _event("late", "2026-09-05T23:42:00Z", "Away", "Home"),
+        _event("early", "2026-09-05T17:12:00Z", "Away", "Home"),
+    ]
+
+    assigned = base._assign_bbs_events(official, rows)
+
+    assert assigned["1"]["id"] == "early"
+    assert assigned["2"]["id"] == "late"
+    assert len({row["id"] for row in assigned.values()}) == 2
+
+
+@pytest.mark.parametrize(
+    "provider_row",
+    [
+        {
+            "id": "missing-start",
+            "away": {"name": "Away"},
+            "home": {"name": "Home"},
+        },
+        _event("reversed", "2026-09-05T17:10:00Z", "Home", "Away"),
+    ],
+    ids=("missing-start", "reversed-teams"),
+)
+def test_bbd_assignment_rejects_missing_start_and_reversed_teams(
+    provider_row,
+) -> None:
+    official = [_game("1", "2026-09-05T17:10:00Z", "Away", "Home")]
+
+    assert base._assign_bbs_events(official, [provider_row]) == {}
+
+
+def test_assembly_reuses_resolver_bbd_assignment_instead_of_rematching(
+    monkeypatch,
+) -> None:
+    official_game = _game(
+        "1",
+        "2026-09-05T20:10:00Z",
+        "Chicago Cubs",
+        "Miami Marlins",
+    )
+    resolver_selection = _event(
+        "resolver-selection",
+        "2026-09-05T21:00:00Z",
+        "Chicago Cubs",
+        "Miami Marlins",
+    )
+    rematch_decoy = _event(
+        "rematch-decoy",
+        "2026-09-05T20:10:00Z",
+        "Chicago Cubs",
+        "Miami Marlins",
+    )
+
+    monkeypatch.setattr(
+        base,
+        "_official_schedule",
+        lambda _slate: {"totalGames": 1, "games": [official_game]},
+    )
+    monkeypatch.setattr(
+        base,
+        "_odds_core",
+        lambda _slate: {
+            "events": [],
+            "catalogEvents": [],
+            "oddsRequestOk": True,
+            "catalogRequestOk": True,
+            "quota": {},
+        },
+    )
+    monkeypatch.setattr(
+        base,
+        "_bbs_matches",
+        lambda _slate, _official: {
+            "events": [rematch_decoy, resolver_selection],
+            "assignments": {"1": resolver_selection},
+        },
+    )
+
+    packet = base._assemble("2026-09-05", expanded=False)
+
+    assert packet["games"][0]["bbs"]["match"]["id"] == "resolver-selection"

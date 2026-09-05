@@ -209,7 +209,21 @@ def _official_bullpen_context(slate: str, games: List[Dict[str, Any]]) -> Dict[s
 def _record_id(value: Any) -> str:
     if not isinstance(value, dict):
         return ""
-    return str(value.get("id") or value.get("match_id") or value.get("event_id") or "").strip()
+    for key in (
+        "id",
+        "match_id",
+        "matchId",
+        "event_id",
+        "eventId",
+        "fixture_id",
+        "fixtureId",
+        "game_id",
+        "gameId",
+        "uuid",
+    ):
+        if value.get(key):
+            return str(value[key]).strip()
+    return ""
 
 
 def _source_presence(game: Dict[str, Any]) -> Dict[str, bool]:
@@ -219,11 +233,28 @@ def _source_presence(game: Dict[str, Any]) -> Dict[str, bool]:
     bbs_match = bbs.get("match") if isinstance(bbs, dict) else None
     return {
         "mlbStatsApi": bool(isinstance(official, dict) and official.get("gamePk")),
-        "theOddsApi": bool(_record_id(odds)),
+        "theOddsApi": bool(
+            _record_id(odds)
+            and base._odds_match_drift_seconds(
+                official if isinstance(official, dict) else game,
+                odds,
+            )
+            is not None
+            and base._odds_has_exact_h2h(
+                odds,
+                (game.get("home") or {}).get("name"),
+                (game.get("away") or {}).get("name"),
+            )
+        ),
         "bigBallsDataPro": bool(
             isinstance(bbs, dict)
             and bbs.get("ok", True) is not False
             and _record_id(bbs_match)
+            and base._bbs_match_drift_seconds(
+                official if isinstance(official, dict) else game,
+                bbs_match,
+            )
+            is not None
         ),
     }
 
@@ -249,11 +280,39 @@ def _apply_source_coverage(packet: Dict[str, Any]) -> Dict[str, Any]:
         "missingGamePks": sorted(set(presence) - set(official_matches)),
     })
     odds_status = source_status.setdefault("theOddsApi", {})
+    catalog_matches = [
+        str(game.get("gamePk") or "")
+        for game in games
+        if base._odds_match_drift_seconds(
+            game.get("official")
+            if isinstance(game.get("official"), dict)
+            else game,
+            game.get("oddsCatalogEvent")
+            if isinstance(game.get("oddsCatalogEvent"), dict)
+            else {},
+        )
+        is not None
+    ]
+    line_readiness_complete = len(odds_matches) == scheduled
+    catalog_coverage_complete = len(catalog_matches) == scheduled
+    integration_ok = odds_status.get("oddsRequestOk") is True
     odds_status.update({
-        "ok": len(odds_matches) == scheduled,
+        # `ok` remains the publication gate.  A healthy API integration with
+        # not-yet-posted lines is reported separately and cannot publish.
+        "ok": line_readiness_complete,
+        "integrationOk": integration_ok,
+        "lineReadinessComplete": line_readiness_complete,
+        "catalogCoverageComplete": catalog_coverage_complete,
         "scheduledGames": scheduled,
         "matchedGames": len(odds_matches),
         "missingGamePks": sorted(set(presence) - set(odds_matches)),
+        "lineReadyGames": len(odds_matches),
+        "lineMissingGamePks": sorted(set(presence) - set(odds_matches)),
+        "catalogMatchedGames": len(catalog_matches),
+        "catalogMissingGamePks": sorted(
+            set(presence) - set(catalog_matches)
+        ),
+        "catalogOnlyIsMoneylineEvidence": False,
     })
     bbs_status = source_status.setdefault("bigBallsDataPro", {})
     bbs_status.update({
@@ -362,11 +421,11 @@ def _validate_deployment_smoke(result: Dict[str, Any]) -> None:
         failures = {
             name: value
             for name in ("mlbStatsApi", "theOddsApi", "bigBallsDataPro")
-            if (value := source.get(name) or {}).get("ok") is not True
+            if (value := source.get(name) or {}).get("integrationOk") is not True
         }
         if failures:
             raise RuntimeError(
-                "THREE_SOURCE_GAME_COVERAGE_INCOMPLETE:"
+                "PROVIDER_INTEGRATION_INCOMPLETE:"
                 + json.dumps(failures, sort_keys=True, separators=(",", ":"))
             )
         return

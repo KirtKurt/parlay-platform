@@ -53,6 +53,7 @@ jobs:
             tests/unit/test_mlb_auto_ml_authority.py \
             tests/unit/test_mlb_auto_direct_read.py \
             tests/unit/test_mlb_auto_model_gateway.py \
+            tests/unit/test_mlb_auto_odds_crosswalk.py \
             tests/unit/test_mlb_auto_production_model_gateway.py \
             tests/unit/test_mlb_auto_provider_smoke_read_only.py \
             tests/unit/test_mlb_auto_pregame_odds_replay.py
@@ -262,6 +263,10 @@ jobs:
           body=json.loads(Path('/tmp/mlb-auto-prospective-probe.json').read_text() or '{}')
           assert meta.get('FunctionError') is None, (meta, body)
           assert isinstance(body, dict) and body.get('ok') is True, body
+          assert body.get('providerIntegrationComplete') is True, body
+          assert body.get('readOnlyProviderProbe') is True, body
+          assert isinstance(body.get('lineReadinessComplete'), bool), body
+          assert isinstance(body.get('publicationReady'), bool), body
           text=json.dumps(body,sort_keys=True)
           assert 'AWS_ML_RANKED_ENSEMBLE' not in text
           assert 'INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble' not in text or 'RETIRED' in text or 'REJECTED' in text

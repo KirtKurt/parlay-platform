@@ -115,34 +115,16 @@ def _match_event_v2(
     *,
     provider: str,
 ) -> Optional[Dict[str, Any]]:
-    home = base._normalize((game.get("home") or {}).get("name"))
-    away = base._normalize((game.get("away") or {}).get("name"))
-    official_start = base._parse(game.get("gameDate"))
     matches: List[Tuple[int, int, Dict[str, Any]]] = []
     for index, row in enumerate(rows or []):
         if not isinstance(row, dict):
             continue
         if provider == "odds":
-            row_home = row.get("home_team") or row.get("homeTeam")
-            row_away = row.get("away_team") or row.get("awayTeam")
+            drift = base._odds_match_drift_seconds(game, row)
         else:
-            row_home = _nested_team_name(row, "home")
-            row_away = _nested_team_name(row, "away")
-        exact = base._normalize(row_home) == home and base._normalize(row_away) == away
-        reversed_pair = (
-            base._normalize(row_home) == away and base._normalize(row_away) == home
-        )
-        if not exact and not reversed_pair:
-            continue
-        provider_start = base._parse(_provider_start(row))
-        if provider_start is not None and official_start is not None:
-            drift = abs(int((provider_start - official_start).total_seconds()))
-            if drift > 18 * 3600:
-                continue
-        else:
-            drift = 12 * 3600
-        orientation_penalty = 0 if exact else 6 * 3600
-        matches.append((drift + orientation_penalty, index, row))
+            drift = base._bbs_match_drift_seconds(game, row)
+        if drift is not None:
+            matches.append((drift, index, row))
     matches.sort(key=lambda item: (item[0], item[1]))
     return copy.deepcopy(matches[0][2]) if matches else None
 
@@ -154,11 +136,28 @@ def _source_presence_v2(game: Dict[str, Any]) -> Dict[str, bool]:
     bbs_match = bbs.get("match") if isinstance(bbs, dict) else None
     return {
         "mlbStatsApi": bool(isinstance(official, dict) and official.get("gamePk")),
-        "theOddsApi": bool(_record_id(odds)),
+        "theOddsApi": bool(
+            _record_id(odds)
+            and base._odds_match_drift_seconds(
+                official if isinstance(official, dict) else game,
+                odds,
+            )
+            is not None
+            and base._odds_has_exact_h2h(
+                odds,
+                (game.get("home") or {}).get("name"),
+                (game.get("away") or {}).get("name"),
+            )
+        ),
         "bigBallsDataPro": bool(
             isinstance(bbs, dict)
             and bbs.get("ok", True) is not False
             and _record_id(bbs_match)
+            and base._bbs_match_drift_seconds(
+                official if isinstance(official, dict) else game,
+                bbs_match,
+            )
+            is not None
         ),
     }
 
@@ -228,6 +227,8 @@ def _attach_decision_evidence(packet: Dict[str, Any]) -> Dict[str, Any]:
         parse=base._parse,
         iso=base._iso,
         market_consensus=base._market_consensus,
+        match_event=base._match_event,
+        assign_odds_events=base._assign_odds_events,
     )
 
 
@@ -305,11 +306,11 @@ def _validate_deployment_smoke_v3(result: Dict[str, Any]) -> None:
         failures = {
             name: value
             for name in ("mlbStatsApi", "theOddsApi", "bigBallsDataPro")
-            if (value := source.get(name) or {}).get("ok") is not True
+            if (value := source.get(name) or {}).get("integrationOk") is not True
         }
         if failures:
             raise RuntimeError(
-                "THREE_SOURCE_GAME_COVERAGE_INCOMPLETE:"
+                "PROVIDER_INTEGRATION_INCOMPLETE:"
                 + json.dumps(failures, sort_keys=True, separators=(",", ":"))
             )
         return

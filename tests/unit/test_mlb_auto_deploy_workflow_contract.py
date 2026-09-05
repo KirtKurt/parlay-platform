@@ -60,6 +60,7 @@ def test_deploy_uses_exact_trigger_sha_and_runs_repair_contracts() -> None:
     assert 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in source
     assert "tests/unit/test_mlb_auto_bbd_utc_date_resolver.py" in source
     assert "tests/unit/test_mlb_auto_decision_evidence.py" in source
+    assert "tests/unit/test_mlb_auto_odds_crosswalk.py" in source
     assert "tests/unit/test_mlb_auto_production_model_gateway.py" in source
     assert "tests/unit/test_mlb_auto_provider_smoke_read_only.py" in source
     assert "tests/unit/test_mlb_auto_pregame_odds_replay.py" in source
@@ -88,3 +89,14 @@ def test_provider_probe_runs_after_later_failure_only_when_deploy_succeeded() ->
         "${{ always() && steps.deploy_stack.outcome == 'success' }}"
     )
     assert steps.index(deploy) < steps.index(probe)
+
+
+def test_provider_probe_gates_integration_not_transient_line_readiness() -> None:
+    source = _source()
+
+    assert "body.get('providerIntegrationComplete') is True" in source
+    assert "body.get('readOnlyProviderProbe') is True" in source
+    assert "isinstance(body.get('lineReadinessComplete'), bool)" in source
+    assert "isinstance(body.get('publicationReady'), bool)" in source
+    assert "body.get('lineReadinessComplete') is True" not in source
+    assert "body.get('publicationReady') is True" not in source
