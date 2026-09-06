@@ -1,0 +1,160 @@
+{
+  "conclusion": {
+    "algorithmDecision": "Measure full leg size and duration, market-flip direction, recovery ratio, persistence, reversal spacing, path efficiency and late conflict; keep the candidate shadow-only; issue no official recommendation until the prospective precision admission contract passes.",
+    "promisingSimilarity": "A market flip plus a 2.00-2.99pp largest reversal is the only audited pocket whose observed 95% Wilson lower bound reached 70%, but it has only nine games.",
+    "reversalSizeAlone": "No edge. Event-level meaningful consensus reversals were approximately coin-flip and game-level largest/latest reversal choices were also below 53%."
+  },
+  "createdAtUtc": "2026-07-23T07:24:23.296150+00:00",
+  "eventLevelAudit": {
+    "allMeaningfulConsensus": {
+      "events": 838,
+      "games": 275,
+      "graded": 824,
+      "medianPp": 0.611,
+      "towardWinnerPct": 49.76
+    },
+    "breadth75": {
+      "events": 32,
+      "games": 31,
+      "graded": 32,
+      "medianPp": 1.695,
+      "towardWinnerPct": 56.25
+    },
+    "consensusSize2To299Pp": {
+      "bandPp": "2.00-2.99",
+      "events": 62,
+      "games": 56,
+      "graded": 62,
+      "medianPp": 2.376,
+      "towardWinnerPct": 59.68
+    },
+    "interpretation": "Repeated events from the same game are not independent and are diagnostic only.",
+    "marketFlip": {
+      "events": 41,
+      "games": 29,
+      "graded": 39,
+      "medianPp": 1.675,
+      "towardWinnerPct": 61.54
+    }
+  },
+  "gameLevelFixedSelections": {
+    "firstMeaningfulReversal": {
+      "accuracyPct": 52.4,
+      "correct": 142,
+      "distinctSlateDates": 22,
+      "games": 271,
+      "wilsonLower95Pct": 46.46
+    },
+    "largestMarketFlip": {
+      "accuracyPct": 70.37,
+      "correct": 19,
+      "distinctSlateDates": 15,
+      "games": 27,
+      "wilsonLower95Pct": 51.52
+    },
+    "largestMarketFlip1To299Pp": {
+      "accuracyPct": 85.71,
+      "correct": 12,
+      "distinctSlateDates": 10,
+      "games": 14,
+      "wilsonLower95Pct": 60.06
+    },
+    "largestMarketFlip2To299Pp": {
+      "accuracyPct": 100.0,
+      "correct": 9,
+      "distinctSlateDates": 7,
+      "games": 9,
+      "wilsonLower95Pct": 70.09
+    },
+    "largestMarketFlipAtLeast2Pp": {
+      "accuracyPct": 78.95,
+      "correct": 15,
+      "distinctSlateDates": 13,
+      "games": 19,
+      "wilsonLower95Pct": 56.67
+    },
+    "largestMeaningfulReversal": {
+      "accuracyPct": 48.71,
+      "correct": 132,
+      "distinctSlateDates": 22,
+      "games": 271,
+      "wilsonLower95Pct": 42.82
+    },
+    "latestMeaningfulReversal": {
+      "accuracyPct": 47.23,
+      "correct": 128,
+      "distinctSlateDates": 22,
+      "games": 271,
+      "wilsonLower95Pct": 41.37
+    }
+  },
+  "productionAdmissionPolicy": {
+    "actionWhenNotMet": "ABSTAIN_FROM_OFFICIAL_RECOMMENDATION",
+    "minimumChronologicalFolds": 3,
+    "minimumDistinctSlateDates": 20,
+    "minimumFoldAccuracyPct": 60.0,
+    "minimumGamesPerFold": 10,
+    "minimumProspectiveHoldoutGames": 50,
+    "minimumRecentAccuracyPct": 70.0,
+    "minimumRecentGames": 20,
+    "requiredControls": [
+      "rule frozen before evaluation",
+      "chronological holdout",
+      "outcome-untouched labels",
+      "no post-discovery tuning",
+      "exact signal-family match"
+    ],
+    "requiredWilsonLower95Pct": 70.0,
+    "targetPrecisionPct": 70.0
+  },
+  "readOnly": true,
+  "researchCandidate": {
+    "accuracyPct": 100.0,
+    "breadthRangePct": {
+      "max": 81.82,
+      "median": 45.45,
+      "min": 9.09
+    },
+    "correct": 9,
+    "definition": "At the immutable T-minus-45 boundary, choose at most one event per game: the largest consensus market-flipping reversal toward the selected side; require amplitude >=2.00pp and <3.00pp.",
+    "distinctSlateDates": 7,
+    "games": 9,
+    "postHocTemporalCrossCheck": {
+      "after2026-07-11": {
+        "accuracyPct": 100.0,
+        "correct": 3,
+        "distinctSlateDates": 2,
+        "games": 3,
+        "wilsonLower95Pct": 43.85
+      },
+      "through2026-07-11": {
+        "accuracyPct": 100.0,
+        "correct": 6,
+        "distinctSlateDates": 5,
+        "games": 6,
+        "wilsonLower95Pct": 60.97
+      },
+      "warning": "This split was inspected after discovering the rule and is not an untouched prospective holdout."
+    },
+    "productionApproved": false,
+    "reasonNotApproved": "Nine post-discovery games are too few to support a future accuracy guarantee despite the 95% Wilson lower bound narrowly exceeding 70%.",
+    "researchOnly": true,
+    "signalFamily": "MLB_REVERSAL_LARGEST_TOWARD_MARKET_FLIP_2_TO_3PP",
+    "timeRangeMinutesBeforeGame": {
+      "max": 1290.57,
+      "median": 317.56,
+      "min": 201.08
+    },
+    "wilsonLower95Pct": 70.09
+  },
+  "source": {
+    "artifactVersion": "MLB-REVERSAL-SIZE-AUDIT-v2-full-union",
+    "endDate": "2026-07-22",
+    "games": 298,
+    "gradedConsensusEvents": 2209,
+    "lockCutoffMinutes": 45,
+    "meaningfulThresholdPp": 0.3,
+    "startDate": "2026-06-28"
+  },
+  "version": "MLB-REVERSAL-SIGNAL-RESEARCH-v1-20260723"
+}
