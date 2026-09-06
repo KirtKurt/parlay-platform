@@ -1,0 +1,36 @@
+name: Export MLB Recovery Legacy Engines
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/export-mlb-recovery-legacy-engines.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Export exact historical source read-only
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-recovery-engines
+          git show bc7c752cf755a21cc14f2d4db3eb271ea35ed143:hello_world/mlb_game_winner_engine.py \
+            > /tmp/mlb-recovery-engines/mlb_recovery_v10_engine.py
+          git show 7ffbd34552c3f5a70ff1a5e93671b6ffff4ca803:hello_world/mlb_game_winner_engine.py \
+            > /tmp/mlb-recovery-engines/mlb_recovery_v11_engine.py
+          sha256sum /tmp/mlb-recovery-engines/*.py > /tmp/mlb-recovery-engines/SHA256SUMS
+
+      - name: Upload exact historical source
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-recovery-legacy-engines-${{ github.run_id }}
+          path: /tmp/mlb-recovery-engines
+          if-no-files-found: error

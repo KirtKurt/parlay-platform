@@ -1,0 +1,190 @@
+name: Probe MLB StatsAPI Recovery Schema
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/probe-mlb-statsapi-recovery-schema.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Probe official pregame-capable statistics endpoints
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import urllib.parse
+          import urllib.request
+          from datetime import date, timedelta
+          from pathlib import Path
+
+          BASE = 'https://statsapi.mlb.com/api'
+
+          def get(path, params):
+              url = BASE + path + '?' + urllib.parse.urlencode(params)
+              request = urllib.request.Request(url, headers={
+                  'accept': 'application/json',
+                  'user-agent': 'inqsi-mlb-recovery-schema-probe/2.0',
+              })
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  return url, json.loads(response.read().decode('utf-8'))
+
+          today = date.today()
+          schedule_url, schedule = get('/v1/schedule', {
+              'sportId': 1,
+              'startDate': (today - timedelta(days=7)).isoformat(),
+              'endDate': (today + timedelta(days=2)).isoformat(),
+              'hydrate': 'probablePitcher,team,venue',
+          })
+          games = [
+              game
+              for date_row in schedule.get('dates') or []
+              for game in date_row.get('games') or []
+              if isinstance(game, dict)
+          ]
+          selected = next((
+              game for game in reversed(games)
+              if ((game.get('teams') or {}).get('home') or {}).get('team', {}).get('id')
+              and ((game.get('teams') or {}).get('away') or {}).get('team', {}).get('id')
+              and (
+                  ((game.get('teams') or {}).get('home') or {}).get('probablePitcher', {}).get('id')
+                  or ((game.get('teams') or {}).get('away') or {}).get('probablePitcher', {}).get('id')
+              )
+          ), None)
+          if selected is None:
+              raise SystemExit('No schedule game with team and probable-pitcher identity was available')
+
+          teams = selected.get('teams') or {}
+          home = teams.get('home') or {}
+          away = teams.get('away') or {}
+          team_id = int((home.get('team') or {}).get('id'))
+          opponent_id = int((away.get('team') or {}).get('id'))
+          pitcher = (home.get('probablePitcher') or away.get('probablePitcher') or {})
+          pitcher_id = int(pitcher.get('id'))
+          game_date = str(selected.get('officialDate') or today.isoformat())
+          season = int(game_date[:4])
+          end_date = (date.fromisoformat(game_date) - timedelta(days=1)).isoformat()
+          season_start = date(season, 3, 1).isoformat()
+          recent_start = (date.fromisoformat(game_date) - timedelta(days=21)).isoformat()
+
+          probes = {}
+          definitions = {
+              'team_hitting_season_to_date': (
+                  f'/v1/teams/{team_id}/stats',
+                  {'stats': 'byDateRange', 'group': 'hitting', 'startDate': season_start, 'endDate': end_date},
+              ),
+              'team_pitching_season_to_date': (
+                  f'/v1/teams/{team_id}/stats',
+                  {'stats': 'byDateRange', 'group': 'pitching', 'startDate': season_start, 'endDate': end_date},
+              ),
+              'team_hitting_recent_21d': (
+                  f'/v1/teams/{team_id}/stats',
+                  {'stats': 'byDateRange', 'group': 'hitting', 'startDate': recent_start, 'endDate': end_date},
+              ),
+              'starter_pitching_season_to_date': (
+                  f'/v1/people/{pitcher_id}/stats',
+                  {'stats': 'byDateRange', 'group': 'pitching', 'startDate': season_start, 'endDate': end_date},
+              ),
+              'starter_pitching_recent_21d': (
+                  f'/v1/people/{pitcher_id}/stats',
+                  {'stats': 'byDateRange', 'group': 'pitching', 'startDate': recent_start, 'endDate': end_date},
+              ),
+              'team_hitting_game_log': (
+                  f'/v1/teams/{team_id}/stats',
+                  {'stats': 'gameLog', 'group': 'hitting', 'season': season},
+              ),
+              'team_pitching_game_log': (
+                  f'/v1/teams/{team_id}/stats',
+                  {'stats': 'gameLog', 'group': 'pitching', 'season': season},
+              ),
+              'starter_pitching_game_log': (
+                  f'/v1/people/{pitcher_id}/stats',
+                  {'stats': 'gameLog', 'group': 'pitching', 'season': season},
+              ),
+              'team_roster': (
+                  f'/v1/teams/{team_id}/roster',
+                  {'rosterType': 'active', 'date': game_date},
+              ),
+              'opponent_roster': (
+                  f'/v1/teams/{opponent_id}/roster',
+                  {'rosterType': 'active', 'date': game_date},
+              ),
+          }
+
+          for name, (path, params) in definitions.items():
+              try:
+                  url, payload = get(path, params)
+                  stats = payload.get('stats') if isinstance(payload, dict) else None
+                  first_split = None
+                  split_count = 0
+                  if isinstance(stats, list):
+                      for block in stats:
+                          splits = block.get('splits') if isinstance(block, dict) else None
+                          split_count += len(splits or [])
+                          if first_split is None and splits:
+                              first_split = splits[0]
+                  probes[name] = {
+                      'ok': True,
+                      'url': url,
+                      'topLevelKeys': sorted(payload) if isinstance(payload, dict) else [],
+                      'statBlockCount': len(stats or []) if isinstance(stats, list) else None,
+                      'splitCount': split_count,
+                      'firstSplitKeys': sorted(first_split) if isinstance(first_split, dict) else [],
+                      'firstStatKeys': sorted((first_split.get('stat') or {})) if isinstance(first_split, dict) else [],
+                      'firstSplitDate': first_split.get('date') if isinstance(first_split, dict) else None,
+                      'firstSplitGamePk': first_split.get('gamePk') if isinstance(first_split, dict) else None,
+                      'rosterCount': len(payload.get('roster') or []) if isinstance(payload, dict) else None,
+                      'sampleStat': first_split.get('stat') if isinstance(first_split, dict) else None,
+                  }
+              except Exception as exc:
+                  probes[name] = {'ok': False, 'error': f'{type(exc).__name__}: {exc}'}
+
+          out = {
+              'ok': all(row.get('ok') for row in probes.values()),
+              'readOnly': True,
+              'provider': 'MLB Stats API',
+              'scheduleUrl': schedule_url,
+              'selectedGamePk': selected.get('gamePk'),
+              'selectedOfficialDate': game_date,
+              'selectedTeamId': team_id,
+              'selectedOpponentId': opponent_id,
+              'selectedPitcherId': pitcher_id,
+              'season': season,
+              'seasonStart': season_start,
+              'statsEndDate': end_date,
+              'recentStart': recent_start,
+              'probes': probes,
+          }
+          path = Path('/tmp/mlb-statsapi-recovery-schema.json')
+          path.write_text(json.dumps(out, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(json.dumps({
+              'ok': out['ok'],
+              'selectedGamePk': out['selectedGamePk'],
+              'probeStatus': {name: row.get('ok') for name, row in probes.items()},
+              'gameLogSplitCounts': {
+                  name: row.get('splitCount')
+                  for name, row in probes.items()
+                  if 'game_log' in name
+              },
+          }, indent=2))
+          if not out['ok']:
+              raise SystemExit('One or more official statistics probes failed')
+          PY
+
+      - name: Upload schema evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-statsapi-recovery-schema-${{ github.run_id }}
+          path: /tmp/mlb-statsapi-recovery-schema.json
+          if-no-files-found: error
