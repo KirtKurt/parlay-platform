@@ -1,0 +1,33 @@
+name: Export Tennis V2 transport bytes
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/export-tennis-v2-transport.yml"
+      - "tennis_release_v2/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record exact transport identities
+        run: |
+          set -euo pipefail
+          sha256sum tennis_release_v2/tennis_predictive_platform_v2.tar.xz.b64.part[0-9][0-9] \
+            > tennis_release_v2/remote-chunk-sha256.txt
+          wc -c tennis_release_v2/tennis_predictive_platform_v2.tar.xz.b64.part[0-9][0-9] \
+            > tennis_release_v2/remote-chunk-sizes.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tennis-v2-transport-${{ github.run_id }}
+          retention-days: 7
+          path: |
+            tennis_release_v2/tennis_predictive_platform_v2.tar.xz.b64.part[0-9][0-9]
+            tennis_release_v2/remote-chunk-sha256.txt
+            tennis_release_v2/remote-chunk-sizes.txt

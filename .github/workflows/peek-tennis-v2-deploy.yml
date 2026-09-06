@@ -1,0 +1,43 @@
+name: Peek Tennis V2 deployment
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/peek-tennis-v2-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  peek:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_SHA: f5d080e4f2c36e2140bcf1d2e16aa2ba3d4ace14
+      TARGET_PATH: .github/workflows/deploy-tennis.yml
+      TARGET_BRANCH: agent/tennis-mlb-exact-parity-v2
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Print exact deployment run
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --method GET "/repos/${GITHUB_REPOSITORY}/actions/runs" \
+            -f branch="$TARGET_BRANCH" -f event=push -f per_page=100 > /tmp/runs.json
+          python - <<'PY'
+          import json,os
+          rows=json.load(open('/tmp/runs.json')).get('workflow_runs',[])
+          hits=[r for r in rows if r.get('head_sha')==os.environ['TARGET_SHA'] and r.get('path')==os.environ['TARGET_PATH']]
+          if len(hits)!=1:
+              raise SystemExit(f'expected exactly one deployment run, found {len(hits)}')
+          keep={k:hits[0].get(k) for k in ('id','name','status','conclusion','head_sha','head_branch','event','path','created_at','updated_at','jobs_url','artifacts_url')}
+          print(json.dumps(keep,indent=2,sort_keys=True))
+          open('/tmp/tennis-v2-deploy-peek.json','w').write(json.dumps(keep,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tennis-v2-deploy-peek-${{ github.run_id }}
+          retention-days: 7
+          path: /tmp/tennis-v2-deploy-peek.json
