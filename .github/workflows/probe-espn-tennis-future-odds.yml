@@ -1,0 +1,66 @@
+name: Probe ESPN future Tennis odds
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/probe-espn-tennis-future-odds.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Inspect July 24 and July 25 match odds
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet requests
+          mkdir -p evidence
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import requests
+
+          s=requests.Session(); s.headers['user-agent']='tennis-future-odds-proof/1.0'
+          report={'dates':{}}
+          def getj(url):
+              r=s.get(str(url).replace('http://','https://',1),timeout=30)
+              try:d=r.json()
+              except Exception:d=None
+              return r,d
+          for date in ('20260724','20260725'):
+              day=[]
+              for tour in ('atp','wta'):
+                  r,data=getj(f'https://site.api.espn.com/apis/site/v2/sports/tennis/{tour}/scoreboard?dates={date}&limit=1000')
+                  for tournament in (data or {}).get('events') or []:
+                      tid=str(tournament.get('id') or '')
+                      cr,core=getj(f'https://sports.core.api.espn.com/v2/sports/tennis/leagues/{tour}/events/{tid}?lang=en&region=us')
+                      for c in (core or {}).get('competitions') or []:
+                          if not str(c.get('date') or '').startswith(f'{date[:4]}-{date[4:6]}-{date[6:]}'):
+                              continue
+                          if ((c.get('type') or {}).get('type'))!='singles':
+                              continue
+                          refs=[]
+                          for x in c.get('competitors') or []:
+                              ar,ath=getj(((x.get('athlete') or {}).get('$ref')))
+                              refs.append((ath or {}).get('displayName') or (ath or {}).get('fullName') or x.get('id'))
+                          odds_ref=((c.get('odds') or {}).get('$ref'))
+                          orr,od=getj(odds_ref) if odds_ref else (None,None)
+                          items=(od or {}).get('items') if isinstance(od,dict) else None
+                          day.append({'date':c.get('date'),'tour':tour,'tournamentId':tid,'tournament':tournament.get('name'),'competitionId':c.get('id'),'competitors':refs,'oddsRef':bool(odds_ref),'oddsStatus':orr.status_code if orr else None,'oddsCount':(od or {}).get('count') if isinstance(od,dict) else None,'oddsItems':items})
+              report['dates'][date]={'matchCount':len(day),'matches':day,'matchesWithOdds':sum(1 for x in day if x.get('oddsItems'))}
+          Path('evidence/future-odds.json').write_text(json.dumps(report,indent=2,sort_keys=True))
+          print(json.dumps(report,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: espn-tennis-future-odds-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: evidence/
