@@ -1,0 +1,22 @@
+name: Dispatch MLB Trainer Status Diagnostic From PR
+
+"on":
+  pull_request:
+    paths:
+      - '.github/workflows/mlb-unstall-pr-dispatch.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch MLB trainer persisted-status diagnostic
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-trainer-health-diagnose-once.yml --repo "$GITHUB_REPOSITORY" --ref main
