@@ -1,0 +1,194 @@
+name: Hotfix MLB V21 Authority Environment
+
+on:
+  push:
+    branches: [agent/hotfix-mlb-v21-authority-env-20260723]
+    paths:
+      - '.github/workflows/hotfix-mlb-v21-authority-env.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hotfix-mlb-v21-authority-env
+  cancel-in-progress: false
+
+jobs:
+  hotfix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Resolve and validate audited production Lambda
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id MLBAuditedPullFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          echo "FUNCTION_NAME=$FUNCTION_NAME" >> "$GITHUB_ENV"
+          aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --output json > /tmp/original_config.json
+          python - <<'PY'
+          import json
+          config=json.load(open('/tmp/original_config.json'))
+          assert config.get('Handler') == 'mlb_manual_pull_protected.lambda_handler'
+          assert int(config.get('Timeout') or 0) >= 600
+          assert int(config.get('MemorySize') or 0) >= 2048
+          env=(config.get('Environment') or {}).get('Variables') or {}
+          safe={
+            'handler':config.get('Handler'),
+            'timeout':config.get('Timeout'),
+            'memory':config.get('MemorySize'),
+            'lastModified':config.get('LastModified'),
+            'deployedGitSha':env.get('INQSI_DEPLOY_GIT_SHA'),
+            'previousAuthorityValue':env.get('INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED'),
+          }
+          json.dump(safe,open('/tmp/original_safe.json','w'),indent=2)
+          PY
+
+      - name: Enable current production writer authority reversibly
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          config=json.load(open('/tmp/original_config.json'))
+          variables=dict(((config.get('Environment') or {}).get('Variables') or {}))
+          variables['INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED']='true'
+          json.dump({'Variables':variables},open('/tmp/new_environment.json','w'),separators=(',',':'))
+          PY
+          aws lambda update-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --environment file:///tmp/new_environment.json \
+            --output json > /tmp/update_response.json
+          aws lambda wait function-updated-v2 \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION"
+
+      - name: Retry the current canonical slot through the protected writer
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"sport":"mlb","t":"HOT","run":"hot_pull_audited","retryExistingCanonicalSlot":true,"authorityHotfixProof":true}' \
+            /tmp/hotfix_invoke_response.json > /tmp/hotfix_invoke_meta.json
+          sleep 10
+
+      - name: Verify complete authoritative storage or restore immediately
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
+          PYTHONPATH: ${{ github.workspace }}/hello_world
+        run: |
+          set +e
+          SLATE_DATE=$(TZ=America/New_York date +%F)
+          python scripts/mlb_scoring_guard_status.py \
+            --slate-date "$SLATE_DATE" \
+            --output /tmp/hotfix_scoring_guard.json
+          GUARD_RC=$?
+          set -e
+          PASS=$(python - <<'PY'
+          import json
+          report=json.load(open('/tmp/hotfix_scoring_guard.json'))
+          summary=report.get('summary') or {}
+          official=int(summary.get('officialGameCount') or 0)
+          persisted=int(summary.get('persistedPredictionGameCount') or 0)
+          movement=int(summary.get('movementFeatureGameCount') or 0)
+          ok=bool(official and persisted==official and movement==official and int(summary.get('missingPredictionCount') or 0)==0 and int(summary.get('missingMovementCount') or 0)==0 and report.get('guardPassed') is True)
+          print('true' if ok else 'false')
+          PY
+          )
+          if [ "$PASS" = "true" ]; then
+            echo 'HOTFIX_VERIFIED=true' >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo 'Authoritative coverage did not recover; restoring original Lambda environment.' >&2
+          python - <<'PY'
+          import json
+          config=json.load(open('/tmp/original_config.json'))
+          variables=dict(((config.get('Environment') or {}).get('Variables') or {}))
+          json.dump({'Variables':variables},open('/tmp/original_environment.json','w'),separators=(',',':'))
+          PY
+          aws lambda update-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --environment file:///tmp/original_environment.json \
+            --output json > /tmp/restore_response.json
+          aws lambda wait function-updated-v2 \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION"
+          exit 1
+
+      - name: Build verified hotfix proof
+        if: success()
+        run: |
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          original=json.load(open('/tmp/original_safe.json'))
+          scoring=json.load(open('/tmp/hotfix_scoring_guard.json'))
+          summary=scoring.get('summary') or {}
+          proof={
+            'ok':True,
+            'proofType':'MLB_V21_AUTHORITY_ENV_HOTFIX',
+            'createdAtUtc':datetime.now(timezone.utc).isoformat().replace('+00:00','Z'),
+            'reversible':True,
+            'rollbackPerformed':False,
+            'function':original,
+            'officialGameCount':summary.get('officialGameCount'),
+            'persistedPredictionGameCount':summary.get('persistedPredictionGameCount'),
+            'movementFeatureGameCount':summary.get('movementFeatureGameCount'),
+            'missingPredictionCount':summary.get('missingPredictionCount'),
+            'missingMovementCount':summary.get('missingMovementCount'),
+            'scoringGuardPassed':scoring.get('guardPassed') is True,
+            'secretExposed':False,
+          }
+          json.dump(proof,open('/tmp/mlb_v21_authority_hotfix_proof.json','w'),indent=2,sort_keys=True)
+          print(json.dumps(proof,indent=2,sort_keys=True))
+          PY
+
+      - name: Upload hotfix evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v21-authority-hotfix-${{ github.run_id }}
+          path: |
+            /tmp/original_safe.json
+            /tmp/hotfix_invoke_meta.json
+            /tmp/hotfix_invoke_response.json
+            /tmp/hotfix_scoring_guard.json
+            /tmp/mlb_v21_authority_hotfix_proof.json
+            /tmp/restore_response.json
+          if-no-files-found: warn
