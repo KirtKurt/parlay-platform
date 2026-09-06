@@ -1,0 +1,172 @@
+name: Deploy isolated Tennis V2.4 Polymarket MLB parity
+
+on:
+  push:
+    branches: [agent/tennis-polymarket-mlb-parity-v2-4]
+    paths:
+      - "tennis_release_v2_4/**"
+      - ".github/tennis-v2-4-part01/**"
+      - ".github/workflows/deploy-tennis-v2-4.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: parlay-platform-tennis-v2-4-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_DEFAULT_REGION: us-east-1
+  SAM_CLI_TELEMETRY: "0"
+  TENNIS_STACK_NAME: parlay-platform-tennis-ml-prod
+  MLB_STACK_NAME: parlay-platform-dev
+  BASELINE_ARTIFACT_ID: "8575790142"
+  BASELINE_SHA256: f8fe7f023794160a7ba7b4566fc4234bd91b852b13a6f49f14b35f5f06bbc74b
+  OVERLAY_SHA256: 325b77b554b5b3835176d8c93d930d8780c4093fb6ba3304f78f4c4770f1b17c
+  OVERLAY_BASE64_SHA256: 2f334bc8cbe58257818fe40035c3c54852eef1eef9eddddcd5eb44972be063cf
+  OVERLAY_BASE64_BYTES: "69192"
+  SOURCE_TREE_SHA256: 0d512dadca07b594e0908c5b760f2b71550d230d8347f7b54f4793357024c909
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Reconstruct and attest exact Tennis source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf /tmp/tennis-v24-baseline tennis_predictive_platform_v2_4
+          mkdir -p /tmp/tennis-v24-baseline
+          curl -LfsS \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${BASELINE_ARTIFACT_ID}/zip" \
+            -o /tmp/tennis-v24-baseline.zip
+          echo "${BASELINE_SHA256}  /tmp/tennis-v24-baseline.zip" | sha256sum -c -
+          unzip -q /tmp/tennis-v24-baseline.zip -d /tmp/tennis-v24-baseline
+          cp -a /tmp/tennis-v24-baseline/unpacked/tennis_predictive_platform_v2 \
+            tennis_predictive_platform_v2_4
+
+          for fragment in .github/tennis-v2-4-part01/frag{00..07}; do
+            test "$(wc -c < "$fragment")" -eq 1000
+          done
+          cat \
+            tennis_release_v2_4/overlay.tar.xz.b64.part00 \
+            .github/tennis-v2-4-part01/frag00 \
+            .github/tennis-v2-4-part01/frag01 \
+            .github/tennis-v2-4-part01/frag02 \
+            .github/tennis-v2-4-part01/frag03 \
+            .github/tennis-v2-4-part01/frag04 \
+            .github/tennis-v2-4-part01/frag05 \
+            .github/tennis-v2-4-part01/frag06 \
+            .github/tennis-v2-4-part01/frag07 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part02 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part03 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part04 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part05 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part06 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part07 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part08 \
+            > /tmp/tennis-v24-overlay.b64
+          test "$(wc -c < /tmp/tennis-v24-overlay.b64)" -eq "$OVERLAY_BASE64_BYTES"
+          echo "${OVERLAY_BASE64_SHA256}  /tmp/tennis-v24-overlay.b64" | sha256sum -c -
+          base64 --decode /tmp/tennis-v24-overlay.b64 > /tmp/tennis-v24-overlay.tar.xz
+          echo "${OVERLAY_SHA256}  /tmp/tennis-v24-overlay.tar.xz" | sha256sum -c -
+          tar -tJf /tmp/tennis-v24-overlay.tar.xz >/dev/null
+          tar -xJf /tmp/tennis-v24-overlay.tar.xz -C tennis_predictive_platform_v2_4
+          while IFS= read -r path; do
+            test -z "$path" || rm -rf "tennis_predictive_platform_v2_4/$path"
+          done < tennis_predictive_platform_v2_4/DELETE_FILES.txt
+          rm -f tennis_predictive_platform_v2_4/DELETE_FILES.txt
+          find tennis_predictive_platform_v2_4 -type d -name __pycache__ -prune -exec rm -rf {} +
+          find tennis_predictive_platform_v2_4 -type d -name .pytest_cache -prune -exec rm -rf {} +
+          find tennis_predictive_platform_v2_4 -type f -name '*.pyc' -delete
+
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tennis_predictive_platform_v2_4/template.yaml')
+          text = path.read_text()
+          dead = 'Conditions:\n  HasApiTennisKey: !Not [!Equals [!Ref TennisApiTennisKey, ""]]\n\n'
+          if text.count(dead) != 1:
+              raise SystemExit('expected exactly one unused HasApiTennisKey condition')
+          path.write_text(text.replace(dead, ''))
+          PY
+
+          actual=$(python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root=Path('tennis_predictive_platform_v2_4'); h=hashlib.sha256()
+          files=sorted((p for p in root.rglob('*') if p.is_file()),key=lambda p:p.relative_to(root).as_posix())
+          for path in files:
+              relative=path.relative_to(root).as_posix().encode(); data=path.read_bytes()
+              h.update(len(relative).to_bytes(8,'big')); h.update(relative)
+              h.update(len(data).to_bytes(8,'big')); h.update(data)
+          print(h.hexdigest())
+          PY
+          )
+          test "$actual" = "$SOURCE_TREE_SHA256"
+          test "$actual" = "$(cat tennis_release_v2_4/source_tree.sha256)"
+          printf '%s\n' "$actual" > /tmp/tennis-source-tree.sha256
+          printf '%s\n' "$BASELINE_SHA256" > /tmp/tennis-baseline-artifact.sha256
+          printf '%s\n' "$OVERLAY_SHA256" > /tmp/tennis-overlay.sha256
+          printf '%s\n' "$OVERLAY_BASE64_SHA256" > /tmp/tennis-overlay-base64.sha256
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Validate, deploy disabled, prove live card, and enable schedules
+        working-directory: tennis_predictive_platform_v2_4
+        shell: bash
+        env:
+          TENNIS_SOURCE_TREE_SHA256: ${{ env.SOURCE_TREE_SHA256 }}
+        run: |
+          set -Eeuo pipefail
+          bash scripts/deploy_aws_v2_4.sh
+
+      - name: Collect deployment evidence
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          mkdir -p tennis_release_v2_4/evidence
+          cp tennis_release_v2_4/README.md tennis_release_v2_4/BASELINE_ARTIFACT.json \
+             tennis_release_v2_4/*.sha256 tennis_release_v2_4/evidence/ 2>/dev/null
+          for file in /tmp/tennis-* /tmp/mlb-before.sha256 /tmp/mlb-after.sha256 \
+                      /tmp/mlb-reference-commit.txt /tmp/mlb-template-before.json \
+                      /tmp/mlb-resources-before.json /tmp/mlb-template-after.json \
+                      /tmp/mlb-resources-after.json; do
+            test -e "$file" && cp "$file" tennis_release_v2_4/evidence/
+          done
+          aws cloudformation describe-stacks --stack-name "$TENNIS_STACK_NAME" \
+            --region "$AWS_REGION" --output json \
+            > tennis_release_v2_4/evidence/tennis-stack-observed.json 2>/dev/null || true
+          aws cloudformation describe-stack-events --stack-name "$TENNIS_STACK_NAME" \
+            --region "$AWS_REGION" --max-items 40 --output json \
+            > tennis_release_v2_4/evidence/tennis-stack-events.json 2>/dev/null || true
+          git rev-parse HEAD > tennis_release_v2_4/evidence/deployment-vehicle-sha.txt
+
+      - name: Upload exact Tennis V2.4 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tennis-v2-4-polymarket-parity-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: tennis_release_v2_4/evidence/
