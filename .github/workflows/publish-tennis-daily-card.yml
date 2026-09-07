@@ -11,7 +11,9 @@ name: Publish Tennis Daily Card
   workflow_run:
     # Refresh the card after the independently monitored Tennis runtime proves a fresh cycle.
     # This prevents delayed GitHub schedule delivery from leaving the published card stale.
-    workflows: ['Publish Tennis Autonomy Status']
+    workflows:
+      - 'Publish Tennis Autonomy Status'
+      - 'Tennis Autonomy Status Backstop'
     types: [completed]
 
 permissions:
