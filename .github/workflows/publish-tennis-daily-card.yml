@@ -8,13 +8,18 @@ name: Publish Tennis Daily Card
   workflow_dispatch:
   schedule:
     - cron: '8,23,38,53 * * * *'
+  workflow_run:
+    # Refresh the card after the independently monitored Tennis runtime proves a fresh cycle.
+    # This prevents delayed GitHub schedule delivery from leaving the published card stale.
+    workflows: ['Publish Tennis Autonomy Status']
+    types: [completed]
 
 permissions:
   contents: write
 
 concurrency:
   group: publish-tennis-daily-card
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   REQUIRED_H2H_REGIONS: 'us,us2,uk,eu,au,fr,se,us_ex'
@@ -22,6 +27,7 @@ env:
 
 jobs:
   publish:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
