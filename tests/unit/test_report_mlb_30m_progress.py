@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import importlib.util
 import json
 import subprocess
@@ -128,6 +129,116 @@ def _trailing() -> dict:
         "recentAccuracy": 0.333333,
         "targetDailyAccuracy": 0.70,
     }
+
+
+def _successor_payload() -> dict:
+    health = {"ok": True, "deploymentIdentityMatches": True, "errors": [],
+              "ageSeconds": 10, "maximumAgeSeconds": 600,
+              "latestRunCreatedAtUtc": "2026-09-09T09:46:41+00:00"}
+    development = {
+        "ok": True, "experimentId": "mlb-successor-starter-rates-v1",
+        "status": "ACCUMULATING_STARTER_RATE_DEVELOPMENT_DATA",
+        "acceptedDevelopmentRows": 115,
+        "counts": {"train": 11, "calibration": 53, "selection": 51},
+        "observedStarterCounts": {"train": 0, "calibration": 0, "selection": 0},
+        "protocol": {"trainMinimum": 300, "validationMinimum": 100,
+                     "starterObservedTrainMinimum": 100,
+                     "starterObservedCalibrationMinimum": 25,
+                     "starterObservedSelectionMinimum": 25},
+        "blockers": ["INSUFFICIENT_OBSERVED_STARTER_RATES_TRAIN"],
+        "rejectedRows": {"invalid immutable fundamentals snapshot": 495},
+    }
+    return {
+        "ok": True, "successorRuntime": {"installed": True},
+        "trainingHealth": {**health, "latestRun": {"successorDevelopment": development}},
+        "selectionCaptureHealth": {**health, "latestRun": {"selectionCapture": {
+            "successorCapture": {"ok": True, "status": "WAITING_FOR_SUCCESSOR_DEVELOPMENT", "capturedCount": 0}}}},
+    }
+
+
+def test_successor_reports_actual_development_and_waiting_capture() -> None:
+    state = _state(audit=None, autonomy=_trailing(), training_payload=_successor_payload())
+    successor = state["successor"]
+    assert successor["trainingHealth"] == successor["captureHealth"] == "HEALTHY"
+    assert successor["acceptedDevelopmentRows"] == 115
+    assert successor["prospectiveCount"] is None
+    comment = reporter._comment(state, None)
+    assert "Development train / minimum | 11 / 300" in comment
+    assert "Validation total / minimum | 104 / 100" in comment
+    assert "Observed starter rates: train / minimum | 0 / 100" in comment
+    assert "WAITING_FOR_SUCCESSOR_DEVELOPMENT" in comment
+    assert "invalid immutable fundamentals snapshot" in comment
+    assert "MLB_SUCCESSOR:INSUFFICIENT_OBSERVED_STARTER_RATES_TRAIN" in state["blockers"]
+    assert state["mlb"]["qualifiedChampionPresent"] is False
+
+
+def test_successor_nested_failure_overrides_healthy_r8_heartbeat() -> None:
+    for operation in ("training", "capture"):
+        payload = _successor_payload()
+        if operation == "training":
+            result = payload["trainingHealth"]["latestRun"]["successorDevelopment"]
+        else:
+            result = payload["selectionCaptureHealth"]["latestRun"]["selectionCapture"]["successorCapture"]
+        result.update(ok=False, status="SUCCESSOR_OPERATION_FAILED", error="fixture storage unavailable")
+        state = _state(audit=None, autonomy=_trailing(), training_payload=payload)
+        assert state["successor"][operation + "Health"] == "FAILED"
+        assert "fixture storage unavailable" in reporter._comment(state, None)
+        assert "SUCCESSOR EXECUTION UNHEALTHY" in reporter._overall_direction(state, state)[0]
+
+
+def test_successor_health_requires_fresh_matching_parent_and_nested_evidence() -> None:
+    for changes, expected in (({"ageSeconds": 601}, "FAILED"),
+                              ({"deploymentIdentityMatches": False}, "FAILED"),
+                              ({"deploymentIdentityMatches": None}, "UNKNOWN"),
+                              ({"ageSeconds": "invalid"}, "UNKNOWN"),
+                              ({"errors": None}, "UNKNOWN")):
+        payload = _successor_payload()
+        payload["trainingHealth"].update(changes)
+        state = _state(audit=None, autonomy=_trailing(), training_payload=payload)
+        assert state["successor"]["trainingHealth"] == expected
+        assert f"TRAINING_HEALTH_{expected}" in reporter._comment(state, None)
+    payload = _successor_payload()
+    payload["trainingHealth"]["latestRun"]["successorDevelopment"] = []
+    state = _state(audit=None, autonomy=_trailing(), training_payload=payload)
+    assert state["successor"]["trainingHealth"] == "UNKNOWN"
+    assert state["successor"]["acceptedDevelopmentRows"] is None
+
+
+def test_successor_progress_comparisons_require_same_healthy_experiment_and_artifact() -> None:
+    before = _state(audit=None, autonomy=_trailing(), training_payload=_successor_payload())
+    after = copy.deepcopy(before)
+    after["successor"]["acceptedDevelopmentRows"] += 15
+    assert reporter._successor_delta(after, before, "acceptedDevelopmentRows") == 15
+    assert "MOVING FORWARD" in reporter._overall_direction(after, before)[0]
+    for field, value in (("experimentId", "different"), ("artifactDigest", "frozen"),
+                         ("trainingHealth", "UNKNOWN")):
+        changed = copy.deepcopy(after)
+        changed["successor"][field] = value
+        assert reporter._successor_delta(changed, before, "acceptedDevelopmentRows") is None
+    legacy = copy.deepcopy(before)
+    legacy.pop("successor")
+    assert reporter._successor_delta(after, legacy, "acceptedDevelopmentRows") is None
+    assert "Successor development" in reporter._comment(after, legacy)
+
+
+def test_sealed_successor_qualification_is_separate_from_public_activation() -> None:
+    payload = _successor_payload()
+    development = payload["trainingHealth"]["latestRun"]["successorDevelopment"]
+    development.update(status="SEALED_QUALIFICATION_PASSED_AWAITING_REVIEW",
+                       artifactDigest="frozen-model", blockers=[],
+                       qualification={"qualificationDigest": "sealed-evidence", "prospectiveCount": 102,
+                                      "sealedAtUtc": "2026-10-01T05:00:00Z", "blockers": []})
+    state = _state(audit=None, autonomy=_trailing(), training_payload=payload)
+    assert state["successor"]["prospectiveCount"] == 102
+    comment = reporter._comment(state, None)
+    assert "sealed-evidence" in comment and "AWAITING_REVIEW" in comment
+    assert state["mlb"]["qualifiedChampionPresent"] is False
+    development.update(status="SEALED_SUCCESSOR_TEST_FAILED")
+    development["qualification"]["blockers"] = ["BRIER_SKILL_NOT_POSITIVE"]
+    state = _state(audit=None, autonomy=_trailing(), training_payload=payload)
+    assert state["successor"]["trainingHealth"] == "HEALTHY"
+    assert "BRIER_SKILL_NOT_POSITIVE" in reporter._comment(state, None)
+    assert "SUCCESSOR SEALED TEST FAILED" in reporter._overall_direction(state, state)[0]
 
 
 def test_current_slate_zero_correct_is_not_replaced_by_trailing_cohort() -> None:

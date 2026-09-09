@@ -642,6 +642,84 @@ def _grading_cohort(
     return result
 
 
+def _successor_health(health: Mapping[str, Any], result: Mapping[str, Any]) -> str:
+    """A healthy parent heartbeat cannot conceal a failed nested operation."""
+    age = _number(health.get("ageSeconds"))
+    maximum = _number(health.get("maximumAgeSeconds"))
+    if result.get("ok") is False or health.get("ok") is False or health.get("errors"):
+        return "FAILED"
+    if health.get("deploymentIdentityMatches") is False:
+        return "FAILED"
+    if age is not None and maximum is not None and (age < 0 or age > maximum):
+        return "FAILED"
+    if (
+        health.get("ok") is True
+        and health.get("deploymentIdentityMatches") is True
+        and health.get("errors") == []
+        and age is not None and maximum is not None and maximum > 0
+        and result.get("ok") is True and result.get("status")
+    ):
+        return "HEALTHY"
+    return "UNKNOWN"
+
+
+def _successor_state(r7: Mapping[str, Any]) -> dict[str, Any]:
+    training_health = _first_mapping(r7.get("trainingHealth"))
+    capture_health = _first_mapping(r7.get("selectionCaptureHealth"))
+    latest = _first_mapping(training_health.get("latestRun"), r7.get("latestStatus"))
+    capture_latest = _first_mapping(capture_health.get("latestRun"), r7.get("latestSelectionCaptureStatus"))
+    development = _first_mapping(latest.get("successorDevelopment"))
+    capture = _first_mapping(_nested(capture_latest, "selectionCapture.successorCapture"))
+    runtime = _first_mapping(r7.get("successorRuntime"))
+    qualification = _first_mapping(development.get("qualification"))
+    result = {
+        "available": bool(runtime or development or capture),
+        "experimentId": development.get("experimentId") or runtime.get("experimentId"),
+        "status": development.get("status") or "UNAVAILABLE",
+        "updatedAtUtc": development.get("updatedAtUtc"),
+        "deploymentIdentity": development.get("deploymentIdentity"),
+        "trainingHealth": _successor_health(training_health, development),
+        "captureHealth": _successor_health(capture_health, capture),
+        "trainingRunAtUtc": training_health.get("latestRunCreatedAtUtc"),
+        "captureRunAtUtc": capture_health.get("latestRunCreatedAtUtc"),
+        "acceptedDevelopmentRows": _integer(development.get("acceptedDevelopmentRows")),
+        "counts": dict(_first_mapping(development.get("counts"))),
+        "observedStarterCounts": dict(_first_mapping(development.get("observedStarterCounts"))),
+        "rejectedRows": dict(_first_mapping(development.get("rejectedRows"))),
+        "protocol": dict(_first_mapping(development.get("protocol"))),
+        "artifactDigest": development.get("artifactDigest"),
+        "qualificationDigest": qualification.get("qualificationDigest"),
+        "sealedAtUtc": qualification.get("sealedAtUtc"),
+        "prospectiveCount": _integer(_first_not_none(
+            qualification.get("prospectiveCount"), development.get("prospectiveCount"))),
+        "captureStatus": capture.get("status") or "UNAVAILABLE",
+        "captureNewCount": _integer(capture.get("capturedCount")),
+        "captureExistingCount": _integer(capture.get("existingCount")),
+        "captureSkipped": dict(_first_mapping(capture.get("skipped"))),
+        "skippedIncompleteSlateDates": development.get("skippedIncompleteSlateDates") or [],
+    }
+    blockers = []
+    for source in (development, qualification):
+        for field in ("blockers", "validationScreenBlockers"):
+            values = source.get(field)
+            if isinstance(values, list):
+                blockers.extend(str(value) for value in values)
+    for label, health, operation in (
+        ("TRAINING", training_health, development),
+        ("CAPTURE", capture_health, capture),
+    ):
+        state = result[label.lower() + "Health"]
+        if result["available"] and state != "HEALTHY":
+            blockers.append(f"{label}_HEALTH_{state}")
+        if operation.get("error"):
+            blockers.append(f"{label}_ERROR:{str(operation['error'])[:300]}")
+        errors = health.get("errors")
+        if isinstance(errors, list):
+            blockers.extend(f"{label}:{error}" for error in errors)
+    result["blockers"] = sorted(set(blockers))
+    return result
+
+
 def _extract_state(
     *,
     r7_invocation: Mapping[str, Any],
@@ -845,7 +923,9 @@ def _extract_state(
     )
     production_changed = bool(latest.get("productionAuthorityChanged") is True)
 
+    successor = _successor_state(r7)
     blockers: list[str] = list(discovery_errors)
+    blockers.extend("MLB_SUCCESSOR:" + value for value in successor["blockers"])
     if candidate.get("evaluationReadError"):
         blockers.append("MLB_LEARNING_EVALUATION_READ_FAILED:" + str(candidate["evaluationReadError"]))
     for value in (
@@ -1009,6 +1089,7 @@ def _extract_state(
             "workflowRun": dict(continuity_run),
             "functionName": r7_invocation.get("functionName"),
         },
+        "successor": successor,
         "blockers": sorted(set(item for item in blockers if item)),
     }
 
@@ -1254,9 +1335,68 @@ def _publication_indicator(auto: Mapping[str, Any]) -> str:
     }.get(str(phase), "⚪ unknown")
 
 
+def _successor_delta(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]], metric: str) -> Optional[float]:
+    current = _first_mapping(state.get("successor"))
+    prior = _first_mapping((previous or {}).get("successor"))
+    if (not current.get("experimentId") or current.get("experimentId") != prior.get("experimentId")
+            or current.get("trainingHealth") != "HEALTHY" or prior.get("trainingHealth") != "HEALTHY"
+            or current.get("artifactDigest") != prior.get("artifactDigest")):
+        return None
+    return _numeric_delta(state, previous, "successor." + metric)
+
+
+def _successor_lines(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) -> list[str]:
+    successor = _first_mapping(state.get("successor"))
+    protocol = _first_mapping(successor.get("protocol"))
+    counts = _first_mapping(successor.get("counts"))
+    observed = _first_mapping(successor.get("observedStarterCounts"))
+    validation = [_integer(counts.get(key)) for key in ("calibration", "selection")]
+    validation_count = sum(validation) if all(value is not None for value in validation) else None
+    lines = [
+        "### Successor development and fresh qualification", "",
+        f"**Experiment:** `{successor.get('experimentId') or 'not reported'}` · stage `{successor.get('status') or 'UNAVAILABLE'}`.",
+        f"**Execution health:** training **{successor.get('trainingHealth') or 'UNKNOWN'}** (last run `{successor.get('trainingRunAtUtc') or 'unavailable'}`); capture **{successor.get('captureHealth') or 'UNKNOWN'}** (last run `{successor.get('captureRunAtUtc') or 'unavailable'}`).",
+        "", "| Evidence | Now | Change since previous pulse |", "|---|---:|---:|",
+        f"| Admissible settled input rows | {_fmt_int(successor.get('acceptedDevelopmentRows'))} | {_fmt_delta(_successor_delta(state, previous, 'acceptedDevelopmentRows'))} |",
+        f"| Development train / minimum | {_fmt_int(counts.get('train'))} / {_fmt_int(protocol.get('trainMinimum'))} | — |",
+        f"| Validation total / minimum | {_fmt_int(validation_count)} / {_fmt_int(protocol.get('validationMinimum'))} | — |",
+        f"| Validation calibration / selection | {_fmt_int(counts.get('calibration'))} / {_fmt_int(counts.get('selection'))} | — |",
+    ]
+    for group in ("train", "calibration", "selection"):
+        lines.append(f"| Observed starter rates: {group} / minimum | {_fmt_int(observed.get(group))} / {_fmt_int(protocol.get('starterObserved' + group.title() + 'Minimum'))} | {_fmt_delta(_successor_delta(state, previous, 'observedStarterCounts.' + group))} |")
+    lines.extend([
+        f"| Fresh prospective settled rows | {_fmt_int(successor.get('prospectiveCount'))} | {_fmt_delta(_successor_delta(state, previous, 'prospectiveCount'))} |",
+        f"| Capture this run: new / existing | {_fmt_int(successor.get('captureNewCount'))} / {_fmt_int(successor.get('captureExistingCount'))} | — |",
+        "",
+        f"**Capture stage:** `{successor.get('captureStatus') or 'UNAVAILABLE'}` · rejected inputs `{json.dumps(successor.get('rejectedRows') or {}, sort_keys=True)}` · capture skips `{json.dumps(successor.get('captureSkipped') or {}, sort_keys=True)}` · incomplete test slates `{json.dumps(successor.get('skippedIncompleteSlateDates') or [])}`.",
+        f"**Frozen model:** `{successor.get('artifactDigest') or 'none reported'}` · sealed qualification `{successor.get('qualificationDigest') or 'none reported'}` · sealed at `{successor.get('sealedAtUtc') or 'not sealed'}`.",
+        "Training and starter counts describe chronological development partitions; partition changes can move rows between groups. Fresh qualification starts after a durable model freeze. Qualification and production activation are separate; the production authority section below reports serving status.",
+        "**Successor blockers:** " + ("; ".join(f"`{value}`" for value in successor.get("blockers") or []) or "none reported"),
+        "",
+    ])
+    return lines
+
+
 def _overall_direction(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) -> tuple[str, int, int]:
     positive = 0
     negative = 0
+    successor = _first_mapping(state.get("successor"))
+    if successor.get("available"):
+        health = (successor.get("trainingHealth"), successor.get("captureHealth"))
+        if "FAILED" in health:
+            return "🔴 SUCCESSOR EXECUTION UNHEALTHY", 0, 1
+        if any(value != "HEALTHY" for value in health):
+            return "🟡 SUCCESSOR HEALTH UNCONFIRMED", 0, 0
+        if successor.get("status") == "SEALED_SUCCESSOR_TEST_FAILED":
+            return "🔴 SUCCESSOR SEALED TEST FAILED", 0, 1
+    # Partition reshuffling is expected; count only new admissible inputs and
+    # fresh test settlements toward the overall advancement indicator.
+    for metric in ("acceptedDevelopmentRows", "prospectiveCount"):
+        delta = _successor_delta(state, previous, metric)
+        if delta is not None and delta > 0:
+            positive += 1
+        elif delta is not None and delta < 0:
+            negative += 1
     for path in (
         "r7.acceptedRowCount",
         "r7.trainCount",
@@ -1397,6 +1537,7 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
         f"**Out-of-sample metrics:** validation accuracy {_fmt_pct(r7.get('validationAccuracy'))}, Brier {_fmt_num(r7.get('validationBrier'))}, ECE {_fmt_num(r7.get('validationEce'))}; prospective accuracy {_fmt_pct(r7.get('prospectiveAccuracy'))}, Brier {_fmt_num(r7.get('prospectiveBrier'))}.",
         f"**R7 recovery workflow:** {workflow_status} · source `{workflow_kind}` · blocked slate `{r7.get('blockedSlateDate') or 'none'}` · continuity blocker `{r7.get('continuityBlocker') or 'none'}`.",
         "",
+        *_successor_lines(state, previous),
         "### MLB AUTO",
         "",
         "| Metric | Now | Δ30m | Direction |",
