@@ -595,8 +595,9 @@ def verify_deployed_stage(
         "cachedMethodSettings": [],
         "routeMethods": actual,
         "exportedRouteMethods": exported_actual,
-        "exportedResultsSchedulerIntegrations": exported_results_integrations,
-        "exportSha256": hashlib.sha256(raw_export).hexdigest(),
+        "exportedResultsSchedulerIntegrations": sorted(exported_results_integrations),
+        "exportSha256": hashlib.sha256(_canonical_json(export).encode("utf-8")).hexdigest(),
+        "exportFingerprintEncoding": "CANONICAL_SORTED_JSON_V1",
         "legacyResultsPostRoutes": [],
         "exactFiveGetFiveOptionsNoPost": True,
     }
@@ -2708,6 +2709,7 @@ def main() -> None:
     parser.add_argument("--deploy-build-manifest", required=True)
     parser.add_argument("--deploy-identity", required=True)
     parser.add_argument("--verifier-workflow-sha", required=True)
+    parser.add_argument("--verifier-workflow-path", default=".github/workflows/verify-mlb-results-api-read-only-postdeploy.yml")
     parser.add_argument("--verifier-run-id", required=True)
     parser.add_argument("--verifier-run-attempt", required=True)
     parser.add_argument("--schedule-wait-seconds", type=int, default=22 * 60)
@@ -2746,6 +2748,11 @@ def main() -> None:
         raise SystemExit("--verifier-workflow-sha must be an exact Git SHA")
 
     output = Path(args.output)
+    if args.verifier_workflow_path not in {
+        ".github/workflows/verify-mlb-results-api-read-only-postdeploy.yml",
+        ".github/workflows/verify-mlb-repaired-results-checker.yml",
+    }:
+        raise SystemExit("Unrecognized results verifier workflow path")
     output.parent.mkdir(parents=True, exist_ok=True)
     evidence: Dict[str, Any] = {
         "ok": False,
@@ -2756,7 +2763,7 @@ def main() -> None:
         "expectedDeployRunId": args.expected_deploy_run_id,
         "deployLineage": lineage,
         "verifierWorkflow": {
-            "path": ".github/workflows/verify-mlb-results-api-read-only-postdeploy.yml",
+            "path": args.verifier_workflow_path,
             "workflowSha": args.verifier_workflow_sha,
             "runId": args.verifier_run_id,
             "runAttempt": args.verifier_run_attempt,
@@ -2774,7 +2781,7 @@ def main() -> None:
                 "tests/unit/test_verify_mlb_results_api_postdeploy.py",
                 "scripts/verify_mlb_results_api_postdeploy.py",
                 ".github/workflows/deploy.yml",
-                ".github/workflows/verify-mlb-results-api-read-only-postdeploy.yml",
+                args.verifier_workflow_path,
             )
         },
         "stackName": args.stack_name,
