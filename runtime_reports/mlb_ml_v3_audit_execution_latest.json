@@ -1,7 +1,7 @@
 {
-  "ok": false,
+  "ok": true,
   "proofType": "MLB_ML_V3_AWS_AUDIT_EXECUTION",
-  "createdAtUtc": "2026-09-09T14:59:41.401996+00:00",
+  "createdAtUtc": "2026-09-09T15:13:41.685824+00:00",
   "environment": {
     "experimentId": "mlb-v2-2026-08-31-historical-live-r8",
     "releaseContractId": "mlb-v2-2026-08-31-historical-live-r8",
@@ -13,12 +13,8 @@
     "storeEnabled": "false",
     "allowLocalFileChampion": "false"
   },
-  "failures": [
-    "aws_v2_training_status_unhealthy_stale_or_invalid",
-    "aws_v2_training_capture_deployment_identity_mismatch",
-    "aws_v2_mode_specific_status_unhealthy"
-  ],
-  "reportCreatedAt": "2026-09-09T15:02:26.530178+00:00",
+  "failures": [],
+  "reportCreatedAt": "2026-09-09T15:15:17.452751+00:00",
   "reportOk": true,
   "windowHours": 24,
   "summary": {
@@ -28019,9 +28015,9 @@
   ],
   "canonicalFinalizedSlateEvidence": {
     "version": "MLB-CANONICAL-FINALIZED-SLATE-EVIDENCE-v2-official-final-outcomes",
-    "checkedAtUtc": "2026-09-09T15:08:26.879753+00:00",
+    "checkedAtUtc": "2026-09-09T15:18:41.329106+00:00",
     "windowHours": 24,
-    "windowStartUtc": "2026-09-08T15:08:26.879753+00:00",
+    "windowStartUtc": "2026-09-08T15:18:41.329106+00:00",
     "releaseCutoffUtc": "2026-08-31T04:00:00+00:00",
     "candidateSlateDates": [
       "2026-09-08",
@@ -28359,7 +28355,7 @@
     },
     "errors": [],
     "evidenceFingerprintVersion": "MLB-CANONICAL-FINALIZED-SLATE-EVIDENCE-SHA256-v2",
-    "evidenceFingerprint": "c9e35928b610102e6116f75b5f7e488a60256a239d4cf7a59c9ad48e7dc4894f"
+    "evidenceFingerprint": "b56287344db5a51ad4f1e6f91668ac8a41a971c8a5c00d6ecdbfc67f8b529c9c"
   },
   "productionAcceptanceScope": {
     "ok": true,
@@ -28380,7 +28376,7 @@
     "sourceRowCount": 15,
     "sourceRowsFingerprintVersion": "MLB-PRODUCTION-ACCEPTANCE-RAW-ROWS-SHA256-v1",
     "sourceRowsFingerprint": "637f9e90cd4c73631d2eccefc53be2a6ab5bf918062bc4b96f55f7a577706b60",
-    "canonicalFinalizedSlateEvidenceFingerprint": "c9e35928b610102e6116f75b5f7e488a60256a239d4cf7a59c9ad48e7dc4894f",
+    "canonicalFinalizedSlateEvidenceFingerprint": "b56287344db5a51ad4f1e6f91668ac8a41a971c8a5c00d6ecdbfc67f8b529c9c",
     "unscopedInvalidRowCount": 0,
     "preCutoffQuarantinedFinalGameCount": 0,
     "postCutoffCompletedFinalGameCount": 15,
@@ -29169,7 +29165,7 @@
     "errors": [],
     "policy": "Pre-r3 finals remain visible in the legacy rolling dashboard but cannot fail r3 acceptance. Every completed game whose scheduled T-45 is at or after the experiment cutoff must prove one exact official MLB gamePk, current immutable LOCKED#GAME authority, and a canonical lock timestamp at or after that same cutoff. A fully finalized slate is accepted only when the raw audit rows exactly equal its canonical official FINAL gamePk authority and each row's teams, scores, winner, and derived correctness match the official game-specific outcome evidence.",
     "scopeFingerprintVersion": "MLB-PRODUCTION-ACCEPTANCE-SCOPE-SHA256-v3",
-    "scopeFingerprint": "be0946fa74a2303f17220f7ab55589fa693f2eaf058f95c8a993618812c82aea"
+    "scopeFingerprint": "64de0feb4df03b7a91748865f600d32211a121d06306b645df54825b81c971e9"
   },
   "accuracyTargetPolicyInstall": {
     "ok": true,
@@ -29317,7 +29313,7 @@
     "promotionGate": {
       "ok": true,
       "version": "MLB-ML-CHAMPION-CHALLENGER-v1.6-retired-shadow-only",
-      "evaluatedAtUtc": "2026-09-09T15:08:26.810066+00:00",
+      "evaluatedAtUtc": "2026-09-09T15:18:41.280065+00:00",
       "automaticPromotionEnabled": false,
       "automaticPromotionRequiresPassedApplicableGates": true,
       "promotionEligible": false,
@@ -29661,19 +29657,19 @@
     "productionAuthoritySource": "persisted_canonical_rules_market_prediction_v2_shadow_only"
   },
   "mlTrainingV2": {
-    "ok": false,
+    "ok": true,
     "readOnly": true,
     "experimentId": "mlb-v2-2026-08-31-historical-live-r8",
     "experimentIdValid": true,
-    "manifestDigest": "033b3766252dcd3a8df750a8454892de6a31eb983e49f39181a8c57192f98089",
+    "manifestDigest": "5e4450e80f1cab4320555fed68f8817da8cd68e79f0fdfd9e791f21be565bae5",
     "manifestReadStable": true,
     "manifestReadBefore": {
-      "revision": 54,
-      "manifestDigest": "033b3766252dcd3a8df750a8454892de6a31eb983e49f39181a8c57192f98089"
+      "revision": 55,
+      "manifestDigest": "5e4450e80f1cab4320555fed68f8817da8cd68e79f0fdfd9e791f21be565bae5"
     },
     "manifestReadAfter": {
-      "revision": 54,
-      "manifestDigest": "033b3766252dcd3a8df750a8454892de6a31eb983e49f39181a8c57192f98089"
+      "revision": 55,
+      "manifestDigest": "5e4450e80f1cab4320555fed68f8817da8cd68e79f0fdfd9e791f21be565bae5"
     },
     "manifestPresent": true,
     "manifestValid": true,
@@ -29686,33 +29682,33 @@
       "prospectiveTest": 102
     },
     "latestCandidatePresent": true,
-    "latestCandidateArtifactDigest": "8eb1c799656e12c261a6ee90ea8f013338216cd0f76fcbef85729f74be3947c7",
+    "latestCandidateArtifactDigest": "05af6c7893bb4f6239829b14b7628c0a35eac4571f7a7e9bb749eee07cefc104",
     "candidatePromotionDecision": "RETAIN_CURRENT_CHAMPION",
     "statusPresent": true,
     "latestRunStatus": "CANDIDATE_REGISTERED",
-    "latestRunCreatedAtUtc": "2026-09-09T13:22:35.829630+00:00",
+    "latestRunCreatedAtUtc": "2026-09-09T15:09:29.437438+00:00",
     "latestRunTimestampValid": true,
-    "latestRunAgeMinutes": 105.87,
+    "latestRunAgeMinutes": 9.21,
     "latestRunFresh": true,
     "latestRunMaxAgeMinutes": 480.0,
     "trainingHealth": {
-      "ok": false,
+      "ok": true,
       "executionMode": "training",
       "statusPresent": true,
       "latestRunStatus": "CANDIDATE_REGISTERED",
-      "latestRunCreatedAtUtc": "2026-09-09T13:22:35.829630+00:00",
+      "latestRunCreatedAtUtc": "2026-09-09T15:09:29.437438+00:00",
       "latestRunTimestampValid": true,
-      "latestRunAgeMinutes": 105.87,
+      "latestRunAgeMinutes": 9.21,
       "latestRunFresh": true,
       "latestRunMaxAgeMinutes": 480.0,
       "deploymentIdentity": {
-        "gitSha": "80af2e4fd33d3dabf5be477da0344a78ed4521cd",
+        "gitSha": "fca09e3cd9b2dc3d9f31bf5a3943268f2c6a1bcd",
         "templateSha256": "984524a516a644e299ecc5cdb0cd2bc75c2b6912be9d41dd59238643ebc91c18"
       },
-      "deploymentIdentityMatches": false,
+      "deploymentIdentityMatches": true,
       "statusVersion": "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow",
       "experimentId": "mlb-v2-2026-08-31-historical-live-r8",
-      "manifestDigest": "033b3766252dcd3a8df750a8454892de6a31eb983e49f39181a8c57192f98089",
+      "manifestDigest": "5e4450e80f1cab4320555fed68f8817da8cd68e79f0fdfd9e791f21be565bae5",
       "statusFingerprintVersion": "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical",
       "executionConcurrencyControl": {
         "protectedExecutionModes": [
@@ -29769,7 +29765,7 @@
           "validation": 100,
           "train": 300
         },
-        "requestRun": "aws_native_fixed_prospective_shadow_training",
+        "requestRun": "function_error_diagnostic",
         "movementCoverage": {
           "acceptedRowCount": 610,
           "missingRowCount": 0,
@@ -29791,9 +29787,9 @@
           "coveredRowCount": 610
         },
         "rejectedRowCount": 8,
-        "statusFingerprint": "0fea439b7c670dcf99eefa5d26496bfbbde25bb409c2efe5f724f2c828a909f7",
+        "statusFingerprint": "c579243b62b8824e807bf6f5f2f57b9e10a9370bb19a966d80a860f0ebdfb452",
         "deploymentIdentity": {
-          "gitSha": "80af2e4fd33d3dabf5be477da0344a78ed4521cd",
+          "gitSha": "fca09e3cd9b2dc3d9f31bf5a3943268f2c6a1bcd",
           "templateSha256": "984524a516a644e299ecc5cdb0cd2bc75c2b6912be9d41dd59238643ebc91c18"
         },
         "championChanged": false,
@@ -29858,7 +29854,7 @@
           "shadowApprovalEligible": false,
           "version": "MLB-ML-PROMOTION-POLICY-v2-prospective-market-skill-manual-first",
           "firstPromotionRequiresManualReview": true,
-          "experimentManifestDigest": "033b3766252dcd3a8df750a8454892de6a31eb983e49f39181a8c57192f98089",
+          "experimentManifestDigest": "5e4450e80f1cab4320555fed68f8817da8cd68e79f0fdfd9e791f21be565bae5",
           "stableChampionExists": false,
           "checks": {
             "prospectiveSelectedRecommendationCount": 30,
@@ -29922,10 +29918,10 @@
             }
           ],
           "ok": true,
-          "evaluatedAtUtc": "2026-09-09T13:22:35.751718+00:00",
+          "evaluatedAtUtc": "2026-09-09T15:09:29.347803+00:00",
           "policy": "The first V2 approval is manual and creates a shadow-only pointer. Until a separately deployed V2 inference consumer validates the artifact, neither approval nor automatic replacement activates direction or playability authority. A rolling or single-day 90% result is dashboard-only and never activates or suspends authority."
         },
-        "createdAtUtc": "2026-09-09T13:22:35.829630+00:00",
+        "createdAtUtc": "2026-09-09T15:09:29.437438+00:00",
         "prospectiveTest": {
           "sealedBeforeEvaluation": true,
           "selectedReliability": {
@@ -30023,7 +30019,7 @@
         },
         "postStartPredictionCreationAllowed": false,
         "modelTrained": true,
-        "manifestDigest": "033b3766252dcd3a8df750a8454892de6a31eb983e49f39181a8c57192f98089",
+        "manifestDigest": "5e4450e80f1cab4320555fed68f8817da8cd68e79f0fdfd9e791f21be565bae5",
         "immutablePredictionRewriteAllowed": false,
         "executionMode": "training",
         "rejectionReasonCounts": {
@@ -30041,11 +30037,16 @@
             "calibration": 53,
             "train": 11
           },
+          "observedTeamCounts": {
+            "selection": 0,
+            "calibration": 0,
+            "train": 0
+          },
           "automaticPromotionEnabled": false,
           "version": "MLB-SUCCESSOR-DURABLE-QUALIFIED-DIRECTION-v1",
           "acceptedDevelopmentRows": 115,
           "deploymentIdentity": {
-            "gitSha": "80af2e4fd33d3dabf5be477da0344a78ed4521cd",
+            "gitSha": "fca09e3cd9b2dc3d9f31bf5a3943268f2c6a1bcd",
             "templateSha256": "984524a516a644e299ecc5cdb0cd2bc75c2b6912be9d41dd59238643ebc91c18"
           },
           "rejectedRows": {
@@ -30053,6 +30054,7 @@
           },
           "productionAuthorityChanged": false,
           "protocol": {
+            "predecessorExperimentId": "mlb-successor-2026-09-09-starter-rates-v1",
             "automaticWagerAllowed": false,
             "starterObservedSelectionMinimum": 25,
             "testCanBeReopened": false,
@@ -30062,9 +30064,12 @@
               10
             ],
             "validationMinimum": 100,
+            "teamObservedCalibrationMinimum": 25,
+            "teamObservedSelectionMinimum": 25,
             "firstActivationRequiresManualReview": true,
-            "version": "MLB-SUCCESSOR-MARKET-OFFSET-STARTER-RATES-v1",
+            "version": "MLB-SUCCESSOR-MARKET-OFFSET-TEAM-CONTEXT-v2",
             "calibrationRule": "earlier_validation_only_regularized_logit_adjustment",
+            "teamObservedTrainMinimum": 100,
             "prospectiveRule": "first_complete_whole_slates_after_durable_freeze_next_ET_day",
             "trainMinimum": 300,
             "maximumDevelopmentRows": 750,
@@ -30074,20 +30079,28 @@
               "homeAwayVelocityPpHr60mDiff",
               "starterEraGapHome",
               "starterKMinusBbGapHome",
-              "starterRatesMissing"
+              "starterRatesMissing",
+              "lineupOpsGapHome",
+              "bullpenPitches3dGapHome",
+              "lineupOpsMissing",
+              "bullpenWorkloadMissing"
             ],
             "starterObservedTrainMinimum": 100,
             "starterObservedCalibrationMinimum": 25,
-            "experimentId": "mlb-successor-2026-09-09-starter-rates-v1",
+            "teamFeaturesRequireObservedSources": true,
+            "experimentId": "mlb-successor-2026-09-09-team-context-v2",
             "selectionRule": "later_validation_brier_then_logloss_then_configuration_name",
             "r8ReviewedTestIsDevelopmentOnly": true
           },
-          "experimentId": "mlb-successor-2026-09-09-starter-rates-v1",
+          "experimentId": "mlb-successor-2026-09-09-team-context-v2",
           "blockers": [
             "INSUFFICIENT_WHOLE_SLATE_DEVELOPMENT_ROWS",
             "INSUFFICIENT_OBSERVED_STARTER_RATES_TRAIN",
             "INSUFFICIENT_OBSERVED_STARTER_RATES_CALIBRATION",
-            "INSUFFICIENT_OBSERVED_STARTER_RATES_SELECTION"
+            "INSUFFICIENT_OBSERVED_STARTER_RATES_SELECTION",
+            "INSUFFICIENT_OBSERVED_TEAM_CONTEXT_TRAIN",
+            "INSUFFICIENT_OBSERVED_TEAM_CONTEXT_CALIBRATION",
+            "INSUFFICIENT_OBSERVED_TEAM_CONTEXT_SELECTION"
           ],
           "observedStarterCounts": {
             "selection": 0,
@@ -30095,8 +30108,8 @@
             "train": 0
           },
           "ok": true,
-          "updatedAtUtc": "2026-09-09T13:22:30.198072+00:00",
-          "status": "ACCUMULATING_STARTER_RATE_DEVELOPMENT_DATA"
+          "updatedAtUtc": "2026-09-09T15:09:24.338711+00:00",
+          "status": "ACCUMULATING_TEAM_CONTEXT_DEVELOPMENT_DATA"
         },
         "executionConcurrencyControl": {
           "protectedExecutionModes": [
@@ -30145,7 +30158,7 @@
           "invokedByTraining": false,
           "status": "OWNED_BY_INDEPENDENT_SELECTION_CAPTURE_CADENCE"
         },
-        "runId": "769c54142b67a445e4b165a9",
+        "runId": "7a002f3803bfa23abf36822b",
         "milestones": {
           "projectedFullCleanSlatesRemaining": {
             "mechanicalShadowTrainerProof": 0,
@@ -31368,7 +31381,7 @@
           "blockedSlateDate": null,
           "policy": "Training excludes unresolved official slates individually and continues with later independently finalized slates; unresolved dates never admit training rows and exact official zero-game schedules remain proven off-days."
         },
-        "artifactDigest": "8eb1c799656e12c261a6ee90ea8f013338216cd0f76fcbef85729f74be3947c7",
+        "artifactDigest": "05af6c7893bb4f6239829b14b7628c0a35eac4571f7a7e9bb749eee07cefc104",
         "status": "CANDIDATE_REGISTERED",
         "promotion": {
           "runtimeAuthorityActivated": false,
@@ -31376,18 +31389,16 @@
           "shadowChampionApproved": false
         }
       },
-      "errors": [
-        "status_deployment_identity_mismatch"
-      ]
+      "errors": []
     },
     "selectionCaptureHealth": {
       "ok": true,
       "executionMode": "selection_capture",
       "statusPresent": true,
       "latestRunStatus": "PROSPECTIVE_SELECTION_CAPTURE_COMPLETE",
-      "latestRunCreatedAtUtc": "2026-09-09T15:07:13.423077+00:00",
+      "latestRunCreatedAtUtc": "2026-09-09T15:17:12.792117+00:00",
       "latestRunTimestampValid": true,
-      "latestRunAgeMinutes": 1.25,
+      "latestRunAgeMinutes": 1.49,
       "latestRunFresh": true,
       "latestRunMaxAgeMinutes": 10.0,
       "deploymentIdentity": {
@@ -31397,7 +31408,7 @@
       "deploymentIdentityMatches": true,
       "statusVersion": "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow",
       "experimentId": "mlb-v2-2026-08-31-historical-live-r8",
-      "manifestDigest": "033b3766252dcd3a8df750a8454892de6a31eb983e49f39181a8c57192f98089",
+      "manifestDigest": "5e4450e80f1cab4320555fed68f8817da8cd68e79f0fdfd9e791f21be565bae5",
       "statusFingerprintVersion": "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical",
       "executionConcurrencyControl": {
         "protectedExecutionModes": [
@@ -31436,7 +31447,7 @@
       "latestRun": {
         "automaticPromotionEnabled": false,
         "requestRun": "aws_native_prospective_selection_capture",
-        "statusFingerprint": "014441f9723ab8cf4e01daad9358e4bee8cd69d3ef5c7ac114c3a996382ebdf5",
+        "statusFingerprint": "b6069109cf5bf8a0aec421ed0a76f69fb5ba4c69014cf5fa74263f3e3d856732",
         "challengerArtifactDigest": "05a9231c24dad1bc2504a1bc687c2b44d6ebbeb4f9f05e5068bcb5a0792c6f61",
         "deploymentIdentity": {
           "gitSha": "fca09e3cd9b2dc3d9f31bf5a3943268f2c6a1bcd",
@@ -31445,13 +31456,13 @@
         "championChanged": false,
         "productionAuthorityChanged": false,
         "otherSportChanged": false,
-        "createdAtUtc": "2026-09-09T15:07:13.423077+00:00",
+        "createdAtUtc": "2026-09-09T15:17:12.792117+00:00",
         "experimentId": "mlb-v2-2026-08-31-historical-live-r8",
         "releaseCutoffUtc": "2026-08-31T04:00:00+00:00",
         "ok": true,
         "postStartPredictionCreationAllowed": false,
         "modelTrained": false,
-        "manifestDigest": "033b3766252dcd3a8df750a8454892de6a31eb983e49f39181a8c57192f98089",
+        "manifestDigest": "5e4450e80f1cab4320555fed68f8817da8cd68e79f0fdfd9e791f21be565bae5",
         "immutablePredictionRewriteAllowed": false,
         "historicalTrainingScanInvoked": false,
         "executionMode": "selection_capture",
@@ -31513,12 +31524,12 @@
           "ok": true,
           "errors": []
         },
-        "runId": "166c09acaea3074a28335316",
+        "runId": "e25e31e24ea5c7006157d0dd",
         "status": "PROSPECTIVE_SELECTION_CAPTURE_COMPLETE"
       },
       "errors": []
     },
-    "deploymentIdentityAgreement": false,
+    "deploymentIdentityAgreement": true,
     "deployedTrainerIdentity": {
       "gitSha": "fca09e3cd9b2dc3d9f31bf5a3943268f2c6a1bcd",
       "templateSha256": "984524a516a644e299ecc5cdb0cd2bc75c2b6912be9d41dd59238643ebc91c18"
@@ -31526,7 +31537,7 @@
     "genericLatestStatusDiagnosticOnly": {
       "automaticPromotionEnabled": false,
       "requestRun": "aws_native_prospective_selection_capture",
-      "statusFingerprint": "014441f9723ab8cf4e01daad9358e4bee8cd69d3ef5c7ac114c3a996382ebdf5",
+      "statusFingerprint": "b6069109cf5bf8a0aec421ed0a76f69fb5ba4c69014cf5fa74263f3e3d856732",
       "challengerArtifactDigest": "05a9231c24dad1bc2504a1bc687c2b44d6ebbeb4f9f05e5068bcb5a0792c6f61",
       "deploymentIdentity": {
         "gitSha": "fca09e3cd9b2dc3d9f31bf5a3943268f2c6a1bcd",
@@ -31535,13 +31546,13 @@
       "championChanged": false,
       "productionAuthorityChanged": false,
       "otherSportChanged": false,
-      "createdAtUtc": "2026-09-09T15:07:13.423077+00:00",
+      "createdAtUtc": "2026-09-09T15:17:12.792117+00:00",
       "experimentId": "mlb-v2-2026-08-31-historical-live-r8",
       "releaseCutoffUtc": "2026-08-31T04:00:00+00:00",
       "ok": true,
       "postStartPredictionCreationAllowed": false,
       "modelTrained": false,
-      "manifestDigest": "033b3766252dcd3a8df750a8454892de6a31eb983e49f39181a8c57192f98089",
+      "manifestDigest": "5e4450e80f1cab4320555fed68f8817da8cd68e79f0fdfd9e791f21be565bae5",
       "immutablePredictionRewriteAllowed": false,
       "historicalTrainingScanInvoked": false,
       "executionMode": "selection_capture",
@@ -31603,7 +31614,7 @@
         "ok": true,
         "errors": []
       },
-      "runId": "166c09acaea3074a28335316",
+      "runId": "e25e31e24ea5c7006157d0dd",
       "status": "PROSPECTIVE_SELECTION_CAPTURE_COMPLETE"
     },
     "milestones": {
