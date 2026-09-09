@@ -625,6 +625,10 @@ def _selection_envelope_errors(item: Mapping[str, Any]) -> List[str]:
 
 
 class AwsTrainingStore:
+    def successor_repository(self):
+        import mlb_successor_runtime_v1
+        return mlb_successor_runtime_v1.Repository(self.table)
+
     def __init__(
         self,
         *,
@@ -2378,6 +2382,13 @@ class TrainingService:
             "manualReviewCreatesShadowApprovalOnly": True,
             "v2InferenceConsumerInstalled": False,
             "runtimeAuthorityActivationAvailable": False,
+            "successorRuntime": {
+                "installed": True,
+                "experimentId": "mlb-successor-2026-09-09-starter-rates-v1",
+                "firstActivationRequiresExactQualifiedArtifactReview": True,
+                "usesSeparateImmutablePredictions": True,
+                "legacyV2InferenceConsumerInstalled": False,
+            },
             "trainingHealth": training_health,
             "selectionCaptureHealth": selection_capture_health,
             "requestedRunEvidence": requested_run_evidence,
@@ -2417,6 +2428,19 @@ class TrainingService:
             for row in response.get("rows") or []
             if isinstance(row, dict)
         ]
+        successor_capture = {"status": "STORE_ADAPTER_UNAVAILABLE"}
+        successor_factory = getattr(self.store, "successor_repository", None)
+        if callable(successor_factory):
+            try:
+                import mlb_successor_runtime_v1 as successor
+                successor_capture = successor.capture(
+                    successor_factory(), rows, self.now,
+                    {"gitSha": self.config.deployment_git_sha,
+                     "templateSha256": self.config.deployment_template_sha256},
+                )
+            except Exception as exc:
+                successor_capture = {"ok": False, "status": "SUCCESSOR_CAPTURE_FAILED",
+                                     "error": f"{type(exc).__name__}:{exc}"}
         captured = 0
         existing = 0
         selected = 0
@@ -2528,6 +2552,7 @@ class TrainingService:
         ledger_covered = captured + existing
         return {
             "ok": not errors,
+            "successorCapture": successor_capture,
             "lockedRowCount": len(rows),
             "learningEligibleCount": learning_eligible,
             "captureEligibleCount": capture_eligible,
@@ -2791,6 +2816,20 @@ class TrainingService:
         if isinstance(slate_continuity, dict) and slate_continuity.get("ok") is not True:
             return save_continuity_wait(slate_continuity)
 
+        successor_development = {"status": "STORE_ADAPTER_UNAVAILABLE"}
+        successor_factory = getattr(self.store, "successor_repository", None)
+        if callable(successor_factory):
+            try:
+                import mlb_successor_runtime_v1 as successor
+                successor_development = successor.develop(
+                    successor_factory(), accepted, self.now(),
+                    {"gitSha": self.config.deployment_git_sha,
+                     "templateSha256": self.config.deployment_template_sha256}, self.store,
+                )
+            except Exception as exc:
+                successor_development = {"ok": False, "status": "SUCCESSOR_DEVELOPMENT_FAILED",
+                                         "error": f"{type(exc).__name__}:{exc}"}
+
         challenger: Optional[Dict[str, Any]] = None
         challenger_pointer: Optional[Dict[str, Any]] = None
         if (manifest.get("partitions") or {}).get("validation", {}).get("frozen") is True:
@@ -2885,6 +2924,7 @@ class TrainingService:
         }
         common = {
             "ok": bool(selection_evaluation.get("ok") is True),
+            "successorDevelopment": successor_development,
             "status": manifest.get("phase"),
             "executionMode": "training",
             "partitionCounts": counts,
