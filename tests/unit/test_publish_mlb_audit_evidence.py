@@ -60,3 +60,23 @@ def test_mismatched_bundle_is_rejected_before_publication(tmp_path):
     root,remote=setup(tmp_path);bundle(root,9)
     (root/publisher.FILES[2]).write_text(json.dumps({'auditCreatedAtUtc':'2026-09-08T14:00:00Z'}))
     with pytest.raises(ValueError,match='another audit'):publisher.publish(root)
+
+
+def test_trainer_diagnostic_uses_same_safe_publication_without_audit_mutation(tmp_path):
+    root,remote=setup(tmp_path)
+    path='runtime_reports/mlb_trainer_function_error_latest.json'
+    (root/path).write_text(json.dumps({'createdAtUtc':'2026-09-09T15:00:00Z','ok':False}))
+    audit=git(remote,'show','main:'+publisher.EXECUTION)
+    assert publisher.publish_trainer_diagnostic(root)['published'] is True
+    assert git(remote,'show','main:'+publisher.EXECUTION)==audit
+    assert json.loads(git(remote,'show','main:'+path))['ok'] is False
+
+
+def test_manual_diagnostic_uses_bounded_invoker_and_safe_publisher():
+    root=Path(__file__).resolve().parents[2]
+    text=(root/'.github/workflows/mlb-trainer-function-error-diagnostic.yml').read_text()
+    assert 'python scripts/invoke_mlb_trainer_with_retry.py' in text
+    assert '--retry-execution-lease' in text
+    assert 'aws lambda invoke' not in text
+    assert 'publish_mlb_audit_evidence.py --trainer-diagnostic' in text
+    assert 'group: unified-mlb-learning' in text
