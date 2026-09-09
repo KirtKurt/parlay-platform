@@ -14,6 +14,7 @@ on:
       - 'scripts/patch_template_sportsdataio.py'
       - 'scripts/verify_mlb_sportsdataio_sam_wiring.py'
       - 'tests/unit/test_mlb_*.py'
+      - 'tests/unit/test_report_mlb_30m_progress.py'
       - 'tests/unit/test_verify_mlb_postdeploy_scheduled_pull.py'
       - 'tests/unit/test_verify_mlb_results_api_postdeploy.py'
       - 'tests/unit/test_run_mlb_ml_v3_audit_report.py'
@@ -59,6 +60,7 @@ on:
       - 'scripts/patch_template_sportsdataio.py'
       - 'scripts/verify_mlb_sportsdataio_sam_wiring.py'
       - 'tests/unit/test_mlb_*.py'
+      - 'tests/unit/test_report_mlb_30m_progress.py'
       - 'tests/unit/test_verify_mlb_postdeploy_scheduled_pull.py'
       - 'tests/unit/test_verify_mlb_results_api_postdeploy.py'
       - 'tests/unit/test_run_mlb_ml_v3_audit_report.py'
@@ -232,6 +234,7 @@ jobs:
             tests/unit/test_mlb_r8_execution_lease_diagnostic_workflow.py \
             tests/unit/test_mlb_postdeploy_proof_publisher.py \
             tests/unit/test_mlb_progress_pulse_watchdog.py \
+            tests/unit/test_report_mlb_30m_progress.py \
             tests/unit/test_mlb_progress_pulse_bounded_runner_relay.py \
             tests/unit/test_mlb_prospective_backlog_workflow.py \
             tests/unit/test_unified_mlb_learning_ownership.py \

@@ -1,64 +1,60 @@
 {
-  "observedAtUtc": "2026-09-09T09:48:34.278060+00:00",
+  "observedAtUtc": "2026-09-09T12:27:14.303401+00:00",
   "evidenceSource": {
     "workflowRunId": 34336532901,
-    "workflowJobId": 102417796078,
+    "workflowJobId": 102464180884,
     "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/34336532901"
   },
   "health": {
+    "selectionCaptureHealth": {
+      "ageSeconds": 1.877,
+      "deploymentIdentityMatches": true,
+      "errors": [],
+      "executionMode": "selection_capture",
+      "latestRunCreatedAtUtc": "2026-09-09T12:27:12.084434+00:00",
+      "maximumAgeSeconds": 600,
+      "ok": true
+    },
     "trainingHealth": {
-      "ok": true,
+      "ageSeconds": 9632.426,
+      "deploymentIdentityMatches": true,
+      "errors": [],
       "executionMode": "training",
       "latestRunCreatedAtUtc": "2026-09-09T09:46:41.528119+00:00",
-      "ageSeconds": 112.482,
       "maximumAgeSeconds": 28800,
-      "deploymentIdentityMatches": true,
-      "errors": []
-    },
-    "selectionCaptureHealth": {
-      "ok": true,
-      "executionMode": "selection_capture",
-      "latestRunCreatedAtUtc": "2026-09-09T09:47:26.232172+00:00",
-      "ageSeconds": 67.786,
-      "maximumAgeSeconds": 600,
-      "deploymentIdentityMatches": true,
-      "errors": []
+      "ok": true
     }
   },
   "successorDevelopment": {
+    "acceptedDevelopmentRows": 115,
+    "automaticPromotionEnabled": false,
+    "blockers": [
+      "INSUFFICIENT_WHOLE_SLATE_DEVELOPMENT_ROWS",
+      "INSUFFICIENT_OBSERVED_STARTER_RATES_TRAIN",
+      "INSUFFICIENT_OBSERVED_STARTER_RATES_CALIBRATION",
+      "INSUFFICIENT_OBSERVED_STARTER_RATES_SELECTION"
+    ],
     "counts": {
-      "selection": 51,
       "calibration": 53,
+      "selection": 51,
       "train": 11
     },
-    "automaticPromotionEnabled": false,
-    "version": "MLB-SUCCESSOR-DURABLE-QUALIFIED-DIRECTION-v1",
-    "acceptedDevelopmentRows": 115,
     "deploymentIdentity": {
       "gitSha": "80af2e4fd33d3dabf5be477da0344a78ed4521cd",
       "templateSha256": "984524a516a644e299ecc5cdb0cd2bc75c2b6912be9d41dd59238643ebc91c18"
     },
-    "rejectedRows": {
-      "invalid immutable fundamentals snapshot": 495
+    "experimentId": "mlb-successor-2026-09-09-starter-rates-v1",
+    "observedStarterCounts": {
+      "calibration": 0,
+      "selection": 0,
+      "train": 0
     },
+    "ok": true,
     "productionAuthorityChanged": false,
     "protocol": {
       "automaticWagerAllowed": false,
-      "starterObservedSelectionMinimum": 25,
-      "testCanBeReopened": false,
-      "penalties": [
-        0.1,
-        1,
-        10
-      ],
-      "validationMinimum": 100,
-      "firstActivationRequiresManualReview": true,
-      "version": "MLB-SUCCESSOR-MARKET-OFFSET-STARTER-RATES-v1",
       "calibrationRule": "earlier_validation_only_regularized_logit_adjustment",
-      "prospectiveRule": "first_complete_whole_slates_after_durable_freeze_next_ET_day",
-      "trainMinimum": 300,
-      "maximumDevelopmentRows": 750,
-      "testMinimum": 100,
+      "experimentId": "mlb-successor-2026-09-09-starter-rates-v1",
       "features": [
         "deltaGapHome",
         "homeAwayVelocityPpHr60mDiff",
@@ -66,215 +62,735 @@
         "starterKMinusBbGapHome",
         "starterRatesMissing"
       ],
-      "starterObservedTrainMinimum": 100,
-      "starterObservedCalibrationMinimum": 25,
-      "experimentId": "mlb-successor-2026-09-09-starter-rates-v1",
+      "firstActivationRequiresManualReview": true,
+      "maximumDevelopmentRows": 750,
+      "penalties": [
+        0.1,
+        1,
+        10
+      ],
+      "prospectiveRule": "first_complete_whole_slates_after_durable_freeze_next_ET_day",
+      "r8ReviewedTestIsDevelopmentOnly": true,
       "selectionRule": "later_validation_brier_then_logloss_then_configuration_name",
-      "r8ReviewedTestIsDevelopmentOnly": true
+      "starterObservedCalibrationMinimum": 25,
+      "starterObservedSelectionMinimum": 25,
+      "starterObservedTrainMinimum": 100,
+      "testCanBeReopened": false,
+      "testMinimum": 100,
+      "trainMinimum": 300,
+      "validationMinimum": 100,
+      "version": "MLB-SUCCESSOR-MARKET-OFFSET-STARTER-RATES-v1"
     },
-    "experimentId": "mlb-successor-2026-09-09-starter-rates-v1",
-    "blockers": [
-      "INSUFFICIENT_WHOLE_SLATE_DEVELOPMENT_ROWS",
-      "INSUFFICIENT_OBSERVED_STARTER_RATES_TRAIN",
-      "INSUFFICIENT_OBSERVED_STARTER_RATES_CALIBRATION",
-      "INSUFFICIENT_OBSERVED_STARTER_RATES_SELECTION"
-    ],
-    "observedStarterCounts": {
-      "selection": 0,
-      "calibration": 0,
-      "train": 0
+    "rejectedRows": {
+      "invalid immutable fundamentals snapshot": 495
     },
-    "ok": true,
+    "status": "ACCUMULATING_STARTER_RATE_DEVELOPMENT_DATA",
     "updatedAtUtc": "2026-09-09T09:46:36.649376+00:00",
-    "status": "ACCUMULATING_STARTER_RATE_DEVELOPMENT_DATA"
+    "version": "MLB-SUCCESSOR-DURABLE-QUALIFIED-DIRECTION-v1"
   },
   "successorCapture": {
-    "ok": true,
     "capturedCount": 0,
+    "ok": true,
     "status": "WAITING_FOR_SUCCESSOR_DEVELOPMENT"
   },
-  "trainerRuntime": {
-    "State": "Active",
-    "LastUpdateStatus": "Successful",
-    "LastModified": "2026-09-09T09:33:31.000+0000",
-    "CodeSha256": "415X4NW1PJoEC7MnO85QGlYO+2pn1mwaneoccqbSJjA=",
-    "Timeout": 900,
-    "MemorySize": 2048,
-    "Handler": "mlb_ml_aws_training_v1_compat.lambda_handler",
-    "errors": []
+  "runtime": {
+    "auto": {
+      "CodeSha256": "nqAt80e9HVcj+JTAnDlQDHyXlf5C7qU6/9myl0NYX34=",
+      "Handler": "orchestrator_v3.lambda_handler",
+      "LastModified": "2026-09-09T05:10:21.000+0000",
+      "LastUpdateStatus": "Successful",
+      "MemorySize": 3008,
+      "State": "Active",
+      "Timeout": 900,
+      "errors": []
+    },
+    "trainer": {
+      "CodeSha256": "415X4NW1PJoEC7MnO85QGlYO+2pn1mwaneoccqbSJjA=",
+      "Handler": "mlb_ml_aws_training_v1_compat.lambda_handler",
+      "LastModified": "2026-09-09T09:33:31.000+0000",
+      "LastUpdateStatus": "Successful",
+      "MemorySize": 2048,
+      "State": "Active",
+      "Timeout": 900,
+      "errors": [
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788931348086,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788931353616,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788931364118,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788931384512,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788931424955,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788931485363,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788931545797,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788931606199,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788933106449,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788933111814,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788933122166,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788933142496,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788933182833,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788933243184,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788933303528,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788933363862,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788933424192,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788934474918,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788934480293,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788934490624,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788934510955,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788934551292,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788934611610,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788934671936,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788934732270,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        },
+        {
+          "codes": [],
+          "frames": [
+            [
+              "/var/task/mlb_ml_aws_training_v1_compat.py",
+              "173",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "3193",
+              "lambda_handler"
+            ],
+            [
+              "/var/task/mlb_ml_aws_training_v1.py",
+              "859",
+              "acquire_execution_lease"
+            ]
+          ],
+          "timeout": false,
+          "timestamp": 1788934792592,
+          "types": [
+            "ExecutionLeaseUnavailable"
+          ],
+          "undefinedNames": []
+        }
+      ]
+    }
   },
-  "resultsDeliveryDiagnostics": {
-    "observedAtUtc": "2026-09-09T09:49:28.718344+00:00",
-    "qualificationEvidence": false,
-    "readOnlyProofReplacement": false,
-    "ruleName": "parlay-platform-dev-MLBResultsSchedulerFunctionMLBR-iAegm5XTRSXV",
-    "windows": [
-      {
-        "startUtc": "2026-09-09T08:36:00+00:00",
-        "endUtc": "2026-09-09T08:51:00+00:00",
-        "AWS/Events/Invocations": {
-          "sum": 0,
-          "datapointCount": 0,
-          "datapoints": []
-        },
-        "AWS/Events/FailedInvocations": {
-          "sum": 0,
-          "datapointCount": 0,
-          "datapoints": []
-        },
-        "AWS/Lambda/Invocations": {
-          "sum": 1,
-          "datapointCount": 1,
-          "datapoints": [
-            {
-              "timestamp": "2026-09-09T08:36:00+00:00",
-              "sum": 1
-            }
-          ]
-        },
-        "AWS/Lambda/Errors": {
-          "sum": 0,
-          "datapointCount": 1,
-          "datapoints": [
-            {
-              "timestamp": "2026-09-09T08:36:00+00:00",
-              "sum": 0
-            }
-          ]
-        }
-      },
-      {
-        "startUtc": "2026-09-09T08:51:00+00:00",
-        "endUtc": "2026-09-09T09:06:00+00:00",
-        "AWS/Events/Invocations": {
-          "sum": 1,
-          "datapointCount": 1,
-          "datapoints": [
-            {
-              "timestamp": "2026-09-09T08:51:00+00:00",
-              "sum": 1
-            }
-          ]
-        },
-        "AWS/Events/FailedInvocations": {
-          "sum": 0,
-          "datapointCount": 0,
-          "datapoints": []
-        },
-        "AWS/Lambda/Invocations": {
-          "sum": 1,
-          "datapointCount": 1,
-          "datapoints": [
-            {
-              "timestamp": "2026-09-09T08:51:00+00:00",
-              "sum": 1
-            }
-          ]
-        },
-        "AWS/Lambda/Errors": {
-          "sum": 0,
-          "datapointCount": 1,
-          "datapoints": [
-            {
-              "timestamp": "2026-09-09T08:51:00+00:00",
-              "sum": 0
-            }
-          ]
-        }
-      },
-      {
-        "startUtc": "2026-09-09T09:06:00+00:00",
-        "endUtc": "2026-09-09T09:21:00+00:00",
-        "AWS/Events/Invocations": {
-          "sum": 2,
-          "datapointCount": 2,
-          "datapoints": [
-            {
-              "timestamp": "2026-09-09T09:06:00+00:00",
-              "sum": 1
-            },
-            {
-              "timestamp": "2026-09-09T09:20:00+00:00",
-              "sum": 1
-            }
-          ]
-        },
-        "AWS/Events/FailedInvocations": {
-          "sum": 0,
-          "datapointCount": 0,
-          "datapoints": []
-        },
-        "AWS/Lambda/Invocations": {
-          "sum": 19,
-          "datapointCount": 2,
-          "datapoints": [
-            {
-              "timestamp": "2026-09-09T09:06:00+00:00",
-              "sum": 15
-            },
-            {
-              "timestamp": "2026-09-09T09:07:00+00:00",
-              "sum": 4
-            }
-          ]
-        },
-        "AWS/Lambda/Errors": {
-          "sum": 0,
-          "datapointCount": 2,
-          "datapoints": [
-            {
-              "timestamp": "2026-09-09T09:06:00+00:00",
-              "sum": 0
-            },
-            {
-              "timestamp": "2026-09-09T09:07:00+00:00",
-              "sum": 0
-            }
-          ]
-        }
-      },
-      {
-        "startUtc": "2026-09-09T09:21:00+00:00",
-        "endUtc": "2026-09-09T09:36:00+00:00",
-        "AWS/Events/Invocations": {
-          "sum": 0,
-          "datapointCount": 0,
-          "datapoints": []
-        },
-        "AWS/Events/FailedInvocations": {
-          "sum": 0,
-          "datapointCount": 0,
-          "datapoints": []
-        },
-        "AWS/Lambda/Invocations": {
-          "sum": 15,
-          "datapointCount": 2,
-          "datapoints": [
-            {
-              "timestamp": "2026-09-09T09:21:00+00:00",
-              "sum": 1
-            },
-            {
-              "timestamp": "2026-09-09T09:35:00+00:00",
-              "sum": 14
-            }
-          ]
-        },
-        "AWS/Lambda/Errors": {
-          "sum": 0,
-          "datapointCount": 2,
-          "datapoints": [
-            {
-              "timestamp": "2026-09-09T09:21:00+00:00",
-              "sum": 0
-            },
-            {
-              "timestamp": "2026-09-09T09:35:00+00:00",
-              "sum": 0
-            }
-          ]
-        }
-      }
-    ]
-  }
+  "note": "The diagnostic error scan includes earlier failures before deployment. Evaluate current operation health using the fresh deployment-bound status records above."
 }
