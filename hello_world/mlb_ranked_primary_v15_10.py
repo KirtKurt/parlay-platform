@@ -35,25 +35,9 @@ _VERIFIED_GUARD_RESULT = _guard_result
 
 
 def _lifecycle_without_prediction(row):
-    from mlb_slate_coverage_patch import AUTHORITY_VERSION
+    from mlb_slate_coverage_patch import is_prediction_free_lifecycle_row
 
-    authority = row.get("perGameCanonicalLock") or {}
-    return (
-        isinstance(authority, dict)
-        and authority.get("authorityVersion") == AUTHORITY_VERSION
-        and authority.get("canonical") is False
-        and authority.get("status") in {
-            "OPEN_PRE_LOCK", "LOCK_DUE_CANONICAL_MISSING", "MISSED_LOCK",
-            "LOCKED_NO_PREDICTION_DATA",
-        }
-        and not row.get("predictedWinner")
-        and not row.get("predictedSide")
-        and not row.get("homeSignal")
-        and not row.get("awaySignal")
-        and row.get("officialPrediction") is False
-        and row.get("trainingEligible") is False
-    )
-
+    return is_prediction_free_lifecycle_row(row)
 
 def apply_model_direction(row, *, default_slate_date=None):
     if _lifecycle_without_prediction(row):

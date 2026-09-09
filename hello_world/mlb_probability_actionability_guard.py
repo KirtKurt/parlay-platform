@@ -654,6 +654,10 @@ def _no_pick(row: Dict[str, Any]) -> Dict[str, Any]:
 
 def guard_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
     """Apply fallback calibration without changing team or side direction."""
+    from mlb_slate_coverage_patch import is_prediction_free_lifecycle_row
+
+    if is_prediction_free_lifecycle_row(row):
+        return copy.deepcopy(row)
     out = _annotate_source_honesty(row)
     out = _calibrate(out)
     return _no_pick(out)

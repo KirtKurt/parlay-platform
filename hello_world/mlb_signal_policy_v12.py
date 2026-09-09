@@ -305,6 +305,11 @@ def _display_card(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _apply_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    import copy
+    from mlb_slate_coverage_patch import is_prediction_free_lifecycle_row
+
+    if is_prediction_free_lifecycle_row(row):
+        return copy.deepcopy(row)
     out = dict(row or {})
     before = _f(out.get("score"), 0.0)
     comps = _components(out)

@@ -56,6 +56,51 @@ def test_unattested_empty_row_is_still_an_error():
         ranked.apply_model_direction({"slate_date": "2026-09-09"})
 
 
+@pytest.mark.parametrize("storage_ok", [True, False])
+def test_unpriced_lifecycle_survives_probability_risk_and_storage(storage_ok):
+    import mlb_slate_coverage_patch as coverage
+    import mlb_prediction_probability_contract_v1 as probability
+    import mlb_probability_actionability_guard as risk
+    import mlb_signal_policy_v12 as signal
+    import mlb_locked_prediction_storage_finalizer_v1 as finalizer
+
+    pending = coverage._prelock_row({
+        "slate_date": "2026-09-09", "gameId": "unpriced",
+        "predictedWinner": None, "predictedSide": None,
+    }, {}, "2026-09-09T22:25:00Z")
+    original = copy.deepcopy(pending)
+    pending = ranked.apply_model_direction(pending)
+    pending = probability.normalize_row(pending)
+    pending = risk.guard_prediction(pending)
+    pending = signal._apply_row(pending)
+    pending = ranked.apply_selection(pending)
+    assert pending == original
+
+    valid = coverage._prelock_row(_row("2026-09-09"), {}, "2026-09-09T22:25:00Z")
+    writes = []
+    def store(row):
+        assert row["predictedWinner"]
+        writes.append(row["gameId"])
+        return {"ok": storage_ok}
+    result = finalizer._store_final(SimpleNamespace(_store_prediction=store), {
+        "ok": True, "gameCount": 2, "predictions": [valid, pending],
+        "allGamesPredicted": False,
+    }, True)
+    assert writes == ["game-1"]
+    assert result["preLockStorageCandidateCount"] == 1
+    assert result["preLockStorageLifecycleSkippedCount"] == 1
+    assert result["preLockStorageDispositionCount"] == 2
+    assert result["preLockStorageDispositionComplete"] is True
+    assert result["preLockStorageComplete"] is storage_ok
+    assert pending["preLockStoreSkipped"] is True
+    assert pending["preLockStoreSkipReason"] == "awaiting_market_or_prediction_not_a_prediction_candidate"
+    assert pending.get("winProbability") is None
+    assert result["allGamesPredicted"] is False
+    if not storage_ok:
+        assert result["ok"] is False
+        assert result["winnerLifecycleOperationalDefect"] is True
+
+
 def _row(date: str, *, home_market: float = 0.62, official: bool = False) -> dict:
     return {
         "sport": "mlb",
