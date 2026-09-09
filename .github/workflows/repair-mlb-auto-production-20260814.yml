@@ -1,0 +1,160 @@
+name: Repair MLB Auto production 20260814
+
+on:
+  push:
+    branches: [agent/mlb-auto-tennis-lifecycle-v1]
+    paths: ['.github/workflows/repair-mlb-auto-production-20260814.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repair-mlb-auto-production-20260814
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-mlb-auto-prod
+
+jobs:
+  repair-and-prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Force settlement repair training and prove live T10 authority
+        run: |
+          set -euo pipefail
+          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
+
+          invoke() {
+            local payload="$1" output="$2" timeout="${3:-300}"
+            aws lambda invoke --cli-read-timeout "$timeout" --cli-connect-timeout 30 \
+              --function-name "$FN" --cli-binary-format raw-in-base64-out \
+              --payload "$payload" "$output" >/dev/null
+          }
+
+          invoke '{"action":"MLB_AUTO_SETTLE"}' settle.json 300
+          invoke '{"action":"MLB_AUTO_REPAIR"}' repair.json 600
+          invoke '{"action":"MLB_AUTO_TRAIN"}' train.json 600
+          invoke '{"action":"STATUS"}' status.json 180
+
+          python - <<'PY' > pred_event.json
+          import json
+          print(json.dumps({
+              'requestContext': {'http': {'method': 'GET'}},
+              'rawPath': '/prod/v1/mlb-auto/predictions',
+              'queryStringParameters': {'date': '2026-08-13'},
+          }))
+          PY
+          invoke "$(cat pred_event.json)" predictions.json 180
+
+          python - <<'PY' > today_event.json
+          import json
+          print(json.dumps({
+              'requestContext': {'http': {'method': 'GET'}},
+              'rawPath': '/prod/v1/mlb-auto/predictions',
+              'queryStringParameters': {'date': '2026-08-14'},
+          }))
+          PY
+          invoke "$(cat today_event.json)" today_predictions.json 180
+
+          aws events list-rules --name-prefix "${STACK_NAME}-" --output json > rules.json
+
+          python - <<'PY'
+          import json
+
+          settle = json.load(open('settle.json'))
+          repair = json.load(open('repair.json'))
+          train = json.load(open('train.json'))
+          status = json.load(open('status.json'))
+          rules = json.load(open('rules.json')).get('Rules') or []
+
+          def http_body(path):
+              envelope = json.load(open(path))
+              body = envelope.get('body') if isinstance(envelope, dict) else None
+              return json.loads(body) if isinstance(body, str) else envelope
+
+          prior = http_body('predictions.json')
+          today = http_body('today_predictions.json')
+
+          assert settle.get('ok') is True, settle
+          assert repair.get('ok') is True, repair
+          assert train.get('ok') is True, train
+          assert status.get('ok') is True and status.get('sport') == 'mlb_auto', status
+          assert status.get('autonomous') is True, status
+          assert status.get('lock_minutes') == 10, status
+          assert status.get('training_lock_minutes') == 10, status
+          assert status.get('official_pick_policy') == 'CHAMPION_CONFIDENCE_AT_OR_BEFORE_T10', status
+          assert status.get('public_prediction_authority') == 'IMMUTABLE_LOCK_WHEN_PRESENT', status
+          assert status.get('public_authority_version'), status
+          assert int(status.get('training_examples') or 0) > 0, status
+          assert (status.get('controller') or {}).get('last_training_attempt_at'), status
+
+          assert prior.get('ok') is True, prior
+          assert prior.get('prediction_authority') == 'IMMUTABLE_LOCK_WHEN_PRESENT', prior
+          assert prior.get('configured_lock_minutes') == 10, prior
+          prior_rows = list(prior.get('predictions') or [])
+          locked = [row for row in prior_rows if row.get('locked')]
+          assert locked, prior
+          for row in locked:
+              assert row.get('public_record_frozen') is True, row
+              assert row.get('prediction_authority') != 'MUTABLE_PRELOCK_FORECAST', row
+              if row.get('published_lock_direction_changed'):
+                  assert row.get('predicted_winner') != row.get('published_predicted_winner'), row
+
+          assert today.get('ok') is True, today
+          assert today.get('prediction_authority') == 'IMMUTABLE_LOCK_WHEN_PRESENT', today
+          assert today.get('configured_lock_minutes') == 10, today
+
+          names = {r.get('Name'): r.get('State') for r in rules}
+          enabled = {}
+          for suffix in ('heartbeat-5m','lock-1m','settle-30m','train-1h','repair-5m','history-15m'):
+              found = [(n,s) for n,s in names.items() if n and n.endswith(suffix)]
+              assert len(found) == 1 and found[0][1] == 'ENABLED', (suffix, names)
+              enabled[suffix] = found[0][0]
+
+          proof = {
+              'ok': True,
+              'sport': 'mlb_auto',
+              'lock_minutes': 10,
+              'authority': status.get('public_prediction_authority'),
+              'platform_version': status.get('platform_version'),
+              'training_examples': status.get('training_examples'),
+              'registered_champion_model_id': status.get('registered_champion_model_id'),
+              'active_champion_model_id': status.get('champion_model_id'),
+              'training_result': train,
+              'repair_result': repair,
+              'settlement_result': settle,
+              'aug13_prediction_count': len(prior_rows),
+              'aug13_locked_count': len(locked),
+              'aug13_direction_drift_rows_safely_frozen': sum(1 for r in locked if r.get('published_lock_direction_changed')),
+              'today_prediction_count': int(today.get('count') or 0),
+              'today_locked_count': int(today.get('locked_count') or 0),
+              'today_official_pick_count': int(today.get('official_pick_count') or 0),
+              'schedules': enabled,
+          }
+          with open('mlb-auto-live-repair-proof.json', 'w') as handle:
+              json.dump(proof, handle, indent=2, sort_keys=True)
+              handle.write('\n')
+          print(json.dumps(proof, indent=2, sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlb-auto-live-repair-proof-${{ github.run_id }}
+          path: |
+            settle.json
+            repair.json
+            train.json
+            status.json
+            predictions.json
+            today_predictions.json
+            rules.json
+            mlb-auto-live-repair-proof.json
+          retention-days: 30
