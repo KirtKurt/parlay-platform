@@ -133,6 +133,13 @@ def main():
               'combinedOriginalAdmission':{k:v for k,v in audit_all.items() if k!='rows'},
               'daily':days, 'runtimeStateMutated':False, 'productionAuthorityChanged':False,
               'budgetSetupRequested':False}
+    report['preparationStatus'] = 'RUNNING' if not args.inventory else 'INVENTORY_ONLY'
+    report['ok'] = bool(args.inventory)
+    audit_all['createdAtUtc'] = now
+    (ROOT/'runtime_reports/mlb_data_admission_rows_latest.json').write_text(json.dumps(audit_all,indent=2)+'\n')
+    (ROOT/'runtime_reports/mlb_data_admission_latest.json').write_text(json.dumps(report,indent=2)+'\n')
+    print(json.dumps({'phase':'admission_complete','historicalArchiveGames':report['historicalArchiveGames'],
+                      'combinedOriginalAdmission':report['combinedOriginalAdmission']},indent=2),flush=True)
     if not args.inventory:
         selected, archives, rejected_archives = [], [], []
         for ledger in ledgers:
@@ -152,6 +159,7 @@ def main():
         completed = [g for g in official if g.get('gameType')=='R' and g.get('status',{}).get('abstractGameState')=='Final']
         if len(completed)>7000: raise ValueError('historical source range exceeds bounded request budget')
         source_errors, sources = {}, []
+        print(json.dumps({'phase':'fetch_prior_games','requestedSources':len(completed),'selectedArchiveRows':len(selected)}),flush=True)
         def read(game):
             try: return game['gamePk'],source_game(game,s3,bucket,args.persist),None
             except Exception as exc: return game['gamePk'],None,type(exc).__name__+': '+str(exc)
@@ -159,6 +167,8 @@ def main():
             for pk, source, error in pool.map(read,completed):
                 if error: source_errors[pk]=error
                 else: sources.append(source)
+                if (len(sources)+len(source_errors))%100==0:
+                    print(json.dumps({'phase':'prior_games','completed':len(sources),'failed':len(source_errors)}),flush=True)
         source_map = {s['officialGamePk']:s for s in sources}
         prepared, rejections = [], []
         seen = set()
@@ -194,6 +204,9 @@ def main():
         if args.persist:report['historicalDevelopment']['artifact']=historical.write_verified(s3,bucket,payload)
         output=ROOT/'runtime_reports/mlb_historical_development_dataset_latest.json'
         output.write_text(json.dumps(payload,sort_keys=True)+'\n')
+        report['preparationStatus']='COMPLETE'
+        report['ok']=True
+    audit_all['createdAtUtc'] = now
     (ROOT/'runtime_reports/mlb_data_admission_rows_latest.json').write_text(json.dumps(audit_all,indent=2)+'\n')
     (ROOT/'runtime_reports/mlb_data_admission_latest.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='daily'},indent=2))

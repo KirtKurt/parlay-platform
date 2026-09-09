@@ -10,9 +10,10 @@ on:
       - 'scripts/mlb_data_admission.py'
       - 'scripts/mlb_historical_development_data.py'
       - 'scripts/run_mlb_data_expansion.py'
+      - 'scripts/publish_mlb_data_admission.py'
       - 'tests/unit/test_mlb_data_expansion.py'
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: mlb-historical-data-preparation
   cancel-in-progress: false
@@ -38,6 +39,9 @@ jobs:
           aws-region: us-east-1
       - name: Prepare historical development data and inspect live admission
         run: python scripts/run_mlb_data_expansion.py --persist --max-rows 2000
+      - name: Publish daily admission reports
+        if: github.ref == 'refs/heads/main'
+        run: python scripts/publish_mlb_data_admission.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

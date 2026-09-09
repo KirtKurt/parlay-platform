@@ -61,6 +61,24 @@ def test_timezone_and_integer_integrity():
         with pytest.raises((ValueError,OverflowError)):historical.count(value)
 
 
+def test_historical_features_are_label_blind_and_never_live_evidence():
+    spec=importlib.util.spec_from_file_location('bridge_fixtures',ROOT/'tests/unit/test_mlb_r7_historical_walkforward_bridge.py')
+    fixtures=importlib.util.module_from_spec(spec);spec.loader.exec_module(fixtures)
+    record=fixtures._record();dataset=fixtures._dataset(record)
+    target={'gamePk':123,'teams':{'home':{'team':{'id':10,'name':'Home'}},'away':{'team':{'id':20,'name':'Away'}}}}
+    a=historical.materialize(record,dataset,fixtures._artifact(),target,[],'2026-09-09T17:00:00Z')
+    record['winner']='Away'
+    b=historical.materialize(record,dataset,fixtures._artifact(),target,[],'2026-09-09T17:00:00Z')
+    assert a['features']==b['features']
+    assert a['featureFingerprint']==b['featureFingerprint']
+    assert a['label']!=b['label']
+    assert a['originalObservation'] is False
+    assert a['prospectiveQualificationEvidence'] is False
+    assert a['missingFeatures']==['archivedPregameCurrentStarterIdentity','archivedPregameBattingOrder']
+    target['teams']['home']['team']['name']='Other'
+    with pytest.raises(ValueError,match='name or side'):historical.materialize(record,dataset,fixtures._artifact(),target,[],'2026-09-09T17:00:00Z')
+
+
 def test_writer_uses_separate_namespace_and_checks_exact_readback():
     class S3:
         def get_bucket_versioning(self,**kwargs):return {'Status':'Enabled'}
@@ -81,3 +99,28 @@ def test_preparation_workflow_cannot_invoke_learning_or_write_canonical_state():
     for forbidden in ('.update_item(','.delete_item(','.put_item(', '"mode":"train"', '"mode":"selection_capture"'):
         assert forbidden not in script
     assert 'PREFIX = \'mlb/development-data/reconstructed-v1/\'' in (ROOT/'scripts/mlb_historical_development_data.py').read_text()
+
+
+def test_daily_report_freshness_and_separate_historical_counts(tmp_path):
+    import report_mlb_30m_progress as reporter
+    from datetime import datetime,timezone
+    import json
+    p=tmp_path/'report.json'
+    data={'ok':True,'createdAtUtc':'2026-09-09T10:00:00+00:00',
+          'historicalDevelopment':{'preparedGames':1000,'rejectedGames':2},'daily':[]}
+    p.write_text(json.dumps(data))
+    result=reporter._data_admission_summary(p,datetime(2026,9,9,12,tzinfo=timezone.utc))
+    assert result['status']=='CURRENT'
+    assert 'not original live observations' in '\n'.join(reporter._data_admission_lines({'dataAdmission':result}))
+    assert reporter._data_admission_summary(p,datetime(2026,9,11,12,tzinfo=timezone.utc))['status']=='STALE'
+    data['ok']=False;p.write_text(json.dumps(data))
+    assert reporter._data_admission_summary(p,datetime(2026,9,9,12,tzinfo=timezone.utc))['status']=='INCOMPLETE'
+
+
+def test_publisher_rejects_mixed_run_bundles(tmp_path):
+    import publish_mlb_data_admission as publisher
+    import json
+    for path,at in zip(publisher.FILES,('2026-09-09T10:00:00Z','2026-09-09T11:00:00Z')):
+        target=tmp_path/path;target.parent.mkdir(parents=True,exist_ok=True)
+        target.write_text(json.dumps({'createdAtUtc':at}))
+    with pytest.raises(ValueError,match='different runs'):publisher.publish(tmp_path)
