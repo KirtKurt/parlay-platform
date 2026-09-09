@@ -37,18 +37,29 @@ def publish(root, *, attempts=3):
     freshness = json.loads(bundle[FILES[2]])
     if created(json.dumps({'createdAtUtc': freshness['auditCreatedAtUtc']})) != observed:
         raise ValueError('freshness proof belongs to another audit')
+    return _publish_bundle(root, bundle, EXECUTION, attempts)
+
+
+def publish_trainer_diagnostic(root, *, attempts=3):
+    root = Path(root).resolve()
+    primary = "runtime_reports/mlb_trainer_function_error_latest.json"
+    return _publish_bundle(root, {primary: (root/primary).read_bytes()}, primary, attempts)
+
+
+def _publish_bundle(root, bundle, primary, attempts):
+    observed = created(bundle[primary])
     for attempt in range(attempts):
         git(root, 'fetch', 'origin', 'main')
         with tempfile.TemporaryDirectory(prefix='mlb-audit-publish-') as directory:
             work = Path(directory)/'work'
             git(root, 'worktree', 'add', '--detach', str(work), 'origin/main')
             try:
-                current = work/EXECUTION
+                current = work/primary
                 if current.exists() and created(current.read_bytes()) >= observed:
                     return {'published': False, 'reason': 'equal_or_newer_audit_already_published'}
                 for path, content in bundle.items():
                     target = work/path;target.parent.mkdir(parents=True, exist_ok=True);target.write_bytes(content)
-                git(work, 'add', '--', *FILES)
+                git(work, 'add', '--', *bundle)
                 git(work, '-c', 'user.name=github-actions[bot]', '-c',
                     'user.email=41898282+github-actions[bot]@users.noreply.github.com',
                     'commit', '-m', 'Publish fresh MLB rolling audit proof')
@@ -63,4 +74,9 @@ def publish(root, *, attempts=3):
 
 
 if __name__ == '__main__':
-    print(json.dumps(publish(Path(__file__).resolve().parents[1])))
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--trainer-diagnostic', action='store_true')
+    args = parser.parse_args()
+    operation = publish_trainer_diagnostic if args.trainer_diagnostic else publish
+    print(json.dumps(operation(Path(__file__).resolve().parents[1])))

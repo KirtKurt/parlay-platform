@@ -123,6 +123,17 @@ def main():
         }
     except Exception as exc:
         result["resultsDeliveryDiagnosticError"] = type(exc).__name__
+    try:
+        import mlb_ml_aws_training_v1 as training
+        lease = boto3.resource("dynamodb", config=CONFIG).Table("parlay_platform_snapshots").get_item(
+            Key={"PK": training.EXECUTION_LEASE_PK, "SK": training.STATE_MUTATION_EXECUTION_LEASE_SK},
+            ConsistentRead=True).get("Item") or {}
+        result["trainingExecutionLease"] = {k: lease.get(k) for k in (
+            "experiment_id", "execution_mode", "acquired_at", "lease_expires_at", "lease_domain")}
+        result["trainingExecutionLease"]["present"] = bool(lease)
+        result["trainingExecutionLease"]["readOnly"] = True
+    except Exception as exc:
+        result["trainingExecutionLeaseReadError"] = type(exc).__name__
     encoded = json.dumps(result, indent=2, default=str) + "\n"
     output = Path("runtime_reports/mlb_r8_runtime_health_latest.json")
     output.parent.mkdir(parents=True, exist_ok=True)
