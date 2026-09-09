@@ -2345,6 +2345,18 @@ class TrainingService:
                 for evidence in requested_run_evidence.values()
             )
         )
+        latest_candidate = copy.deepcopy(self.store.load_latest_candidate(self.config.experiment_id))
+        if latest_candidate and latest_candidate.get("experimentId") == self.config.experiment_id:
+            pointer = (latest_candidate.get("artifacts") or {}).get("evaluation")
+            if pointer:
+                try:
+                    # Read the exact checksum-verified S3 version. Enrich only
+                    # this response; candidate history and digests stay immutable.
+                    evaluation = self.store.read_versioned_json(pointer)
+                    latest_candidate["validation"] = evaluation.get("validation")
+                    latest_candidate["prospectiveTest"] = evaluation.get("prospectiveTest")
+                except Exception as exc:
+                    latest_candidate["evaluationReadError"] = type(exc).__name__
         return {
             "ok": bool(
                 training_health["ok"]
@@ -2355,9 +2367,7 @@ class TrainingService:
             "experimentId": self.config.experiment_id,
             "releaseCutoffUtc": self._normalized_release_cutoff(),
             "manifest": manifest,
-            "latestCandidate": self.store.load_latest_candidate(
-                self.config.experiment_id
-            ),
+            "latestCandidate": latest_candidate,
             "champion": self.store.load_champion(),
             "deploymentIdentity": {
                 "gitSha": self.config.deployment_git_sha,
@@ -3066,6 +3076,8 @@ class TrainingService:
                 "status": "CANDIDATE_REGISTERED",
                 "artifactDigest": artifact_digest,
                 "evaluationFingerprint": evaluation_fingerprint,
+                "validation": copy.deepcopy(trained["validation"]),
+                "prospectiveTest": copy.deepcopy(trained["prospectiveTest"]),
                 "promotionGate": gate,
                 "promotion": promotion,
                 "championChanged": promotion.get("shadowChampionApproved") is True,

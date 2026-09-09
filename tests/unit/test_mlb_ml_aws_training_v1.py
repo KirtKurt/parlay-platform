@@ -2331,6 +2331,9 @@ def test_candidate_and_evaluated_manifest_commit_together_and_are_idempotent(
     store = FakeStore(new_manifest(sealed=True))
     first = service(store).run()
     assert first["status"] == "CANDIDATE_REGISTERED"
+    expected = trained_bundle(store.manifest)
+    assert first["validation"] == expected["validation"]
+    assert first["prospectiveTest"]["outcome"] == expected["prospectiveTest"]["outcome"]
     assert first["promotionGate"]["promotionDecision"] == (
         "PENDING_MANUAL_FIRST_SHADOW_APPROVAL"
     )
@@ -3579,3 +3582,35 @@ def test_artifact_store_requires_bucket_versioning():
         aws_training.TrainingContractError, match="versioning must be Enabled"
     ):
         store.put_versioned_json("key.json", {"ok": True})
+
+
+def test_status_reads_exact_evaluation_pointer_without_mutating_candidate(monkeypatch):
+    store = FakeStore()
+    candidate = {"experimentId": config().experiment_id, "artifactDigest": "fixed",
+                 "artifacts": {"evaluation": {"versionId": "exact", "sha256": "a" * 64}}}
+    store.latest = copy.deepcopy(candidate)
+    evaluation = {"validation": {"outcome": {"accuracyPct": 61.47}},
+                  "prospectiveTest": {"outcome": {"accuracyPct": 52.94}}}
+    reads = []
+    def read(pointer):
+        reads.append(pointer)
+        return evaluation
+    monkeypatch.setattr(store, "read_versioned_json", read)
+    result = service(store).status()
+    assert reads == [candidate["artifacts"]["evaluation"]]
+    assert result["latestCandidate"]["validation"] == evaluation["validation"]
+    assert store.latest == candidate
+    assert store.artifact_calls == 0
+
+
+def test_status_failed_evaluation_read_does_not_invent_metrics(monkeypatch):
+    store = FakeStore()
+    store.latest = {"experimentId": config().experiment_id, "artifactDigest": "fixed",
+                    "artifacts": {"evaluation": {"versionId": "exact"}}}
+    def fail(pointer):
+        raise aws_training.TrainingContractError("checksum mismatch")
+    monkeypatch.setattr(store, "read_versioned_json", fail)
+    result = service(store).status()
+    assert result["latestCandidate"]["evaluationReadError"] == "TrainingContractError"
+    assert "validation" not in result["latestCandidate"]
+    assert store.artifact_calls == 0

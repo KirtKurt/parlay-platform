@@ -205,6 +205,11 @@ def _resolve_read_function_name() -> str:
     return name
 
 
+class QualifiedChampionUnavailable(RuntimeError):
+    """Expected non-publishing state; retrying cannot create a champion."""
+
+
+
 def _direct_lambda_json(path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     function_name = _resolve_read_function_name()
     query = {
@@ -236,6 +241,16 @@ def _direct_lambda_json(path: str, params: Optional[Dict[str, Any]] = None) -> D
     status = int(envelope.get("statusCode") or 200)
     body = envelope.get("body", envelope)
     payload = json.loads(body) if isinstance(body, str) else body
+    if (
+        status == 503 and isinstance(payload, dict)
+        and payload.get("status") == "NO_QUALIFIED_CHAMPION"
+        and payload.get("publicationClosed") is True
+        and payload.get("productionSelectionAllowed") is False
+        and payload.get("qualifiedChampionPresent") is False
+        and not payload.get("winner_predictions")
+        and not payload.get("predictions")
+    ):
+        raise QualifiedChampionUnavailable("NO_QUALIFIED_CHAMPION")
     if status >= 400:
         raise RuntimeError(
             f"MLB_ML_DIRECT_READ_HTTP_{status}:"

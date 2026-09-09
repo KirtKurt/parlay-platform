@@ -337,13 +337,21 @@ def _metric(container: Any, keys: Iterable[str]) -> Optional[float]:
             parsed = _number(container.get(key))
             if parsed is not None:
                 return parsed
-    for child_key in ("metrics", "classification", "calibration", "summary", "overall"):
+    for child_key in ("outcome", "metrics", "classification", "calibration", "summary", "overall"):
         child = container.get(child_key)
         if isinstance(child, Mapping):
             found = _metric(child, keys)
             if found is not None:
                 return found
     return None
+
+
+def _outcome_accuracy(container: Mapping[str, Any]) -> Optional[float]:
+    outcome = _first_mapping(container.get("outcome"), container)
+    pct = _metric(outcome, ("accuracyPct",))
+    if pct is not None:
+        return pct / 100.0 if 0.0 <= pct <= 100.0 else None
+    return _normalise_accuracy(_metric(outcome, ("accuracy", "selectedAccuracy", "overallAccuracy")))
 
 
 def _normalise_accuracy(value: Optional[float]) -> Optional[float]:
@@ -819,11 +827,18 @@ def _extract_state(
     promotion_decision = gate.get("promotionDecision") or gate.get("decision") or promotion.get(
         "reason"
     )
-    gate_passed = gate.get("ok") is True or promotion_decision in {
-        "PROMOTE",
-        "AUTO_SHADOW_APPROVAL_ELIGIBLE",
-        "PASS",
-    }
+    # `ok` means evaluation completed, not that the candidate is eligible.
+    gate_passed = gate.get("promotionEligible") is True
+    if "promotionEligible" not in gate:
+        gate_passed = gate.get("passed") is True
+    if gate.get("ok") is False:
+        gate_passed = False
+    promotion_blockers = [
+        str(item.get("code")) for item in gate.get("blockers", [])
+        if isinstance(item, Mapping) and item.get("code")
+    ]
+    if promotion_decision == "RETAIN_CURRENT_CHAMPION" and not champion:
+        promotion_decision = "NO_ELIGIBLE_CANDIDATE_NO_CHAMPION"
     live_authority = bool(
         latest.get("liveInferenceAuthority") is True
         or promotion.get("runtimeAuthorityActivated") is True
@@ -831,6 +846,8 @@ def _extract_state(
     production_changed = bool(latest.get("productionAuthorityChanged") is True)
 
     blockers: list[str] = list(discovery_errors)
+    if candidate.get("evaluationReadError"):
+        blockers.append("MLB_LEARNING_EVALUATION_READ_FAILED:" + str(candidate["evaluationReadError"]))
     for value in (
         r7_invocation.get("functionError"),
         model_invocation.get("functionError"),
@@ -848,6 +865,7 @@ def _extract_state(
     ):
         if value:
             blockers.append(str(value))
+    blockers.extend("MLB_LEARNING_PROMOTION:" + code for code in promotion_blockers)
     if model.get("status") == "NO_QUALIFIED_CHAMPION":
         blockers.append("NO_QUALIFIED_CHAMPION")
     if authority_readiness["valid"] is not True:
@@ -965,13 +983,15 @@ def _extract_state(
             "modelTrained": model_trained,
             "candidateArtifactId": candidate.get("artifactDigest") or latest.get("artifactDigest"),
             "championArtifactId": champion.get("artifactDigest") or champion.get("modelId"),
-            "validationAccuracy": _normalise_accuracy(_metric(validation, ("accuracy", "selectedAccuracy", "overallAccuracy"))),
+            "validationAccuracy": _outcome_accuracy(validation),
             "validationBrier": _metric(validation, ("brierScore", "brier", "selectedBrierScore")),
             "validationEce": _metric(validation, ("ece", "expectedCalibrationError", "calibrationError")),
-            "prospectiveAccuracy": _normalise_accuracy(_metric(prospective, ("accuracy", "selectedAccuracy", "overallAccuracy"))),
+            "prospectiveAccuracy": _outcome_accuracy(prospective),
             "prospectiveBrier": _metric(prospective, ("brierScore", "brier", "selectedBrierScore")),
             "promotionDecision": promotion_decision,
             "promotionGatePassed": bool(gate_passed),
+            "promotionBlockers": promotion_blockers,
+            "promotionEvaluationOk": gate.get("ok") is True,
             "liveInferenceAuthority": live_authority,
             "productionAuthorityChanged": production_changed,
             "movementCoveredRowCount": _integer(movement_coverage.get("coveredRowCount")),

@@ -350,4 +350,25 @@ _install_pregame_odds_replay(
 
 
 def lambda_handler(event: Any, context: Any) -> Any:
-    return strict_bedrock.lambda_handler(event, context)
+    try:
+        return strict_bedrock.lambda_handler(event, context)
+    except (ml_authority.QualifiedChampionUnavailable, strict_bedrock.PublicationDeadlineMissed) as exc:
+        # Scheduled retries cannot fix missing qualification or an elapsed
+        # cutoff. Return an explicit unhealthy, closed state without writes.
+        # HTTP requests retain their existing error contract.
+        if not isinstance(event, dict) or event.get("rawPath") or event.get("path"):
+            raise
+        status = (
+            "AUTHORITY_READINESS_GATED"
+            if isinstance(exc, ml_authority.QualifiedChampionUnavailable)
+            else "AUTHORITATIVE_CARD_DEADLINE_MISSED"
+        )
+        return {
+            "ok": False,
+            "status": status,
+            "reason": "NO_QUALIFIED_CHAMPION" if status == "AUTHORITY_READINESS_GATED" else status,
+            "publicationClosed": True,
+            "productionSelectionAllowed": False,
+            "cardPublished": False,
+            "retryable": False,
+        }

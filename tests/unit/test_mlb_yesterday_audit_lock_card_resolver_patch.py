@@ -312,3 +312,28 @@ def test_zero_valid_cards_and_zero_canonical_rows_preserves_fail_closed_state(mo
         match="IMMUTABLE_DAILY_LOCK_CARD_UNAVAILABLE",
     ):
         module.load_locked_predictions("2026-08-03")
+
+
+def test_distinct_canonical_and_provider_ids_preserve_both_authorities(monkeypatch):
+    _install_contracts(monkeypatch)
+    row, item = _canonical_row("odds-event-1")
+    row["gameId"] = "mlb_statsapi:824062"
+    row["gameIdentity"] = "mlb_statsapi:824062"
+    item["game_id"] = row["gameId"]
+    item["game_identity"] = row["gameIdentity"]
+    item["SK"] = f"LOCKED#GAME#{row['commenceTime']}#{row['gameIdentity']}"
+    module = _module(set(), [], canonical_items=[item])
+    subject.apply(module)
+    result = module.load_locked_predictions("2026-08-03")
+    assert result["rows"][0]["providerEventId"] == "odds-event-1"
+    assert result["rows"][0]["gameId"] == "mlb_statsapi:824062"
+
+
+def test_provider_id_cannot_replace_canonical_metadata_id(monkeypatch):
+    _install_contracts(monkeypatch)
+    row, item = _canonical_row("odds-event-1")
+    row["gameId"] = "mlb_statsapi:824062"
+    module = _module(set(), [], canonical_items=[item])
+    subject.apply(module)
+    with pytest.raises(LockedEvidenceUnavailable, match="METADATA_INVALID"):
+        module.load_locked_predictions("2026-08-03")
