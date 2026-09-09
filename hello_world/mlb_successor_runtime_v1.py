@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-import mlb_successor_model_v1 as model
+import mlb_successor_model_v2 as model
 
 PK = "MLB_ML_SUCCESSOR#" + model.EXPERIMENT_ID
 ET = ZoneInfo("America/New_York")

@@ -106,3 +106,24 @@ def test_response_crossing_lock_discards_both_sources():
         result=get(url,timeout);times[0]=NOW+timedelta(hours=6);return result
     a,b=source.observe('2026-09-09',game,history,fetch,now=lambda:times[0])
     assert a['source_status']==b['source_status']=='NOT_CONNECTED_SOURCE_REQUIRED'
+
+
+def test_snapshot_preserves_team_observations_without_inventing_legacy_composites():
+    import mlb_fundamentals_snapshot_v2 as snapshots
+    import mlb_ml_dual_model_v2 as r8
+    game,history,feed,teams,get=fixtures()
+    lineup,bullpen=source.observe('2026-09-09',game,history,get,now=lambda:NOW)
+    row={'gameId':'mlb_statsapi:123','officialGamePk':123,'slateDateEt':'2026-09-09',
+         'predictionSourcePullAt':NOW.isoformat(),'advanced_context':{'confirmed_lineups':lineup,'bullpen_fatigue':bullpen}}
+    snap=snapshots.build(row,captured_at_utc=NOW.isoformat())
+    assert not snapshots.validate(snap)
+    assert snap['groups']['confirmed_lineups']['values']['homeMeanSeasonOps']==pytest.approx(.8)
+    assert snap['groups']['bullpen_availability']['values']['homeUsage1d3d5d']['3d']['pitches']==18
+    assert snap['groups']['bullpen_availability']['values']['homeComposite'] is None
+    assert r8._strict_features({'fundamentalsSnapshotV2':snap},{}) == r8._strict_features({},{})
+
+
+def test_partial_history_cannot_claim_zero_usage():
+    game,history,feed,teams,get=fixtures();history['payload']['totalGames']=2
+    _,bullpen=source.observe('2026-09-09',game,history,get,now=lambda:NOW)
+    assert bullpen['source_status']=='NOT_CONNECTED_SOURCE_REQUIRED'

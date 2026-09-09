@@ -104,6 +104,8 @@ GROUP_SPECS: Tuple[Tuple[str, str, Tuple[Tuple[str, str], ...]], ...] = (
             ("awayStrengthDelta", "away_lineup_strength_delta"),
             ("homeBattingOrder", "home_batting_order"),
             ("awayBattingOrder", "away_batting_order"),
+            ("homeMeanSeasonOps", "home_lineup_mean_ops"),
+            ("awayMeanSeasonOps", "away_lineup_mean_ops"),
         ),
     ),
     (

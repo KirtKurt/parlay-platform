@@ -685,6 +685,7 @@ def _successor_state(r7: Mapping[str, Any]) -> dict[str, Any]:
         "acceptedDevelopmentRows": _integer(development.get("acceptedDevelopmentRows")),
         "counts": dict(_first_mapping(development.get("counts"))),
         "observedStarterCounts": dict(_first_mapping(development.get("observedStarterCounts"))),
+        "observedTeamCounts": dict(_first_mapping(development.get("observedTeamCounts"))),
         "rejectedRows": dict(_first_mapping(development.get("rejectedRows"))),
         "protocol": dict(_first_mapping(development.get("protocol"))),
         "artifactDigest": development.get("artifactDigest"),
@@ -1350,6 +1351,7 @@ def _successor_delta(state: Mapping[str, Any], previous: Optional[Mapping[str, A
 def _successor_lines(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) -> list[str]:
     successor = _first_mapping(state.get("successor"))
     protocol = _first_mapping(successor.get("protocol"))
+    team_counts = _first_mapping(successor.get("observedTeamCounts"))
     counts = _first_mapping(successor.get("counts"))
     observed = _first_mapping(successor.get("observedStarterCounts"))
     validation = [_integer(counts.get(key)) for key in ("calibration", "selection")]
@@ -1373,6 +1375,7 @@ def _successor_lines(state: Mapping[str, Any], previous: Optional[Mapping[str, A
         f"**Capture stage:** `{successor.get('captureStatus') or 'UNAVAILABLE'}` · rejected inputs `{json.dumps(successor.get('rejectedRows') or {}, sort_keys=True)}` · capture skips `{json.dumps(successor.get('captureSkipped') or {}, sort_keys=True)}` · incomplete test slates `{json.dumps(successor.get('skippedIncompleteSlateDates') or [])}`.",
         f"**Frozen model:** `{successor.get('artifactDigest') or 'none reported'}` · sealed qualification `{successor.get('qualificationDigest') or 'none reported'}` · sealed at `{successor.get('sealedAtUtc') or 'not sealed'}`.",
         "Training and starter counts describe chronological development partitions; partition changes can move rows between groups. Fresh qualification starts after a durable model freeze. Qualification and production activation are separate; the production authority section below reports serving status.",
+        f"**Observed lineup + relief workload rows:** train {_fmt_int(team_counts.get('train'))}/{_fmt_int(protocol.get('teamObservedTrainMinimum'))} · calibration {_fmt_int(team_counts.get('calibration'))}/{_fmt_int(protocol.get('teamObservedCalibrationMinimum'))} · selection {_fmt_int(team_counts.get('selection'))}/{_fmt_int(protocol.get('teamObservedSelectionMinimum'))}.",
         "**Successor blockers:** " + ("; ".join(f"`{value}`" for value in successor.get("blockers") or []) or "none reported"),
         "",
     ])

@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from mlb_official_schedule_authority import normalize_team as _official_normalize_team
 import mlb_statsapi_starter_context as starter_context
+import mlb_statsapi_team_context as team_context
 
 
 ADVANCED_CONTEXT_VERSION = "MLB-B1.0-advanced-context-v2-source-provenance"
@@ -692,6 +693,16 @@ def build_advanced_context(game_date_et: str, game: Dict[str, Any], row: Optiona
                 }
             context["fip_xfip"].update(quality)
             context["starter_handedness_splits"].update(handedness)
+            try:
+                lineup, bullpen = team_context.observe(
+                    game_date_et, matched, lambda: _statsapi_schedule_history(game_date_et), _http_get_json
+                )
+            except Exception:
+                lineup = bullpen = {"source_status": "ERROR",
+                                    "note": "Official team observation adapter unavailable."}
+            context["confirmed_lineups"].update(lineup)
+            context["bullpen_fatigue"].update(bullpen)
+
 
     blocked = []
     for key in _REQUIRED_CONTEXT_KEYS:
@@ -741,8 +752,8 @@ def advanced_context_status() -> Dict[str, Any]:
             "fip_xfip": "PARTIAL_MLB_STATS_API_ERA_K_MINUS_BB_PRELOCK_ONLY",
             "wrc_plus": "NOT_CONNECTED_SOURCE_REQUIRED",
             "starter_handedness_splits": "PARTIAL_MLB_STATS_API_PITCHER_HAND_PRELOCK_ONLY",
-            "bullpen_fatigue": "NOT_CONNECTED_SOURCE_REQUIRED",
-            "confirmed_lineups": "NOT_CONNECTED_SOURCE_REQUIRED",
+            "bullpen_fatigue": "PARTIAL_MLB_STATS_API_PRIOR_DAY_RELIEF_WORKLOAD",
+            "confirmed_lineups": "PARTIAL_MLB_STATS_API_PRELOCK_BATTING_ORDER_AND_OPS",
             "weather_wind_roof": "NOT_CONNECTED_SOURCE_REQUIRED",
             "ballpark_factors": "NOT_CONNECTED_SOURCE_REQUIRED",
             "injuries_late_scratches_news": "NOT_CONNECTED_SOURCE_REQUIRED",

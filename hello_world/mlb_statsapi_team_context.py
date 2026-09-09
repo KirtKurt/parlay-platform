@@ -125,6 +125,7 @@ def observe(game_date, game, history, http_get, *, now=None):
                 lineup[side+"_lineup_mean_ops"] = observed["meanOps"] if observed else None
     # Prior ET calendar days only. Same-day doubleheaders and suspended games
     # remain excluded; incomplete history never becomes zero workload.
+    history = history() if callable(history) else history
     lower = (at.astimezone(ET).date() - timedelta(days=5)).isoformat()
     history_games = [g for d in history.get("payload", {}).get("dates", []) for g in d.get("games", [])]
     history_ids = [g.get("gamePk") for g in history_games]

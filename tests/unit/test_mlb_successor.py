@@ -5,7 +5,7 @@ import math
 
 import pytest
 
-import mlb_successor_model_v1 as model
+import mlb_successor_model_v2 as model
 import mlb_successor_runtime_v1 as runtime
 import mlb_fundamentals_snapshot_v2 as snapshots
 import mlb_statsapi_starter_context as source
@@ -122,7 +122,8 @@ def training_records(n=450):
              "marketHomeProbability": .45+.1*(i%2), "homeWon": i%2,
              "deltaGapHome": (i%7)/7, "homeAwayVelocityPpHr60mDiff": (i%3)/3,
              "starterEraGapHome": .5*(i%2), "starterKMinusBbGapHome": (i%5)-2,
-             "starterRatesMissing": 0.} for i in range(n)]
+             "starterRatesMissing": 0., "lineupOpsGapHome": .1*(i%3),
+             "bullpenPitches3dGapHome": 10*(i%4), "lineupOpsMissing": 0., "bullpenWorkloadMissing": 0.} for i in range(n)]
 
 
 def test_lambda_fit_matches_independent_scipy_optimizer():
@@ -138,7 +139,7 @@ def test_missing_starter_history_waits_without_manufacturing_a_model():
     data = training_records()
     for r in data: r.update(starterRatesMissing=1., starterEraGapHome=None, starterKMinusBbGapHome=None)
     report = model.development(data)
-    assert report["status"] == "ACCUMULATING_STARTER_RATE_DEVELOPMENT_DATA"
+    assert report["status"] == "ACCUMULATING_TEAM_CONTEXT_DEVELOPMENT_DATA"
     assert "candidate" not in report
     assert report["observedStarterCounts"] == {"train": 0, "calibration": 0, "selection": 0}
 
@@ -324,3 +325,37 @@ def test_unknown_starter_dataset_cannot_receive_observed_credit(dataset):
     snapshot["groups"]["starter_quality"]["dataset"] = dataset
     snapshot["fingerprint"] = snapshots.fingerprint_for_snapshot(snapshot)
     assert model.record(row, labeled=False)["starterRatesMissing"] == 1
+
+
+def test_v2_is_a_separate_protocol_and_never_changes_v1():
+    import mlb_successor_model_v1 as prior
+    assert prior.EXPERIMENT_ID != model.EXPERIMENT_ID
+    assert runtime.PK.endswith(model.EXPERIMENT_ID)
+    assert prior.FEATURES != model.FEATURES
+    assert 'teamObservedTrainMinimum' not in prior.PROTOCOL
+    assert model.PROTOCOL['testCanBeReopened'] is False
+
+
+def test_team_features_require_observations_in_every_partition():
+    rows=training_records()
+    for row in rows:row.update(lineupOpsMissing=1.,lineupOpsGapHome=None)
+    result=model.development(rows)
+    assert result['observedTeamCounts']=={'train':0,'calibration':0,'selection':0}
+    assert len([b for b in result['blockers'] if 'TEAM_CONTEXT' in b])==3
+    assert 'candidate' not in result
+
+
+def test_team_adapter_snapshot_reaches_new_model_without_label_leakage():
+    from tests.unit.test_mlb_statsapi_team_context import fixtures, NOW as moment
+    import mlb_statsapi_team_context as team
+    game,history,feed,teams,get=fixtures()
+    lineup,bullpen=team.observe('2026-09-09',game,history,get,now=lambda:moment)
+    row=locked_row(day='2026-09-09')
+    row['advanced_context'].update(confirmed_lineups=lineup,bullpen_fatigue=bullpen)
+    snap=snapshots.build(row,captured_at_utc=row['predictionSourcePullAt'])
+    row['fundamentalsSnapshotV2']=snap;row['featureSnapshot']['fundamentalsSnapshotV2']=snap
+    before=deepcopy(row);result=model.record(row,labeled=False)
+    assert result['lineupOpsMissing']==result['bullpenWorkloadMissing']==0
+    assert result['lineupOpsGapHome']==pytest.approx(0.)
+    assert model.record({**row,'winner':'Home','correct':True},labeled=True)['inputFingerprint']==result['inputFingerprint']
+    assert row==before

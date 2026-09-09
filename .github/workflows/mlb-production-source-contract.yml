@@ -240,6 +240,7 @@ jobs:
             tests/unit/test_unified_mlb_learning_ownership.py \
             tests/unit/test_run_mlb_ml_v3_audit_report.py
           python -m pytest -q tests/unit/test_mlb_deployed_audit_binding.py tests/unit/test_mlb_security_setup.py
+          python -m pytest -q tests/unit/test_mlb_successor.py tests/unit/test_mlb_statsapi_starter_context.py tests/unit/test_mlb_statsapi_team_context.py
 
       - name: Compile deployment and acceptance tooling
         run: |
