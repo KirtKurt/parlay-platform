@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'hello_world'))
 import mlb_successor_model_v2 as model
 import mlb_fundamentals_snapshot_v2 as snapshots
+from mlb_historical_development_data import is_final
 
 
 def audit_rows(rows):
@@ -16,11 +17,16 @@ def audit_rows(rows):
         identity = (str(row.get('slateDateEt') or ''), str(row.get('officialGamePk') or row.get('gameId') or ''))
         vector = row.get('featureSnapshot') or row.get('frozenFeatureVector') or {}
         snap = row.get('fundamentalsSnapshotV2') or vector.get('fundamentalsSnapshotV2') or {}
-        errors = snapshots.validate(snap)
+        try:
+            errors = snapshots.validate(snap)
+        except (ValueError, TypeError, KeyError) as exc:
+            errors = ['snapshot_validation_failed:' + type(exc).__name__]
         reason, admitted = None, False
         try:
             if identity in identities:
                 raise ValueError('duplicate game identity')
+            if row.get('trainingEligible') is False:
+                raise ValueError('canonical training admission rejected: ' + ','.join(row.get('trainingExclusionReasons') or []))
             model.record(row, labeled=True)
             admitted = True
         except (ValueError, TypeError, KeyError) as exc:
@@ -43,7 +49,7 @@ def audit_rows(rows):
 
 def daily_audit(day, game_rows, locks, rejected_locks, labels, schedule_games, canonical):
     by_pk = {str(r.get('official_game_pk')): r for r in labels}
-    final_ids = {str(g['gamePk']) for g in schedule_games if g.get('status', {}).get('abstractGameState') == 'Final'}
+    final_ids = {str(g['gamePk']) for g in schedule_games if is_final(g)}
     eligible, details = [], []
     for locked in locks:
         pk = str(locked.get('officialGamePk') or '')
@@ -61,13 +67,33 @@ def daily_audit(day, game_rows, locks, rejected_locks, labels, schedule_games, c
         if snapshots.validate(snap):
             continue
         groups = snap.get('groups') or {}
-        for name in ('starter_quality', 'confirmed_lineups', 'bullpen_availability'):
-            group = groups.get(name) or {}
-            if group.get('status') in snapshots.SOURCE_PRESENT_STATUSES:
-                coverage[name] += 1
+        starter = groups.get('starter_quality') or {}
+        lineup = groups.get('confirmed_lineups') or {}
+        bullpen = groups.get('bullpen_availability') or {}
+        if starter.get('dataset') in (model.starter_source.VERSION, model.starter_source.DATASET):
+            values = starter.get('values') or {}
+            if all(model.number(values.get(k)) is not None for k in ('homeEra','awayEra','homeKMinusBbPct','awayKMinusBbPct')):
+                coverage['bothStarterRates'] += 1
+        if lineup.get('dataset') == model.team_source.VERSION:
+            values = lineup.get('values') or {}
+            if all(values.get(s+'Confirmed') is True for s in ('home','away')):
+                coverage['bothConfirmedLineups'] += 1
+            if all(model.number(values.get(s+'MeanSeasonOps')) is not None for s in ('home','away')):
+                coverage['bothLineupOps'] += 1
+        if bullpen.get('dataset') == model.team_source.VERSION:
+            values = bullpen.get('values') or {}
+            if all(isinstance(values.get(s+'Usage1d3d5d'),dict) and model.number(values[s+'Usage1d3d5d'].get('3d',{}).get('pitches')) is not None for s in ('home','away')):
+                coverage['bothBullpenWorkloads'] += 1
+    collected_ids = {str((item.get('data') or item).get('officialGamePk') or '') for item in game_rows}
+    locked_ids = {str(row.get('officialGamePk') or '') for row in locks}
+    gaps = [{'officialGamePk':str(g['gamePk']),
+             'collectionPresent':str(g['gamePk']) in collected_ids,
+             'validLockPresent':str(g['gamePk']) in locked_ids,
+             'officialState':g.get('status',{}).get('abstractGameState')}
+            for g in schedule_games if str(g['gamePk']) not in collected_ids or str(g['gamePk']) not in locked_ids]
     return {'slateDateEt': day, 'scheduledGames': len(schedule_games),
             'collectedGames': len(game_rows), 'validLocks': len(locks),
             'rejectedLocks': rejected_locks, 'officialFinalGames': len(final_ids),
             'storedFinalLabels': len(labels), 'admittedSettledGames': admission['admittedRows'],
             'sourceCoverage': dict(coverage), 'waitingOrMissingLabels': details,
-            'admission': admission, 'readOnly': True}
+            'admission': admission, 'collectionOrLockGaps': gaps, 'readOnly': True}

@@ -16,7 +16,7 @@ permissions:
   contents: write
 concurrency:
   group: mlb-historical-data-preparation
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   prepare-data:
     runs-on: ubuntu-latest
@@ -38,7 +38,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
       - name: Prepare historical development data and inspect live admission
-        run: python scripts/run_mlb_data_expansion.py --persist --max-rows 2000
+        run: python scripts/run_mlb_data_expansion.py --persist --max-rows 5000
       - name: Publish daily admission reports
         if: github.ref == 'refs/heads/main'
         run: python scripts/publish_mlb_data_admission.py

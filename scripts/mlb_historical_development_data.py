@@ -21,6 +21,12 @@ PREFIX = 'mlb/development-data/reconstructed-v1/'
 ET = ZoneInfo('America/New_York')
 
 
+def is_final(game):
+    return (game.get('status', {}).get('abstractGameState') == 'Final'
+            and game.get('status', {}).get('detailedState') not in ('Postponed', 'Cancelled')
+            and sum(t.get('isWinner') is True for t in game.get('teams', {}).values()) == 1)
+
+
 def encoded(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
 
@@ -124,6 +130,8 @@ def materialize(record, dataset, artifact, target_game, prior_games, reconstruct
     start, lock = utc(record['commenceTime']), utc(record['predictionLockAtUtc'])
     if start.astimezone(ET).date().isoformat() != day or lock >= start:
         raise ValueError('invalid target date or lock')
+    if utc(target_game['gameDate']).astimezone(ET).date().isoformat() != day:
+        raise ValueError('archived game date differs from official played date')
     source_at = bridge._source_at(record, dataset.get('snapshotAudit') or [], dataset['officialGameCount'])
     home_p, away_p = (float(record[s+'Signal']['fairProbability']) for s in ('home', 'away'))
     if not 0 < home_p < 1 or not 0 < away_p < 1 or abs(home_p+away_p-1) > 1e-6:
@@ -137,6 +145,10 @@ def materialize(record, dataset, artifact, target_game, prior_games, reconstruct
     features = {'marketHomeProbability': home_p,
                 'deltaGapHome': float(record['homeSignal']['delta']) - float(record['awaySignal']['delta']),
                 'home': sides['home'], 'away': sides['away']}
+    for name in ('teamBattingOps14d', 'priorStartingPitchersEra14d', 'priorStartingPitchersKMinusBbPct14d'):
+        a, b = sides['home'][name], sides['away'][name]
+        features[name+'GapHome'] = a-b if a is not None and b is not None else None
+    features['bullpenPitches3dGapHome'] = sides['home']['bullpenUsage1d3d5d']['3d']['pitches']-sides['away']['bullpenUsage1d3d5d']['3d']['pitches']
     feature_fingerprint = digest(features)
     winner = record['winner']
     if winner not in (record['homeTeam'], record['awayTeam']):

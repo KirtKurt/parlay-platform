@@ -65,7 +65,7 @@ def test_historical_features_are_label_blind_and_never_live_evidence():
     spec=importlib.util.spec_from_file_location('bridge_fixtures',ROOT/'tests/unit/test_mlb_r7_historical_walkforward_bridge.py')
     fixtures=importlib.util.module_from_spec(spec);spec.loader.exec_module(fixtures)
     record=fixtures._record();dataset=fixtures._dataset(record)
-    target={'gamePk':123,'teams':{'home':{'team':{'id':10,'name':'Home'}},'away':{'team':{'id':20,'name':'Away'}}}}
+    target={'gamePk':123,'gameDate':record['commenceTime'],'teams':{'home':{'team':{'id':10,'name':'Home'}},'away':{'team':{'id':20,'name':'Away'}}}}
     a=historical.materialize(record,dataset,fixtures._artifact(),target,[],'2026-09-09T17:00:00Z')
     record['winner']='Away'
     b=historical.materialize(record,dataset,fixtures._artifact(),target,[],'2026-09-09T17:00:00Z')
@@ -124,3 +124,24 @@ def test_publisher_rejects_mixed_run_bundles(tmp_path):
         target=tmp_path/path;target.parent.mkdir(parents=True,exist_ok=True)
         target.write_text(json.dumps({'createdAtUtc':at}))
     with pytest.raises(ValueError,match='different runs'):publisher.publish(tmp_path)
+
+
+def test_postponed_schedule_occurrence_does_not_duplicate_actual_game():
+    from run_mlb_data_expansion import normalize_schedule
+    original={'gamePk':1,'gameType':'R','gameDate':'2025-04-05T20:10:00Z',
+              'status':{'abstractGameState':'Final','detailedState':'Postponed'},
+              'teams':{'home':{'team':{'id':10}},'away':{'team':{'id':20}}}}
+    played=copy.deepcopy(original);played['gameDate']='2025-04-06T17:35:00Z'
+    played['status']['detailedState']='Final';played['teams']['home']['isWinner']=True
+    p={'totalGames':2,'dates':[{'games':[original]},{'games':[played]}]}
+    games=normalize_schedule(p)
+    assert len(games)==1 and games[0]['gameDate']==played['gameDate']
+    assert historical.is_final(original) is False
+    assert historical.is_final(games[0]) is True
+    played['teams']['home']['team']['id']=99
+    with pytest.raises(ValueError,match='conflicting official'):normalize_schedule(p)
+
+
+def test_incomplete_official_schedule_is_still_rejected():
+    from run_mlb_data_expansion import normalize_schedule
+    with pytest.raises(ValueError,match='incomplete'):normalize_schedule({'totalGames':1,'dates':[]})

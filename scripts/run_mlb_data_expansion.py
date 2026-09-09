@@ -29,14 +29,33 @@ def query(table, pk, prefix):
         if not cursor: return rows
 
 
+def normalize_schedule(payload):
+    games = [g for d in payload.get('dates', []) for g in d.get('games', [])]
+    if payload.get('totalGames') != len(games):
+        raise ValueError('incomplete official schedule')
+    grouped = {}
+    for game in games:
+        grouped.setdefault(game['gamePk'], []).append(game)
+    result = []
+    for occurrences in grouped.values():
+        identities = {(g.get('gameType'), g['teams']['home']['team']['id'], g['teams']['away']['team']['id']) for g in occurrences}
+        if len(identities) != 1:
+            raise ValueError('conflicting official game identity')
+        played = [g for g in occurrences if g['status'].get('detailedState') not in ('Postponed','Cancelled')]
+        candidates = played or occurrences
+        chosen = dict(min(candidates, key=lambda g:g['gameDate']))
+        chosen['scheduleOccurrences'] = len(occurrences)
+        chosen['resumptionTimingAmbiguous'] = any(any(g.get(k) for k in ('resumeDate','resumeGameDate','resumedFrom','resumedFromDate')) for g in occurrences)
+        result.append(chosen)
+    return result
+
+
 def schedule(first, last):
     endpoint = 'https://statsapi.mlb.com/api/v1/schedule?' + urlencode({'sportId': 1, 'startDate': first, 'endDate': last})
     payload = advanced._http_get_json(endpoint, timeout=30)
-    games = [g for d in payload.get('dates', []) for g in d.get('games', [])]
-    ids = [g['gamePk'] for g in games]
-    if payload.get('totalGames') != len(games) or len(set(ids)) != len(ids):
-        raise ValueError('incomplete or duplicate official schedule')
-    return games, {'endpoint': endpoint, 'retrievedAtUtc': datetime.now(timezone.utc).isoformat(), 'sha256': historical.digest(payload)}
+    games = normalize_schedule(payload)
+    return games, {'endpoint': endpoint, 'retrievedAtUtc': datetime.now(timezone.utc).isoformat(),
+                   'sha256': historical.digest(payload),'listedOccurrences':payload['totalGames'],'uniqueGames':len(games)}
 
 
 def source_game(game, s3, bucket, persist):
@@ -118,7 +137,7 @@ def main():
         item['scheduleReceipt'] = receipt
         days.append(item)
         by_pk = {str(r.get('official_game_pk')):r for r in labels}
-        final_ids = {str(g['gamePk']) for g in games if g.get('status',{}).get('abstractGameState')=='Final'}
+        final_ids = {str(g['gamePk']) for g in games if historical.is_final(g)}
         for lock in locks:
             pk = str(lock.get('officialGamePk'))
             if pk in by_pk and pk in final_ids:
@@ -142,21 +161,28 @@ def main():
                       'combinedOriginalAdmission':report['combinedOriginalAdmission']},indent=2),flush=True)
     if not args.inventory:
         selected, archives, rejected_archives = [], [], []
-        for ledger in ledgers:
-            if ledger['slateDateEt'] >= today.isoformat(): continue
-            if selected and len(selected)+int(ledger['eligibleGameCount']) > args.max_rows: break
+        def read_archive(ledger):
             try:
                 archived = bridge._get_artifact(s3, ledger['artifact']); bridge._verify_dataset(archived,ledger)
             except Exception as exc:
-                rejected_archives.append({'slateDateEt':ledger['slateDateEt'],'reason':str(exc)}); continue
-            archives.append({'dataset':archived,'artifact':ledger['artifact']})
-            selected.extend(archived['records'])
+                return ledger,None,str(exc)
+            return ledger,archived,None
+        candidates = [l for l in ledgers if l['slateDateEt'] < today.isoformat()]
+        # Read immutable archived slates concurrently; production DynamoDB
+        # readers above remain sequential and no trainer is invoked.
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for ledger,archived,error in pool.map(read_archive,candidates):
+                if error:
+                    rejected_archives.append({'slateDateEt':ledger['slateDateEt'],'reason':error});continue
+                if selected and len(selected)+len(archived['records']) > args.max_rows:continue
+                archives.append({'dataset':archived,'artifact':ledger['artifact']})
+                selected.extend(archived['records'])
         if not selected: raise ValueError('no verified historical rows')
         first = (datetime.fromisoformat(min(r['slateDateEt'] for r in selected)).date()-timedelta(days=14)).isoformat()
         last = max(r['slateDateEt'] for r in selected)
         official, schedule_receipt = schedule(first,last)
         official_map = {g['gamePk']:g for g in official}
-        completed = [g for g in official if g.get('gameType')=='R' and g.get('status',{}).get('abstractGameState')=='Final']
+        completed = [g for g in official if g.get('gameType')=='R' and historical.is_final(g)]
         if len(completed)>7000: raise ValueError('historical source range exceeds bounded request budget')
         source_errors, sources = {}, []
         print(json.dumps({'phase':'fetch_prior_games','requestedSources':len(completed),'selectedArchiveRows':len(selected)}),flush=True)
@@ -186,6 +212,7 @@ def main():
                         # Postponements contribute no statistics. Suspensions,
                         # missing sources and late completions remain rejected.
                         if old['status'].get('detailedState') in ('Postponed','Cancelled'):continue
+                        if old.get('resumptionTimingAmbiguous'):raise ValueError('prior-game resumption timing ambiguous:'+str(old['gamePk']))
                         if old['gamePk'] not in source_map:raise ValueError('prior-game source unavailable:'+str(old['gamePk']))
                         relevant.append(source_map[old['gamePk']])
                     prepared.append(historical.materialize(record,archive['dataset'],archive['artifact'],target,relevant,now))
