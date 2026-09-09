@@ -33,6 +33,14 @@ these reconstructed features distinct from the v2 successor's live features.
 No development result grants production authority. A successor must still
 freeze its protocol and model, collect a new prospective test, and pass review.
 
+For an explicit one-off research run, use
+`python scripts/benchmark_mlb_reconstructed_development.py DATASET.json`.
+It excludes incomplete slates, trains on the earliest 70% of complete slate
+dates, and compares six fixed configurations on the later 30%. Scaling and
+imputation use training data only. Its validation results are used for model
+selection and are not a fresh qualification test. This command is not part of
+the automatic daily workflow.
+
 The daily admission reports separately inspect original canonical live locks
 and final labels. The summary reports collection, locks, settlement, source
 coverage, and admissible settled rows per date. The companion
