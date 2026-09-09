@@ -2331,6 +2331,9 @@ def test_candidate_and_evaluated_manifest_commit_together_and_are_idempotent(
     store = FakeStore(new_manifest(sealed=True))
     first = service(store).run()
     assert first["status"] == "CANDIDATE_REGISTERED"
+    expected = trained_bundle(store.manifest)
+    assert first["validation"] == expected["validation"]
+    assert first["prospectiveTest"]["outcome"] == expected["prospectiveTest"]["outcome"]
     assert first["promotionGate"]["promotionDecision"] == (
         "PENDING_MANUAL_FIRST_SHADOW_APPROVAL"
     )

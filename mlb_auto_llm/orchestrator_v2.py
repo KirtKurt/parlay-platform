@@ -9,6 +9,11 @@ import handler as base
 from model_gateway import configured_models, invoke_chain_text
 
 
+class PublicationDeadlineMissed(RuntimeError):
+    """A terminal slate wait, never permission to publish after cutoff."""
+
+
+
 def _without_scores(side: Any) -> Dict[str, Any]:
     if not isinstance(side, dict):
         return {}
@@ -1080,7 +1085,7 @@ def _late_guard(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         production._validate_deployment_smoke(result)
         return result
 
-    raise RuntimeError(
+    raise PublicationDeadlineMissed(
         "AUTHORITATIVE_CARD_DEADLINE_MISSED:"
         + base.json.dumps(
             {

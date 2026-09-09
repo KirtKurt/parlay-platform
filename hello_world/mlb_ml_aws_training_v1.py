@@ -3066,6 +3066,8 @@ class TrainingService:
                 "status": "CANDIDATE_REGISTERED",
                 "artifactDigest": artifact_digest,
                 "evaluationFingerprint": evaluation_fingerprint,
+                "validation": copy.deepcopy(trained["validation"]),
+                "prospectiveTest": copy.deepcopy(trained["prospectiveTest"]),
                 "promotionGate": gate,
                 "promotion": promotion,
                 "championChanged": promotion.get("shadowChampionApproved") is True,

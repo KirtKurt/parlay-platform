@@ -2,6 +2,9 @@
 import hashlib
 import json
 import re
+import os
+import sys
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 import boto3
@@ -56,7 +59,7 @@ def main():
                 error_types = re.findall(r'\b([A-Za-z_][A-Za-z_0-9]*(?:Error|Exception|Unavailable))\b', message)
                 frames = re.findall(r'File "(/var/task/[A-Za-z0-9_./-]+)", line (\d+), in ([A-Za-z0-9_]+)', message)
                 undefined = re.findall(r"name '([A-Za-z_][A-Za-z_0-9]*)' is not defined", message)
-                errors.append({"timestamp":event.get("timestamp"), "types":sorted(set(error_types)), "frames":frames, "undefinedNames":undefined, "timeout":"Task timed out" in message})
+                errors.append({"timestamp":event.get("timestamp"), "types":sorted(set(error_types)), "frames":frames, "undefinedNames":undefined, "codes": re.findall(r"(?:RuntimeError: |HTTP Error )([A-Z][A-Z_0-9]+|[0-9]{3})", message), "timeout":"Task timed out" in message})
             result["runtime"][name]["errors"] = errors
         except Exception as exc:
             result["runtime"][name]["logReadError"] = type(exc).__name__
@@ -69,6 +72,16 @@ def main():
         result["auditRow"] = {k:row.get(k) for k in ["gameId", "gameIdentity", "providerEventId", "commenceTime", "predictedWinner", "canonicalPerGameStageAuthority"]}
     except Exception as exc:
         result["auditReadError"] = type(exc).__name__
+    try:
+        os.environ.setdefault("SNAPSHOTS_TABLE", "parlay_platform_snapshots")
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hello_world"))
+        import mlb_yesterday_audit as audit
+        import mlb_yesterday_audit_lock_card_resolver_patch as resolver
+        resolver.apply(audit)
+        verified = audit.load_locked_predictions("2026-09-07")
+        result["auditVerification"] = {"rowCount": len(verified["rows"]), "authority": verified["authority"]}
+    except Exception as exc:
+        result["auditVerificationError"] = str(exc)[:500]
     print(json.dumps(result, indent=2, default=str))
 
 

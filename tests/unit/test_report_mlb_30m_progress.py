@@ -77,6 +77,7 @@ def _state(
     model_http_status: int = 503,
     today_body: dict | None = None,
     today_http_status: int = 503,
+    training_payload: dict | None = None,
 ) -> dict:
     auto = {
         "ok": True,
@@ -99,7 +100,7 @@ def _state(
     if auto_overrides:
         auto.update(auto_overrides)
     return reporter._extract_state(
-        r7_invocation={"ok": True, "payload": {"ok": True}},
+        r7_invocation={"ok": True, "payload": training_payload or {"ok": True}},
         model_invocation=_api(
             model_body if model_body is not None else _no_champion_body(),
             model_http_status,
@@ -483,3 +484,46 @@ def test_latest_visible_pulse_ignores_non_pulse_comments() -> None:
     assert result is not None
     assert result["commentId"] == 1
     assert result["state"] == state
+
+
+def test_completed_evaluation_is_not_a_passed_promotion_gate():
+    state = _state(audit=None, autonomy={}, training_payload={
+        "latestStatus": {"promotionGate": {"ok": True, "promotionEligible": False,
+            "promotionDecision": "RETAIN_CURRENT_CHAMPION",
+            "blockers": [{"code": "NO_POSITIVE_BRIER_SKILL"}]}}
+    })
+    assert state["r7"]["promotionGatePassed"] is False
+    assert state["r7"]["promotionEvaluationOk"] is True
+    assert state["r7"]["promotionDecision"] == "NO_ELIGIBLE_CANDIDATE_NO_CHAMPION"
+    assert "MLB_LEARNING_PROMOTION:NO_POSITIVE_BRIER_SKILL" in state["blockers"]
+
+
+def test_outcome_metrics_are_reported_without_using_reliability_accuracy():
+    state = _state(audit=None, autonomy={}, training_payload={
+        "latestStatus": {
+            "validation": {"outcome": {"accuracyPct": 61, "brierScore": .23, "calibrationError": .07}},
+            "prospectiveTest": {"outcome": {"accuracyPct": 58, "brierScore": .24},
+                                "selectedReliability": {"accuracyPct": 99}},
+            "promotionGate": {"ok": True, "promotionEligible": True}
+        }
+    })
+    assert state["r7"]["validationAccuracy"] == .61
+    assert state["r7"]["prospectiveAccuracy"] == .58
+    assert state["r7"]["validationBrier"] == .23
+    assert state["r7"]["promotionGatePassed"] is True
+
+
+def test_accuracy_percent_units_do_not_turn_one_percent_into_one_hundred():
+    assert reporter._outcome_accuracy({"outcome": {"accuracyPct": 1}}) == .01
+    assert reporter._outcome_accuracy({"outcome": {"accuracyPct": 0}}) == 0
+    assert reporter._outcome_accuracy({"outcome": {"accuracyPct": 101}}) is None
+
+
+def test_failed_evaluation_cannot_pass_and_retains_existing_champion_label():
+    state = _state(audit=None, autonomy={}, training_payload={
+        "champion": {"artifactDigest": "existing"},
+        "latestStatus": {"promotionGate": {"ok": False, "promotionEligible": True,
+            "promotionDecision": "RETAIN_CURRENT_CHAMPION"}}
+    })
+    assert state["r7"]["promotionGatePassed"] is False
+    assert state["r7"]["promotionDecision"] == "RETAIN_CURRENT_CHAMPION"

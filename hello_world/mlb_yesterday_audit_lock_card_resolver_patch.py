@@ -152,6 +152,11 @@ def _direct_canonical_rows(module: Any, slate_date: str) -> Dict[str, Any]:
         item_game_id = str(item.get("game_id") or "")
         if item_game_id.startswith("provider:"):
             item_game_id = item_game_id[len("provider:") :]
+        # The immutable writer stores the canonical ID, while _game_id prefers
+        # the provider event ID used for the official-result crosswalk.
+        stored_row_game_id = str(row.get("gameId") or row.get("game_id") or row.get("id") or "")
+        if stored_row_game_id.startswith("provider:"):
+            stored_row_game_id = stored_row_game_id[len("provider:") :]
         item_identity = str(item.get("game_identity") or "")
         row_stage = (
             row.get("canonicalPerGameStageAuthority")
@@ -172,7 +177,7 @@ def _direct_canonical_rows(module: Any, slate_date: str) -> Dict[str, Any]:
             and item.get("immutable_locked_storage_version") == storage_contract.VERSION
             and item.get("stage_fingerprint")
             == row_stage.get("stageFingerprint")
-            and item_game_id == game_id
+            and item_game_id == stored_row_game_id
             and item_identity == identity
             and module.normalize_team(item.get("predicted_winner"))
             == module.normalize_team(row.get("predictedWinner"))
