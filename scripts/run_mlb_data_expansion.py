@@ -81,8 +81,15 @@ def source_game(game, s3, bucket, persist):
         raise ValueError('prior-game identity mismatch')
     if persist:
         body = historical.encoded(result)
-        s3.put_object(Bucket=bucket, Key=key, Body=body, ContentType='application/json',
-                      Metadata={'sha256': hashlib.sha256(body).hexdigest()}, IfNoneMatch='*')
+        try:
+            s3.put_object(Bucket=bucket, Key=key, Body=body, ContentType='application/json',
+                          Metadata={'sha256': hashlib.sha256(body).hexdigest()}, IfNoneMatch='*')
+        except Exception as exc:
+            if getattr(exc, 'response', {}).get('Error', {}).get('Code') not in ('PreconditionFailed', '412'):
+                raise
+            # Another bounded preparation run saved this game first. Read and
+            # verify that immutable receipt instead of replacing it.
+            return source_game(game, s3, bucket, False)
     return result
 
 
@@ -102,6 +109,8 @@ def main():
     function = physical('MLBMLTrainingFunction')
     env = lam.get_function_configuration(FunctionName=function)['Environment']['Variables']
     bucket = env['MLB_ML_ARTIFACTS_BUCKET']
+    if args.persist and s3.get_bucket_versioning(Bucket=bucket).get('Status') != 'Enabled':
+        raise ValueError('versioned development storage required before source writes')
     os.environ['SNAPSHOTS_TABLE'] = physical('SnapshotsTable')
     os.environ['OUTCOMES_TABLE'] = physical('OutcomesTable')
     ddb = boto3.resource('dynamodb', region_name='us-east-1')
@@ -128,8 +137,11 @@ def main():
     canonical.outcomes_tbl = ddb.Table(os.environ['OUTCOMES_TABLE'])
     repair.install(canonical)
     days, canonical_rows = [], []
-    for n in range(14, -1, -1):
+    release_day = historical.utc(env['MLB_ML_RELEASE_CUTOFF_UTC']).astimezone(historical.ET).date()
+    days_back = min(14, max(0, (today-release_day).days))
+    for n in range(days_back, -1, -1):
         day = (today-timedelta(days=n)).isoformat()
+        print(json.dumps({'phase':'daily_admission','slateDateEt':day}),flush=True)
         games, receipt = schedule(day, day)
         locks, rejected = canonical._validated_canonical_locks(day)
         labels = canonical._labels_for_slate(day)
@@ -178,6 +190,26 @@ def main():
                 archives.append({'dataset':archived,'artifact':ledger['artifact']})
                 selected.extend(archived['records'])
         if not selected: raise ValueError('no verified historical rows')
+        # The frozen R8 candidate excludes diagnostic historical rows. Replay
+        # the deployed trainer's whole-slate historical window as well, so the
+        # audit accounts for those rows without changing their source evidence.
+        historical_window = []
+        limit = max(400, min(2000, int(env.get('MLB_R7_HISTORICAL_MAX_ROWS', '500'))))
+        release = historical.utc(env['MLB_ML_RELEASE_CUTOFF_UTC']).date().isoformat()
+        for archive in archives:
+            data = archive['dataset']
+            if data['slateDateEt'] >= release: continue
+            if historical_window and len(historical_window)+len(data['records']) > limit: break
+            historical_window.extend(bridge.materialize_record(r, dataset=data, artifact=archive['artifact'],
+                feature_version=env['MLB_ML_FEATURE_VECTOR_VERSION']) for r in data['records'])
+            if len(historical_window) >= limit: break
+        unique.update({(str(r['slateDateEt']),str(r['officialGamePk'])):r for r in historical_window})
+        audit_all = audit_rows(list(unique.values()));audit_all['createdAtUtc']=now
+        report['combinedOriginalAdmission']={k:v for k,v in audit_all.items() if k not in ('rows','createdAtUtc')}
+        report['historicalTrainerWindowRows']=len(historical_window)
+        report['sourceScope']='deployed historical window, frozen candidate and recent canonical locks'
+        (ROOT/'runtime_reports/mlb_data_admission_rows_latest.json').write_text(json.dumps(audit_all,indent=2)+'\n')
+        (ROOT/'runtime_reports/mlb_data_admission_latest.json').write_text(json.dumps(report,indent=2)+'\n')
         first = (datetime.fromisoformat(min(r['slateDateEt'] for r in selected)).date()-timedelta(days=14)).isoformat()
         last = max(r['slateDateEt'] for r in selected)
         official, schedule_receipt = schedule(first,last)

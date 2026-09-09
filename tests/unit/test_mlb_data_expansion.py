@@ -145,3 +145,33 @@ def test_postponed_schedule_occurrence_does_not_duplicate_actual_game():
 def test_incomplete_official_schedule_is_still_rejected():
     from run_mlb_data_expansion import normalize_schedule
     with pytest.raises(ValueError,match='incomplete'):normalize_schedule({'totalGames':1,'dates':[]})
+
+
+def test_source_cache_conflict_reads_the_first_verified_receipt(monkeypatch):
+    import run_mlb_data_expansion as runner
+    from botocore.exceptions import ClientError
+    from io import BytesIO
+    import hashlib
+    value={'officialGamePk':1};value['fingerprint']=historical.digest(value)
+    body=historical.encoded(value)
+    class S3:
+        def __init__(self):self.reads=0
+        def get_object(self,**kwargs):
+            self.reads+=1
+            if self.reads==1:raise ClientError({'Error':{'Code':'NoSuchKey'}},'GetObject')
+            return {'Body':BytesIO(body),'Metadata':{'sha256':hashlib.sha256(body).hexdigest()}}
+        def put_object(self,**kwargs):
+            assert kwargs['IfNoneMatch']=='*'
+            raise ClientError({'Error':{'Code':'PreconditionFailed'}},'PutObject')
+    monkeypatch.setattr(runner.advanced,'_http_get_json',lambda *a,**k:{})
+    monkeypatch.setattr(runner.historical,'compact_game',lambda *a:value)
+    s3=S3();assert runner.source_game({'gamePk':1},s3,'bucket',True)==value
+    assert s3.reads==2
+
+
+def test_source_cache_permission_failure_is_not_retried_as_missing():
+    import run_mlb_data_expansion as runner
+    from botocore.exceptions import ClientError
+    class S3:
+        def get_object(self,**kwargs):raise ClientError({'Error':{'Code':'AccessDenied'}},'GetObject')
+    with pytest.raises(ClientError):runner.source_game({'gamePk':1},S3(),'bucket',True)
