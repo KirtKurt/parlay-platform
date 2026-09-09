@@ -27,6 +27,55 @@ if hashlib.sha256(_source).hexdigest() != _EXPECTED_SOURCE_SHA256:
     raise RuntimeError("MLB_RANKED_V15_10_SOURCE_CHECKSUM_MISMATCH")
 exec(compile(_source, str(_RESOURCE) + "::<verified-source>", "exec"), globals(), globals())
 
+# Full official slates contain lifecycle rows before a market/prediction exists.
+# These are not model inputs and must survive both legacy scoring wrappers.
+_VERIFIED_MODEL_DIRECTION = apply_model_direction
+_VERIFIED_SELECTION = apply_selection
+_VERIFIED_GUARD_RESULT = _guard_result
+
+
+def _lifecycle_without_prediction(row):
+    from mlb_slate_coverage_patch import AUTHORITY_VERSION
+
+    authority = row.get("perGameCanonicalLock") or {}
+    return (
+        isinstance(authority, dict)
+        and authority.get("authorityVersion") == AUTHORITY_VERSION
+        and authority.get("canonical") is False
+        and authority.get("status") in {
+            "OPEN_PRE_LOCK", "LOCK_DUE_CANONICAL_MISSING", "MISSED_LOCK",
+            "LOCKED_NO_PREDICTION_DATA",
+        }
+        and not row.get("predictedWinner")
+        and not row.get("predictedSide")
+        and not row.get("homeSignal")
+        and not row.get("awaySignal")
+        and row.get("officialPrediction") is False
+        and row.get("trainingEligible") is False
+    )
+
+
+def apply_model_direction(row, *, default_slate_date=None):
+    if _lifecycle_without_prediction(row):
+        return copy.deepcopy(row)
+    return _VERIFIED_MODEL_DIRECTION(row, default_slate_date=default_slate_date)
+
+
+def apply_selection(row, *, default_slate_date=None):
+    if _lifecycle_without_prediction(row):
+        return copy.deepcopy(row)
+    return _VERIFIED_SELECTION(row, default_slate_date=default_slate_date)
+
+
+def _guard_result(result, *, args, kwargs, direction):
+    out = _VERIFIED_GUARD_RESULT(result, args=args, kwargs=kwargs, direction=direction)
+    if not direction and out.get("primaryAlgorithm") == VERSION:
+        rows = out.get("predictions") or []
+        selected = [row for row in rows if not _lifecycle_without_prediction(row)]
+        out["productionSelectionCount"] = len(selected)
+        out["actionablePickCount"] = sum(row.get("actionablePick") is True for row in selected)
+    return out
+
 # Capture the verified implementation before adding the dynamic, gated outer
 # authority.  V15.10 remains the incumbent and rollback diagnostic until a
 # historical champion passes every runtime validation invariant.
