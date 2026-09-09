@@ -924,6 +924,7 @@ def _extract_state(
     production_changed = bool(latest.get("productionAuthorityChanged") is True)
 
     successor = _successor_state(r7)
+    performance_observations: list[str] = []
     blockers: list[str] = list(discovery_errors)
     blockers.extend("MLB_SUCCESSOR:" + value for value in successor["blockers"])
     if candidate.get("evaluationReadError"):
@@ -982,7 +983,7 @@ def _extract_state(
                 + ",".join(str(item) for item in cohort.get("errors") or [])
             )
         if cohort.get("targetMet") is False:
-            blockers.append(
+            performance_observations.append(
                 f"MLB_AUTO_{blocker_name}_ACCURACY_BELOW_TARGET:"
                 f"{cohort.get('correctPicks')}/{cohort.get('gradedPicks')}:"
                 f"{_fmt_pct(cohort.get('accuracy'))}<{_fmt_pct(target_accuracy)}"
@@ -1090,6 +1091,7 @@ def _extract_state(
             "functionName": r7_invocation.get("functionName"),
         },
         "successor": successor,
+        "performanceObservations": performance_observations,
         "blockers": sorted(set(item for item in blockers if item)),
     }
 
@@ -1316,10 +1318,10 @@ def _grading_indicator(cohort: Mapping[str, Any]) -> str:
     if cohort.get("valid") is not True:
         return "🔴 telemetry invalid"
     if cohort.get("targetMet") is True:
-        return "🟢 telemetry valid · 🟢 target met"
+        return "🟢 telemetry valid · 🟢 aspirational goal met"
     if cohort.get("targetMet") is False:
-        return "🟢 telemetry valid · 🔴 target missed"
-    return "🟢 telemetry valid · ⚪ target not evaluated"
+        return "🟢 telemetry valid · 🟡 below aspirational goal"
+    return "🟢 telemetry valid · ⚪ aspirational goal not evaluated"
 
 
 def _publication_indicator(auto: Mapping[str, Any]) -> str:
@@ -1551,7 +1553,7 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
         f"| Trailing-14-day graded / correct / accuracy | {_fmt_int(trailing_grading.get('gradedPicks'))} / {_fmt_int(trailing_grading.get('correctPicks'))} / {_fmt_pct(trailing_grading.get('accuracy'))} | — | {_grading_indicator(trailing_grading)} |",
         f"| Primary grading cohort | `{auto.get('gradingCohort') or 'unavailable'}` | {_fmt_delta(graded_delta)} graded | {_arrow(graded_delta)} |",
         "",
-        f"**Slate:** `{auto.get('slateDateEt') or 'n/a'}` · scheduled games **{_fmt_int(auto.get('scheduledGames'))}** · card published **{auto.get('cardPublished')}** · card authority `{auto.get('cardDecisionAuthority') or 'not exposed'}` · target accuracy **{_fmt_pct(auto.get('targetAccuracy'))}**.",
+        f"**Slate:** `{auto.get('slateDateEt') or 'n/a'}` · scheduled games **{_fmt_int(auto.get('scheduledGames'))}** · card published **{auto.get('cardPublished')}** · card authority `{auto.get('cardDecisionAuthority') or 'not exposed'}` · aspirational accuracy goal (not an advancement gate) **{_fmt_pct(auto.get('targetAccuracy'))}**.",
         f"**Publication timing:** phase `{auto.get('publicationPhase') or 'unknown'}` · final window starts `{auto.get('finalWindowStartUtc') or 'n/a'}` · deadline `{auto.get('publishDeadlineUtc') or 'n/a'}`. Authority counts describe published picks; before the final window, zero decisions are expected. `AUTHORITY_READINESS_GATED` requires explicit fail-closed authority fields and zero winner predictions; it never enables fallback picks.",
         "",
         "### MLB production authority",
@@ -1569,6 +1571,9 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
         "",
     ]
 
+    observations = state.get("performanceObservations") or []
+    if observations:
+        lines.append("**Performance observations (not operational or qualification blockers):** " + "; ".join(f"`{item}`" for item in observations))
     blockers = state.get("blockers") or []
     if blockers:
         lines.append("**Current blockers:** " + "; ".join(f"`{item}`" for item in blockers[:12]))

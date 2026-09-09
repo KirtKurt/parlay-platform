@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 VERSION = "MLB-STATSAPI-STARTER-CONTEXT-v1-prelock-season-observations"
+DATASET = "MLB regular season pitching totals and pitcher handedness; " + VERSION
 _CACHE = {}
 
 
@@ -109,7 +110,7 @@ def observe(game_date, game, schedule, http_get, *, now=None):
     if not cached["ok"] or clock().astimezone(timezone.utc) >= start - timedelta(minutes=45):
         return unavailable, unavailable.copy()
     provenance = {"provider": "MLB Stats API", "endpoint": cached["endpoint"],
-                  "dataset": "MLB regular season pitching totals and pitcher handedness; " + VERSION,
+                  "dataset": DATASET,
                   "retrievedAtUtc": cached["at"].isoformat(),
                   "sourceEffectiveAtUtc": cached["at"].isoformat(),
                   "payloadFingerprint": cached["fingerprint"]}
