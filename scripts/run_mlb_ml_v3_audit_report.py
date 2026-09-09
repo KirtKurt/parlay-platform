@@ -1088,6 +1088,11 @@ def _read_deployed_trainer_identity() -> dict:
         and re.fullmatch(r"[0-9a-f]{64}", identity["templateSha256"])
     ):
         raise RuntimeError("deployed MLB trainer release identity is invalid")
+    for key, variable in (("gitSha", "MLB_AUDIT_EXPECTED_GIT_SHA"),
+                          ("templateSha256", "MLB_AUDIT_EXPECTED_TEMPLATE_SHA256")):
+        expected = os.environ.get(variable)
+        if expected and identity[key] != expected:
+            raise RuntimeError("deployed MLB trainer changed during audit: " + key)
     return identity
 
 
@@ -1099,7 +1104,7 @@ def _read_v2_training_state(*, now_utc=None, deployed_identity=None) -> dict:
 
     table_name = os.environ.get("SNAPSHOTS_TABLE", "")
     experiment_id = os.environ.get(
-        "MLB_ML_EXPERIMENT_ID", "mlb-v2-2026-08-03-future-prospective-r7"
+        "MLB_ML_EXPERIMENT_ID", experiment.PRODUCTION_EXPERIMENT_ID
     )
     if not table_name:
         raise RuntimeError("SNAPSHOTS_TABLE is required for V2 status monitoring")
@@ -1322,6 +1327,10 @@ def main() -> int:
         "proofType": "MLB_ML_V3_AWS_AUDIT_EXECUTION",
         "createdAtUtc": datetime.now(timezone.utc).isoformat(),
         "environment": {
+            "experimentId": os.environ.get("MLB_ML_EXPERIMENT_ID"),
+            "releaseContractId": os.environ.get("MLB_ML_RELEASE_CONTRACT_ID"),
+            "releaseCutoffUtc": os.environ.get("MLB_ML_RELEASE_CUTOFF_UTC"),
+            "expectedDeployedGitSha": os.environ.get("MLB_AUDIT_EXPECTED_GIT_SHA"),
             "snapshotsTableConfigured": bool(os.environ.get("SNAPSHOTS_TABLE")),
             "oddsApiKeyConfigured": bool(os.environ.get("ODDS_API_KEY")),
             "autoPromote": os.environ.get("INQSI_MLB_ML_AUTO_PROMOTE"),

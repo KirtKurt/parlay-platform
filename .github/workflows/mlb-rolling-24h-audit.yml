@@ -64,7 +64,7 @@ jobs:
           INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION: 'false'
           INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC: '2026-07-13T00:20:03+00:00'
           PYTHONPATH: ${{ github.workspace }}/hello_world
-        run: python scripts/run_mlb_ml_v3_audit_report.py
+        run: python scripts/run_deployed_mlb_audit.py
 
       - name: Extract settlement mismatch diagnostics
         run: python scripts/extract_mlb_missing_settlement_diagnostics.py

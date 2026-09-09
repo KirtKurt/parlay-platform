@@ -22,6 +22,16 @@ if [ -z "$API_ID" ]; then
   exit 1
 fi
 
+# Stage throttling is independent of WAF permissions.
+aws apigateway update-stage \
+  --rest-api-id "$API_ID" \
+  --stage-name Prod \
+  --region "$AWS_REGION" \
+  --patch-operations \
+    op=replace,path='/*/*/throttling/rateLimit',value='100' \
+    op=replace,path='/*/*/throttling/burstLimit',value='200'
+
+
 WEB_ACL_NAME="inqsi-api-protection"
 
 cat > waf-rules.json <<'JSON'
@@ -89,21 +99,23 @@ fi
 
 API_STAGE_ARN="arn:aws:apigateway:${AWS_REGION}::/restapis/${API_ID}/stages/Prod"
 
-if aws wafv2 get-web-acl-for-resource --resource-arn "$API_STAGE_ARN" --region "$AWS_REGION" >/tmp/inqsi-current-waf.json 2>/dev/null; then
-  echo "WAF already associated with API stage."
+if aws wafv2 get-web-acl-for-resource --resource-arn "$API_STAGE_ARN" --region "$AWS_REGION" >/tmp/inqsi-current-waf.json 2>/tmp/inqsi-current-waf-error.log; then
+  ASSOCIATED_ARN=$(python -c 'import json; print((json.load(open("/tmp/inqsi-current-waf.json")).get("WebACL") or {}).get("ARN", ""))')
+  if [ "$ASSOCIATED_ARN" != "$WEB_ACL_ARN" ]; then
+    echo "API stage has a different WebACL; review its rules before replacing it."
+    exit 1
+  fi
+  echo "Expected WAF is associated with API stage."
 else
+  if ! grep -q 'WAFNonexistentItemException' /tmp/inqsi-current-waf-error.log; then
+    cat /tmp/inqsi-current-waf-error.log >&2
+    exit 1
+  fi
   aws wafv2 associate-web-acl \
     --web-acl-arn "$WEB_ACL_ARN" \
     --resource-arn "$API_STAGE_ARN" \
     --region "$AWS_REGION"
 fi
 
-aws apigateway update-stage \
-  --rest-api-id "$API_ID" \
-  --stage-name Prod \
-  --region "$AWS_REGION" \
-  --patch-operations \
-    op=replace,path='/*/*/throttling/rateLimit',value='100' \
-    op=replace,path='/*/*/throttling/burstLimit',value='200'
 
 echo "Inqis API protection configured: WAF associated and stage throttling updated."
