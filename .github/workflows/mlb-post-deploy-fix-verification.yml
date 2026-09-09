@@ -358,6 +358,7 @@ jobs:
           import os
           from datetime import datetime, timedelta, timezone
           from pathlib import Path
+          from scripts.mlb_public_prediction_smoke_policy import qualified_champion_readiness_blockers
 
           invocation = json.loads(Path('/tmp/mlb-post-deploy-invocation.json').read_text(encoding='utf-8'))
           scoring = json.loads(Path('runtime_reports/mlb_scoring_guard_status_latest.json').read_text(encoding='utf-8'))
@@ -457,6 +458,7 @@ jobs:
               deployment_blockers.append('scheduled_pull_observation_failed')
           if scoring.get('guardPassed') is not True and not historical_slate_cutoff_exception:
               readiness_blockers.append('scoring_guard_not_ready')
+          readiness_blockers.extend(qualified_champion_readiness_blockers(winner_results))
           if invocation.get('timeoutSeconds', 0) < 600:
               deployment_blockers.append('timeout_not_600')
           if invocation.get('memorySizeMb', 0) < 2048:

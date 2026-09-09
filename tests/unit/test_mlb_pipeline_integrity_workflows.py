@@ -59,6 +59,7 @@ def test_post_deploy_separates_runtime_health_from_model_readiness():
     assert "deployment_blockers = []" in text
     assert "readiness_blockers = []" in text
     assert "readiness_blockers.append('scoring_guard_not_ready')" in text
+    assert "readiness_blockers.extend(qualified_champion_readiness_blockers(winner_results))" in text
     assert "deployment_blockers.append('scoring_guard_not_ready')" not in text
     assert "DEPLOYMENT_HEALTHY_READINESS_GATED" in text
     assert "'deploymentHealthy': deployment_healthy" in text
