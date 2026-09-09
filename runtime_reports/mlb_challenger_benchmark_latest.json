@@ -1,0 +1,2348 @@
+{
+  "calibrationCount": 53,
+  "challenger": {
+    "calibrator": {
+      "baseKey": "rawModelProbability",
+      "features": [
+        "rawModelLogit"
+      ],
+      "inactiveFeatures": [],
+      "means": {
+        "rawModelLogit": 0.2305615104461042
+      },
+      "penalty": 0.1,
+      "scales": {
+        "rawModelLogit": 0.41649398937132753
+      },
+      "trainingCount": 53,
+      "weights": [
+        -0.0139286386135219,
+        0.2082718490833404
+      ]
+    },
+    "model": {
+      "baseKey": "marketHomeProbability",
+      "features": [
+        "deltaGapHome",
+        "homeAwayVelocityPpHr60mDiff"
+      ],
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome",
+        "starterCompositeGapHome",
+        "bullpenCompositeGapHome",
+        "lineupWrcPlusGapHome",
+        "fundamentalPitchingMissing",
+        "fundamentalOffenseLineupMissing"
+      ],
+      "means": {
+        "deltaGapHome": 0.011039777835248302,
+        "homeAwayVelocityPpHr60mDiff": 0.11752870337662338
+      },
+      "penalty": 1.0,
+      "scales": {
+        "deltaGapHome": 0.0413673887155159,
+        "homeAwayVelocityPpHr60mDiff": 0.9480928858390358
+      },
+      "trainingCount": 308,
+      "weights": [
+        0.0617388291577646,
+        0.0008376307942520853,
+        0.020899506919340012
+      ]
+    }
+  },
+  "chosenConfiguration": "market_movement_baseball_l2_1.0_cal_True",
+  "comparisons": [
+    {
+      "family": "market",
+      "inactiveFeatures": [],
+      "name": "market_l2_None_cal_False",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": 0.0,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          0.0,
+          0.0
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5490196078431373,
+        "brier": 0.24523124509857838,
+        "calibrationBins": [
+          {
+            "count": 4,
+            "lower": 0.3,
+            "meanProbability": 0.376999,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 30,
+            "lower": 0.4,
+            "meanProbability": 0.44913326666666664,
+            "observedHomeWinRate": 0.4666666666666667
+          },
+          {
+            "count": 39,
+            "lower": 0.5,
+            "meanProbability": 0.5406046923076923,
+            "observedHomeWinRate": 0.48717948717948717
+          },
+          {
+            "count": 26,
+            "lower": 0.6,
+            "meanProbability": 0.6322378076923078,
+            "observedHomeWinRate": 0.6538461538461539
+          },
+          {
+            "count": 3,
+            "lower": 0.7,
+            "meanProbability": 0.712125,
+            "observedHomeWinRate": 0.6666666666666666
+          }
+        ],
+        "calibrationError": 0.03725275490196077,
+        "count": 102,
+        "logLoss": 0.6839388840182485
+      },
+      "selection": {
+        "accuracy": 0.6071428571428571,
+        "brier": 0.232407718043266,
+        "calibrationBins": [
+          {
+            "count": 1,
+            "lower": 0.2,
+            "meanProbability": 0.28959780029973187,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 7,
+            "lower": 0.3,
+            "meanProbability": 0.3582819991545173,
+            "observedHomeWinRate": 0.2857142857142857
+          },
+          {
+            "count": 17,
+            "lower": 0.4,
+            "meanProbability": 0.45820386233039484,
+            "observedHomeWinRate": 0.4117647058823529
+          },
+          {
+            "count": 17,
+            "lower": 0.5,
+            "meanProbability": 0.5534736757808901,
+            "observedHomeWinRate": 0.5294117647058824
+          },
+          {
+            "count": 11,
+            "lower": 0.6,
+            "meanProbability": 0.6369343576905376,
+            "observedHomeWinRate": 0.7272727272727273
+          },
+          {
+            "count": 3,
+            "lower": 0.7,
+            "meanProbability": 0.7186212844881646,
+            "observedHomeWinRate": 0.6666666666666666
+          }
+        ],
+        "calibrationError": 0.06368714750968418,
+        "count": 56,
+        "logLoss": 0.6572278207933505
+      }
+    },
+    {
+      "family": "market",
+      "inactiveFeatures": [],
+      "name": "market_l2_None_cal_True",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.0028942215142062464,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.011468388731049314,
+          0.005057086613558264
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5784313725490197,
+        "brier": 0.2481254666127847,
+        "calibrationBins": [
+          {
+            "count": 1,
+            "lower": 0.2,
+            "meanProbability": 0.26613158772455137,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 15,
+            "lower": 0.3,
+            "meanProbability": 0.3601420638168401,
+            "observedHomeWinRate": 0.5333333333333333
+          },
+          {
+            "count": 23,
+            "lower": 0.4,
+            "meanProbability": 0.4463432491413565,
+            "observedHomeWinRate": 0.34782608695652173
+          },
+          {
+            "count": 28,
+            "lower": 0.5,
+            "meanProbability": 0.5401662456623894,
+            "observedHomeWinRate": 0.5357142857142857
+          },
+          {
+            "count": 25,
+            "lower": 0.6,
+            "meanProbability": 0.6568823571750283,
+            "observedHomeWinRate": 0.68
+          },
+          {
+            "count": 10,
+            "lower": 0.7,
+            "meanProbability": 0.7429196954290873,
+            "observedHomeWinRate": 0.5
+          }
+        ],
+        "calibrationError": 0.0855825989091776,
+        "count": 102,
+        "logLoss": 0.691448726816788
+      },
+      "selection": {
+        "accuracy": 0.6071428571428571,
+        "brier": 0.2317041124021855,
+        "calibrationBins": [
+          {
+            "count": 1,
+            "lower": 0.1,
+            "meanProbability": 0.19326187686192492,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 4,
+            "lower": 0.2,
+            "meanProbability": 0.24910094488398102,
+            "observedHomeWinRate": 0.25
+          },
+          {
+            "count": 9,
+            "lower": 0.3,
+            "meanProbability": 0.35163239644775507,
+            "observedHomeWinRate": 0.2222222222222222
+          },
+          {
+            "count": 11,
+            "lower": 0.4,
+            "meanProbability": 0.45262369422164456,
+            "observedHomeWinRate": 0.5454545454545454
+          },
+          {
+            "count": 12,
+            "lower": 0.5,
+            "meanProbability": 0.5455183088810938,
+            "observedHomeWinRate": 0.6666666666666666
+          },
+          {
+            "count": 11,
+            "lower": 0.6,
+            "meanProbability": 0.6392059394773671,
+            "observedHomeWinRate": 0.36363636363636365
+          },
+          {
+            "count": 7,
+            "lower": 0.7,
+            "meanProbability": 0.742334237314361,
+            "observedHomeWinRate": 0.8571428571428571
+          },
+          {
+            "count": 1,
+            "lower": 0.8,
+            "meanProbability": 0.8206329668689094,
+            "observedHomeWinRate": 1.0
+          }
+        ],
+        "calibrationError": 0.15114711205004167,
+        "count": 56,
+        "logLoss": 0.6565887930272977
+      }
+    },
+    {
+      "family": "market_movement",
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome"
+      ],
+      "name": "market_movement_l2_0.01_cal_False",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.011321086134840704,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.02981792666985072,
+          0.009286097694099325
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5196078431372549,
+        "brier": 0.25655233123341914,
+        "calibrationBins": [
+          {
+            "count": 1,
+            "lower": 0.3,
+            "meanProbability": 0.3727853768163488,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 10,
+            "lower": 0.4,
+            "meanProbability": 0.4606416065239105,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 37,
+            "lower": 0.5,
+            "meanProbability": 0.5546406469754626,
+            "observedHomeWinRate": 0.40540540540540543
+          },
+          {
+            "count": 35,
+            "lower": 0.6,
+            "meanProbability": 0.6438235843316998,
+            "observedHomeWinRate": 0.6285714285714286
+          },
+          {
+            "count": 19,
+            "lower": 0.7,
+            "meanProbability": 0.7295153484338707,
+            "observedHomeWinRate": 0.5789473684210527
+          }
+        ],
+        "calibrationError": 0.09742274086166369,
+        "count": 102,
+        "logLoss": 0.7083049848877607
+      },
+      "selection": {
+        "accuracy": 0.5892857142857143,
+        "brier": 0.2381151312521586,
+        "calibrationBins": [
+          {
+            "count": 3,
+            "lower": 0.3,
+            "meanProbability": 0.37169340097521825,
+            "observedHomeWinRate": 0.6666666666666666
+          },
+          {
+            "count": 9,
+            "lower": 0.4,
+            "meanProbability": 0.4514374062669536,
+            "observedHomeWinRate": 0.2222222222222222
+          },
+          {
+            "count": 19,
+            "lower": 0.5,
+            "meanProbability": 0.5583500709497217,
+            "observedHomeWinRate": 0.42105263157894735
+          },
+          {
+            "count": 17,
+            "lower": 0.6,
+            "meanProbability": 0.6625056841113554,
+            "observedHomeWinRate": 0.5882352941176471
+          },
+          {
+            "count": 8,
+            "lower": 0.7,
+            "meanProbability": 0.7397209720414655,
+            "observedHomeWinRate": 0.875
+          }
+        ],
+        "calibrationError": 0.14109529741219565,
+        "count": 56,
+        "logLoss": 0.6681948762775988
+      }
+    },
+    {
+      "family": "market_movement",
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome"
+      ],
+      "name": "market_movement_l2_0.01_cal_True",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.00920958447363108,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.020936199714743607,
+          0.002392727117058616
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5294117647058824,
+        "brier": 0.2544408295722095,
+        "calibrationBins": [
+          {
+            "count": 1,
+            "lower": 0.2,
+            "meanProbability": 0.271146853530435,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 8,
+            "lower": 0.3,
+            "meanProbability": 0.36108079152839956,
+            "observedHomeWinRate": 0.375
+          },
+          {
+            "count": 23,
+            "lower": 0.4,
+            "meanProbability": 0.4530442031902261,
+            "observedHomeWinRate": 0.5217391304347826
+          },
+          {
+            "count": 34,
+            "lower": 0.5,
+            "meanProbability": 0.5542900808448615,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 22,
+            "lower": 0.6,
+            "meanProbability": 0.6509472512304811,
+            "observedHomeWinRate": 0.5909090909090909
+          },
+          {
+            "count": 13,
+            "lower": 0.7,
+            "meanProbability": 0.725729491195098,
+            "observedHomeWinRate": 0.6153846153846154
+          },
+          {
+            "count": 1,
+            "lower": 0.8,
+            "meanProbability": 0.8029884793390941,
+            "observedHomeWinRate": 0.0
+          }
+        ],
+        "calibrationError": 0.07670945374057267,
+        "count": 102,
+        "logLoss": 0.7044953821942025
+      },
+      "selection": {
+        "accuracy": 0.625,
+        "brier": 0.23229014374994525,
+        "calibrationBins": [
+          {
+            "count": 3,
+            "lower": 0.2,
+            "meanProbability": 0.2700588583177182,
+            "observedHomeWinRate": 0.6666666666666666
+          },
+          {
+            "count": 8,
+            "lower": 0.3,
+            "meanProbability": 0.3538021629335031,
+            "observedHomeWinRate": 0.25
+          },
+          {
+            "count": 9,
+            "lower": 0.4,
+            "meanProbability": 0.45652132389712186,
+            "observedHomeWinRate": 0.3333333333333333
+          },
+          {
+            "count": 15,
+            "lower": 0.5,
+            "meanProbability": 0.5361567688765904,
+            "observedHomeWinRate": 0.6
+          },
+          {
+            "count": 16,
+            "lower": 0.6,
+            "meanProbability": 0.6523381077768585,
+            "observedHomeWinRate": 0.5625
+          },
+          {
+            "count": 5,
+            "lower": 0.7,
+            "meanProbability": 0.7608107652272089,
+            "observedHomeWinRate": 0.8
+          }
+        ],
+        "calibrationError": 0.10214173229881793,
+        "count": 56,
+        "logLoss": 0.6569993340813377
+      }
+    },
+    {
+      "family": "market_movement",
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome"
+      ],
+      "name": "market_movement_l2_0.1_cal_False",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.007307765224853375,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.02124366140371402,
+          0.007869678522718864
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5098039215686274,
+        "brier": 0.25253901032343185,
+        "calibrationBins": [
+          {
+            "count": 2,
+            "lower": 0.3,
+            "meanProbability": 0.38534443064789736,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 16,
+            "lower": 0.4,
+            "meanProbability": 0.47092939240800613,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 39,
+            "lower": 0.5,
+            "meanProbability": 0.5549329310623665,
+            "observedHomeWinRate": 0.41025641025641024
+          },
+          {
+            "count": 34,
+            "lower": 0.6,
+            "meanProbability": 0.6484065142695125,
+            "observedHomeWinRate": 0.6470588235294118
+          },
+          {
+            "count": 11,
+            "lower": 0.7,
+            "meanProbability": 0.7250056858183004,
+            "observedHomeWinRate": 0.5454545454545454
+          }
+        ],
+        "calibrationError": 0.09174224706640323,
+        "count": 102,
+        "logLoss": 0.6995054532114393
+      },
+      "selection": {
+        "accuracy": 0.6071428571428571,
+        "brier": 0.23497930320137672,
+        "calibrationBins": [
+          {
+            "count": 4,
+            "lower": 0.3,
+            "meanProbability": 0.3633752094414932,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 9,
+            "lower": 0.4,
+            "meanProbability": 0.4472408716593578,
+            "observedHomeWinRate": 0.2222222222222222
+          },
+          {
+            "count": 19,
+            "lower": 0.5,
+            "meanProbability": 0.5459949751840727,
+            "observedHomeWinRate": 0.47368421052631576
+          },
+          {
+            "count": 19,
+            "lower": 0.6,
+            "meanProbability": 0.6500942479378191,
+            "observedHomeWinRate": 0.631578947368421
+          },
+          {
+            "count": 5,
+            "lower": 0.7,
+            "meanProbability": 0.7470257943973406,
+            "observedHomeWinRate": 0.8
+          }
+        ],
+        "calibrationError": 0.08146845133031232,
+        "count": 56,
+        "logLoss": 0.6619356877354433
+      }
+    },
+    {
+      "family": "market_movement",
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome"
+      ],
+      "name": "market_movement_l2_0.1_cal_True",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.007855388553728668,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.01900263026025584,
+          0.0029451672359128048
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5392156862745098,
+        "brier": 0.2530866336523071,
+        "calibrationBins": [
+          {
+            "count": 2,
+            "lower": 0.2,
+            "meanProbability": 0.28556347217899775,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 9,
+            "lower": 0.3,
+            "meanProbability": 0.36947450815260496,
+            "observedHomeWinRate": 0.4444444444444444
+          },
+          {
+            "count": 22,
+            "lower": 0.4,
+            "meanProbability": 0.4453765549783867,
+            "observedHomeWinRate": 0.45454545454545453
+          },
+          {
+            "count": 35,
+            "lower": 0.5,
+            "meanProbability": 0.5528460839925563,
+            "observedHomeWinRate": 0.5142857142857142
+          },
+          {
+            "count": 20,
+            "lower": 0.6,
+            "meanProbability": 0.655090367377001,
+            "observedHomeWinRate": 0.6
+          },
+          {
+            "count": 13,
+            "lower": 0.7,
+            "meanProbability": 0.7275472335550723,
+            "observedHomeWinRate": 0.6153846153846154
+          },
+          {
+            "count": 1,
+            "lower": 0.8,
+            "meanProbability": 0.8075522482704811,
+            "observedHomeWinRate": 0.0
+          }
+        ],
+        "calibrationError": 0.06884710631872515,
+        "count": 102,
+        "logLoss": 0.7018631138894809
+      },
+      "selection": {
+        "accuracy": 0.6428571428571429,
+        "brier": 0.23106613634355982,
+        "calibrationBins": [
+          {
+            "count": 3,
+            "lower": 0.2,
+            "meanProbability": 0.24696117271740692,
+            "observedHomeWinRate": 0.6666666666666666
+          },
+          {
+            "count": 8,
+            "lower": 0.3,
+            "meanProbability": 0.3429514572612846,
+            "observedHomeWinRate": 0.25
+          },
+          {
+            "count": 10,
+            "lower": 0.4,
+            "meanProbability": 0.449879779391536,
+            "observedHomeWinRate": 0.3
+          },
+          {
+            "count": 15,
+            "lower": 0.5,
+            "meanProbability": 0.5357739486248972,
+            "observedHomeWinRate": 0.6666666666666666
+          },
+          {
+            "count": 15,
+            "lower": 0.6,
+            "meanProbability": 0.654296390372075,
+            "observedHomeWinRate": 0.5333333333333333
+          },
+          {
+            "count": 4,
+            "lower": 0.7,
+            "meanProbability": 0.7599938424087274,
+            "observedHomeWinRate": 0.75
+          },
+          {
+            "count": 1,
+            "lower": 0.8,
+            "meanProbability": 0.8073211206094899,
+            "observedHomeWinRate": 1.0
+          }
+        ],
+        "calibrationError": 0.13414315730511608,
+        "count": 56,
+        "logLoss": 0.6547166624185431
+      }
+    },
+    {
+      "family": "market_movement",
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome"
+      ],
+      "name": "market_movement_l2_1.0_cal_False",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.0015324252629678203,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.005500058094440377,
+          0.0027746117592364235
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5294117647058824,
+        "brier": 0.24676367036154623,
+        "calibrationBins": [
+          {
+            "count": 3,
+            "lower": 0.3,
+            "meanProbability": 0.37827792626453194,
+            "observedHomeWinRate": 0.6666666666666666
+          },
+          {
+            "count": 29,
+            "lower": 0.4,
+            "meanProbability": 0.45799961519560256,
+            "observedHomeWinRate": 0.4827586206896552
+          },
+          {
+            "count": 36,
+            "lower": 0.5,
+            "meanProbability": 0.5464216965625338,
+            "observedHomeWinRate": 0.4722222222222222
+          },
+          {
+            "count": 31,
+            "lower": 0.6,
+            "meanProbability": 0.6400656746129735,
+            "observedHomeWinRate": 0.6129032258064516
+          },
+          {
+            "count": 3,
+            "lower": 0.7,
+            "meanProbability": 0.7261843764960895,
+            "observedHomeWinRate": 0.6666666666666666
+          }
+        ],
+        "calibrationError": 0.051715171561525435,
+        "count": 102,
+        "logLoss": 0.6871604888017947
+      },
+      "selection": {
+        "accuracy": 0.6428571428571429,
+        "brier": 0.23231171201072565,
+        "calibrationBins": [
+          {
+            "count": 6,
+            "lower": 0.3,
+            "meanProbability": 0.34651903730218514,
+            "observedHomeWinRate": 0.3333333333333333
+          },
+          {
+            "count": 15,
+            "lower": 0.4,
+            "meanProbability": 0.45429234155040515,
+            "observedHomeWinRate": 0.3333333333333333
+          },
+          {
+            "count": 17,
+            "lower": 0.5,
+            "meanProbability": 0.5444981595122206,
+            "observedHomeWinRate": 0.6470588235294118
+          },
+          {
+            "count": 14,
+            "lower": 0.6,
+            "meanProbability": 0.6331561339446422,
+            "observedHomeWinRate": 0.5714285714285714
+          },
+          {
+            "count": 4,
+            "lower": 0.7,
+            "meanProbability": 0.724888554810647,
+            "observedHomeWinRate": 0.75
+          }
+        ],
+        "calibrationError": 0.08217254091685433,
+        "count": 56,
+        "logLoss": 0.65684021865238
+      }
+    },
+    {
+      "family": "market_movement",
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome"
+      ],
+      "name": "market_movement_l2_1.0_cal_True",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.004509075704632988,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.013835569170320337,
+          0.004202853987174967
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5588235294117647,
+        "brier": 0.24974032080321143,
+        "calibrationBins": [
+          {
+            "count": 2,
+            "lower": 0.2,
+            "meanProbability": 0.2845950467507447,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 12,
+            "lower": 0.3,
+            "meanProbability": 0.36287997266636945,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 21,
+            "lower": 0.4,
+            "meanProbability": 0.43731575250749044,
+            "observedHomeWinRate": 0.38095238095238093
+          },
+          {
+            "count": 32,
+            "lower": 0.5,
+            "meanProbability": 0.5401607102195289,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 23,
+            "lower": 0.6,
+            "meanProbability": 0.6548756750735274,
+            "observedHomeWinRate": 0.6956521739130435
+          },
+          {
+            "count": 11,
+            "lower": 0.7,
+            "meanProbability": 0.7320974705240819,
+            "observedHomeWinRate": 0.5454545454545454
+          },
+          {
+            "count": 1,
+            "lower": 0.8,
+            "meanProbability": 0.8048617369069606,
+            "observedHomeWinRate": 0.0
+          }
+        ],
+        "calibrationError": 0.09157663872710817,
+        "count": 102,
+        "logLoss": 0.6949521630211553
+      },
+      "selection": {
+        "accuracy": 0.625,
+        "brier": 0.23104732249737556,
+        "calibrationBins": [
+          {
+            "count": 5,
+            "lower": 0.2,
+            "meanProbability": 0.2431029586833971,
+            "observedHomeWinRate": 0.4
+          },
+          {
+            "count": 9,
+            "lower": 0.3,
+            "meanProbability": 0.3611563203452462,
+            "observedHomeWinRate": 0.2222222222222222
+          },
+          {
+            "count": 10,
+            "lower": 0.4,
+            "meanProbability": 0.45147242579236585,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 13,
+            "lower": 0.5,
+            "meanProbability": 0.5409210577318531,
+            "observedHomeWinRate": 0.6923076923076923
+          },
+          {
+            "count": 12,
+            "lower": 0.6,
+            "meanProbability": 0.6476521382408242,
+            "observedHomeWinRate": 0.4166666666666667
+          },
+          {
+            "count": 6,
+            "lower": 0.7,
+            "meanProbability": 0.7492669260070994,
+            "observedHomeWinRate": 0.8333333333333334
+          },
+          {
+            "count": 1,
+            "lower": 0.8,
+            "meanProbability": 0.8198012334452457,
+            "observedHomeWinRate": 1.0
+          }
+        ],
+        "calibrationError": 0.14186815983311662,
+        "count": 56,
+        "logLoss": 0.6550194895518613
+      }
+    },
+    {
+      "family": "market_movement",
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome"
+      ],
+      "name": "market_movement_l2_10.0_cal_False",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.00016865842751749856,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.0006578064815656532,
+          0.0003611931982645402
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5392156862745098,
+        "brier": 0.24539990352609595,
+        "calibrationBins": [
+          {
+            "count": 4,
+            "lower": 0.3,
+            "meanProbability": 0.37785383175812076,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 29,
+            "lower": 0.4,
+            "meanProbability": 0.4491638190260787,
+            "observedHomeWinRate": 0.4827586206896552
+          },
+          {
+            "count": 40,
+            "lower": 0.5,
+            "meanProbability": 0.5413945056391629,
+            "observedHomeWinRate": 0.475
+          },
+          {
+            "count": 26,
+            "lower": 0.6,
+            "meanProbability": 0.6339990491560115,
+            "observedHomeWinRate": 0.6538461538461539
+          },
+          {
+            "count": 3,
+            "lower": 0.7,
+            "meanProbability": 0.7138478714303839,
+            "observedHomeWinRate": 0.6666666666666666
+          }
+        ],
+        "calibrationError": 0.0468253184609079,
+        "count": 102,
+        "logLoss": 0.6842926402628218
+      },
+      "selection": {
+        "accuracy": 0.625,
+        "brier": 0.23236475552818292,
+        "calibrationBins": [
+          {
+            "count": 1,
+            "lower": 0.2,
+            "meanProbability": 0.29115159037079386,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 7,
+            "lower": 0.3,
+            "meanProbability": 0.3594485836026481,
+            "observedHomeWinRate": 0.2857142857142857
+          },
+          {
+            "count": 16,
+            "lower": 0.4,
+            "meanProbability": 0.4576552167629581,
+            "observedHomeWinRate": 0.375
+          },
+          {
+            "count": 18,
+            "lower": 0.5,
+            "meanProbability": 0.5519316431170356,
+            "observedHomeWinRate": 0.5555555555555556
+          },
+          {
+            "count": 11,
+            "lower": 0.6,
+            "meanProbability": 0.6385837847156491,
+            "observedHomeWinRate": 0.7272727272727273
+          },
+          {
+            "count": 3,
+            "lower": 0.7,
+            "meanProbability": 0.7201597209357476,
+            "observedHomeWinRate": 0.6666666666666666
+          }
+        ],
+        "calibrationError": 0.06694214139077742,
+        "count": 56,
+        "logLoss": 0.6571134085328675
+      }
+    },
+    {
+      "family": "market_movement",
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome"
+      ],
+      "name": "market_movement_l2_10.0_cal_True",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.003103213270971893,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.011697874846565981,
+          0.0048401102879880795
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5784313725490197,
+        "brier": 0.24833445836955031,
+        "calibrationBins": [
+          {
+            "count": 1,
+            "lower": 0.2,
+            "meanProbability": 0.26655330134406324,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 14,
+            "lower": 0.3,
+            "meanProbability": 0.3577242952867276,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 24,
+            "lower": 0.4,
+            "meanProbability": 0.444962635463382,
+            "observedHomeWinRate": 0.375
+          },
+          {
+            "count": 28,
+            "lower": 0.5,
+            "meanProbability": 0.5407991868791443,
+            "observedHomeWinRate": 0.5357142857142857
+          },
+          {
+            "count": 25,
+            "lower": 0.6,
+            "meanProbability": 0.6571646049447937,
+            "observedHomeWinRate": 0.68
+          },
+          {
+            "count": 10,
+            "lower": 0.7,
+            "meanProbability": 0.743319556918436,
+            "observedHomeWinRate": 0.5
+          }
+        ],
+        "calibrationError": 0.07402811268572038,
+        "count": 102,
+        "logLoss": 0.6919069027588363
+      },
+      "selection": {
+        "accuracy": 0.6071428571428571,
+        "brier": 0.23160757461857734,
+        "calibrationBins": [
+          {
+            "count": 1,
+            "lower": 0.1,
+            "meanProbability": 0.19400878839011115,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 4,
+            "lower": 0.2,
+            "meanProbability": 0.24945724999767974,
+            "observedHomeWinRate": 0.25
+          },
+          {
+            "count": 9,
+            "lower": 0.3,
+            "meanProbability": 0.35264745122989594,
+            "observedHomeWinRate": 0.2222222222222222
+          },
+          {
+            "count": 11,
+            "lower": 0.4,
+            "meanProbability": 0.4530334636562893,
+            "observedHomeWinRate": 0.5454545454545454
+          },
+          {
+            "count": 12,
+            "lower": 0.5,
+            "meanProbability": 0.5452577922986364,
+            "observedHomeWinRate": 0.6666666666666666
+          },
+          {
+            "count": 12,
+            "lower": 0.6,
+            "meanProbability": 0.6447545888002454,
+            "observedHomeWinRate": 0.4166666666666667
+          },
+          {
+            "count": 6,
+            "lower": 0.7,
+            "meanProbability": 0.7495054487671902,
+            "observedHomeWinRate": 0.8333333333333334
+          },
+          {
+            "count": 1,
+            "lower": 0.8,
+            "meanProbability": 0.8206714721712828,
+            "observedHomeWinRate": 1.0
+          }
+        ],
+        "calibrationError": 0.14062283153060598,
+        "count": 56,
+        "logLoss": 0.6563575429811769
+      }
+    },
+    {
+      "family": "market_movement_baseball",
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome",
+        "starterCompositeGapHome",
+        "bullpenCompositeGapHome",
+        "lineupWrcPlusGapHome",
+        "fundamentalPitchingMissing",
+        "fundamentalOffenseLineupMissing"
+      ],
+      "name": "market_movement_baseball_l2_0.01_cal_False",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.011321086134840704,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.02981792666985072,
+          0.009286097694099325
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5196078431372549,
+        "brier": 0.25655233123341914,
+        "calibrationBins": [
+          {
+            "count": 1,
+            "lower": 0.3,
+            "meanProbability": 0.3727853768163488,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 10,
+            "lower": 0.4,
+            "meanProbability": 0.4606416065239105,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 37,
+            "lower": 0.5,
+            "meanProbability": 0.5546406469754626,
+            "observedHomeWinRate": 0.40540540540540543
+          },
+          {
+            "count": 35,
+            "lower": 0.6,
+            "meanProbability": 0.6438235843316998,
+            "observedHomeWinRate": 0.6285714285714286
+          },
+          {
+            "count": 19,
+            "lower": 0.7,
+            "meanProbability": 0.7295153484338707,
+            "observedHomeWinRate": 0.5789473684210527
+          }
+        ],
+        "calibrationError": 0.09742274086166369,
+        "count": 102,
+        "logLoss": 0.7083049848877607
+      },
+      "selection": {
+        "accuracy": 0.5892857142857143,
+        "brier": 0.2381151312521586,
+        "calibrationBins": [
+          {
+            "count": 3,
+            "lower": 0.3,
+            "meanProbability": 0.37169340097521825,
+            "observedHomeWinRate": 0.6666666666666666
+          },
+          {
+            "count": 9,
+            "lower": 0.4,
+            "meanProbability": 0.4514374062669536,
+            "observedHomeWinRate": 0.2222222222222222
+          },
+          {
+            "count": 19,
+            "lower": 0.5,
+            "meanProbability": 0.5583500709497217,
+            "observedHomeWinRate": 0.42105263157894735
+          },
+          {
+            "count": 17,
+            "lower": 0.6,
+            "meanProbability": 0.6625056841113554,
+            "observedHomeWinRate": 0.5882352941176471
+          },
+          {
+            "count": 8,
+            "lower": 0.7,
+            "meanProbability": 0.7397209720414655,
+            "observedHomeWinRate": 0.875
+          }
+        ],
+        "calibrationError": 0.14109529741219565,
+        "count": 56,
+        "logLoss": 0.6681948762775988
+      }
+    },
+    {
+      "family": "market_movement_baseball",
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome",
+        "starterCompositeGapHome",
+        "bullpenCompositeGapHome",
+        "lineupWrcPlusGapHome",
+        "fundamentalPitchingMissing",
+        "fundamentalOffenseLineupMissing"
+      ],
+      "name": "market_movement_baseball_l2_0.01_cal_True",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.00920958447363108,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.020936199714743607,
+          0.002392727117058616
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5294117647058824,
+        "brier": 0.2544408295722095,
+        "calibrationBins": [
+          {
+            "count": 1,
+            "lower": 0.2,
+            "meanProbability": 0.271146853530435,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 8,
+            "lower": 0.3,
+            "meanProbability": 0.36108079152839956,
+            "observedHomeWinRate": 0.375
+          },
+          {
+            "count": 23,
+            "lower": 0.4,
+            "meanProbability": 0.4530442031902261,
+            "observedHomeWinRate": 0.5217391304347826
+          },
+          {
+            "count": 34,
+            "lower": 0.5,
+            "meanProbability": 0.5542900808448615,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 22,
+            "lower": 0.6,
+            "meanProbability": 0.6509472512304811,
+            "observedHomeWinRate": 0.5909090909090909
+          },
+          {
+            "count": 13,
+            "lower": 0.7,
+            "meanProbability": 0.725729491195098,
+            "observedHomeWinRate": 0.6153846153846154
+          },
+          {
+            "count": 1,
+            "lower": 0.8,
+            "meanProbability": 0.8029884793390941,
+            "observedHomeWinRate": 0.0
+          }
+        ],
+        "calibrationError": 0.07670945374057267,
+        "count": 102,
+        "logLoss": 0.7044953821942025
+      },
+      "selection": {
+        "accuracy": 0.625,
+        "brier": 0.23229014374994525,
+        "calibrationBins": [
+          {
+            "count": 3,
+            "lower": 0.2,
+            "meanProbability": 0.2700588583177182,
+            "observedHomeWinRate": 0.6666666666666666
+          },
+          {
+            "count": 8,
+            "lower": 0.3,
+            "meanProbability": 0.3538021629335031,
+            "observedHomeWinRate": 0.25
+          },
+          {
+            "count": 9,
+            "lower": 0.4,
+            "meanProbability": 0.45652132389712186,
+            "observedHomeWinRate": 0.3333333333333333
+          },
+          {
+            "count": 15,
+            "lower": 0.5,
+            "meanProbability": 0.5361567688765904,
+            "observedHomeWinRate": 0.6
+          },
+          {
+            "count": 16,
+            "lower": 0.6,
+            "meanProbability": 0.6523381077768585,
+            "observedHomeWinRate": 0.5625
+          },
+          {
+            "count": 5,
+            "lower": 0.7,
+            "meanProbability": 0.7608107652272089,
+            "observedHomeWinRate": 0.8
+          }
+        ],
+        "calibrationError": 0.10214173229881793,
+        "count": 56,
+        "logLoss": 0.6569993340813377
+      }
+    },
+    {
+      "family": "market_movement_baseball",
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome",
+        "starterCompositeGapHome",
+        "bullpenCompositeGapHome",
+        "lineupWrcPlusGapHome",
+        "fundamentalPitchingMissing",
+        "fundamentalOffenseLineupMissing"
+      ],
+      "name": "market_movement_baseball_l2_0.1_cal_False",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.007307765224853375,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.02124366140371402,
+          0.007869678522718864
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5098039215686274,
+        "brier": 0.25253901032343185,
+        "calibrationBins": [
+          {
+            "count": 2,
+            "lower": 0.3,
+            "meanProbability": 0.38534443064789736,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 16,
+            "lower": 0.4,
+            "meanProbability": 0.47092939240800613,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 39,
+            "lower": 0.5,
+            "meanProbability": 0.5549329310623665,
+            "observedHomeWinRate": 0.41025641025641024
+          },
+          {
+            "count": 34,
+            "lower": 0.6,
+            "meanProbability": 0.6484065142695125,
+            "observedHomeWinRate": 0.6470588235294118
+          },
+          {
+            "count": 11,
+            "lower": 0.7,
+            "meanProbability": 0.7250056858183004,
+            "observedHomeWinRate": 0.5454545454545454
+          }
+        ],
+        "calibrationError": 0.09174224706640323,
+        "count": 102,
+        "logLoss": 0.6995054532114393
+      },
+      "selection": {
+        "accuracy": 0.6071428571428571,
+        "brier": 0.23497930320137672,
+        "calibrationBins": [
+          {
+            "count": 4,
+            "lower": 0.3,
+            "meanProbability": 0.3633752094414932,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 9,
+            "lower": 0.4,
+            "meanProbability": 0.4472408716593578,
+            "observedHomeWinRate": 0.2222222222222222
+          },
+          {
+            "count": 19,
+            "lower": 0.5,
+            "meanProbability": 0.5459949751840727,
+            "observedHomeWinRate": 0.47368421052631576
+          },
+          {
+            "count": 19,
+            "lower": 0.6,
+            "meanProbability": 0.6500942479378191,
+            "observedHomeWinRate": 0.631578947368421
+          },
+          {
+            "count": 5,
+            "lower": 0.7,
+            "meanProbability": 0.7470257943973406,
+            "observedHomeWinRate": 0.8
+          }
+        ],
+        "calibrationError": 0.08146845133031232,
+        "count": 56,
+        "logLoss": 0.6619356877354433
+      }
+    },
+    {
+      "family": "market_movement_baseball",
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome",
+        "starterCompositeGapHome",
+        "bullpenCompositeGapHome",
+        "lineupWrcPlusGapHome",
+        "fundamentalPitchingMissing",
+        "fundamentalOffenseLineupMissing"
+      ],
+      "name": "market_movement_baseball_l2_0.1_cal_True",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.007855388553728668,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.01900263026025584,
+          0.0029451672359128048
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5392156862745098,
+        "brier": 0.2530866336523071,
+        "calibrationBins": [
+          {
+            "count": 2,
+            "lower": 0.2,
+            "meanProbability": 0.28556347217899775,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 9,
+            "lower": 0.3,
+            "meanProbability": 0.36947450815260496,
+            "observedHomeWinRate": 0.4444444444444444
+          },
+          {
+            "count": 22,
+            "lower": 0.4,
+            "meanProbability": 0.4453765549783867,
+            "observedHomeWinRate": 0.45454545454545453
+          },
+          {
+            "count": 35,
+            "lower": 0.5,
+            "meanProbability": 0.5528460839925563,
+            "observedHomeWinRate": 0.5142857142857142
+          },
+          {
+            "count": 20,
+            "lower": 0.6,
+            "meanProbability": 0.655090367377001,
+            "observedHomeWinRate": 0.6
+          },
+          {
+            "count": 13,
+            "lower": 0.7,
+            "meanProbability": 0.7275472335550723,
+            "observedHomeWinRate": 0.6153846153846154
+          },
+          {
+            "count": 1,
+            "lower": 0.8,
+            "meanProbability": 0.8075522482704811,
+            "observedHomeWinRate": 0.0
+          }
+        ],
+        "calibrationError": 0.06884710631872515,
+        "count": 102,
+        "logLoss": 0.7018631138894809
+      },
+      "selection": {
+        "accuracy": 0.6428571428571429,
+        "brier": 0.23106613634355982,
+        "calibrationBins": [
+          {
+            "count": 3,
+            "lower": 0.2,
+            "meanProbability": 0.24696117271740692,
+            "observedHomeWinRate": 0.6666666666666666
+          },
+          {
+            "count": 8,
+            "lower": 0.3,
+            "meanProbability": 0.3429514572612846,
+            "observedHomeWinRate": 0.25
+          },
+          {
+            "count": 10,
+            "lower": 0.4,
+            "meanProbability": 0.449879779391536,
+            "observedHomeWinRate": 0.3
+          },
+          {
+            "count": 15,
+            "lower": 0.5,
+            "meanProbability": 0.5357739486248972,
+            "observedHomeWinRate": 0.6666666666666666
+          },
+          {
+            "count": 15,
+            "lower": 0.6,
+            "meanProbability": 0.654296390372075,
+            "observedHomeWinRate": 0.5333333333333333
+          },
+          {
+            "count": 4,
+            "lower": 0.7,
+            "meanProbability": 0.7599938424087274,
+            "observedHomeWinRate": 0.75
+          },
+          {
+            "count": 1,
+            "lower": 0.8,
+            "meanProbability": 0.8073211206094899,
+            "observedHomeWinRate": 1.0
+          }
+        ],
+        "calibrationError": 0.13414315730511608,
+        "count": 56,
+        "logLoss": 0.6547166624185431
+      }
+    },
+    {
+      "family": "market_movement_baseball",
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome",
+        "starterCompositeGapHome",
+        "bullpenCompositeGapHome",
+        "lineupWrcPlusGapHome",
+        "fundamentalPitchingMissing",
+        "fundamentalOffenseLineupMissing"
+      ],
+      "name": "market_movement_baseball_l2_1.0_cal_False",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.0015324252629678203,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.005500058094440377,
+          0.0027746117592364235
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5294117647058824,
+        "brier": 0.24676367036154623,
+        "calibrationBins": [
+          {
+            "count": 3,
+            "lower": 0.3,
+            "meanProbability": 0.37827792626453194,
+            "observedHomeWinRate": 0.6666666666666666
+          },
+          {
+            "count": 29,
+            "lower": 0.4,
+            "meanProbability": 0.45799961519560256,
+            "observedHomeWinRate": 0.4827586206896552
+          },
+          {
+            "count": 36,
+            "lower": 0.5,
+            "meanProbability": 0.5464216965625338,
+            "observedHomeWinRate": 0.4722222222222222
+          },
+          {
+            "count": 31,
+            "lower": 0.6,
+            "meanProbability": 0.6400656746129735,
+            "observedHomeWinRate": 0.6129032258064516
+          },
+          {
+            "count": 3,
+            "lower": 0.7,
+            "meanProbability": 0.7261843764960895,
+            "observedHomeWinRate": 0.6666666666666666
+          }
+        ],
+        "calibrationError": 0.051715171561525435,
+        "count": 102,
+        "logLoss": 0.6871604888017947
+      },
+      "selection": {
+        "accuracy": 0.6428571428571429,
+        "brier": 0.23231171201072565,
+        "calibrationBins": [
+          {
+            "count": 6,
+            "lower": 0.3,
+            "meanProbability": 0.34651903730218514,
+            "observedHomeWinRate": 0.3333333333333333
+          },
+          {
+            "count": 15,
+            "lower": 0.4,
+            "meanProbability": 0.45429234155040515,
+            "observedHomeWinRate": 0.3333333333333333
+          },
+          {
+            "count": 17,
+            "lower": 0.5,
+            "meanProbability": 0.5444981595122206,
+            "observedHomeWinRate": 0.6470588235294118
+          },
+          {
+            "count": 14,
+            "lower": 0.6,
+            "meanProbability": 0.6331561339446422,
+            "observedHomeWinRate": 0.5714285714285714
+          },
+          {
+            "count": 4,
+            "lower": 0.7,
+            "meanProbability": 0.724888554810647,
+            "observedHomeWinRate": 0.75
+          }
+        ],
+        "calibrationError": 0.08217254091685433,
+        "count": 56,
+        "logLoss": 0.65684021865238
+      }
+    },
+    {
+      "family": "market_movement_baseball",
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome",
+        "starterCompositeGapHome",
+        "bullpenCompositeGapHome",
+        "lineupWrcPlusGapHome",
+        "fundamentalPitchingMissing",
+        "fundamentalOffenseLineupMissing"
+      ],
+      "name": "market_movement_baseball_l2_1.0_cal_True",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.004509075704632988,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.013835569170320337,
+          0.004202853987174967
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5588235294117647,
+        "brier": 0.24974032080321143,
+        "calibrationBins": [
+          {
+            "count": 2,
+            "lower": 0.2,
+            "meanProbability": 0.2845950467507447,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 12,
+            "lower": 0.3,
+            "meanProbability": 0.36287997266636945,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 21,
+            "lower": 0.4,
+            "meanProbability": 0.43731575250749044,
+            "observedHomeWinRate": 0.38095238095238093
+          },
+          {
+            "count": 32,
+            "lower": 0.5,
+            "meanProbability": 0.5401607102195289,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 23,
+            "lower": 0.6,
+            "meanProbability": 0.6548756750735274,
+            "observedHomeWinRate": 0.6956521739130435
+          },
+          {
+            "count": 11,
+            "lower": 0.7,
+            "meanProbability": 0.7320974705240819,
+            "observedHomeWinRate": 0.5454545454545454
+          },
+          {
+            "count": 1,
+            "lower": 0.8,
+            "meanProbability": 0.8048617369069606,
+            "observedHomeWinRate": 0.0
+          }
+        ],
+        "calibrationError": 0.09157663872710817,
+        "count": 102,
+        "logLoss": 0.6949521630211553
+      },
+      "selection": {
+        "accuracy": 0.625,
+        "brier": 0.23104732249737556,
+        "calibrationBins": [
+          {
+            "count": 5,
+            "lower": 0.2,
+            "meanProbability": 0.2431029586833971,
+            "observedHomeWinRate": 0.4
+          },
+          {
+            "count": 9,
+            "lower": 0.3,
+            "meanProbability": 0.3611563203452462,
+            "observedHomeWinRate": 0.2222222222222222
+          },
+          {
+            "count": 10,
+            "lower": 0.4,
+            "meanProbability": 0.45147242579236585,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 13,
+            "lower": 0.5,
+            "meanProbability": 0.5409210577318531,
+            "observedHomeWinRate": 0.6923076923076923
+          },
+          {
+            "count": 12,
+            "lower": 0.6,
+            "meanProbability": 0.6476521382408242,
+            "observedHomeWinRate": 0.4166666666666667
+          },
+          {
+            "count": 6,
+            "lower": 0.7,
+            "meanProbability": 0.7492669260070994,
+            "observedHomeWinRate": 0.8333333333333334
+          },
+          {
+            "count": 1,
+            "lower": 0.8,
+            "meanProbability": 0.8198012334452457,
+            "observedHomeWinRate": 1.0
+          }
+        ],
+        "calibrationError": 0.14186815983311662,
+        "count": 56,
+        "logLoss": 0.6550194895518613
+      }
+    },
+    {
+      "family": "market_movement_baseball",
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome",
+        "starterCompositeGapHome",
+        "bullpenCompositeGapHome",
+        "lineupWrcPlusGapHome",
+        "fundamentalPitchingMissing",
+        "fundamentalOffenseLineupMissing"
+      ],
+      "name": "market_movement_baseball_l2_10.0_cal_False",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.00016865842751749856,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.0006578064815656532,
+          0.0003611931982645402
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5392156862745098,
+        "brier": 0.24539990352609595,
+        "calibrationBins": [
+          {
+            "count": 4,
+            "lower": 0.3,
+            "meanProbability": 0.37785383175812076,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 29,
+            "lower": 0.4,
+            "meanProbability": 0.4491638190260787,
+            "observedHomeWinRate": 0.4827586206896552
+          },
+          {
+            "count": 40,
+            "lower": 0.5,
+            "meanProbability": 0.5413945056391629,
+            "observedHomeWinRate": 0.475
+          },
+          {
+            "count": 26,
+            "lower": 0.6,
+            "meanProbability": 0.6339990491560115,
+            "observedHomeWinRate": 0.6538461538461539
+          },
+          {
+            "count": 3,
+            "lower": 0.7,
+            "meanProbability": 0.7138478714303839,
+            "observedHomeWinRate": 0.6666666666666666
+          }
+        ],
+        "calibrationError": 0.0468253184609079,
+        "count": 102,
+        "logLoss": 0.6842926402628218
+      },
+      "selection": {
+        "accuracy": 0.625,
+        "brier": 0.23236475552818292,
+        "calibrationBins": [
+          {
+            "count": 1,
+            "lower": 0.2,
+            "meanProbability": 0.29115159037079386,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 7,
+            "lower": 0.3,
+            "meanProbability": 0.3594485836026481,
+            "observedHomeWinRate": 0.2857142857142857
+          },
+          {
+            "count": 16,
+            "lower": 0.4,
+            "meanProbability": 0.4576552167629581,
+            "observedHomeWinRate": 0.375
+          },
+          {
+            "count": 18,
+            "lower": 0.5,
+            "meanProbability": 0.5519316431170356,
+            "observedHomeWinRate": 0.5555555555555556
+          },
+          {
+            "count": 11,
+            "lower": 0.6,
+            "meanProbability": 0.6385837847156491,
+            "observedHomeWinRate": 0.7272727272727273
+          },
+          {
+            "count": 3,
+            "lower": 0.7,
+            "meanProbability": 0.7201597209357476,
+            "observedHomeWinRate": 0.6666666666666666
+          }
+        ],
+        "calibrationError": 0.06694214139077742,
+        "count": 56,
+        "logLoss": 0.6571134085328675
+      }
+    },
+    {
+      "family": "market_movement_baseball",
+      "inactiveFeatures": [
+        "bookAgreementGapHome",
+        "reversalGapHome",
+        "starterCompositeGapHome",
+        "bullpenCompositeGapHome",
+        "lineupWrcPlusGapHome",
+        "fundamentalPitchingMissing",
+        "fundamentalOffenseLineupMissing"
+      ],
+      "name": "market_movement_baseball_l2_10.0_cal_True",
+      "pairedMarketComparison": {
+        "developmentEvidenceOnly": true,
+        "marketMinusModelBrier": -0.003103213270971893,
+        "slateCount": 8,
+        "wholeSlateBootstrap95Pct": [
+          -0.011697874846565981,
+          0.0048401102879880795
+        ]
+      },
+      "reviewedTest": {
+        "accuracy": 0.5784313725490197,
+        "brier": 0.24833445836955031,
+        "calibrationBins": [
+          {
+            "count": 1,
+            "lower": 0.2,
+            "meanProbability": 0.26655330134406324,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 14,
+            "lower": 0.3,
+            "meanProbability": 0.3577242952867276,
+            "observedHomeWinRate": 0.5
+          },
+          {
+            "count": 24,
+            "lower": 0.4,
+            "meanProbability": 0.444962635463382,
+            "observedHomeWinRate": 0.375
+          },
+          {
+            "count": 28,
+            "lower": 0.5,
+            "meanProbability": 0.5407991868791443,
+            "observedHomeWinRate": 0.5357142857142857
+          },
+          {
+            "count": 25,
+            "lower": 0.6,
+            "meanProbability": 0.6571646049447937,
+            "observedHomeWinRate": 0.68
+          },
+          {
+            "count": 10,
+            "lower": 0.7,
+            "meanProbability": 0.743319556918436,
+            "observedHomeWinRate": 0.5
+          }
+        ],
+        "calibrationError": 0.07402811268572038,
+        "count": 102,
+        "logLoss": 0.6919069027588363
+      },
+      "selection": {
+        "accuracy": 0.6071428571428571,
+        "brier": 0.23160757461857734,
+        "calibrationBins": [
+          {
+            "count": 1,
+            "lower": 0.1,
+            "meanProbability": 0.19400878839011115,
+            "observedHomeWinRate": 1.0
+          },
+          {
+            "count": 4,
+            "lower": 0.2,
+            "meanProbability": 0.24945724999767974,
+            "observedHomeWinRate": 0.25
+          },
+          {
+            "count": 9,
+            "lower": 0.3,
+            "meanProbability": 0.35264745122989594,
+            "observedHomeWinRate": 0.2222222222222222
+          },
+          {
+            "count": 11,
+            "lower": 0.4,
+            "meanProbability": 0.4530334636562893,
+            "observedHomeWinRate": 0.5454545454545454
+          },
+          {
+            "count": 12,
+            "lower": 0.5,
+            "meanProbability": 0.5452577922986364,
+            "observedHomeWinRate": 0.6666666666666666
+          },
+          {
+            "count": 12,
+            "lower": 0.6,
+            "meanProbability": 0.6447545888002454,
+            "observedHomeWinRate": 0.4166666666666667
+          },
+          {
+            "count": 6,
+            "lower": 0.7,
+            "meanProbability": 0.7495054487671902,
+            "observedHomeWinRate": 0.8333333333333334
+          },
+          {
+            "count": 1,
+            "lower": 0.8,
+            "meanProbability": 0.8206714721712828,
+            "observedHomeWinRate": 1.0
+          }
+        ],
+        "calibrationError": 0.14062283153060598,
+        "count": 56,
+        "logLoss": 0.6563575429811769
+      }
+    }
+  ],
+  "createdAtUtc": "2026-09-09T07:49:15.085317+00:00",
+  "featureAudit": {
+    "prospectiveTest": {
+      "bookAgreementGapHome": {
+        "coverage": 1.0,
+        "distinct": 1,
+        "missing": 0,
+        "observed": 102,
+        "standardDeviation": 0.0
+      },
+      "bullpenCompositeGapHome": {
+        "coverage": 0.0,
+        "distinct": 0,
+        "missing": 102,
+        "observed": 0,
+        "standardDeviation": null
+      },
+      "deltaGapHome": {
+        "coverage": 1.0,
+        "distinct": 102,
+        "missing": 0,
+        "observed": 102,
+        "standardDeviation": 0.03724226571210472
+      },
+      "fundamentalOffenseLineupMissing": {
+        "coverage": 1.0,
+        "distinct": 1,
+        "missing": 0,
+        "observed": 102,
+        "standardDeviation": 0.0
+      },
+      "fundamentalPitchingMissing": {
+        "coverage": 1.0,
+        "distinct": 1,
+        "missing": 0,
+        "observed": 102,
+        "standardDeviation": 0.0
+      },
+      "homeAwayVelocityPpHr60mDiff": {
+        "coverage": 1.0,
+        "distinct": 102,
+        "missing": 0,
+        "observed": 102,
+        "standardDeviation": 0.9122301066138985
+      },
+      "homeMarketDeVigProbability": {
+        "coverage": 1.0,
+        "distinct": 102,
+        "missing": 0,
+        "observed": 102,
+        "standardDeviation": 0.08433641349291675
+      },
+      "lineupWrcPlusGapHome": {
+        "coverage": 0.0,
+        "distinct": 0,
+        "missing": 102,
+        "observed": 0,
+        "standardDeviation": null
+      },
+      "reversalGapHome": {
+        "coverage": 1.0,
+        "distinct": 1,
+        "missing": 0,
+        "observed": 102,
+        "standardDeviation": 0.0
+      },
+      "starterCompositeGapHome": {
+        "coverage": 0.0,
+        "distinct": 0,
+        "missing": 102,
+        "observed": 0,
+        "standardDeviation": null
+      }
+    },
+    "train": {
+      "bookAgreementGapHome": {
+        "coverage": 1.0,
+        "distinct": 1,
+        "missing": 0,
+        "observed": 308,
+        "standardDeviation": 0.0
+      },
+      "bullpenCompositeGapHome": {
+        "coverage": 0.0,
+        "distinct": 0,
+        "missing": 308,
+        "observed": 0,
+        "standardDeviation": null
+      },
+      "deltaGapHome": {
+        "coverage": 1.0,
+        "distinct": 308,
+        "missing": 0,
+        "observed": 308,
+        "standardDeviation": 0.0413673887155159
+      },
+      "fundamentalOffenseLineupMissing": {
+        "coverage": 1.0,
+        "distinct": 1,
+        "missing": 0,
+        "observed": 308,
+        "standardDeviation": 0.0
+      },
+      "fundamentalPitchingMissing": {
+        "coverage": 1.0,
+        "distinct": 1,
+        "missing": 0,
+        "observed": 308,
+        "standardDeviation": 0.0
+      },
+      "homeAwayVelocityPpHr60mDiff": {
+        "coverage": 1.0,
+        "distinct": 303,
+        "missing": 0,
+        "observed": 308,
+        "standardDeviation": 0.9480928858390358
+      },
+      "homeMarketDeVigProbability": {
+        "coverage": 1.0,
+        "distinct": 308,
+        "missing": 0,
+        "observed": 308,
+        "standardDeviation": 0.08337636590994357
+      },
+      "lineupWrcPlusGapHome": {
+        "coverage": 0.0,
+        "distinct": 0,
+        "missing": 308,
+        "observed": 0,
+        "standardDeviation": null
+      },
+      "reversalGapHome": {
+        "coverage": 1.0,
+        "distinct": 1,
+        "missing": 0,
+        "observed": 308,
+        "standardDeviation": 0.0
+      },
+      "starterCompositeGapHome": {
+        "coverage": 0.0,
+        "distinct": 0,
+        "missing": 308,
+        "observed": 0,
+        "standardDeviation": null
+      }
+    },
+    "validation": {
+      "bookAgreementGapHome": {
+        "coverage": 1.0,
+        "distinct": 1,
+        "missing": 0,
+        "observed": 109,
+        "standardDeviation": 0.0
+      },
+      "bullpenCompositeGapHome": {
+        "coverage": 0.0,
+        "distinct": 0,
+        "missing": 109,
+        "observed": 0,
+        "standardDeviation": null
+      },
+      "deltaGapHome": {
+        "coverage": 1.0,
+        "distinct": 109,
+        "missing": 0,
+        "observed": 109,
+        "standardDeviation": 0.042617316138331224
+      },
+      "fundamentalOffenseLineupMissing": {
+        "coverage": 1.0,
+        "distinct": 1,
+        "missing": 0,
+        "observed": 109,
+        "standardDeviation": 0.0
+      },
+      "fundamentalPitchingMissing": {
+        "coverage": 1.0,
+        "distinct": 1,
+        "missing": 0,
+        "observed": 109,
+        "standardDeviation": 0.0
+      },
+      "homeAwayVelocityPpHr60mDiff": {
+        "coverage": 1.0,
+        "distinct": 108,
+        "missing": 0,
+        "observed": 109,
+        "standardDeviation": 1.4645351034652698
+      },
+      "homeMarketDeVigProbability": {
+        "coverage": 1.0,
+        "distinct": 109,
+        "missing": 0,
+        "observed": 109,
+        "standardDeviation": 0.10277584766252605
+      },
+      "lineupWrcPlusGapHome": {
+        "coverage": 0.0,
+        "distinct": 0,
+        "missing": 109,
+        "observed": 0,
+        "standardDeviation": null
+      },
+      "reversalGapHome": {
+        "coverage": 1.0,
+        "distinct": 1,
+        "missing": 0,
+        "observed": 109,
+        "standardDeviation": 0.0
+      },
+      "starterCompositeGapHome": {
+        "coverage": 0.0,
+        "distinct": 0,
+        "missing": 109,
+        "observed": 0,
+        "standardDeviation": null
+      }
+    }
+  },
+  "frozenR8Replay": {
+    "accuracy": 0.5294117647058824,
+    "brier": 0.2568831302669822,
+    "calibrationBins": [
+      {
+        "count": 1,
+        "lower": 0.3,
+        "meanProbability": 0.3818981732271542,
+        "observedHomeWinRate": 1.0
+      },
+      {
+        "count": 9,
+        "lower": 0.4,
+        "meanProbability": 0.46104694781070243,
+        "observedHomeWinRate": 0.4444444444444444
+      },
+      {
+        "count": 35,
+        "lower": 0.5,
+        "meanProbability": 0.5520911298115514,
+        "observedHomeWinRate": 0.4
+      },
+      {
+        "count": 40,
+        "lower": 0.6,
+        "meanProbability": 0.645483648498768,
+        "observedHomeWinRate": 0.65
+      },
+      {
+        "count": 17,
+        "lower": 0.7,
+        "meanProbability": 0.7315075808369959,
+        "observedHomeWinRate": 0.5294117647058824
+      }
+    ],
+    "calibrationError": 0.09516663563482033,
+    "count": 102,
+    "logLoss": 0.7090052396765463
+  },
+  "frozenReplayMatchesRecordedEvaluation": true,
+  "immutableHistoryRewritten": false,
+  "marketReference": {
+    "accuracy": 0.5490196078431373,
+    "brier": 0.24523124509857838,
+    "calibrationBins": [
+      {
+        "count": 4,
+        "lower": 0.3,
+        "meanProbability": 0.376999,
+        "observedHomeWinRate": 0.5
+      },
+      {
+        "count": 30,
+        "lower": 0.4,
+        "meanProbability": 0.44913326666666664,
+        "observedHomeWinRate": 0.4666666666666667
+      },
+      {
+        "count": 39,
+        "lower": 0.5,
+        "meanProbability": 0.5406046923076923,
+        "observedHomeWinRate": 0.48717948717948717
+      },
+      {
+        "count": 26,
+        "lower": 0.6,
+        "meanProbability": 0.6322378076923078,
+        "observedHomeWinRate": 0.6538461538461539
+      },
+      {
+        "count": 3,
+        "lower": 0.7,
+        "meanProbability": 0.712125,
+        "observedHomeWinRate": 0.6666666666666666
+      }
+    ],
+    "calibrationError": 0.03725275490196077,
+    "count": 102,
+    "logLoss": 0.6839388840182485
+  },
+  "nextRequiredEvidence": "new pre-outcome predictions after a separate challenger cutover",
+  "ok": true,
+  "partitionCounts": {
+    "prospectiveTest": 102,
+    "train": 308,
+    "validation": 109
+  },
+  "productionAuthorityChanged": false,
+  "promotionEligible": false,
+  "prospectiveQualificationEvidence": false,
+  "selectionCount": 56,
+  "selectionRule": "minimum_brier_then_logloss_on_later_validation_dates_only",
+  "sourceExperimentId": "mlb-v2-2026-08-31-historical-live-r8",
+  "sourceProvenance": {
+    "artifactChecksums": {
+      "dataset": "b7443663a608cca1861f48218daee6e42e68c074b75f0a34c98909de47581382",
+      "evaluation": "bbaa07f42077b5833943123f7bc77334714a46260fdbfe5b8d9f00ca3dc6ef8a",
+      "frozenChallenger": "05a9231c24dad1bc2504a1bc687c2b44d6ebbeb4f9f05e5068bcb5a0792c6f61"
+    },
+    "candidateDigest": "a874feb217f770a47b7415c92281e1bc11d7a0e42f4f1bb8215cc3fd21332338",
+    "datasetDigest": "b7443663a608cca1861f48218daee6e42e68c074b75f0a34c98909de47581382"
+  },
+  "trainingAndCalibrationDisjoint": true,
+  "version": "MLB-CHALLENGER-BENCHMARK-v1-frozen-source-development-only",
+  "wholeSlatesKeptTogether": true
+}

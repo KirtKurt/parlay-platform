@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 from mlb_official_schedule_authority import normalize_team as _official_normalize_team
+import mlb_statsapi_starter_context as starter_context
 
 
 ADVANCED_CONTEXT_VERSION = "MLB-B1.0-advanced-context-v2-source-provenance"
@@ -669,6 +670,29 @@ def build_advanced_context(game_date_et: str, game: Dict[str, Any], row: Optiona
         "closing_line_value": _closing_line_value(row),
     }
 
+    # Current observations may enrich future immutable snapshots. Exact official
+    # identity is mandatory; current season totals never backfill historical locks.
+    official_id = game.get("official_game_pk") or game.get("officialGamePk")
+    if official_id:
+        schedule = _statsapi_schedule(game_date_et)
+        matched = _match_game_from_schedule(
+            schedule, game.get("home_team"), game.get("away_team"), official_id
+        )
+        if matched:
+            try:
+                quality, handedness = starter_context.observe(
+                    game_date_et, matched, schedule, _http_get_json
+                )
+            except Exception:
+                # Supplemental source/schema failures cannot erase the known
+                # official schedule, probable pitchers, or travel observations.
+                quality = handedness = {
+                    "source_status": "ERROR",
+                    "note": "Official starter observation adapter unavailable.",
+                }
+            context["fip_xfip"].update(quality)
+            context["starter_handedness_splits"].update(handedness)
+
     blocked = []
     for key in _REQUIRED_CONTEXT_KEYS:
         item = context.get(key) or {}
@@ -714,9 +738,9 @@ def advanced_context_status() -> Dict[str, Any]:
             "scores_settlement": "CONNECTED",
             "confirmed_probable_pitchers": "PARTIAL_MLB_STATS_API_NO_KEY",
             "venue": "PARTIAL_MLB_STATS_API_NO_KEY",
-            "fip_xfip": "NOT_CONNECTED_SOURCE_REQUIRED",
+            "fip_xfip": "PARTIAL_MLB_STATS_API_ERA_K_MINUS_BB_PRELOCK_ONLY",
             "wrc_plus": "NOT_CONNECTED_SOURCE_REQUIRED",
-            "starter_handedness_splits": "NOT_CONNECTED_SOURCE_REQUIRED",
+            "starter_handedness_splits": "PARTIAL_MLB_STATS_API_PITCHER_HAND_PRELOCK_ONLY",
             "bullpen_fatigue": "NOT_CONNECTED_SOURCE_REQUIRED",
             "confirmed_lineups": "NOT_CONNECTED_SOURCE_REQUIRED",
             "weather_wind_roof": "NOT_CONNECTED_SOURCE_REQUIRED",

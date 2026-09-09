@@ -5,6 +5,10 @@ on:
     paths:
       - scripts/diagnose_mlb_r8_health.py
       - scripts/mlb_challenger_benchmark.py
+      - scripts/verify_mlb_starter_context.py
+      - hello_world/mlb_statsapi_starter_context.py
+      - hello_world/mlb_advanced_context.py
+      - tests/unit/test_mlb_statsapi_starter_context.py
       - tests/unit/test_mlb_challenger_benchmark.py
       - .github/workflows/diagnose-mlb-r8-health.yml
   workflow_dispatch:
@@ -29,10 +33,16 @@ jobs:
       - run: python scripts/diagnose_mlb_r8_health.py
       - name: Compare challengers against exact frozen R8 evidence
         run: python scripts/mlb_challenger_benchmark.py
+      - name: Verify official pre-lock starter observations
+        run: |
+          python -m pytest -q tests/unit/test_mlb_statsapi_starter_context.py
+          python scripts/verify_mlb_starter_context.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: mlb-challenger-benchmark-${{ github.run_id }}
-          path: runtime_reports/mlb_challenger_benchmark_latest.json
+          path: |
+            runtime_reports/mlb_challenger_benchmark_latest.json
+            runtime_reports/mlb_starter_context_live_proof_latest.json
           if-no-files-found: warn
           retention-days: 90
