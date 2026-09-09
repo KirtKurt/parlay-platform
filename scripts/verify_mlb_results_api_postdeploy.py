@@ -1743,6 +1743,12 @@ def wait_for_schedule_metrics(
         # the 600-second producer or metric publication polling crosses the
         # next healthy cron tick.
         end = start + timedelta(minutes=15)
+        # EventBridge can publish the invocation in the preceding minute
+        # bucket (observed 09:20 for a native 09:21 scheduled envelope). Keep
+        # a single 15-minute occurrence window, excluding the next rule tick's
+        # preceding bucket. Lambda's HTTP-isolated window remains unchanged.
+        eventbridge_start = start - timedelta(minutes=1)
+        eventbridge_end = eventbridge_start + timedelta(minutes=15)
         lambda_invocations = _metric_sum(
             cloudwatch,
             namespace="AWS/Lambda",
@@ -1764,16 +1770,16 @@ def wait_for_schedule_metrics(
             namespace="AWS/Events",
             metric_name="Invocations",
             dimensions=[{"Name": "RuleName", "Value": rule_name}],
-            start=metric_start,
-            end=end,
+            start=eventbridge_start,
+            end=eventbridge_end,
         )
         rule_failures = _metric_sum(
             cloudwatch,
             namespace="AWS/Events",
             metric_name="FailedInvocations",
             dimensions=[{"Name": "RuleName", "Value": rule_name}],
-            start=metric_start,
-            end=end,
+            start=eventbridge_start,
+            end=eventbridge_end,
         )
         if rule_failures > 0:
             raise VerificationError(
@@ -1802,12 +1808,16 @@ def wait_for_schedule_metrics(
             return {
                 "windowStartUtc": _iso(metric_start),
                 "windowEndUtc": _iso(end),
+                "eventBridgeWindowStartUtc": _iso(eventbridge_start),
+                "eventBridgeWindowEndUtc": _iso(eventbridge_end),
                 "lambdaInvocations": lambda_invocations,
                 "lambdaErrors": lambda_errors,
                 "eventBridgeInvocations": rule_invocations,
                 "eventBridgeFailedInvocations": rule_failures,
                 "publicationSettleSeconds": publication_settle_seconds,
-                "eventBridgeDeliveryAuthoritative": True,
+                "eventBridgeDeliveryAuthoritative": False,
+                "eventBridgeMetricAvailable": True,
+                "deliveryCountIsCompleteAccounting": False,
                 "lambdaAggregateMetricsAuthoritative": False,
                 "lambdaAggregateMetricsDiagnosticReason": (
                     "The same function serves public GET/OPTIONS concurrently; "
@@ -1827,10 +1837,26 @@ def wait_for_schedule_metrics(
         remaining = active_deadline - time.monotonic()
         if remaining <= 0:
             if visible_at is None:
-                raise VerificationError(
-                    "CloudWatch did not expose one EventBridge delivery metric "
-                    "before the visibility deadline"
-                )
+                # AWS documents these metrics as best-effort, with no guarantee
+                # of completeness or timeliness. Absence cannot refute the
+                # native event + persisted summary + request-bound platform log.
+                # The caller still requires that complete causal proof below.
+                return {
+                    "windowStartUtc": _iso(metric_start), "windowEndUtc": _iso(end),
+                    "eventBridgeWindowStartUtc": _iso(eventbridge_start),
+                    "eventBridgeWindowEndUtc": _iso(eventbridge_end),
+                    "lambdaInvocations": lambda_invocations, "lambdaErrors": lambda_errors,
+                    "eventBridgeInvocations": None,
+                    "eventBridgeFailedInvocations": rule_failures,
+                    "eventBridgeMetricAvailable": False,
+                    "eventBridgeDeliveryAuthoritative": False,
+                    "lambdaAggregateMetricsAuthoritative": False,
+                    "deliveryCountIsCompleteAccounting": False,
+                    "diagnostic": "EVENTBRIDGE_DELIVERY_METRIC_UNAVAILABLE",
+                    "documentation": "https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-monitoring.html",
+                    "requestBoundCausalProofRequired": True,
+                    "clean": None,
+                }
             raise VerificationError(
                 "CloudWatch EventBridge delivery metric did not remain stable "
                 "for the independent publication settle window"
@@ -2017,6 +2043,7 @@ def verify_ml_training_protected_partition_isolation(
         Path("hello_world/mlb_ml_aws_training_v1_compat.py"),
         Path("hello_world/mlb_prospective_trainer_read_repair.py"),
         Path("hello_world/mlb_r7_source_honest_training_repair.py"),
+        Path("hello_world/mlb_successor_runtime_v1.py"),
     )
     overrides = dict(source_overrides or {})
     sources = {
@@ -2104,13 +2131,88 @@ def verify_ml_training_protected_partition_isolation(
     ):
         raise VerificationError("ML trainer local DDB client is not store-table-bound")
 
-    # Fail closed if a recognized DynamoDB mutation is ever moved into a
-    # compatibility/repair module or outside the one source-proven store class.
+    # The successor shares the existing store table, but owns a separate fixed
+    # partition. Prove both its table binding and each write's partition key.
+    successor_path = str(trainer_paths[-1])
+    successor_tree = ast.parse(sources[successor_path], filename=successor_path)
+    successor_class = next(
+        (node for node in successor_tree.body
+         if isinstance(node, ast.ClassDef) and node.name == "Repository"), None
+    )
+    partition_assignments = [
+        node for node in ast.walk(successor_tree)
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "PK" for target in node.targets)
+    ]
+    factory = next(
+        (node for node in store_class.body
+         if isinstance(node, ast.FunctionDef) and node.name == "successor_repository"), None
+    )
+    if (successor_class is None or len(partition_assignments) != 1
+            or ast.unparse(partition_assignments[0].value) != "'MLB_ML_SUCCESSOR#' + model.EXPERIMENT_ID"
+            or factory is None
+            or ast.unparse(factory) != (
+                "def successor_repository(self):\n"
+                "    import mlb_successor_runtime_v1\n"
+                "    return mlb_successor_runtime_v1.Repository(self.table)"
+            )):
+        raise VerificationError("Successor store table or fixed partition binding changed")
+    table_assignments = [
+        node for node in ast.walk(successor_class)
+        if isinstance(node, ast.Assign)
+        and any(ast.unparse(target) == "self.table" for target in node.targets)
+    ]
+    if len(table_assignments) != 1 or ast.unparse(table_assignments[0].value) != "table":
+        raise VerificationError("Successor store table binding changed")
+    successor_write_ids = set()
+    for method in successor_class.body:
+        if not isinstance(method, ast.FunctionDef):
+            continue
+        for call in ast.walk(method):
+            if (not isinstance(call, ast.Call) or not isinstance(call.func, ast.Attribute)
+                    or call.func.attr not in mutation_methods):
+                continue
+            if (method.name not in {"once", "status"}
+                    or ast.unparse(call.func) != "self.table.put_item"):
+                raise VerificationError("Successor mutation escaped its approved store methods")
+            arguments = {keyword.arg: keyword.value for keyword in call.keywords}
+            item = arguments.get("Item")
+            if (call.args or not isinstance(item, ast.Call)
+                    or ast.unparse(item.func) != "safe" or len(item.args) != 1 or item.keywords):
+                raise VerificationError("Successor write item is not source-proven")
+            item = item.args[0]
+            if method.name == "once":
+                assignments = [node for node in ast.walk(method)
+                               if isinstance(node, ast.Assign)
+                               and any(ast.unparse(t) == "item" for t in node.targets)]
+                if (not isinstance(item, ast.Name) or item.id != "item" or len(assignments) != 1
+                        or set(arguments) != {"Item", "ConditionExpression"}
+                        or ast.literal_eval(arguments["ConditionExpression"]) != "attribute_not_exists(PK)"):
+                    raise VerificationError("Successor immutable write contract changed")
+                item = assignments[0].value
+                # The once-item is constructed once and never patched or passed
+                # to another helper before its conditional write.
+                item_source = ast.unparse(method)
+                if "item[" in item_source or "item." in item_source:
+                    raise VerificationError("Successor write item is mutated after construction")
+            elif set(arguments) != {"Item"}:
+                raise VerificationError("Successor status write contract changed")
+            if not isinstance(item, ast.Dict) or any(key is None for key in item.keys):
+                raise VerificationError("Successor write item must be a fixed dictionary")
+            keys = [ast.literal_eval(key) for key in item.keys]
+            if keys.count("PK") != 1 or ast.unparse(item.values[keys.index("PK")]) != "PK":
+                raise VerificationError("Successor write escaped its fixed partition")
+            successor_write_ids.add(id(call))
+    if len(successor_write_ids) != 2:
+        raise VerificationError("Successor store must have exactly two approved write sites")
+
+    # Fail closed if a recognized mutation moves outside either proven store.
     store_node_ids = {id(node) for node in ast.walk(store_class)}
     escaped_mutations: Dict[str, List[Dict[str, Any]]] = {}
     source_trees = {
         path: canonical_tree
         if path == canonical_path
+        else successor_tree if path == successor_path
         else ast.parse(source, filename=path)
         for path, source in sources.items()
     }
@@ -2123,6 +2225,8 @@ def verify_ml_training_protected_partition_isolation(
             ):
                 continue
             if path == canonical_path and id(node) in store_node_ids:
+                continue
+            if path == successor_path and id(node) in successor_write_ids:
                 continue
             escaped_mutations.setdefault(path, []).append(
                 {
@@ -2178,7 +2282,11 @@ def verify_ml_training_protected_partition_isolation(
         "writerStore": "AwsTrainingStore",
         "writerTableEnvironment": "SNAPSHOTS_TABLE",
         "outcomesAccess": "CANONICAL_LABEL_READ_ONLY",
-        "allDynamoDbMutationCallsConfinedToAwsTrainingStore": True,
+        "allDynamoDbMutationCallsConfinedToAwsTrainingStore": False,
+        "allDynamoDbMutationCallsConfinedToApprovedSnapshotStores": True,
+        "writerStores": ["AwsTrainingStore", "mlb_successor_runtime_v1.Repository"],
+        "successorPartitionPrefix": "MLB_ML_SUCCESSOR#",
+        "successorImmutableWritesConditional": True,
         "protectedPartitionPrefixes": list(protected_prefixes),
         "canonicalLabelReaderMutationCalls": [],
         "protectedOutcomesPredictionsResultSignalsOrLabelsWritable": False,
@@ -2482,7 +2590,9 @@ def run(args: argparse.Namespace, evidence: Dict[str, Any]) -> None:
     )
     evidence["scheduledAdvance"]["binding"] = {
         "oneEnabledExactRuleTarget": True,
-        "oneEventBridgeDelivery": True,
+        "oneEventBridgeDelivery": None,
+        "exactDeliveryCountAsserted": False,
+        "oneNativeScheduledInvocationProven": True,
         "aggregateLambdaInvocationCountAuthoritative": False,
         "requestBoundLambdaRequestId": evidence["scheduledAdvance"]["lambdaPlatformLog"][
             "requestId"

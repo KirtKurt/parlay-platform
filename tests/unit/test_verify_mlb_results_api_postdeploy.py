@@ -978,11 +978,11 @@ def test_prior_minute_http_probes_do_not_contaminate_schedule_metrics_or_logs(
     assert metrics["lambdaAggregateMetricsAuthoritative"] is False
     assert metrics["windowStartUtc"] == "2026-08-28T01:06:00Z"
     assert all(
-        request["StartTime"] == window_start
+        request["StartTime"] == window_start - timedelta(minutes=int(request["Namespace"] == "AWS/Events"))
         for request in metrics_client.requests
     )
     assert all(
-        request["EndTime"] == window_start + timedelta(minutes=15)
+        request["EndTime"] == window_start + timedelta(minutes=15 - int(request["Namespace"] == "AWS/Events"))
         for request in metrics_client.requests
     )
     assert platform_log["requestId"] == request_id
@@ -1057,6 +1057,59 @@ def test_metric_visibility_must_remain_exactly_one_during_settle(monkeypatch):
         )
 
     assert clock["now"] == 120.0
+
+
+def test_preceding_eventbridge_bucket_is_included_without_next_occurrence():
+    start = datetime(2026, 9, 9, 9, 21, tzinfo=timezone.utc)
+
+    class Metrics:
+        def get_metric_statistics(self, **kwargs):
+            if kwargs["Namespace"] != "AWS/Events" or kwargs["MetricName"] != "Invocations":
+                return {"Datapoints": []}
+            timestamps = [start - timedelta(minutes=1), start + timedelta(minutes=14)]
+            return {"Datapoints": [{"Sum": 1, "Timestamp": t} for t in timestamps
+                                   if kwargs["StartTime"] <= t < kwargs["EndTime"]]}
+
+    proof = subject.wait_for_schedule_metrics(
+        Metrics(), function_name="results", rule_name="results-rule", start=start,
+        publication_settle_seconds=0,
+    )
+    assert proof["eventBridgeInvocations"] == 1
+    assert proof["eventBridgeWindowStartUtc"] == "2026-09-09T09:20:00Z"
+    assert proof["eventBridgeWindowEndUtc"] == "2026-09-09T09:35:00Z"
+    assert proof["eventBridgeDeliveryAuthoritative"] is False
+
+
+def test_missing_best_effort_delivery_metric_is_explicitly_unavailable(monkeypatch):
+    class Metrics:
+        def get_metric_statistics(self, **kwargs):
+            return {"Datapoints": []}
+
+    proof = subject.wait_for_schedule_metrics(
+        Metrics(), function_name="results", rule_name="results-rule",
+        start=datetime(2026, 9, 9, 9, 21, tzinfo=timezone.utc), timeout_seconds=0,
+    )
+    assert proof["eventBridgeMetricAvailable"] is False
+    assert proof["eventBridgeInvocations"] is None
+    assert proof["eventBridgeDeliveryAuthoritative"] is False
+    assert proof["deliveryCountIsCompleteAccounting"] is False
+    assert proof["requestBoundCausalProofRequired"] is True
+    assert proof["clean"] is None
+
+
+@pytest.mark.parametrize("metric,count", [("Invocations", 2), ("FailedInvocations", 1)])
+def test_delivery_failure_or_ambiguity_still_blocks_verification(metric, count):
+    class Metrics:
+        def get_metric_statistics(self, **kwargs):
+            return {"Datapoints": [{"Sum": count}]} if (
+                kwargs["Namespace"] == "AWS/Events" and kwargs["MetricName"] == metric
+            ) else {"Datapoints": []}
+
+    with pytest.raises(subject.VerificationError):
+        subject.wait_for_schedule_metrics(
+            Metrics(), function_name="results", rule_name="results-rule",
+            start=datetime(2026, 9, 9, 9, 21, tzinfo=timezone.utc), timeout_seconds=0,
+        )
 
 
 def test_request_bound_timeout_report_cannot_pass_as_clean():
@@ -1150,7 +1203,38 @@ def test_ml_selection_and_training_writers_cannot_target_protected_partitions():
     assert proof["outcomesAccess"] == "CANONICAL_LABEL_READ_ONLY"
     assert proof["canonicalLabelReaderMutationCalls"] == []
     assert proof["protectedOutcomesPredictionsResultSignalsOrLabelsWritable"] is False
-    assert proof["allDynamoDbMutationCallsConfinedToAwsTrainingStore"] is True
+    assert proof["allDynamoDbMutationCallsConfinedToAwsTrainingStore"] is False
+    assert proof["allDynamoDbMutationCallsConfinedToApprovedSnapshotStores"] is True
+    assert proof["successorPartitionPrefix"] == "MLB_ML_SUCCESSOR#"
+    assert proof["successorImmutableWritesConditional"] is True
+    assert "hello_world/mlb_successor_runtime_v1.py" in proof["sourceSha256"]
+
+
+@pytest.mark.parametrize("before,after", [
+    ('"MLB_ML_SUCCESSOR#"', '"UNREVIEWED#"'),
+    ('self.table = table', 'self.table = other_table'),
+    ('item = {"PK": PK, "SK": key', 'item = {"PK": key, "SK": key'),
+    ('"PK": PK, "SK": "STATUS#"', '"PK": mode, "SK": "STATUS#"'),
+    ('ConditionExpression="attribute_not_exists(PK)"', 'ConditionExpression="attribute_exists(PK)"'),
+    ('self.table.put_item(Item=safe(item)', 'other_table.put_item(Item=safe(item)'),
+])
+def test_successor_storage_audit_rejects_namespace_table_and_immutability_drift(before, after):
+    path = "hello_world/mlb_successor_runtime_v1.py"
+    source = (ROOT / path).read_text(encoding="utf-8")
+    assert before in source
+    with pytest.raises(subject.VerificationError, match="Successor"):
+        subject.verify_ml_training_protected_partition_isolation(
+            source_overrides={path: source.replace(before, after, 1)}
+        )
+
+
+def test_successor_storage_audit_rejects_public_reader_writes():
+    path = "hello_world/mlb_successor_runtime_v1.py"
+    source = (ROOT / path).read_text(encoding="utf-8") + (
+        "\n\ndef unsafe_public_read(table):\n    table.delete_item(Key={'PK': PK, 'SK': 'ACTIVE'})\n"
+    )
+    with pytest.raises(subject.VerificationError, match="escaped AwsTrainingStore"):
+        subject.verify_ml_training_protected_partition_isolation(source_overrides={path: source})
 
 
 def test_ml_training_source_proof_rejects_any_mutation_outside_store():

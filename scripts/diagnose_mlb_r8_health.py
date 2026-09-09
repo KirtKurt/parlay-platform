@@ -84,7 +84,50 @@ def main():
         result["auditVerification"] = {"rowCount": len(verified["rows"]), "authority": verified["authority"]}
     except Exception as exc:
         result["auditVerificationError"] = str(exc)[:500]
-    print(json.dumps(result, indent=2, default=str))
+    # Read completed occurrence windows to distinguish a delayed CloudWatch
+    # publication from a missing delivery. These aggregates are diagnostic;
+    # they do not replace the request-bound post-deployment proof.
+    try:
+        results_function = resolve("parlay-platform-dev", "MLBResultsSchedulerFunction")
+        rule = resolve("parlay-platform-dev", "MLBResultsSchedulerFunctionMLBResultsEvery6Hours")
+        cloudwatch = boto3.client("cloudwatch", config=CONFIG)
+        observed = datetime.now(timezone.utc)
+        minute = observed.replace(second=0, microsecond=0)
+        end = minute - timedelta(minutes=(minute.minute - 6) % 15)
+        windows = []
+        for offset in range(4, 0, -1):
+            start = end - timedelta(minutes=15 * offset)
+            stop = start + timedelta(minutes=15)
+            window = {"startUtc": start.isoformat(), "endUtc": stop.isoformat()}
+            for namespace, metric, dimension, value in (
+                ("AWS/Events", "Invocations", "RuleName", rule),
+                ("AWS/Events", "FailedInvocations", "RuleName", rule),
+                ("AWS/Lambda", "Invocations", "FunctionName", results_function),
+                ("AWS/Lambda", "Errors", "FunctionName", results_function),
+            ):
+                points = cloudwatch.get_metric_statistics(
+                    Namespace=namespace, MetricName=metric,
+                    Dimensions=[{"Name": dimension, "Value": value}],
+                    StartTime=start, EndTime=stop, Period=60, Statistics=["Sum"],
+                ).get("Datapoints", [])
+                window[namespace + "/" + metric] = {
+                    "sum": sum(float(p.get("Sum", 0)) for p in points),
+                    "datapointCount": len(points),
+                    "datapoints": [{"timestamp": p["Timestamp"].isoformat(), "sum": p.get("Sum", 0)}
+                                   for p in sorted(points, key=lambda p: p["Timestamp"])],
+                }
+            windows.append(window)
+        result["resultsDeliveryDiagnostics"] = {
+            "observedAtUtc": observed.isoformat(), "qualificationEvidence": False,
+            "readOnlyProofReplacement": False, "ruleName": rule, "windows": windows,
+        }
+    except Exception as exc:
+        result["resultsDeliveryDiagnosticError"] = type(exc).__name__
+    encoded = json.dumps(result, indent=2, default=str) + "\n"
+    output = Path("runtime_reports/mlb_r8_runtime_health_latest.json")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(encoded, encoding="utf-8")
+    print(encoded)
 
 
 if __name__ == "__main__":
