@@ -1407,12 +1407,13 @@ def _data_admission_lines(state: Mapping[str, Any]) -> list[str]:
     lines = ['', '### Data collection and admission', '',
              f"**Daily audit:** `{report.get('status')}` · observed `{report.get('createdAtUtc') or 'unavailable'}`.",
              f"**Separate reconstructed historical development games:** {_fmt_int(historical.get('preparedGames'))} · rejected {_fmt_int(historical.get('rejectedGames'))}. These are not original live observations or fresh qualification samples.",
-             '', '| Slate | Collected / scheduled | Valid locks | Official finals | Stored labels | Admitted settled games |',
+             '', '| Slate | Collected / scheduled | Valid locks | Official finals | Stored labels | Row-admissible settled games |',
              '|---|---:|---:|---:|---:|---:|']
     for d in report.get('daily') or []:
         lines.append(f"| {d['slateDateEt']} | {_fmt_int(d['collectedGames'])} / {_fmt_int(d['scheduledGames'])} | {_fmt_int(d['validLocks'])} | {_fmt_int(d['officialFinalGames'])} | {_fmt_int(d['storedFinalLabels'])} | {_fmt_int(d['admittedSettledGames'])} |")
     rejection = (report.get('combinedOriginalAdmission') or {}).get('classificationCounts') or {}
     lines += ['', '**Admission classifications:** ' + json.dumps(rejection, sort_keys=True),
+              'These are independent row-admission checks; active successor counts are reported separately above.',
               'Detailed per-game rejection evidence: `runtime_reports/mlb_data_admission_rows_latest.json`.']
     return lines
 

@@ -17,6 +17,14 @@ from mlb_data_admission import audit_rows, daily_audit
 import mlb_r7_historical_walkforward_bridge as bridge
 import mlb_advanced_context as advanced
 
+# Ask the official endpoint for exactly the fields retained by compact_game;
+# exclude pitch trajectories, media and unused per-play details.
+SOURCE_FIELDS = ('gameData,game,pk,type,datetime,dateTime,status,abstractGameState,'
+    'liveData,plays,allPlays,about,endTime,boxscore,teams,home,away,team,id,name,'
+    'teamStats,batting,atBats,hits,baseOnBalls,hitByPitch,sacFlies,doubles,triples,'
+    'homeRuns,pitchers,players,person,stats,pitching,gamesStarted,numberOfPitches,'
+    'outs,earnedRuns,strikeOuts,battersFaced')
+
 
 def query(table, pk, prefix):
     from boto3.dynamodb.conditions import Key
@@ -73,7 +81,7 @@ def source_game(game, s3, bucket, persist):
         if result['officialGamePk'] != pk or historical.digest({k:v for k,v in result.items() if k!='fingerprint'}) != result['fingerprint']:
             raise ValueError('cached prior-game identity or fingerprint mismatch')
         return result
-    endpoint = f'https://statsapi.mlb.com/api/v1.1/game/{pk}/feed/live'
+    endpoint = f'https://statsapi.mlb.com/api/v1.1/game/{pk}/feed/live?fields={SOURCE_FIELDS}'
     payload = advanced._http_get_json(endpoint, timeout=30)
     receipt = {'endpoint': endpoint, 'retrievedAtUtc': datetime.now(timezone.utc).isoformat(), 'fullPayloadSha256': historical.digest(payload)}
     result = historical.compact_game(payload, receipt)
@@ -153,7 +161,7 @@ def main():
         for lock in locks:
             pk = str(lock.get('officialGamePk'))
             if pk in by_pk and pk in final_ids:
-                canonical_rows.append(canonical._joined_training_row(day, by_pk[pk], lock, slate_finalized=True))
+                canonical_rows.append(canonical._joined_training_row(day, by_pk[pk], lock, slate_finalized=historical.slate_complete(games)))
     unique = {(str(r.get('slateDateEt')), str(r.get('officialGamePk'))):r for r in rows}
     unique.update({(str(r.get('slateDateEt')),str(r.get('officialGamePk'))):r for r in canonical_rows})
     audit_all = audit_rows(list(unique.values()))

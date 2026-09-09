@@ -175,3 +175,13 @@ def test_source_cache_permission_failure_is_not_retried_as_missing():
     class S3:
         def get_object(self,**kwargs):raise ClientError({'Error':{'Code':'AccessDenied'}},'GetObject')
     with pytest.raises(ClientError):runner.source_game({'gamePk':1},S3(),'bucket',True)
+
+
+def test_one_final_game_does_not_finalize_a_partially_settled_slate():
+    final={'status':{'abstractGameState':'Final','detailedState':'Final'},'teams':{'home':{'isWinner':True},'away':{'isWinner':False}}}
+    preview={'status':{'abstractGameState':'Preview','detailedState':'Scheduled'},'teams':{}}
+    assert historical.slate_complete([final,preview]) is False
+    assert historical.slate_complete([final]) is True
+    report=admission.audit_rows([{'gameId':'1','slateFinalized':False}])
+    assert report['admittedRows']==0
+    assert report['rows'][0]['reason']=='waiting for complete slate settlement'

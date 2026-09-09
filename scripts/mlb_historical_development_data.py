@@ -27,6 +27,11 @@ def is_final(game):
             and sum(t.get('isWinner') is True for t in game.get('teams', {}).values()) == 1)
 
 
+def slate_complete(games):
+    playable = [g for g in games if g.get('status', {}).get('detailedState') not in ('Postponed', 'Cancelled')]
+    return bool(playable) and all(is_final(g) for g in playable)
+
+
 def encoded(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
 

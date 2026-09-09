@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'hello_world'))
 import mlb_successor_model_v2 as model
 import mlb_fundamentals_snapshot_v2 as snapshots
-from mlb_historical_development_data import is_final
+from mlb_historical_development_data import is_final, slate_complete
 
 
 def audit_rows(rows):
@@ -25,6 +25,8 @@ def audit_rows(rows):
         try:
             if identity in identities:
                 raise ValueError('duplicate game identity')
+            if row.get('slateFinalized') is False:
+                raise ValueError('waiting for complete slate settlement')
             if row.get('trainingEligible') is False:
                 raise ValueError('canonical training admission rejected: ' + ','.join(row.get('trainingExclusionReasons') or []))
             model.record(row, labeled=True)
@@ -34,6 +36,7 @@ def audit_rows(rows):
         identities.add(identity)
         historical = row.get('historicalTrainingOnly') is True or snap.get('historicalMissingnessOnly') is True
         classification = ('ADMITTED_ORIGINAL_OBSERVATION' if admitted else
+                          'WAITING_FOR_COMPLETE_SLATE' if reason == 'waiting for complete slate settlement' else
                           'HISTORICAL_MISSINGNESS_SEPARATE_DATASET' if historical else
                           'MISSING_ORIGINAL_SNAPSHOT' if not snap else 'ORIGINAL_EVIDENCE_REQUIRES_REVIEW')
         counts[classification] += 1
@@ -55,7 +58,7 @@ def daily_audit(day, game_rows, locks, rejected_locks, labels, schedule_games, c
         pk = str(locked.get('officialGamePk') or '')
         label = by_pk.get(pk)
         if label and pk in final_ids:
-            joined = canonical._joined_training_row(day, label, copy.deepcopy(locked), slate_finalized=True)
+            joined = canonical._joined_training_row(day, label, copy.deepcopy(locked), slate_finalized=slate_complete(schedule_games))
             eligible.append(joined)
         else:
             details.append({'officialGamePk': pk, 'state': 'FINAL_LABEL_MISSING' if pk in final_ids else 'WAITING_FOR_SETTLEMENT'})
