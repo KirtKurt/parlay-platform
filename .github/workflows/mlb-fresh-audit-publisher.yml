@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/mlb-fresh-audit-publisher.yml'
+      - 'scripts/run_deployed_mlb_audit.py'
   schedule:
     # 1:35 a.m. America/New_York in either daylight or standard time.
     # Keep these as separate cron expressions so a delayed Actions start can still
@@ -97,6 +98,7 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Generate fresh read-only AWS-backed audit
+        id: audit
         if: steps.gate.outputs.run == 'true'
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
@@ -106,7 +108,9 @@ jobs:
           INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION: 'false'
           INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC: '2026-07-13T00:20:03+00:00'
           PYTHONPATH: ${{ github.workspace }}/hello_world
-        run: python scripts/run_mlb_ml_v3_audit_report.py
+        run: |
+          rm -f runtime_reports/mlb_ml_v3_audit_execution_latest.json runtime_reports/mlb_rolling_24h_audit_latest.json runtime_reports/mlb_audit_freshness_latest.json
+          python scripts/run_deployed_mlb_audit.py
 
       - name: Prove report freshness
         if: steps.gate.outputs.run == 'true'
@@ -143,7 +147,8 @@ jobs:
           PY
 
       - name: Publish compact audit proof to main
-        if: steps.gate.outputs.run == 'true'
+        # Preserve fresh failed evidence too; the freshness step remains failed.
+        if: always() && steps.gate.outputs.run == 'true' && steps.audit.outcome == 'success'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -160,3 +165,15 @@ jobs:
           git commit -m "Publish fresh MLB rolling audit proof"
           git pull --rebase --autostash origin main
           git push origin HEAD:main
+
+      - name: Retain audit diagnostics even when publication fails
+        if: always() && steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-audit-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            runtime_reports/mlb_ml_v3_audit_execution_latest.json
+            runtime_reports/mlb_rolling_24h_audit_latest.json
+            runtime_reports/mlb_audit_freshness_latest.json
+          if-no-files-found: warn
+          retention-days: 30

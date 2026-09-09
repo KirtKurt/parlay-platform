@@ -4,6 +4,7 @@ set -euo pipefail
 STACK_NAME="${1:-parlay-platform-dev}"
 AWS_REGION="${2:-}"
 MONTHLY_BUDGET_LIMIT="${3:-100}"
+FAILED=0
 
 if [ -z "$AWS_REGION" ]; then
   echo "Usage: configure_security_alarms.sh <stack_name> <aws_region> [monthly_budget_limit]"
@@ -13,10 +14,18 @@ fi
 put_alarm() {
   local name="$1"
   shift
-  if aws cloudwatch put-metric-alarm --region "$AWS_REGION" --alarm-name "$name" "$@"; then
+  local settings
+  if ! settings=$(aws cloudwatch describe-alarms --region "$AWS_REGION" --alarm-names "$name" --query 'MetricAlarms[0]' --output json); then
+    echo "Cannot read existing alarm actions for $name; leaving it unchanged."
+    FAILED=1
+    return
+  fi
+  settings=$(printf '%s' "$settings" | python -c 'import json,sys; old=json.load(sys.stdin) or {}; print(json.dumps({k:old[k] for k in ("ActionsEnabled","AlarmActions","OKActions","InsufficientDataActions") if k in old}))')
+  if aws cloudwatch put-metric-alarm --region "$AWS_REGION" --alarm-name "$name" --cli-input-json "$settings" "$@"; then
     echo "Configured alarm: $name"
   else
-    echo "Skipped alarm: $name"
+    echo "Failed alarm: $name"
+    FAILED=1
   fi
 }
 
@@ -35,6 +44,11 @@ LAMBDA_NAME=$(aws cloudformation describe-stack-resource \
   --output text 2>/dev/null || true)
 
 if [ -n "$API_ID" ] && [ "$API_ID" != "None" ]; then
+  API_NAME=$(aws apigateway get-rest-api --rest-api-id "$API_ID" --region "$AWS_REGION" --query name --output text)
+  if [ -z "$API_NAME" ] || [ "$API_NAME" = "None" ]; then
+    echo "Could not resolve REST API metric name."
+    exit 1
+  fi
   put_alarm "inqsi-api-5xx-spike" \
     --metric-name 5XXError \
     --namespace AWS/ApiGateway \
@@ -43,7 +57,7 @@ if [ -n "$API_ID" ] && [ "$API_ID" != "None" ]; then
     --evaluation-periods 1 \
     --threshold 10 \
     --comparison-operator GreaterThanOrEqualToThreshold \
-    --dimensions Name=ApiId,Value="$API_ID" Name=Stage,Value=Prod \
+    --dimensions "Name=ApiName,Value=$API_NAME" Name=Stage,Value=Prod \
     --treat-missing-data notBreaching
 
   put_alarm "inqsi-api-4xx-spike" \
@@ -54,7 +68,7 @@ if [ -n "$API_ID" ] && [ "$API_ID" != "None" ]; then
     --evaluation-periods 1 \
     --threshold 50 \
     --comparison-operator GreaterThanOrEqualToThreshold \
-    --dimensions Name=ApiId,Value="$API_ID" Name=Stage,Value=Prod \
+    --dimensions "Name=ApiName,Value=$API_NAME" Name=Stage,Value=Prod \
     --treat-missing-data notBreaching
 
   put_alarm "inqsi-api-request-volume-spike" \
@@ -65,10 +79,11 @@ if [ -n "$API_ID" ] && [ "$API_ID" != "None" ]; then
     --evaluation-periods 1 \
     --threshold 3000 \
     --comparison-operator GreaterThanOrEqualToThreshold \
-    --dimensions Name=ApiId,Value="$API_ID" Name=Stage,Value=Prod \
+    --dimensions "Name=ApiName,Value=$API_NAME" Name=Stage,Value=Prod \
     --treat-missing-data notBreaching
 else
   echo "API Gateway resource not found; skipping API alarms."
+  FAILED=1
 fi
 
 if [ -n "$LAMBDA_NAME" ] && [ "$LAMBDA_NAME" != "None" ]; then
@@ -95,6 +110,7 @@ if [ -n "$LAMBDA_NAME" ] && [ "$LAMBDA_NAME" != "None" ]; then
     --treat-missing-data notBreaching
 else
   echo "Lambda ApiFunction not found; skipping Lambda alarms."
+  FAILED=1
 fi
 
 for TABLE in parlay_platform_snapshots parlay_platform_signals parlay_platform_predictions parlay_platform_outcomes; do
@@ -125,9 +141,14 @@ else
   if grep -qi "DuplicateRecordException" /tmp/inqsi-budget-error.log; then
     echo "Budget guardrail already exists."
   else
-    echo "Budget guardrail skipped: deploy IAM user likely needs budgets:CreateBudget."
+    echo "Budget setup failed; an authorized administrator must resolve the reported permission or configuration error."
+    echo "The legacy AWS Budgets write permission is budgets:ModifyBudget (not budgets:CreateBudget)."
     cat /tmp/inqsi-budget-error.log || true
+    FAILED=1
   fi
 fi
 
-echo "Security alarms configuration attempted. Missing permissions are non-fatal."
+if [ "$FAILED" -ne 0 ]; then
+  echo "Security setup is incomplete; see the failed operations above."
+fi
+exit "$FAILED"

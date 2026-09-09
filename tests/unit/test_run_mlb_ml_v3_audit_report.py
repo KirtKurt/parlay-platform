@@ -559,7 +559,7 @@ def test_generic_latest_never_overrides_mode_specific_authority(monkeypatch) -> 
             (pk, "STATUS#LATEST"): generic,
             (pk, "STATUS#LATEST#TRAINING"): _status("training", 300),
             (pk, "STATUS#LATEST#SELECTION_CAPTURE"): _status(
-                "selection_capture", 15
+                "selection_capture", 5
             ),
         },
     )
