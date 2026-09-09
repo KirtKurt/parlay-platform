@@ -1,0 +1,52 @@
+name: Tennis Publication Keepalive
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/tennis-publication-keepalive.yml'
+  schedule:
+    # Start overlapping keepalive windows away from the top of the hour.
+    - cron: '17 */3 * * *'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: tennis-publication-keepalive
+  cancel-in-progress: true
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: Dispatch fresh Tennis health and card publications
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Scheduled Actions can be delayed or omitted. Keep one runner alive long
+          # enough to overlap the next three-hour launch and dispatch the actual
+          # publishers on a ten-minute cadence.
+          stop_at=$(( $(date +%s) + 20700 ))
+
+          while [ "$(date +%s)" -lt "$stop_at" ]; do
+            gh workflow run publish-tennis-autonomy-status.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref main
+
+            # Give the health publisher time to query/self-heal the AWS cycle before
+            # rebuilding the authoritative card from DynamoDB.
+            sleep 90
+
+            gh workflow run publish-tennis-daily-card.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref main
+
+            # Ninety seconds above plus this delay gives a ten-minute cadence.
+            sleep 510
+          done
