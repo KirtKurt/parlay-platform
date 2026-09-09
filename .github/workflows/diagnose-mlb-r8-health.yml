@@ -6,8 +6,12 @@ on:
       - scripts/diagnose_mlb_r8_health.py
       - scripts/mlb_challenger_benchmark.py
       - scripts/verify_mlb_starter_context.py
+      - scripts/verify_mlb_team_context.py
+      - hello_world/mlb_statsapi_team_context.py
+      - tests/unit/test_mlb_statsapi_team_context.py
       - scripts/verify_mlb_successor_development.py
       - hello_world/mlb_successor_model_v1.py
+      - hello_world/mlb_successor_model_v2.py
       - hello_world/mlb_successor_runtime_v1.py
       - tests/unit/test_mlb_successor.py
       - hello_world/mlb_statsapi_starter_context.py
@@ -46,6 +50,10 @@ jobs:
         run: |
           python -m pytest -q tests/unit/test_mlb_successor.py
           python scripts/verify_mlb_successor_development.py
+      - name: Verify live pregame batting orders and relief workload
+        run: |
+          python -m pytest -q tests/unit/test_mlb_statsapi_team_context.py
+          python scripts/verify_mlb_team_context.py --persisted
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -54,6 +62,7 @@ jobs:
             runtime_reports/mlb_r8_runtime_health_latest.json
             runtime_reports/mlb_challenger_benchmark_latest.json
             runtime_reports/mlb_starter_context_live_proof_latest.json
+            runtime_reports/mlb_team_context_live_proof_latest.json
             runtime_reports/mlb_successor_development_replay_latest.json
           if-no-files-found: warn
           retention-days: 90

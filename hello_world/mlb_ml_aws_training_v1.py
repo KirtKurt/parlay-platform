@@ -2384,7 +2384,7 @@ class TrainingService:
             "runtimeAuthorityActivationAvailable": False,
             "successorRuntime": {
                 "installed": True,
-                "experimentId": "mlb-successor-2026-09-09-starter-rates-v1",
+                "experimentId": "mlb-successor-2026-09-09-team-context-v2",
                 "firstActivationRequiresExactQualifiedArtifactReview": True,
                 "usesSeparateImmutablePredictions": True,
                 "legacyV2InferenceConsumerInstalled": False,

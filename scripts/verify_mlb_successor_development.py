@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hello_world"))
-import mlb_successor_model_v1 as model
+import mlb_successor_model_v2 as model
 from mlb_challenger_benchmark import load_sources
 
 
