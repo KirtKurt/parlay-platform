@@ -53,7 +53,7 @@ jobs:
       - name: Verify live pregame batting orders and relief workload
         run: |
           python -m pytest -q tests/unit/test_mlb_statsapi_team_context.py
-          python scripts/verify_mlb_team_context.py
+          python scripts/verify_mlb_team_context.py --persisted
       - uses: actions/upload-artifact@v4
         if: always()
         with:
