@@ -70,7 +70,7 @@ def _model_body() -> Dict[str, Any]:
     # No historical or retired model may be projected as current MLB
     # winner authority. Publication stays closed until a trained,
     # promotion-qualified R7 artifact is atomically activated.
-    return {
+    body = {
         "ok": False,
         "sport": "mlb",
         "status": "NO_QUALIFIED_CHAMPION",
@@ -99,6 +99,20 @@ def _model_body() -> Dict[str, Any]:
         "apiRuntimeVersion": VERSION,
         "authorityContractVersion": "MLB-AUTO-R7-QUALIFIED-CHAMPION-ONLY-v1",
     }
+    try:
+        import mlb_successor_runtime_v1 as successor
+        qualified = successor.public_model() if RUNTIME_INSTALL.get("ok") is True else None
+        if qualified:
+            body.update(qualified)
+            body.update({"ok": True, "status": "QUALIFIED_CHAMPION", "error": None,
+                         "publicationClosed": False, "productionSelectionAllowed": True,
+                         "primaryAlgorithmActive": True, "qualifiedChampionPresent": True,
+                         # Compatibility name for the existing AWS ML authority contract.
+                         "r7ChampionQualified": True})
+    except Exception:
+        # Corrupt, missing, revoked or inaccessible evidence keeps publication closed.
+        pass
+    return body
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     event = event or {}
@@ -114,6 +128,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if ENGINE is None or model.get("ok") is not True:
         return _response(503, {**model, "ok": False, "winner_predictions": [], "predictions": [], "count": 0})
     date = params.get("game_date_et") or params.get("date") or _today_et()
+    if model.get("successorConsumerVersion"):
+        try:
+            import mlb_successor_runtime_v1 as successor
+            result = successor.public_predictions(
+                date, min(max(int(params.get("limit") or 500), 1), 500), model["artifactDigest"])
+            return _response(200, {**model, **result, "apiRuntimeVersion": VERSION})
+        except Exception:
+            return _response(503, {**model, "ok": False, "status": "QUALIFIED_PREDICTIONS_UNAVAILABLE",
+                                   "predictions": [], "winner_predictions": [], "count": 0})
     try:
         reader = getattr(ENGINE, "read_persisted_predictions", None)
         if not callable(reader):

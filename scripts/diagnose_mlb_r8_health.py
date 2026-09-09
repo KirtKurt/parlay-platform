@@ -35,6 +35,8 @@ def main():
         "latestTraining": {k: v for k, v in latest.items() if k in {"status", "createdAtUtc", "completedAtUtc", "startedAtUtc", "processedThroughSlateDate", "acceptedRowCount", "partitionCounts", "modelTrained", "validation", "prospectiveTest", "promotion"}},
         "health": {k: {a: b for a,b in (status.get(k) or {}).items() if a != "latestRun"} for k in ["trainingHealth", "selectionCaptureHealth"]},
         "runtimeAuthorityActivationAvailable": status.get("runtimeAuthorityActivationAvailable"),
+        "successorDevelopment": latest.get("successorDevelopment"),
+        "successorCapture": (((status.get("selectionCaptureHealth") or {}).get("latestRun") or {}).get("selectionCapture") or {}).get("successorCapture"),
     }
     pointer = (candidate.get("artifacts") or {}).get("evaluation") or {}
     if pointer:
