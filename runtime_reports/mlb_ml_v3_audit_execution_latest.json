@@ -1,20 +1,24 @@
 {
-  "ok": true,
+  "ok": false,
   "proofType": "MLB_ML_V3_AWS_AUDIT_EXECUTION",
-  "createdAtUtc": "2026-09-09T14:03:12.346471+00:00",
+  "createdAtUtc": "2026-09-09T14:59:41.401996+00:00",
   "environment": {
     "experimentId": "mlb-v2-2026-08-31-historical-live-r8",
     "releaseContractId": "mlb-v2-2026-08-31-historical-live-r8",
     "releaseCutoffUtc": "2026-08-31T04:00:00+00:00",
-    "expectedDeployedGitSha": "80af2e4fd33d3dabf5be477da0344a78ed4521cd",
+    "expectedDeployedGitSha": "fca09e3cd9b2dc3d9f31bf5a3943268f2c6a1bcd",
     "snapshotsTableConfigured": true,
     "oddsApiKeyConfigured": true,
     "autoPromote": "false",
     "storeEnabled": "false",
     "allowLocalFileChampion": "false"
   },
-  "failures": [],
-  "reportCreatedAt": "2026-09-09T14:04:14.944050+00:00",
+  "failures": [
+    "aws_v2_training_status_unhealthy_stale_or_invalid",
+    "aws_v2_training_capture_deployment_identity_mismatch",
+    "aws_v2_mode_specific_status_unhealthy"
+  ],
+  "reportCreatedAt": "2026-09-09T15:02:26.530178+00:00",
   "reportOk": true,
   "windowHours": 24,
   "summary": {
@@ -28015,9 +28019,9 @@
   ],
   "canonicalFinalizedSlateEvidence": {
     "version": "MLB-CANONICAL-FINALIZED-SLATE-EVIDENCE-v2-official-final-outcomes",
-    "checkedAtUtc": "2026-09-09T14:06:33.713607+00:00",
+    "checkedAtUtc": "2026-09-09T15:08:26.879753+00:00",
     "windowHours": 24,
-    "windowStartUtc": "2026-09-08T14:06:33.713607+00:00",
+    "windowStartUtc": "2026-09-08T15:08:26.879753+00:00",
     "releaseCutoffUtc": "2026-08-31T04:00:00+00:00",
     "candidateSlateDates": [
       "2026-09-08",
@@ -28355,7 +28359,7 @@
     },
     "errors": [],
     "evidenceFingerprintVersion": "MLB-CANONICAL-FINALIZED-SLATE-EVIDENCE-SHA256-v2",
-    "evidenceFingerprint": "02b20ed7812a88f7f0e884c9f9ade992c5c73358427e8c748dfec0989ca38356"
+    "evidenceFingerprint": "c9e35928b610102e6116f75b5f7e488a60256a239d4cf7a59c9ad48e7dc4894f"
   },
   "productionAcceptanceScope": {
     "ok": true,
@@ -28376,7 +28380,7 @@
     "sourceRowCount": 15,
     "sourceRowsFingerprintVersion": "MLB-PRODUCTION-ACCEPTANCE-RAW-ROWS-SHA256-v1",
     "sourceRowsFingerprint": "637f9e90cd4c73631d2eccefc53be2a6ab5bf918062bc4b96f55f7a577706b60",
-    "canonicalFinalizedSlateEvidenceFingerprint": "02b20ed7812a88f7f0e884c9f9ade992c5c73358427e8c748dfec0989ca38356",
+    "canonicalFinalizedSlateEvidenceFingerprint": "c9e35928b610102e6116f75b5f7e488a60256a239d4cf7a59c9ad48e7dc4894f",
     "unscopedInvalidRowCount": 0,
     "preCutoffQuarantinedFinalGameCount": 0,
     "postCutoffCompletedFinalGameCount": 15,
@@ -29165,7 +29169,7 @@
     "errors": [],
     "policy": "Pre-r3 finals remain visible in the legacy rolling dashboard but cannot fail r3 acceptance. Every completed game whose scheduled T-45 is at or after the experiment cutoff must prove one exact official MLB gamePk, current immutable LOCKED#GAME authority, and a canonical lock timestamp at or after that same cutoff. A fully finalized slate is accepted only when the raw audit rows exactly equal its canonical official FINAL gamePk authority and each row's teams, scores, winner, and derived correctness match the official game-specific outcome evidence.",
     "scopeFingerprintVersion": "MLB-PRODUCTION-ACCEPTANCE-SCOPE-SHA256-v3",
-    "scopeFingerprint": "2c8b5920691fb25b15a72d312e1ab85e2f734409b454700645212058ad76ff69"
+    "scopeFingerprint": "be0946fa74a2303f17220f7ab55589fa693f2eaf058f95c8a993618812c82aea"
   },
   "accuracyTargetPolicyInstall": {
     "ok": true,
@@ -29313,7 +29317,7 @@
     "promotionGate": {
       "ok": true,
       "version": "MLB-ML-CHAMPION-CHALLENGER-v1.6-retired-shadow-only",
-      "evaluatedAtUtc": "2026-09-09T14:06:33.644110+00:00",
+      "evaluatedAtUtc": "2026-09-09T15:08:26.810066+00:00",
       "automaticPromotionEnabled": false,
       "automaticPromotionRequiresPassedApplicableGates": true,
       "promotionEligible": false,
@@ -29657,7 +29661,7 @@
     "productionAuthoritySource": "persisted_canonical_rules_market_prediction_v2_shadow_only"
   },
   "mlTrainingV2": {
-    "ok": true,
+    "ok": false,
     "readOnly": true,
     "experimentId": "mlb-v2-2026-08-31-historical-live-r8",
     "experimentIdValid": true,
@@ -29688,24 +29692,24 @@
     "latestRunStatus": "CANDIDATE_REGISTERED",
     "latestRunCreatedAtUtc": "2026-09-09T13:22:35.829630+00:00",
     "latestRunTimestampValid": true,
-    "latestRunAgeMinutes": 43.97,
+    "latestRunAgeMinutes": 105.87,
     "latestRunFresh": true,
     "latestRunMaxAgeMinutes": 480.0,
     "trainingHealth": {
-      "ok": true,
+      "ok": false,
       "executionMode": "training",
       "statusPresent": true,
       "latestRunStatus": "CANDIDATE_REGISTERED",
       "latestRunCreatedAtUtc": "2026-09-09T13:22:35.829630+00:00",
       "latestRunTimestampValid": true,
-      "latestRunAgeMinutes": 43.97,
+      "latestRunAgeMinutes": 105.87,
       "latestRunFresh": true,
       "latestRunMaxAgeMinutes": 480.0,
       "deploymentIdentity": {
         "gitSha": "80af2e4fd33d3dabf5be477da0344a78ed4521cd",
         "templateSha256": "984524a516a644e299ecc5cdb0cd2bc75c2b6912be9d41dd59238643ebc91c18"
       },
-      "deploymentIdentityMatches": true,
+      "deploymentIdentityMatches": false,
       "statusVersion": "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow",
       "experimentId": "mlb-v2-2026-08-31-historical-live-r8",
       "manifestDigest": "033b3766252dcd3a8df750a8454892de6a31eb983e49f39181a8c57192f98089",
@@ -31372,20 +31376,22 @@
           "shadowChampionApproved": false
         }
       },
-      "errors": []
+      "errors": [
+        "status_deployment_identity_mismatch"
+      ]
     },
     "selectionCaptureHealth": {
       "ok": true,
       "executionMode": "selection_capture",
       "statusPresent": true,
       "latestRunStatus": "PROSPECTIVE_SELECTION_CAPTURE_COMPLETE",
-      "latestRunCreatedAtUtc": "2026-09-09T14:05:12.825884+00:00",
+      "latestRunCreatedAtUtc": "2026-09-09T15:07:13.423077+00:00",
       "latestRunTimestampValid": true,
-      "latestRunAgeMinutes": 1.35,
+      "latestRunAgeMinutes": 1.25,
       "latestRunFresh": true,
       "latestRunMaxAgeMinutes": 10.0,
       "deploymentIdentity": {
-        "gitSha": "80af2e4fd33d3dabf5be477da0344a78ed4521cd",
+        "gitSha": "fca09e3cd9b2dc3d9f31bf5a3943268f2c6a1bcd",
         "templateSha256": "984524a516a644e299ecc5cdb0cd2bc75c2b6912be9d41dd59238643ebc91c18"
       },
       "deploymentIdentityMatches": true,
@@ -31430,16 +31436,16 @@
       "latestRun": {
         "automaticPromotionEnabled": false,
         "requestRun": "aws_native_prospective_selection_capture",
-        "statusFingerprint": "f03c90dc2276a41deb5e0aafa60d0ce3616ecbeb91ec86f6f34e626f2af7bc93",
+        "statusFingerprint": "014441f9723ab8cf4e01daad9358e4bee8cd69d3ef5c7ac114c3a996382ebdf5",
         "challengerArtifactDigest": "05a9231c24dad1bc2504a1bc687c2b44d6ebbeb4f9f05e5068bcb5a0792c6f61",
         "deploymentIdentity": {
-          "gitSha": "80af2e4fd33d3dabf5be477da0344a78ed4521cd",
+          "gitSha": "fca09e3cd9b2dc3d9f31bf5a3943268f2c6a1bcd",
           "templateSha256": "984524a516a644e299ecc5cdb0cd2bc75c2b6912be9d41dd59238643ebc91c18"
         },
         "championChanged": false,
         "productionAuthorityChanged": false,
         "otherSportChanged": false,
-        "createdAtUtc": "2026-09-09T14:05:12.825884+00:00",
+        "createdAtUtc": "2026-09-09T15:07:13.423077+00:00",
         "experimentId": "mlb-v2-2026-08-31-historical-live-r8",
         "releaseCutoffUtc": "2026-08-31T04:00:00+00:00",
         "ok": true,
@@ -31507,29 +31513,29 @@
           "ok": true,
           "errors": []
         },
-        "runId": "58fc4d1cc5b81f309477ca34",
+        "runId": "166c09acaea3074a28335316",
         "status": "PROSPECTIVE_SELECTION_CAPTURE_COMPLETE"
       },
       "errors": []
     },
-    "deploymentIdentityAgreement": true,
+    "deploymentIdentityAgreement": false,
     "deployedTrainerIdentity": {
-      "gitSha": "80af2e4fd33d3dabf5be477da0344a78ed4521cd",
+      "gitSha": "fca09e3cd9b2dc3d9f31bf5a3943268f2c6a1bcd",
       "templateSha256": "984524a516a644e299ecc5cdb0cd2bc75c2b6912be9d41dd59238643ebc91c18"
     },
     "genericLatestStatusDiagnosticOnly": {
       "automaticPromotionEnabled": false,
       "requestRun": "aws_native_prospective_selection_capture",
-      "statusFingerprint": "f03c90dc2276a41deb5e0aafa60d0ce3616ecbeb91ec86f6f34e626f2af7bc93",
+      "statusFingerprint": "014441f9723ab8cf4e01daad9358e4bee8cd69d3ef5c7ac114c3a996382ebdf5",
       "challengerArtifactDigest": "05a9231c24dad1bc2504a1bc687c2b44d6ebbeb4f9f05e5068bcb5a0792c6f61",
       "deploymentIdentity": {
-        "gitSha": "80af2e4fd33d3dabf5be477da0344a78ed4521cd",
+        "gitSha": "fca09e3cd9b2dc3d9f31bf5a3943268f2c6a1bcd",
         "templateSha256": "984524a516a644e299ecc5cdb0cd2bc75c2b6912be9d41dd59238643ebc91c18"
       },
       "championChanged": false,
       "productionAuthorityChanged": false,
       "otherSportChanged": false,
-      "createdAtUtc": "2026-09-09T14:05:12.825884+00:00",
+      "createdAtUtc": "2026-09-09T15:07:13.423077+00:00",
       "experimentId": "mlb-v2-2026-08-31-historical-live-r8",
       "releaseCutoffUtc": "2026-08-31T04:00:00+00:00",
       "ok": true,
@@ -31597,7 +31603,7 @@
         "ok": true,
         "errors": []
       },
-      "runId": "58fc4d1cc5b81f309477ca34",
+      "runId": "166c09acaea3074a28335316",
       "status": "PROSPECTIVE_SELECTION_CAPTURE_COMPLETE"
     },
     "milestones": {
