@@ -70,3 +70,9 @@ def test_audit_rejects_deployment_change_after_binding(monkeypatch):
     monkeypatch.setenv("MLB_AUDIT_EXPECTED_GIT_SHA", "c" * 40)
     with pytest.raises(RuntimeError, match="changed during audit"):
         audit._read_deployed_trainer_identity()
+
+
+def test_capture_freshness_matches_canonical_trainer():
+    from scripts import run_mlb_ml_v3_audit_report as audit
+    import mlb_ml_aws_training_v1 as trainer
+    assert audit.V2_SELECTION_CAPTURE_STATUS_MAX_AGE_MINUTES == trainer.SELECTION_CAPTURE_STATUS_MAX_AGE.total_seconds() / 60
