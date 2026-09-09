@@ -1,0 +1,82 @@
+{
+  "blockers": [
+    "webApplicationFirewall:AccessDeniedException",
+    "monthlyBudget:AccessDeniedException"
+  ],
+  "checks": {
+    "apiThrottling": {
+      "burstLimit": 200,
+      "ok": true,
+      "rateLimit": 100
+    },
+    "monthlyBudget": {
+      "error": "User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: budgets:ViewBudget on resource: arn:aws:budgets::735707987003:budget/inqsi-monthly-cost-guardrail because no identity-based policy allows the budgets:ViewBudget action",
+      "errorCode": "AccessDeniedException",
+      "ok": false
+    },
+    "restApiAlarms": {
+      "alarms": [
+        {
+          "dimensions": [
+            {
+              "Name": "ApiName",
+              "Value": "parlay-platform-dev"
+            },
+            {
+              "Name": "Stage",
+              "Value": "Prod"
+            }
+          ],
+          "name": "inqsi-api-4xx-spike",
+          "ok": true,
+          "state": "OK"
+        },
+        {
+          "dimensions": [
+            {
+              "Name": "ApiName",
+              "Value": "parlay-platform-dev"
+            },
+            {
+              "Name": "Stage",
+              "Value": "Prod"
+            }
+          ],
+          "name": "inqsi-api-5xx-spike",
+          "ok": true,
+          "state": "OK"
+        },
+        {
+          "dimensions": [
+            {
+              "Name": "ApiName",
+              "Value": "parlay-platform-dev"
+            },
+            {
+              "Name": "Stage",
+              "Value": "Prod"
+            }
+          ],
+          "name": "inqsi-api-request-volume-spike",
+          "ok": true,
+          "state": "OK"
+        }
+      ],
+      "ok": true
+    },
+    "webApplicationFirewall": {
+      "error": "User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: wafv2:GetWebACLForResource on resource: arn:aws:wafv2:us-east-1:735707987003:regional/webacl/*/* because no identity-based policy allows the wafv2:GetWebACLForResource action",
+      "errorCode": "AccessDeniedException",
+      "ok": false
+    }
+  },
+  "evidenceSource": {
+    "artifactId": 10107845265,
+    "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/34360995526",
+    "workflowJobId": 102497620489,
+    "workflowRunId": 34360995526
+  },
+  "observedAtUtc": "2026-09-09T14:03:49.763645+00:00",
+  "ok": false,
+  "readOnly": true
+}
