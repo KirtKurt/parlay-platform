@@ -334,6 +334,34 @@ def test_deployed_prod_export_binds_exact_read_only_integrations():
     assert proof["cacheClusterEnabled"] is False
 
 
+def test_deployed_export_comparison_ignores_json_format_and_mapping_order():
+    class Reordered(FakeDeployedStage):
+        def get_export(self, **kwargs):
+            data = json.loads(super().get_export(**kwargs)["body"].read())
+            def reverse(value):
+                if isinstance(value, dict):
+                    return {k: reverse(v) for k, v in reversed(list(value.items()))}
+                return value
+            return {"body": BytesIO(json.dumps(reverse(data), indent=4).encode())}
+
+    first = subject.verify_deployed_stage(FakeDeployedStage(), rest_api_id="api-id", function_arn=FUNCTION_ARN)
+    second = subject.verify_deployed_stage(Reordered(), rest_api_id="api-id", function_arn=FUNCTION_ARN)
+    assert first == second
+    assert first["exportFingerprintEncoding"] == "CANONICAL_SORTED_JSON_V1"
+
+
+def test_deployed_export_comparison_retains_unrelated_configuration_changes():
+    class Changed(FakeDeployedStage):
+        def get_export(self, **kwargs):
+            data = json.loads(super().get_export(**kwargs)["body"].read())
+            data["security"] = [{"new_authorizer": []}]
+            return {"body": BytesIO(json.dumps(data).encode())}
+
+    first = subject.verify_deployed_stage(FakeDeployedStage(), rest_api_id="api-id", function_arn=FUNCTION_ARN)
+    second = subject.verify_deployed_stage(Changed(), rest_api_id="api-id", function_arn=FUNCTION_ARN)
+    assert first["exportSha256"] != second["exportSha256"]
+
+
 def test_deployed_prod_export_rejects_stale_post_or_cache():
     with pytest.raises(subject.VerificationError, match="method surface mismatch"):
         subject.verify_deployed_stage(
