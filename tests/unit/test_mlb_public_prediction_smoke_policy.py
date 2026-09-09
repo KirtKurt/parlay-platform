@@ -156,3 +156,57 @@ def test_arbitrary_503_and_nonempty_fallback_winner_are_rejected():
             1,
             now=NOW,
         )
+
+
+def _successor_payload():
+    from scripts.mlb_public_prediction_smoke_policy import SUCCESSOR_CONSUMER
+    start = NOW + timedelta(minutes=40)
+    row = {"gameId": "g1", "officialGamePk": "824000", "homeTeam": "Home", "awayTeam": "Away",
+           "predictedWinner": "Away", "predictedSide": "away", "homeProbability": .4, "awayProbability": .6,
+           "commenceTime": start.isoformat(), "capturedAtUtc": NOW.isoformat(),
+           "featureLockAtUtc": (NOW-timedelta(minutes=5)).isoformat(),
+           "artifactDigest": "a"*64, "inputFingerprint": "b"*64, "immutable": True,
+           "automaticWagerAllowed": False, "playabilityAuthorityEnabled": False}
+    payload = _no_champion(ok=True, status="QUALIFIED_CHAMPION", error=None,
+        publicationClosed=False, productionSelectionAllowed=True, primaryAlgorithmActive=True,
+        qualifiedChampionPresent=True, r7ChampionQualified=True, r7DeploymentIdentity={"gitSha": "c"*40},
+        model_version="MLB-SUCCESSOR", primaryAlgorithm="MLB-SUCCESSOR",
+        successorConsumerVersion=SUCCESSOR_CONSUMER, predictionSource=SUCCESSOR_CONSUMER,
+        artifactDigest="a"*64, readOnly=True, playabilityAuthorityEnabled=False,
+        predictions=[row], winner_predictions=[row], count=1)
+    status = {**_row("g1", start, winner="Home", locked=True, status="LOCKED_CANONICAL"),
+              "officialGamePk": "824000", "homeTeam": "Home", "awayTeam": "Away"}
+    return payload, [status]
+
+
+def test_qualified_successor_can_differ_without_rewriting_old_winner():
+    from copy import deepcopy
+    payload, statuses = _successor_payload()
+    before = deepcopy((payload, statuses))
+    result = reconcile_public_prediction_lifecycle(200, payload, statuses, 1, now=NOW)
+    assert result["successorPredictionAuthorityVerified"] is True
+    assert result["authorityClosedStatusProjectionUsed"] is False
+    assert result["publicPayload"]["predictions"][0]["predictedWinner"] == "Away"
+    assert result["lifecyclePayload"]["predictions"][0]["predictedWinner"] == "Home"
+    assert result["statusProjectionPersisted"] is False
+    assert (payload, statuses) == before
+
+
+@pytest.mark.parametrize("field,value", [("artifactDigest", "wrong"), ("officialGamePk", "999"),
+    ("awayProbability", .9), ("homeProbability", float("nan")), ("predictedSide", "home"),
+    ("inputFingerprint", "missing"), ("automaticWagerAllowed", True), ("immutable", False),
+    ("capturedAtUtc", "2026-08-28T04:00:00+00:00")])
+def test_successor_consumer_projection_rejects_bad_public_evidence(field, value):
+    payload, statuses = _successor_payload()
+    payload["predictions"][0][field] = value
+    with pytest.raises(ValueError):
+        reconcile_public_prediction_lifecycle(200, payload, statuses, 1, now=NOW)
+
+
+def test_qualified_successor_can_wait_for_canonical_locks_without_old_winner_fallback():
+    payload, statuses = _successor_payload()
+    payload.update(predictions=[], winner_predictions=[], count=0)
+    result = reconcile_public_prediction_lifecycle(200, payload, statuses, 1, now=NOW)
+    assert result["successorPredictionAuthorityVerified"] is True
+    assert result["publicWinnerCount"] == 0
+    assert result["publicPayload"]["predictions"] == []
