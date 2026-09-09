@@ -978,11 +978,11 @@ def test_prior_minute_http_probes_do_not_contaminate_schedule_metrics_or_logs(
     assert metrics["lambdaAggregateMetricsAuthoritative"] is False
     assert metrics["windowStartUtc"] == "2026-08-28T01:06:00Z"
     assert all(
-        request["StartTime"] == window_start
+        request["StartTime"] == window_start - timedelta(minutes=int(request["Namespace"] == "AWS/Events"))
         for request in metrics_client.requests
     )
     assert all(
-        request["EndTime"] == window_start + timedelta(minutes=15)
+        request["EndTime"] == window_start + timedelta(minutes=15 - int(request["Namespace"] == "AWS/Events"))
         for request in metrics_client.requests
     )
     assert platform_log["requestId"] == request_id
@@ -1057,6 +1057,27 @@ def test_metric_visibility_must_remain_exactly_one_during_settle(monkeypatch):
         )
 
     assert clock["now"] == 120.0
+
+
+def test_preceding_eventbridge_bucket_is_included_without_next_occurrence():
+    start = datetime(2026, 9, 9, 9, 21, tzinfo=timezone.utc)
+
+    class Metrics:
+        def get_metric_statistics(self, **kwargs):
+            if kwargs["Namespace"] != "AWS/Events" or kwargs["MetricName"] != "Invocations":
+                return {"Datapoints": []}
+            timestamps = [start - timedelta(minutes=1), start + timedelta(minutes=14)]
+            return {"Datapoints": [{"Sum": 1, "Timestamp": t} for t in timestamps
+                                   if kwargs["StartTime"] <= t < kwargs["EndTime"]]}
+
+    proof = subject.wait_for_schedule_metrics(
+        Metrics(), function_name="results", rule_name="results-rule", start=start,
+        publication_settle_seconds=0,
+    )
+    assert proof["eventBridgeInvocations"] == 1
+    assert proof["eventBridgeWindowStartUtc"] == "2026-09-09T09:20:00Z"
+    assert proof["eventBridgeWindowEndUtc"] == "2026-09-09T09:35:00Z"
+    assert proof["eventBridgeDeliveryAuthoritative"] is False
 
 
 def test_missing_best_effort_delivery_metric_is_explicitly_unavailable(monkeypatch):

@@ -1743,6 +1743,12 @@ def wait_for_schedule_metrics(
         # the 600-second producer or metric publication polling crosses the
         # next healthy cron tick.
         end = start + timedelta(minutes=15)
+        # EventBridge can publish the invocation in the preceding minute
+        # bucket (observed 09:20 for a native 09:21 scheduled envelope). Keep
+        # a single 15-minute occurrence window, excluding the next rule tick's
+        # preceding bucket. Lambda's HTTP-isolated window remains unchanged.
+        eventbridge_start = start - timedelta(minutes=1)
+        eventbridge_end = eventbridge_start + timedelta(minutes=15)
         lambda_invocations = _metric_sum(
             cloudwatch,
             namespace="AWS/Lambda",
@@ -1764,16 +1770,16 @@ def wait_for_schedule_metrics(
             namespace="AWS/Events",
             metric_name="Invocations",
             dimensions=[{"Name": "RuleName", "Value": rule_name}],
-            start=metric_start,
-            end=end,
+            start=eventbridge_start,
+            end=eventbridge_end,
         )
         rule_failures = _metric_sum(
             cloudwatch,
             namespace="AWS/Events",
             metric_name="FailedInvocations",
             dimensions=[{"Name": "RuleName", "Value": rule_name}],
-            start=metric_start,
-            end=end,
+            start=eventbridge_start,
+            end=eventbridge_end,
         )
         if rule_failures > 0:
             raise VerificationError(
@@ -1802,6 +1808,8 @@ def wait_for_schedule_metrics(
             return {
                 "windowStartUtc": _iso(metric_start),
                 "windowEndUtc": _iso(end),
+                "eventBridgeWindowStartUtc": _iso(eventbridge_start),
+                "eventBridgeWindowEndUtc": _iso(eventbridge_end),
                 "lambdaInvocations": lambda_invocations,
                 "lambdaErrors": lambda_errors,
                 "eventBridgeInvocations": rule_invocations,
@@ -1835,6 +1843,8 @@ def wait_for_schedule_metrics(
                 # The caller still requires that complete causal proof below.
                 return {
                     "windowStartUtc": _iso(metric_start), "windowEndUtc": _iso(end),
+                    "eventBridgeWindowStartUtc": _iso(eventbridge_start),
+                    "eventBridgeWindowEndUtc": _iso(eventbridge_end),
                     "lambdaInvocations": lambda_invocations, "lambdaErrors": lambda_errors,
                     "eventBridgeInvocations": None,
                     "eventBridgeFailedInvocations": rule_failures,
