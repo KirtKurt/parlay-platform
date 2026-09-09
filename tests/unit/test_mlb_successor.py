@@ -225,3 +225,66 @@ def test_dynamodb_numeric_round_trip_preserves_fingerprints():
     round_trip = {"int": Decimal("1"), "float": Decimal("1.0"), "noninteger": Decimal(".125"), "boolean": True}
     assert model.fingerprint(value) == model.fingerprint(round_trip)
     assert model.fingerprint({"x": True}) != model.fingerprint({"x": 1})
+
+
+def test_fresh_test_seals_at_first_complete_whole_slate_and_cannot_change():
+    repo, frozen = Memory(), freeze()
+    source = passing_evidence(frozen, 110)
+    final_rows = []
+    for row in source["rows"]:
+        entry, label = row["prediction"], row["homeWon"]
+        record = entry["record"]
+        repo.once(f'PREDICTION#{record["slateDateEt"]}#{record["officialGamePk"]}', entry)
+        final_rows.append({**record, "homeWon": label})
+    result = runtime.evaluate_prospective(repo, final_rows, frozen, NOW+timedelta(days=15))
+    assert result["qualification"]["prospectiveCount"] == 100
+    sealed = deepcopy(repo.get("QUALIFICATION"))
+    for row in final_rows: row["homeWon"] = 1-row["homeWon"]
+    runtime.evaluate_prospective(repo, final_rows, frozen, NOW+timedelta(days=16))
+    assert repo.get("QUALIFICATION") == sealed
+
+
+def test_incomplete_slate_and_changed_lock_inputs_cannot_be_cherry_picked():
+    repo, frozen = Memory(), freeze()
+    source = passing_evidence(frozen, 100)
+    final_rows = []
+    for i, row in enumerate(source["rows"]):
+        entry, record = row["prediction"], row["prediction"]["record"]
+        if i: repo.once(f'PREDICTION#{record["slateDateEt"]}#{record["officialGamePk"]}', entry)
+        final_rows.append({**record, "homeWon": row["homeWon"]})
+    result = runtime.evaluate_prospective(repo, final_rows, frozen, NOW+timedelta(days=15))
+    assert result["prospectiveCount"] == 90
+    assert result["skippedIncompleteSlateDates"] == ["2026-09-10"]
+    assert repo.get("QUALIFICATION") is None
+    final_rows[10]["inputFingerprint"] = "changed"
+    with pytest.raises(ValueError, match="changed frozen"):
+        runtime.evaluate_prospective(repo, final_rows, frozen, NOW+timedelta(days=15))
+
+
+def test_repository_immutable_conflicts_corruption_and_pagination():
+    class Conditional(Exception):
+        response = {"Error": {"Code": "ConditionalCheckFailedException"}}
+    class Table:
+        def __init__(self): self.rows = {}; self.queries = []
+        def put_item(self, Item, **kwargs):
+            key = (Item["PK"], Item["SK"])
+            if kwargs.get("ConditionExpression") and key in self.rows: raise Conditional()
+            self.rows[key] = deepcopy(Item)
+        def get_item(self, Key, ConsistentRead):
+            assert ConsistentRead is True
+            return {"Item": deepcopy(self.rows.get((Key["PK"], Key["SK"])))}
+        def query(self, **kwargs):
+            self.queries.append(kwargs)
+            assert kwargs["ConsistentRead"] is True
+            items = list(self.rows.values())
+            return {"Items": items[1:]} if "ExclusiveStartKey" in kwargs else {"Items": items[:1], "LastEvaluatedKey": {"PK": "cursor", "SK": "cursor"}}
+    table = Table()
+    repo = runtime.Repository(table)
+    assert repo.once("A", {"value": .5}) == {"value": .5}
+    assert repo.once("A", {"value": .5}) == {"value": Decimal(".5")}
+    with pytest.raises(ValueError, match="immutable"): repo.once("A", {"value": .6})
+    repo.once("B", {"value": 1.})
+    assert len(repo.predictions("2026-09-10")) == 2
+    assert len(table.queries) == 2
+    table.rows[(runtime.PK, "A")]["data"]["value"] = 9
+    with pytest.raises(ValueError, match="fingerprint"): repo.get("A")
