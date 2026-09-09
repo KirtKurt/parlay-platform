@@ -333,6 +333,24 @@ def test_valid_grading_reports_target_met_separately() -> None:
     assert not any("ACCURACY_BELOW_TARGET" in item for item in state["blockers"])
 
 
+def test_capture_window_changes_do_not_signal_progress_or_data_loss() -> None:
+    before = _state(audit=None, autonomy=_trailing())
+    before["mlbAuto"]["publicationPhase"] = "AUTHORITY_READINESS_GATED"
+    before["r7"].update(selectionCapturedCount=1, selectionEligibleCount=1)
+    after = copy.deepcopy(before)
+    after["r7"].update(selectionCapturedCount=0, selectionEligibleCount=0)
+    for current, prior in ((after, before), (before, after)):
+        assert reporter._overall_direction(current, prior) == (
+            "🟡 AUTHORITY READINESS GATED", 0, 0
+        )
+    assert "Selection coverage this run" in reporter._comment(after, before)
+    before["r7"]["acceptedRowCount"] = 610
+    after["r7"]["acceptedRowCount"] = 609
+    assert reporter._overall_direction(after, before) == (
+        "🔴 REGRESSION DETECTED", 0, 1
+    )
+
+
 def test_unpublished_card_before_final_window_is_collecting_not_due() -> None:
     state = _state(
         audit=None,

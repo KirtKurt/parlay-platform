@@ -1402,6 +1402,8 @@ def _overall_direction(state: Mapping[str, Any], previous: Optional[Mapping[str,
             positive += 1
         elif delta is not None and delta < 0:
             negative += 1
+    # Selection coverage is scoped to one invocation's eligible games, not a
+    # cumulative ledger size. Its normal window changes are not advancement.
     for path in (
         "r7.acceptedRowCount",
         "r7.trainCount",
@@ -1409,7 +1411,6 @@ def _overall_direction(state: Mapping[str, Any], previous: Optional[Mapping[str,
         "r7.prospectiveTestCount",
         "r7.processedSlateCount",
         "r7.finalizedSlateCount",
-        "r7.selectionCapturedCount",
         "r7.movementCoveredRowCount",
     ):
         delta = _numeric_delta(state, previous, path)
@@ -1535,7 +1536,7 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
         f"| Prospective-test partition | {_progress(int(r7.get('prospectiveTestCount') or 0), int(r7.get('prospectiveTestTarget') or 100))} | {_fmt_delta(prospective_delta)} | {_arrow(prospective_delta)} |",
         f"| Processed / finalized slates | {_fmt_int(r7.get('processedSlateCount'))} / {_fmt_int(r7.get('finalizedSlateCount'))} | — | — |",
         f"| Movement-feature coverage | {_fmt_int(r7.get('movementCoveredRowCount'))} / {_fmt_int(r7.get('movementAcceptedRowCount'))} ({_fmt_pct(r7.get('movementCoverageRate'))}) · mean source ratio {_fmt_pct(r7.get('movementMeanSelectedCoverageRatioFull'))} | — | — |",
-        f"| Selection ledger covered / eligible / selected | {_fmt_int(r7.get('selectionCapturedCount'))} / {_fmt_int(r7.get('selectionEligibleCount'))} / {_fmt_int(r7.get('selectionSelectedCount'))} ({_fmt_pct(r7.get('selectionCoverageRate'))}) | — | — |",
+        f"| Selection coverage this run: covered / eligible / selected | {_fmt_int(r7.get('selectionCapturedCount'))} / {_fmt_int(r7.get('selectionEligibleCount'))} / {_fmt_int(r7.get('selectionSelectedCount'))} ({_fmt_pct(r7.get('selectionCoverageRate'))}) | — | — |",
         f"| Selection capture new / existing | {_fmt_int(r7.get('selectionNewCount'))} / {_fmt_int(r7.get('selectionExistingCount'))} | — | — |",
         "",
         f"**Training state:** `{r7.get('trainingStatus') or 'unknown'}` · model trained **{r7.get('modelTrained')}** · candidate `{r7.get('candidateArtifactId') or 'none'}` · promotion `{r7.get('promotionDecision') or 'not evaluated'}` · gate passed **{r7.get('promotionGatePassed')}**.",
