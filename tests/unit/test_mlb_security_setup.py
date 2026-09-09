@@ -17,6 +17,8 @@ if args[:2]==['sts','get-caller-identity']: print('123456789012')
 elif args[:2]==['cloudformation','describe-stack-resource']:
     print('api123' if 'ServerlessRestApi' in args else 'api-lambda')
 elif args[:2]==['apigateway','get-rest-api']: print('Production API')
+elif args[:2]==['cloudwatch','describe-alarms']:
+    print(json.dumps({'ActionsEnabled':False,'AlarmActions':['arn:existing-notification']}))
 elif args[:2]==['budgets','create-budget'] and mode=='budget-denied':
     print('AccessDeniedException budgets:ModifyBudget',file=sys.stderr);sys.exit(1)
 elif args[:2]==['cloudwatch','put-metric-alarm'] and mode=='alarm-denied':
@@ -43,6 +45,9 @@ def test_rest_api_alarms_use_real_metric_dimension(tmp_path):
     assert len(alarms) == 3
     assert all('Name=ApiName,Value=Production API' in call for call in alarms)
     assert not any('Name=ApiId,Value=api123' in call for call in alarms)
+    for call in alarms:
+        preserved = json.loads(call[call.index('--cli-input-json') + 1])
+        assert preserved == {'ActionsEnabled': False, 'AlarmActions': ['arn:existing-notification']}
 
 
 def test_failed_budget_does_not_report_success(tmp_path):

@@ -14,7 +14,14 @@ fi
 put_alarm() {
   local name="$1"
   shift
-  if aws cloudwatch put-metric-alarm --region "$AWS_REGION" --alarm-name "$name" "$@"; then
+  local settings
+  if ! settings=$(aws cloudwatch describe-alarms --region "$AWS_REGION" --alarm-names "$name" --query 'MetricAlarms[0]' --output json); then
+    echo "Cannot read existing alarm actions for $name; leaving it unchanged."
+    FAILED=1
+    return
+  fi
+  settings=$(printf '%s' "$settings" | python -c 'import json,sys; old=json.load(sys.stdin) or {}; print(json.dumps({k:old[k] for k in ("ActionsEnabled","AlarmActions","OKActions","InsufficientDataActions") if k in old}))')
+  if aws cloudwatch put-metric-alarm --region "$AWS_REGION" --alarm-name "$name" --cli-input-json "$settings" "$@"; then
     echo "Configured alarm: $name"
   else
     echo "Failed alarm: $name"
