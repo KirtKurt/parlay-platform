@@ -1150,7 +1150,38 @@ def test_ml_selection_and_training_writers_cannot_target_protected_partitions():
     assert proof["outcomesAccess"] == "CANONICAL_LABEL_READ_ONLY"
     assert proof["canonicalLabelReaderMutationCalls"] == []
     assert proof["protectedOutcomesPredictionsResultSignalsOrLabelsWritable"] is False
-    assert proof["allDynamoDbMutationCallsConfinedToAwsTrainingStore"] is True
+    assert proof["allDynamoDbMutationCallsConfinedToAwsTrainingStore"] is False
+    assert proof["allDynamoDbMutationCallsConfinedToApprovedSnapshotStores"] is True
+    assert proof["successorPartitionPrefix"] == "MLB_ML_SUCCESSOR#"
+    assert proof["successorImmutableWritesConditional"] is True
+    assert "hello_world/mlb_successor_runtime_v1.py" in proof["sourceSha256"]
+
+
+@pytest.mark.parametrize("before,after", [
+    ('"MLB_ML_SUCCESSOR#"', '"UNREVIEWED#"'),
+    ('self.table = table', 'self.table = other_table'),
+    ('item = {"PK": PK, "SK": key', 'item = {"PK": key, "SK": key'),
+    ('"PK": PK, "SK": "STATUS#"', '"PK": mode, "SK": "STATUS#"'),
+    ('ConditionExpression="attribute_not_exists(PK)"', 'ConditionExpression="attribute_exists(PK)"'),
+    ('self.table.put_item(Item=safe(item)', 'other_table.put_item(Item=safe(item)'),
+])
+def test_successor_storage_audit_rejects_namespace_table_and_immutability_drift(before, after):
+    path = "hello_world/mlb_successor_runtime_v1.py"
+    source = (ROOT / path).read_text(encoding="utf-8")
+    assert before in source
+    with pytest.raises(subject.VerificationError, match="Successor"):
+        subject.verify_ml_training_protected_partition_isolation(
+            source_overrides={path: source.replace(before, after, 1)}
+        )
+
+
+def test_successor_storage_audit_rejects_public_reader_writes():
+    path = "hello_world/mlb_successor_runtime_v1.py"
+    source = (ROOT / path).read_text(encoding="utf-8") + (
+        "\n\ndef unsafe_public_read(table):\n    table.delete_item(Key={'PK': PK, 'SK': 'ACTIVE'})\n"
+    )
+    with pytest.raises(subject.VerificationError, match="escaped AwsTrainingStore"):
+        subject.verify_ml_training_protected_partition_isolation(source_overrides={path: source})
 
 
 def test_ml_training_source_proof_rejects_any_mutation_outside_store():

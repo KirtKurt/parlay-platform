@@ -1,0 +1,31 @@
+{
+  "allDynamoDbMutationCallsConfinedToApprovedSnapshotStores": true,
+  "allDynamoDbMutationCallsConfinedToAwsTrainingStore": false,
+  "canonicalLabelReaderMutationCalls": [],
+  "fullTrainingSchedule": "cron(11 1/6 * * ? *)",
+  "outcomesAccess": "CANONICAL_LABEL_READ_ONLY",
+  "protectedOutcomesPredictionsResultSignalsOrLabelsWritable": false,
+  "protectedPartitionPrefixes": [
+    "OUTCOME#mlb#",
+    "MLB_CANONICAL_FINAL_LABEL#",
+    "PRED#mlb#",
+    "RESULT_SIGNAL#mlb#"
+  ],
+  "selectionCaptureSchedule": "cron(1/2 * * * ? *)",
+  "sourceSha256": {
+    "hello_world/mlb_canonical_final_labels_v1.py": "08ad0f2ca4a0bb0658b158dcf873085c2cbda6f30a434d8182ec87624e523102",
+    "hello_world/mlb_ml_aws_training_v1.py": "0de4368a53914cd3de33b824a84d2097783edfe76b8d4b043a13d319cdf6cded",
+    "hello_world/mlb_ml_aws_training_v1_compat.py": "eb8fcce763d0535ed94f868de9a7531bde6d89596a895f962b7df1fd052da22c",
+    "hello_world/mlb_prospective_trainer_read_repair.py": "fbb3a19c6f089667fd5fe19ccb98a4326df6b5231295c0fbde96dc6788db2dc4",
+    "hello_world/mlb_r7_source_honest_training_repair.py": "9f0ec4ca0c1f3909a761056cf97e9d8f72192df14bed4c52611acdd0d77dcc73",
+    "hello_world/mlb_successor_runtime_v1.py": "8379d0caa513b7d2d7f8b10098c965f52e81c617480f6581537de25645e77881"
+  },
+  "successorImmutableWritesConditional": true,
+  "successorPartitionPrefix": "MLB_ML_SUCCESSOR#",
+  "writerStore": "AwsTrainingStore",
+  "writerStores": [
+    "AwsTrainingStore",
+    "mlb_successor_runtime_v1.Repository"
+  ],
+  "writerTableEnvironment": "SNAPSHOTS_TABLE"
+}
