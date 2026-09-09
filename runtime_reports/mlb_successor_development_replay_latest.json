@@ -1,0 +1,72 @@
+{
+  "development": {
+    "blockers": [
+      "INSUFFICIENT_WHOLE_SLATE_DEVELOPMENT_ROWS",
+      "INSUFFICIENT_OBSERVED_STARTER_RATES_TRAIN",
+      "INSUFFICIENT_OBSERVED_STARTER_RATES_CALIBRATION",
+      "INSUFFICIENT_OBSERVED_STARTER_RATES_SELECTION"
+    ],
+    "counts": {
+      "calibration": 49,
+      "selection": 53,
+      "train": 0
+    },
+    "observedStarterCounts": {
+      "calibration": 0,
+      "selection": 0,
+      "train": 0
+    },
+    "ok": true,
+    "productionAuthorityChanged": false,
+    "protocol": {
+      "automaticWagerAllowed": false,
+      "calibrationRule": "earlier_validation_only_regularized_logit_adjustment",
+      "experimentId": "mlb-successor-2026-09-09-starter-rates-v1",
+      "features": [
+        "deltaGapHome",
+        "homeAwayVelocityPpHr60mDiff",
+        "starterEraGapHome",
+        "starterKMinusBbGapHome",
+        "starterRatesMissing"
+      ],
+      "firstActivationRequiresManualReview": true,
+      "maximumDevelopmentRows": 750,
+      "penalties": [
+        0.1,
+        1.0,
+        10.0
+      ],
+      "prospectiveRule": "first_complete_whole_slates_after_durable_freeze_next_ET_day",
+      "r8ReviewedTestIsDevelopmentOnly": true,
+      "selectionRule": "later_validation_brier_then_logloss_then_configuration_name",
+      "starterObservedCalibrationMinimum": 25,
+      "starterObservedSelectionMinimum": 25,
+      "starterObservedTrainMinimum": 100,
+      "testCanBeReopened": false,
+      "testMinimum": 100,
+      "trainMinimum": 300,
+      "validationMinimum": 100,
+      "version": "MLB-SUCCESSOR-MARKET-OFFSET-STARTER-RATES-v1"
+    },
+    "status": "ACCUMULATING_STARTER_RATE_DEVELOPMENT_DATA"
+  },
+  "observedAtUtc": "2026-09-09T08:58:10.124735+00:00",
+  "productionAuthorityChanged": false,
+  "prospectiveQualificationEvidence": false,
+  "r8HistoryUnchanged": true,
+  "readOnly": true,
+  "rejectionCounts": {
+    "invalid immutable fundamentals snapshot": 417
+  },
+  "sourceProvenance": {
+    "artifactChecksums": {
+      "dataset": "8b843d397c5e7abad7e8aa4dcdeba51ab9ee86673c58f48f814d7bfdcc751368",
+      "evaluation": "bbaa07f42077b5833943123f7bc77334714a46260fdbfe5b8d9f00ca3dc6ef8a",
+      "frozenChallenger": "05a9231c24dad1bc2504a1bc687c2b44d6ebbeb4f9f05e5068bcb5a0792c6f61"
+    },
+    "candidateDigest": "4dcd6c03dca12044cb9baa66068b144d559dab110bbdd39d04cc8aae61517027",
+    "datasetDigest": "8b843d397c5e7abad7e8aa4dcdeba51ab9ee86673c58f48f814d7bfdcc751368"
+  },
+  "sourceRowCount": 519,
+  "successorAcceptedRowCount": 102
+}

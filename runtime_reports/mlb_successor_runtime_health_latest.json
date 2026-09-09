@@ -1,0 +1,280 @@
+{
+  "observedAtUtc": "2026-09-09T09:48:34.278060+00:00",
+  "evidenceSource": {
+    "workflowRunId": 34336532901,
+    "workflowJobId": 102417796078,
+    "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/34336532901"
+  },
+  "health": {
+    "trainingHealth": {
+      "ok": true,
+      "executionMode": "training",
+      "latestRunCreatedAtUtc": "2026-09-09T09:46:41.528119+00:00",
+      "ageSeconds": 112.482,
+      "maximumAgeSeconds": 28800,
+      "deploymentIdentityMatches": true,
+      "errors": []
+    },
+    "selectionCaptureHealth": {
+      "ok": true,
+      "executionMode": "selection_capture",
+      "latestRunCreatedAtUtc": "2026-09-09T09:47:26.232172+00:00",
+      "ageSeconds": 67.786,
+      "maximumAgeSeconds": 600,
+      "deploymentIdentityMatches": true,
+      "errors": []
+    }
+  },
+  "successorDevelopment": {
+    "counts": {
+      "selection": 51,
+      "calibration": 53,
+      "train": 11
+    },
+    "automaticPromotionEnabled": false,
+    "version": "MLB-SUCCESSOR-DURABLE-QUALIFIED-DIRECTION-v1",
+    "acceptedDevelopmentRows": 115,
+    "deploymentIdentity": {
+      "gitSha": "80af2e4fd33d3dabf5be477da0344a78ed4521cd",
+      "templateSha256": "984524a516a644e299ecc5cdb0cd2bc75c2b6912be9d41dd59238643ebc91c18"
+    },
+    "rejectedRows": {
+      "invalid immutable fundamentals snapshot": 495
+    },
+    "productionAuthorityChanged": false,
+    "protocol": {
+      "automaticWagerAllowed": false,
+      "starterObservedSelectionMinimum": 25,
+      "testCanBeReopened": false,
+      "penalties": [
+        0.1,
+        1,
+        10
+      ],
+      "validationMinimum": 100,
+      "firstActivationRequiresManualReview": true,
+      "version": "MLB-SUCCESSOR-MARKET-OFFSET-STARTER-RATES-v1",
+      "calibrationRule": "earlier_validation_only_regularized_logit_adjustment",
+      "prospectiveRule": "first_complete_whole_slates_after_durable_freeze_next_ET_day",
+      "trainMinimum": 300,
+      "maximumDevelopmentRows": 750,
+      "testMinimum": 100,
+      "features": [
+        "deltaGapHome",
+        "homeAwayVelocityPpHr60mDiff",
+        "starterEraGapHome",
+        "starterKMinusBbGapHome",
+        "starterRatesMissing"
+      ],
+      "starterObservedTrainMinimum": 100,
+      "starterObservedCalibrationMinimum": 25,
+      "experimentId": "mlb-successor-2026-09-09-starter-rates-v1",
+      "selectionRule": "later_validation_brier_then_logloss_then_configuration_name",
+      "r8ReviewedTestIsDevelopmentOnly": true
+    },
+    "experimentId": "mlb-successor-2026-09-09-starter-rates-v1",
+    "blockers": [
+      "INSUFFICIENT_WHOLE_SLATE_DEVELOPMENT_ROWS",
+      "INSUFFICIENT_OBSERVED_STARTER_RATES_TRAIN",
+      "INSUFFICIENT_OBSERVED_STARTER_RATES_CALIBRATION",
+      "INSUFFICIENT_OBSERVED_STARTER_RATES_SELECTION"
+    ],
+    "observedStarterCounts": {
+      "selection": 0,
+      "calibration": 0,
+      "train": 0
+    },
+    "ok": true,
+    "updatedAtUtc": "2026-09-09T09:46:36.649376+00:00",
+    "status": "ACCUMULATING_STARTER_RATE_DEVELOPMENT_DATA"
+  },
+  "successorCapture": {
+    "ok": true,
+    "capturedCount": 0,
+    "status": "WAITING_FOR_SUCCESSOR_DEVELOPMENT"
+  },
+  "trainerRuntime": {
+    "State": "Active",
+    "LastUpdateStatus": "Successful",
+    "LastModified": "2026-09-09T09:33:31.000+0000",
+    "CodeSha256": "415X4NW1PJoEC7MnO85QGlYO+2pn1mwaneoccqbSJjA=",
+    "Timeout": 900,
+    "MemorySize": 2048,
+    "Handler": "mlb_ml_aws_training_v1_compat.lambda_handler",
+    "errors": []
+  },
+  "resultsDeliveryDiagnostics": {
+    "observedAtUtc": "2026-09-09T09:49:28.718344+00:00",
+    "qualificationEvidence": false,
+    "readOnlyProofReplacement": false,
+    "ruleName": "parlay-platform-dev-MLBResultsSchedulerFunctionMLBR-iAegm5XTRSXV",
+    "windows": [
+      {
+        "startUtc": "2026-09-09T08:36:00+00:00",
+        "endUtc": "2026-09-09T08:51:00+00:00",
+        "AWS/Events/Invocations": {
+          "sum": 0,
+          "datapointCount": 0,
+          "datapoints": []
+        },
+        "AWS/Events/FailedInvocations": {
+          "sum": 0,
+          "datapointCount": 0,
+          "datapoints": []
+        },
+        "AWS/Lambda/Invocations": {
+          "sum": 1,
+          "datapointCount": 1,
+          "datapoints": [
+            {
+              "timestamp": "2026-09-09T08:36:00+00:00",
+              "sum": 1
+            }
+          ]
+        },
+        "AWS/Lambda/Errors": {
+          "sum": 0,
+          "datapointCount": 1,
+          "datapoints": [
+            {
+              "timestamp": "2026-09-09T08:36:00+00:00",
+              "sum": 0
+            }
+          ]
+        }
+      },
+      {
+        "startUtc": "2026-09-09T08:51:00+00:00",
+        "endUtc": "2026-09-09T09:06:00+00:00",
+        "AWS/Events/Invocations": {
+          "sum": 1,
+          "datapointCount": 1,
+          "datapoints": [
+            {
+              "timestamp": "2026-09-09T08:51:00+00:00",
+              "sum": 1
+            }
+          ]
+        },
+        "AWS/Events/FailedInvocations": {
+          "sum": 0,
+          "datapointCount": 0,
+          "datapoints": []
+        },
+        "AWS/Lambda/Invocations": {
+          "sum": 1,
+          "datapointCount": 1,
+          "datapoints": [
+            {
+              "timestamp": "2026-09-09T08:51:00+00:00",
+              "sum": 1
+            }
+          ]
+        },
+        "AWS/Lambda/Errors": {
+          "sum": 0,
+          "datapointCount": 1,
+          "datapoints": [
+            {
+              "timestamp": "2026-09-09T08:51:00+00:00",
+              "sum": 0
+            }
+          ]
+        }
+      },
+      {
+        "startUtc": "2026-09-09T09:06:00+00:00",
+        "endUtc": "2026-09-09T09:21:00+00:00",
+        "AWS/Events/Invocations": {
+          "sum": 2,
+          "datapointCount": 2,
+          "datapoints": [
+            {
+              "timestamp": "2026-09-09T09:06:00+00:00",
+              "sum": 1
+            },
+            {
+              "timestamp": "2026-09-09T09:20:00+00:00",
+              "sum": 1
+            }
+          ]
+        },
+        "AWS/Events/FailedInvocations": {
+          "sum": 0,
+          "datapointCount": 0,
+          "datapoints": []
+        },
+        "AWS/Lambda/Invocations": {
+          "sum": 19,
+          "datapointCount": 2,
+          "datapoints": [
+            {
+              "timestamp": "2026-09-09T09:06:00+00:00",
+              "sum": 15
+            },
+            {
+              "timestamp": "2026-09-09T09:07:00+00:00",
+              "sum": 4
+            }
+          ]
+        },
+        "AWS/Lambda/Errors": {
+          "sum": 0,
+          "datapointCount": 2,
+          "datapoints": [
+            {
+              "timestamp": "2026-09-09T09:06:00+00:00",
+              "sum": 0
+            },
+            {
+              "timestamp": "2026-09-09T09:07:00+00:00",
+              "sum": 0
+            }
+          ]
+        }
+      },
+      {
+        "startUtc": "2026-09-09T09:21:00+00:00",
+        "endUtc": "2026-09-09T09:36:00+00:00",
+        "AWS/Events/Invocations": {
+          "sum": 0,
+          "datapointCount": 0,
+          "datapoints": []
+        },
+        "AWS/Events/FailedInvocations": {
+          "sum": 0,
+          "datapointCount": 0,
+          "datapoints": []
+        },
+        "AWS/Lambda/Invocations": {
+          "sum": 15,
+          "datapointCount": 2,
+          "datapoints": [
+            {
+              "timestamp": "2026-09-09T09:21:00+00:00",
+              "sum": 1
+            },
+            {
+              "timestamp": "2026-09-09T09:35:00+00:00",
+              "sum": 14
+            }
+          ]
+        },
+        "AWS/Lambda/Errors": {
+          "sum": 0,
+          "datapointCount": 2,
+          "datapoints": [
+            {
+              "timestamp": "2026-09-09T09:21:00+00:00",
+              "sum": 0
+            },
+            {
+              "timestamp": "2026-09-09T09:35:00+00:00",
+              "sum": 0
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,258 @@
+{
+  "proofType": "MLB_REPAIRED_RESULTS_VERIFICATION_SUMMARY",
+  "ok": true,
+  "blockers": [],
+  "createdAtUtc": "2026-09-09T10:01:01.992045Z",
+  "completedAtUtc": "2026-09-09T10:12:11.956290Z",
+  "expectedDeploySha": "80af2e4fd33d3dabf5be477da0344a78ed4521cd",
+  "expectedDeployRunId": "34333834173-1",
+  "source": {
+    "workflowRunId": 34337874609,
+    "workflowJobId": 102421440606,
+    "verifierWorkflow": {
+      "path": ".github/workflows/verify-mlb-repaired-results-checker.yml",
+      "runAttempt": "1",
+      "runId": "34337874609",
+      "workflowSha": "8e72d136705510aa3711086ac72fb7ee34fc4250"
+    },
+    "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/34337874609",
+    "artifactId": 10098879599,
+    "artifactArchiveSha256": "sha256:606617d2dad667b6c29052386b1c4b63a35e43273af399787074084a0642859b",
+    "artifactUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/34337874609/artifacts/10098879599",
+    "summaryOfWorkflowEvidence": true
+  },
+  "sourceBinding": {
+    ".github/workflows/deploy.yml": "046f5693dc6ede6912d65d0085903455287f1df77b7263d70cf621f952c1417a",
+    ".github/workflows/verify-mlb-repaired-results-checker.yml": "2095eabcb711f3038a1c21ec0fdfa679cd054d3ad4d93bccd4a2004293f99431",
+    "hello_world/mlb_result_signals.py": "4bff1cfec2b2d05a143e52c3238351625e6064f57a2e9c9642d255f387d7c171",
+    "hello_world/mlb_results_scheduler.py": "c4e5eab4f2493f55ef37bf6b09c2897f6793e297dbdb8811e7193dc8be25aa3a",
+    "scripts/mlb_lambda_artifact_identity.py": "de4714a985e4680000ebcfad0457ccffa0b6aae8ffc5e485fdae6735e32e59b3",
+    "scripts/verify_mlb_deploy_identity.py": "1f709dca4029342b926040e805e280ccc8313e591ee0e736f865c9532084bad1",
+    "scripts/verify_mlb_results_api_postdeploy.py": "c0fee3a4ef9540407192ca8bdbd6e0b868fff5bc21fc21abf32eafe53070f210",
+    "template.yaml": "984524a516a644e299ecc5cdb0cd2bc75c2b6912be9d41dd59238643ebc91c18",
+    "tests/unit/test_mlb_result_signals_provenance.py": "b8a4bc9e876bee0c3a4f9f9052b55512e46661bfd5f2fe7f1e5468d0148fb16c",
+    "tests/unit/test_mlb_results_scheduler_http_read_only.py": "7723f752de333c654370ef80a91dafcca370f3dab855b2eeabb8f8c6fde7d8a4",
+    "tests/unit/test_verify_mlb_results_api_postdeploy.py": "b6e5e42748d5ff5d11f2232e13eb9115995db1137ab79a93e2920c15d4c015fb"
+  },
+  "historicalHttpProof": {
+    "probeSlateDateEt": "2026-08-04",
+    "protectedPartitionsUnchanged": true,
+    "netPartitionStateInvariant": true,
+    "mutationProofAuthority": "STRONG_CONSISTENT_PINNED_HISTORICAL_PARTITION_FINGERPRINT_EQUALITY",
+    "durationSeconds": 63.373
+  },
+  "scheduledAdvance": {
+    "nativeEventTimeUtc": "2026-09-09T10:06:00Z",
+    "nativeEventId": "c9c2a70a-8b09-57e0-1e8f-240c1a780bfa",
+    "lambdaRequestId": "817c3a47-e50e-41d3-bba0-6a7b6831fcd3",
+    "newSummaryCreatedAt": "2026-09-09T10:09:51.633453+00:00",
+    "newSummaryKey": {
+      "PK": "RESULT_SIGNAL#mlb#2026-09-09",
+      "SK": "SUMMARY#2026-09-09T10:09:51.633453+00:00"
+    },
+    "metrics": {
+      "clean": true,
+      "cleanScope": "EVENTBRIDGE_DELIVERY_ONLY",
+      "correlation": "ONE_RULE_DELIVERY_SUPPORTS_REQUEST_BOUND_NATIVE_SUMMARY",
+      "deliveryCountIsCompleteAccounting": false,
+      "eventBridgeDeliveryAuthoritative": false,
+      "eventBridgeFailedInvocations": 0,
+      "eventBridgeInvocations": 1,
+      "eventBridgeMetricAvailable": true,
+      "eventBridgeWindowEndUtc": "2026-09-09T10:20:00Z",
+      "eventBridgeWindowStartUtc": "2026-09-09T10:05:00Z",
+      "lambdaAggregateMetricsAuthoritative": false,
+      "lambdaAggregateMetricsDiagnosticReason": "The same function serves public GET/OPTIONS concurrently; the persisted summary is bound by Lambda request ID instead.",
+      "lambdaErrors": 0,
+      "lambdaInvocations": 1,
+      "publicationSettleSeconds": 120,
+      "windowEndUtc": "2026-09-09T10:21:00Z",
+      "windowStartUtc": "2026-09-09T10:06:00Z"
+    },
+    "lambdaPlatformLog": {
+      "clean": true,
+      "endCount": 1,
+      "logGroup": "/aws/lambda/parlay-platform-dev-MLBResultsSchedulerFunction-EsmNd16RYLmT",
+      "reportCount": 1,
+      "reportSha256": "91c30713e4ffb1d1cd1cc174dfdc82a6328bfc7a9f5cf978815eb9c0ac7373ad",
+      "reportStatus": "NOT_EMITTED_BY_PLATFORM",
+      "requestId": "817c3a47-e50e-41d3-bba0-6a7b6831fcd3",
+      "startCount": 1,
+      "structuredPersistenceLogCount": 1,
+      "structuredPersistenceLogSha256": "9f5eb3b9d0c1bca6ad873403e6c35f565613086298d1b8a087ec1a4f3c7efe2e",
+      "unrelatedRequestCount": 0,
+      "unrelatedRequestIds": [],
+      "unrelatedRequestsGateVerification": false
+    },
+    "binding": {
+      "aggregateLambdaInvocationCountAuthoritative": false,
+      "bindingType": "PRE_FENCE_KEY_DIFF_NATIVE_EVENTBRIDGE_REQUEST_ID_CAUSAL_BINDING",
+      "exactDeliveryCountAsserted": false,
+      "nativeEventBridgeEventId": "c9c2a70a-8b09-57e0-1e8f-240c1a780bfa",
+      "nativeEventBridgeRuleArn": "arn:aws:events:***:735707987003:rule/parlay-platform-dev-MLBResultsSchedulerFunctionMLBR-iAegm5XTRSXV",
+      "oneEnabledExactRuleTarget": true,
+      "oneEventBridgeDelivery": null,
+      "oneMatchingStructuredPersistenceLog": true,
+      "oneNativeScheduledInvocationProven": true,
+      "oneNewValidatedSummary": true,
+      "requestBoundLambdaRequestId": "817c3a47-e50e-41d3-bba0-6a7b6831fcd3"
+    },
+    "scope": {
+      "asserts": "NATURAL_METHODLESS_RESULTS_SCHEDULER_ADVANCEMENT_AND_PLATFORM_CLEANLINESS",
+      "canonicalSettlementHttp200Asserted": false,
+      "note": "A methodless run may persist a result-signal summary and return an HTTP-style 409 without becoming a Lambda platform error.",
+      "otherProducerHealthAsserted": false
+    }
+  },
+  "controlPlaneRecheck": {
+    "apiIdentityUnchanged": true,
+    "apiResourceSurfaceUnchanged": true,
+    "deployedStageExportUnchanged": true,
+    "functionIdentityUnchanged": true,
+    "scheduleRuleAndTargetUnchanged": true,
+    "stackStatus": "UPDATE_COMPLETE",
+    "tablePhysicalIdsUnchanged": true,
+    "verifiedAtUtc": "2026-09-09T10:12:11.952047Z"
+  },
+  "protectedTrainingStorage": {
+    "allDynamoDbMutationCallsConfinedToApprovedSnapshotStores": true,
+    "allDynamoDbMutationCallsConfinedToAwsTrainingStore": false,
+    "canonicalLabelReaderMutationCalls": [],
+    "fullTrainingSchedule": "cron(11 1/6 * * ? *)",
+    "outcomesAccess": "CANONICAL_LABEL_READ_ONLY",
+    "protectedOutcomesPredictionsResultSignalsOrLabelsWritable": false,
+    "protectedPartitionPrefixes": [
+      "OUTCOME#mlb#",
+      "MLB_CANONICAL_FINAL_LABEL#",
+      "PRED#mlb#",
+      "RESULT_SIGNAL#mlb#"
+    ],
+    "selectionCaptureSchedule": "cron(1/2 * * * ? *)",
+    "sourceSha256": {
+      "hello_world/mlb_canonical_final_labels_v1.py": "08ad0f2ca4a0bb0658b158dcf873085c2cbda6f30a434d8182ec87624e523102",
+      "hello_world/mlb_ml_aws_training_v1.py": "0de4368a53914cd3de33b824a84d2097783edfe76b8d4b043a13d319cdf6cded",
+      "hello_world/mlb_ml_aws_training_v1_compat.py": "eb8fcce763d0535ed94f868de9a7531bde6d89596a895f962b7df1fd052da22c",
+      "hello_world/mlb_prospective_trainer_read_repair.py": "fbb3a19c6f089667fd5fe19ccb98a4326df6b5231295c0fbde96dc6788db2dc4",
+      "hello_world/mlb_r7_source_honest_training_repair.py": "9f0ec4ca0c1f3909a761056cf97e9d8f72192df14bed4c52611acdd0d77dcc73",
+      "hello_world/mlb_successor_runtime_v1.py": "8379d0caa513b7d2d7f8b10098c965f52e81c617480f6581537de25645e77881"
+    },
+    "successorImmutableWritesConditional": true,
+    "successorPartitionPrefix": "MLB_ML_SUCCESSOR#",
+    "writerStore": "AwsTrainingStore",
+    "writerStores": [
+      "AwsTrainingStore",
+      "mlb_successor_runtime_v1.Repository"
+    ],
+    "writerTableEnvironment": "SNAPSHOTS_TABLE"
+  },
+  "deployedStage": {
+    "cacheClusterEnabled": false,
+    "cachedMethodSettings": [],
+    "deploymentCreatedDate": "2026-08-28T00:56:55Z",
+    "deploymentId": "y33jet",
+    "exactFiveGetFiveOptionsNoPost": true,
+    "exportFingerprintEncoding": "CANONICAL_SORTED_JSON_V1",
+    "exportSha256": "152a9b27265065af045caf396ab00b12f6f55032f8977e020df1e48ea647c163",
+    "exportedResultsSchedulerIntegrations": [
+      [
+        "/v1/results/mlb/final-scores",
+        "GET",
+        "aws_proxy"
+      ],
+      [
+        "/v1/results/mlb/final-scores",
+        "OPTIONS",
+        "aws_proxy"
+      ],
+      [
+        "/v1/results/mlb/proof",
+        "GET",
+        "aws_proxy"
+      ],
+      [
+        "/v1/results/mlb/proof",
+        "OPTIONS",
+        "aws_proxy"
+      ],
+      [
+        "/v1/results/mlb/result-signals",
+        "GET",
+        "aws_proxy"
+      ],
+      [
+        "/v1/results/mlb/result-signals",
+        "OPTIONS",
+        "aws_proxy"
+      ],
+      [
+        "/v1/results/mlb/settlement",
+        "GET",
+        "aws_proxy"
+      ],
+      [
+        "/v1/results/mlb/settlement",
+        "OPTIONS",
+        "aws_proxy"
+      ],
+      [
+        "/v1/results/mlb/signal-learning",
+        "GET",
+        "aws_proxy"
+      ],
+      [
+        "/v1/results/mlb/signal-learning",
+        "OPTIONS",
+        "aws_proxy"
+      ]
+    ],
+    "exportedRouteMethods": {
+      "/v1/results/mlb/final-scores": [
+        "GET",
+        "OPTIONS"
+      ],
+      "/v1/results/mlb/proof": [
+        "GET",
+        "OPTIONS"
+      ],
+      "/v1/results/mlb/result-signals": [
+        "GET",
+        "OPTIONS"
+      ],
+      "/v1/results/mlb/settlement": [
+        "GET",
+        "OPTIONS"
+      ],
+      "/v1/results/mlb/signal-learning": [
+        "GET",
+        "OPTIONS"
+      ]
+    },
+    "legacyResultsPostRoutes": [],
+    "routeMethods": {
+      "/v1/results/mlb/final-scores": [
+        "GET",
+        "OPTIONS"
+      ],
+      "/v1/results/mlb/proof": [
+        "GET",
+        "OPTIONS"
+      ],
+      "/v1/results/mlb/result-signals": [
+        "GET",
+        "OPTIONS"
+      ],
+      "/v1/results/mlb/settlement": [
+        "GET",
+        "OPTIONS"
+      ],
+      "/v1/results/mlb/signal-learning": [
+        "GET",
+        "OPTIONS"
+      ]
+    },
+    "stageLastUpdatedDate": "2026-08-28T00:56:58Z",
+    "stageName": "Prod"
+  },
+  "productionAuthorityChanged": false,
+  "syntheticScheduledInvocationPerformed": false
+}
