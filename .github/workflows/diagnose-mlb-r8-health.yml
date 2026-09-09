@@ -9,6 +9,7 @@ on:
       - hello_world/mlb_statsapi_starter_context.py
       - hello_world/mlb_advanced_context.py
       - tests/unit/test_mlb_statsapi_starter_context.py
+      - tests/unit/test_verify_mlb_starter_context.py
       - tests/unit/test_mlb_challenger_benchmark.py
       - .github/workflows/diagnose-mlb-r8-health.yml
   workflow_dispatch:
@@ -35,8 +36,8 @@ jobs:
         run: python scripts/mlb_challenger_benchmark.py
       - name: Verify official pre-lock starter observations
         run: |
-          python -m pytest -q tests/unit/test_mlb_statsapi_starter_context.py
-          python scripts/verify_mlb_starter_context.py
+          python -m pytest -q tests/unit/test_mlb_statsapi_starter_context.py tests/unit/test_verify_mlb_starter_context.py
+          python scripts/verify_mlb_starter_context.py --persisted
       - uses: actions/upload-artifact@v4
         if: always()
         with:
