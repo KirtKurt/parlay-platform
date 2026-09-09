@@ -143,6 +143,45 @@ def test_disposition_requires_every_open_candidate_to_have_persisted_winner():
     assert "g1:open_prelock_prediction_missing" in result["errors"]
 
 
+def test_verified_unpriced_game_is_lifecycle_without_hiding_priced_storage_failure():
+    now = datetime(2026, 9, 9, 6, 0, tzinfo=timezone.utc)
+    start = now + timedelta(hours=12)
+    status = [_row("priced", start), _row("unpriced", start)]
+    predictions = [_row("priced", start, winner="Home"), _row("unpriced", start)]
+    pull = {"games": [
+        {"game_id": "priced", "commence_time": start.isoformat(), "books": {"book": {"ml": {"home": -120, "away": 110}}}},
+        {"game_id": "unpriced", "commence_time": start.isoformat(), "books": {}},
+    ]}
+    unpriced = observer.unpriced_games_from_verified_pull(pull)
+    assert unpriced == {"unpriced": start.isoformat()}
+    result = observer.classify_dispositions(status, predictions, now=now, unpriced_games=unpriced)
+    assert result["complete"] is True
+    assert result["candidateCount"] == result["storedCandidateCount"] == 1
+    assert result["unpricedPendingCount"] == result["lifecycleCount"] == 1
+    assert result["dispositionCount"] == 2
+    predictions[0]["predictedWinner"] = None
+    result = observer.classify_dispositions(status, predictions, now=now, unpriced_games=unpriced)
+    assert result["complete"] is False
+    assert "priced:open_prelock_prediction_missing" in result["errors"]
+
+
+@pytest.mark.parametrize("wrong_binding", ["different_id", "different_start", "winner_claim"])
+def test_unpriced_evidence_cannot_excuse_unbound_or_claimed_predictions(wrong_binding):
+    now = datetime(2026, 9, 9, 6, 0, tzinfo=timezone.utc)
+    start = now + timedelta(hours=12)
+    status = [_row("g1", start)]
+    evidence = {"g1": start.isoformat()}
+    if wrong_binding == "different_id":
+        evidence = {"g2": start.isoformat()}
+    elif wrong_binding == "different_start":
+        evidence = {"g1": (start + timedelta(hours=1)).isoformat()}
+    else:
+        status[0]["predictedWinner"] = "Home"
+    result = observer.classify_dispositions(status, [_row("g1", start)], now=now, unpriced_games=evidence)
+    assert result["complete"] is False
+    assert "g1:open_prelock_prediction_missing" in result["errors"]
+
+
 def test_disposition_accepts_locked_winner_and_explicit_no_backfill_lifecycle():
     now = datetime(2026, 7, 23, 12, 0, tzinfo=timezone.utc)
     past = now - timedelta(hours=4)
@@ -187,6 +226,7 @@ def test_disposition_accepts_locked_winner_and_explicit_no_backfill_lifecycle():
         "storedCandidateCount": 0,
         "canonicalLockedCount": 1,
         "lifecycleCount": 1,
+        "unpricedPendingCount": 0,
         "dispositionCount": 2,
         "complete": True,
         "errors": [],
