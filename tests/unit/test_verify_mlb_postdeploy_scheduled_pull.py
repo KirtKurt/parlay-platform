@@ -143,10 +143,11 @@ def test_disposition_requires_every_open_candidate_to_have_persisted_winner():
     assert "g1:open_prelock_prediction_missing" in result["errors"]
 
 
-def test_verified_unpriced_game_is_lifecycle_without_hiding_priced_storage_failure():
+@pytest.mark.parametrize("pending_status", ["PENDING", "OPEN_PRE_LOCK"])
+def test_verified_unpriced_game_is_lifecycle_without_hiding_priced_storage_failure(pending_status):
     now = datetime(2026, 9, 9, 6, 0, tzinfo=timezone.utc)
     start = now + timedelta(hours=12)
-    status = [_row("priced", start), _row("unpriced", start)]
+    status = [_row("priced", start), _row("unpriced", start, status=pending_status)]
     predictions = [_row("priced", start, winner="Home"), _row("unpriced", start)]
     pull = {"games": [
         {"game_id": "priced", "commence_time": start.isoformat(), "books": {"book": {"ml": {"home": -120, "away": 110}}}},
