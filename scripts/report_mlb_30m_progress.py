@@ -1382,6 +1382,26 @@ def _successor_lines(state: Mapping[str, Any], previous: Optional[Mapping[str, A
     return lines
 
 
+def _research_lines(state: Mapping[str, Any]) -> list[str]:
+    research = state.get('research')
+    if not isinstance(research, Mapping):
+        return []
+    lines = ['', '### Expanded MLB player research', '',
+             '| Operation | Health | Last run UTC |', '|---|---|---|']
+    for name in ('capture', 'training', 'ingestion'):
+        item = research.get(name) or {}
+        evidence = item.get('evidence') or {}
+        lines.append(f"| {name} | {item.get('health', 'NOT_OBSERVED')} | {evidence.get('updatedAtUtc', 'not observed')} |")
+    capture = (research.get('capture') or {}).get('evidence') or {}
+    training = (research.get('training') or {}).get('evidence') or {}
+    ingestion = (research.get('ingestion') or {}).get('evidence') or {}
+    lines.extend(['', f"Research stage: `{training.get('status', 'NOT_OBSERVED')}`; development rows: `{training.get('developmentRows', 0)}`; new original rows: `{ingestion.get('originalRows', 0)}`.",
+        f"Last capture wrote `{capture.get('snapshotWrites', 0)}` snapshots and `{capture.get('predictionWrites', 0)}` research predictions. Missed T10 games: `{json.dumps(capture.get('missedT10', []))}`.",
+        f"Prior-game sources: `{ingestion.get('priorGames', 0)}/{ingestion.get('expectedPriorGames', 0)}`; Statcast days: `{ingestion.get('statcastDays', 0)}/30`; ingestion errors: `{len(ingestion.get('errors', []))}`.",
+        'Research observations and historical development data do not grant production or wagering authority.', ''])
+    return lines
+
+
 def _data_admission_summary(path: Path, now: datetime) -> dict[str, Any]:
     try:
         report = json.loads(path.read_text())
@@ -1580,6 +1600,7 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
         f"**R7 recovery workflow:** {workflow_status} · source `{workflow_kind}` · blocked slate `{r7.get('blockedSlateDate') or 'none'}` · continuity blocker `{r7.get('continuityBlocker') or 'none'}`.",
         "",
         *_successor_lines(state, previous),
+        *_research_lines(state),
         "### MLB AUTO",
         "",
         "| Metric | Now | Δ30m | Direction |",
@@ -1712,6 +1733,9 @@ def main() -> int:
         Path(__file__).resolve().parents[1]/'runtime_reports/mlb_data_admission_latest.json',
         datetime.now(timezone.utc),
     )
+    research_fn, _ = _resolve_function(ROOT_STACK, 'MLBResearchFunction')
+    research = _invoke(research_fn, {'mode': 'status'}) if research_fn else {}
+    state['research'] = research.get('payload') or {}
     comments = _issue_comments()
     previous_pulse = _latest_visible_pulse(comments)
     previous = previous_pulse.get("state") if previous_pulse else None

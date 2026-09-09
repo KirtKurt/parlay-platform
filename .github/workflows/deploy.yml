@@ -12,6 +12,7 @@ on:
       - "samconfig.toml"
       - "backend/src/**"
       - "hello_world/**"
+      - "mlb_research/**"
       - ".deploy-trigger"
       - "DEPLOY_TRIGGER_PULL_HISTORY.txt"
       - "ops/deploy-triggers/**"
@@ -124,6 +125,7 @@ jobs:
             tests/unit/test_mlb_ml_runtime_install_explicit.py
             tests/unit/test_mlb_pull_guard_status.py
             tests/unit/test_mlb_advanced_context_travel_rest.py
+            tests/unit/test_mlb_research_v1.py
             tests/unit/test_mlb_successor.py
             tests/unit/test_mlb_statsapi_starter_context.py
             tests/unit/test_mlb_statsapi_team_context.py
