@@ -56,11 +56,13 @@ jobs:
           git merge-base --is-ancestor "$TARGET_DEPLOY_SHA" origin/main
 
       - name: Bind exact successful deploy run and attestation steps
+        id: deploy_lineage
         env:
           GH_TOKEN: ${{ github.token }}
           DEPLOY_RUN_ID: ${{ github.event.workflow_run.id }}
           DEPLOY_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           DEPLOY_WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
+          DEPLOY_RUN_STARTED_AT: ${{ github.event.workflow_run.run_started_at }}
         run: |
           set -euo pipefail
           expected_workflow_id=$(gh api \
@@ -100,6 +102,25 @@ jobs:
           import os
           from pathlib import Path
 
+          def deployment_executed_in_attempt(job, attempt_started_at):
+              from datetime import datetime
+              def timestamp(value):
+                  parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+                  if parsed.tzinfo is None:
+                      raise ValueError('deployment timestamp must include timezone')
+                  return parsed
+              steps = [step for step in job.get('steps', []) if step.get('name') == 'Deploy exact canonical source']
+              if len(steps) != 1 or steps[0].get('conclusion') != 'success':
+                  raise ValueError('exact successful SAM step is required')
+              started = timestamp(steps[0].get('started_at'))
+              completed = timestamp(steps[0].get('completed_at'))
+              if completed < started:
+                  raise ValueError('deployment completion precedes start')
+              attempt_started = timestamp(attempt_started_at)
+              if started < attempt_started <= completed:
+                  raise ValueError('deployment overlaps the attempt boundary')
+              return started >= attempt_started
+
           jobs = json.loads(
               Path('/tmp/mlb-results-deploy-jobs.json').read_text()
           )
@@ -123,6 +144,11 @@ jobs:
           missing = [name for name in required if steps.get(name) != 'success']
           if missing:
               raise SystemExit('Deploy attestations missing: ' + json.dumps(missing))
+          executed = deployment_executed_in_attempt(job, os.environ['DEPLOY_RUN_STARTED_AT'])
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write('deployment_executed=' + str(executed).lower() + '\n')
+          if not executed:
+              print('Successful deployment was reused from an earlier attempt; no new build artifact or results verification is required.')
           proof = {
               'repository': os.environ['GITHUB_REPOSITORY'],
               'workflowPath': '.github/workflows/deploy.yml',
@@ -133,6 +159,7 @@ jobs:
               'jobId': job.get('id'),
               'jobConclusion': job.get('conclusion'),
               'requiredSuccessfulSteps': list(required),
+              'deploymentExecutedInTriggeringAttempt': executed,
           }
           Path('/tmp/mlb-results-deploy-lineage.json').write_text(
               json.dumps(proof, indent=2, sort_keys=True) + '\n'
@@ -140,6 +167,7 @@ jobs:
           PY
 
       - name: Download exact triggering deploy artifact proof
+        if: steps.deploy_lineage.outputs.deployment_executed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           DEPLOY_RUN_ID: ${{ github.event.workflow_run.id }}
@@ -156,14 +184,17 @@ jobs:
           test -s "$proof_dir/mlb_deploy_identity_latest.json"
 
       - name: Setup Python 3.11
+        if: steps.deploy_lineage.outputs.deployment_executed == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install bounded verification runtime
+        if: steps.deploy_lineage.outputs.deployment_executed == 'true'
         run: python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<9"
 
       - name: Run verifier regressions
+        if: steps.deploy_lineage.outputs.deployment_executed == 'true'
         run: |
           set -euo pipefail
           python -m py_compile scripts/verify_mlb_results_api_postdeploy.py
@@ -173,6 +204,7 @@ jobs:
             tests/unit/test_mlb_result_signals_provenance.py
 
       - name: Configure AWS credentials
+        if: steps.deploy_lineage.outputs.deployment_executed == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -180,6 +212,7 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Verify live read-only surface and natural scheduled advance
+        if: steps.deploy_lineage.outputs.deployment_executed == 'true'
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
         run: |

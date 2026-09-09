@@ -1343,6 +1343,41 @@ def test_postdeploy_workflow_never_synthetically_invokes_the_scheduler():
     assert "scripts/verify_mlb_results_api_postdeploy.py" in workflow
 
 
+@pytest.mark.parametrize(
+    "start,end,attempt,expected",
+    [
+        ("06:07:24", "06:08:30", "06:03:09", True),
+        ("06:07:24", "06:08:30", "07:19:06", False),
+        ("07:19:06", "07:20:00", "07:19:06", True),
+        ("06:07:24", "06:08:30", "06:08:00", None),
+        ("06:08:30", "06:07:24", "06:03:09", None),
+    ],
+)
+def test_results_verifier_distinguishes_reused_and_executed_deploy_jobs(start, end, attempt, expected):
+    import ast
+    import textwrap
+
+    workflow = (ROOT / ".github/workflows/verify-mlb-results-api-read-only-postdeploy.yml").read_text()
+    step = workflow.split("- name: Bind exact successful deploy run and attestation steps", 1)[1]
+    code = textwrap.dedent(step.split("python - <<'PY'\n", 1)[1].split("\n          PY", 1)[0])
+    function = next(node for node in ast.parse(code).body if isinstance(node, ast.FunctionDef) and node.name == "deployment_executed_in_attempt")
+    namespace = {}
+    exec(compile(ast.Module(body=[function], type_ignores=[]), "workflow", "exec"), namespace)
+    check = namespace["deployment_executed_in_attempt"]
+    stamp = lambda value: "2026-09-09T" + value + "Z"
+    job = {"steps": [{"name": "Deploy exact canonical source", "conclusion": "success",
+                      "started_at": stamp(start), "completed_at": stamp(end)}]}
+    if expected is None:
+        with pytest.raises(ValueError):
+            check(job, stamp(attempt))
+    else:
+        assert check(job, stamp(attempt)) is expected
+    job["steps"][0]["conclusion"] = "failure"
+    with pytest.raises(ValueError):
+        check(job, stamp(attempt))
+    assert workflow.count("if: steps.deploy_lineage.outputs.deployment_executed == 'true'") == 6
+
+
 def test_async_destination_normalizes_aws_empty_nested_shape() -> None:
     assert subject._normalized_async_invoke_config(
         {
