@@ -257,7 +257,7 @@ def classify_dispositions(
             # of an unpriced game and must continue to fail the verifier.
             if (
                 winner in (None, "")
-                and status_value == "OPEN_PRE_LOCK"
+                and status_value in {"PENDING", "OPEN_PRE_LOCK"}
                 and status_entry.get("predictedWinner") in (None, "")
                 and status_entry.get("predictedSide") in (None, "")
                 and status_entry.get("lockedPrediction") is not True
