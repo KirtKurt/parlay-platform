@@ -1382,6 +1382,42 @@ def _successor_lines(state: Mapping[str, Any], previous: Optional[Mapping[str, A
     return lines
 
 
+def _data_admission_summary(path: Path, now: datetime) -> dict[str, Any]:
+    try:
+        report = json.loads(path.read_text())
+        at = datetime.fromisoformat(report['createdAtUtc'].replace('Z', '+00:00'))
+        if at.tzinfo is None:
+            raise ValueError('admission timestamp lacks timezone')
+        age = (now-at).total_seconds()/3600
+        daily = report.get('daily') or []
+        return {'status': ('CURRENT' if 0 <= age <= 30 else 'STALE') if report.get('ok') is True else 'INCOMPLETE',
+                'createdAtUtc': report['createdAtUtc'], 'ageHours': round(age, 2),
+                'historicalDevelopment': report.get('historicalDevelopment') or {},
+                'combinedOriginalAdmission': report.get('combinedOriginalAdmission') or {},
+                'daily': [{k:d.get(k) for k in ('slateDateEt','scheduledGames','collectedGames','validLocks','officialFinalGames','storedFinalLabels','admittedSettledGames')} for d in daily[-3:]]}
+    except Exception as exc:
+        return {'status': 'UNAVAILABLE', 'error': type(exc).__name__}
+
+
+def _data_admission_lines(state: Mapping[str, Any]) -> list[str]:
+    report = state.get('dataAdmission') or {}
+    if not report:
+        return []
+    historical = report.get('historicalDevelopment') or {}
+    lines = ['', '### Data collection and admission', '',
+             f"**Daily audit:** `{report.get('status')}` · observed `{report.get('createdAtUtc') or 'unavailable'}`.",
+             f"**Separate reconstructed historical development games:** {_fmt_int(historical.get('preparedGames'))} · rejected {_fmt_int(historical.get('rejectedGames'))}. These are not original live observations or fresh qualification samples.",
+             '', '| Slate | Collected / scheduled | Valid locks | Official finals | Stored labels | Row-admissible settled games |',
+             '|---|---:|---:|---:|---:|---:|']
+    for d in report.get('daily') or []:
+        lines.append(f"| {d['slateDateEt']} | {_fmt_int(d['collectedGames'])} / {_fmt_int(d['scheduledGames'])} | {_fmt_int(d['validLocks'])} | {_fmt_int(d['officialFinalGames'])} | {_fmt_int(d['storedFinalLabels'])} | {_fmt_int(d['admittedSettledGames'])} |")
+    rejection = (report.get('combinedOriginalAdmission') or {}).get('classificationCounts') or {}
+    lines += ['', '**Admission classifications:** ' + json.dumps(rejection, sort_keys=True),
+              'These are independent row-admission checks; active successor counts are reported separately above.',
+              'Detailed per-game rejection evidence: `runtime_reports/mlb_data_admission_rows_latest.json`.']
+    return lines
+
+
 def _overall_direction(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) -> tuple[str, int, int]:
     positive = 0
     negative = 0
@@ -1584,6 +1620,7 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
     else:
         lines.append("**Current blockers:** none reported by the read-only evidence paths.")
 
+    lines.extend(_data_admission_lines(state))
     pulse_url = f"https://github.com/{REPO}/actions/runs/{RUN_ID}"
     if RUN_ID:
         lines.extend(["", f"Evidence run: [GitHub Actions {RUN_ID}, attempt {RUN_ATTEMPT or '1'}]({pulse_url})."])
@@ -1670,6 +1707,10 @@ def main() -> int:
         auto_errors_35m=_cloudwatch_sum(auto_fn, "Errors"),
         continuity_run=_latest_continuity_run(),
         discovery_errors=discovery_errors,
+    )
+    state['dataAdmission'] = _data_admission_summary(
+        Path(__file__).resolve().parents[1]/'runtime_reports/mlb_data_admission_latest.json',
+        datetime.now(timezone.utc),
     )
     comments = _issue_comments()
     previous_pulse = _latest_visible_pulse(comments)
