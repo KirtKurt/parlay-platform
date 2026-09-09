@@ -288,3 +288,39 @@ def test_repository_immutable_conflicts_corruption_and_pagination():
     assert len(table.queries) == 2
     table.rows[(runtime.PK, "A")]["data"]["value"] = 9
     with pytest.raises(ValueError, match="fingerprint"): repo.get("A")
+
+
+def test_actual_starter_adapter_output_is_observed_by_successor():
+    row = locked_row()
+    moment = datetime.fromisoformat(row["predictionSourcePullAt"])
+    game = {"gamePk": int(row["officialGamePk"]), "gameDate": row["commenceTime"],
+            "status": {"abstractGameState": "Preview"},
+            "teams": {side: {"probablePitcher": {"id": identity}}
+                      for side, identity in (("home", 101), ("away", 202))}}
+    people = [{"id": identity, "stats": [{"group": {"displayName": "pitching"},
+               "type": {"displayName": "season"}, "splits": [{"season": "2026",
+               "sport": {"id": 1}, "gameType": "R", "stat": {"era": era,
+               "strikeOuts": 90, "baseOnBalls": 20, "battersFaced": 400}}]}]}
+              for identity, era in ((101, "3.10"), (202, "4.60"))]
+    source._CACHE.clear()
+    quality, _ = source.observe(row["slateDateEt"], game,
+        {"payload": {"dates": [{"games": [game]}]}},
+        lambda *args, **kwargs: {"people": people}, now=lambda: moment)
+    row["advanced_context"]["fip_xfip"] = quality
+    snapshot = snapshots.build(row, captured_at_utc=moment.isoformat())
+    row["fundamentalsSnapshotV2"] = snapshot
+    row["featureSnapshot"]["fundamentalsSnapshotV2"] = snapshot
+    assert snapshot["groups"]["starter_quality"]["dataset"] == source.DATASET
+    assert not snapshots.validate(snapshot)
+    assert model.record(row, labeled=False)["starterRatesMissing"] == 0
+    assert model.record({**row, "winner": "Home", "correct": True}, labeled=True)["starterRatesMissing"] == 0
+    source._CACHE.clear()
+
+
+@pytest.mark.parametrize("dataset", ["untrusted; " + source.VERSION, source.DATASET + "-modified", ""])
+def test_unknown_starter_dataset_cannot_receive_observed_credit(dataset):
+    row = locked_row()
+    snapshot = row["fundamentalsSnapshotV2"]
+    snapshot["groups"]["starter_quality"]["dataset"] = dataset
+    snapshot["fingerprint"] = snapshots.fingerprint_for_snapshot(snapshot)
+    assert model.record(row, labeled=False)["starterRatesMissing"] == 1

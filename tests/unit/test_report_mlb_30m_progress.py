@@ -309,10 +309,12 @@ def test_valid_grading_distinguishes_missed_accuracy_target() -> None:
     assert state["mlbAuto"]["gradingTargetMet"] is False
     assert any(
         blocker.startswith("MLB_AUTO_TRAILING_14_DAY_ACCURACY_BELOW_TARGET:5/15:")
-        for blocker in state["blockers"]
+        for blocker in state["performanceObservations"]
     )
+    assert not any("ACCURACY_BELOW_TARGET" in item for item in state["blockers"])
     comment = reporter._comment(state, None)
-    assert "telemetry valid · 🔴 target missed" in comment
+    assert "telemetry valid · 🟡 below aspirational goal" in comment
+    assert "not an advancement gate" in comment
 
 
 def test_valid_grading_reports_target_met_separately() -> None:

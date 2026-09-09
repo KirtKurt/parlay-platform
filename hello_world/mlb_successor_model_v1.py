@@ -108,7 +108,7 @@ def record(row, *, labeled):
     values = group.get("values") or {}
     rates = [number(values.get(k)) for k in ("homeEra", "awayEra", "homeKMinusBbPct", "awayKMinusBbPct")]
     observed = (group.get("status") in snapshots.SOURCE_PRESENT_STATUSES
-                and group.get("dataset") == starter_source.VERSION
+                and group.get("dataset") in (starter_source.VERSION, starter_source.DATASET)
                 and all(v is not None for v in rates)
                 and all(v >= 0 for v in rates[:2])
                 and all(-100 <= v <= 100 for v in rates[2:]))
