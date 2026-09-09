@@ -5,12 +5,33 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from scripts.mlb_public_prediction_smoke_policy import (
+    qualified_champion_readiness_blockers,
     reconcile_public_prediction_lifecycle,
 )
 from scripts.verify_mlb_authority_response import AUTHORITY_CONTRACT
 
 
 NOW = datetime(2026, 8, 27, 2, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize(
+    "states,expected",
+    [
+        (["NO_QUALIFIED_CHAMPION"], ["no_qualified_champion"]),
+        (["QUALIFIED_R7_CHAMPION"], []),
+        (["QUALIFIED_R7_CHAMPION", "NO_QUALIFIED_CHAMPION"], ["no_qualified_champion"]),
+        ([], ["qualified_champion_authority_not_verified"]),
+        ([None], ["qualified_champion_authority_not_verified"]),
+        (["INVALID"], ["qualified_champion_authority_not_verified"]),
+    ],
+)
+def test_complete_internal_scoring_does_not_supply_champion_authority(states, expected):
+    results = [
+        {"publicAuthorityState": state, "ok": True, "allGamesPredicted": True,
+         "preLockStorageComplete": True, "preLockStoredCount": 15}
+        for state in states
+    ]
+    assert qualified_champion_readiness_blockers(results) == expected
 
 
 def _no_champion(**overrides):

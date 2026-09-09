@@ -25,6 +25,25 @@ except ImportError:  # pragma: no cover - direct script execution
 VERSION = "MLB-PUBLIC-PREDICTION-SMOKE-POLICY-v1-authority-closed-projection"
 
 
+def qualified_champion_readiness_blockers(
+    winner_results: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    """Keep healthy, authority-closed observations ineligible for promotion.
+
+    These states come from the observer's validated public authority response.
+    Complete internal scoring or storage cannot supply champion authority.
+    """
+    states = {row.get("publicAuthorityState") for row in winner_results}
+    if states == {"QUALIFIED_R7_CHAMPION"}:
+        return []
+    blockers = []
+    if "NO_QUALIFIED_CHAMPION" in states:
+        blockers.append("no_qualified_champion")
+    if not states or states - {"QUALIFIED_R7_CHAMPION", "NO_QUALIFIED_CHAMPION"}:
+        blockers.append("qualified_champion_authority_not_verified")
+    return blockers
+
+
 def _winner(row: Mapping[str, Any]) -> bool:
     return row.get("predictedWinner") not in (None, "")
 
