@@ -185,3 +185,27 @@ def test_one_final_game_does_not_finalize_a_partially_settled_slate():
     report=admission.audit_rows([{'gameId':'1','slateFinalized':False}])
     assert report['admittedRows']==0
     assert report['rows'][0]['reason']=='waiting for complete slate settlement'
+
+
+def test_cross_year_schedule_requests_do_not_silently_drop_a_season(monkeypatch):
+    import run_mlb_data_expansion as runner
+    from urllib.parse import parse_qs,urlparse
+    calls=[]
+    def fetch(url,timeout):
+        query=parse_qs(urlparse(url).query);calls.append(query)
+        year=int(query['startDate'][0][:4]);assert query['endDate'][0][:4]==str(year)
+        game={'gamePk':year,'gameType':'R','gameDate':str(year)+'-06-01T17:00:00Z','status':{'detailedState':'Final'},
+              'teams':{'home':{'team':{'id':1}},'away':{'team':{'id':2}}}}
+        return {'totalGames':1,'dates':[{'games':[game]}]}
+    monkeypatch.setattr(runner.advanced,'_http_get_json',fetch)
+    games,receipt=runner.schedule('2025-04-01','2026-09-08')
+    assert [g['gamePk'] for g in games]==[2025,2026]
+    assert len(calls)==2 and len(receipt['requests'])==2
+
+
+def test_prior_game_finishing_after_midnight_is_usable_only_after_completion():
+    old=game(end='2025-06-02T06:00:00Z')
+    result=historical.team_features(10,'2025-06-02',[old],'2025-06-02T20:00:00Z')
+    assert result['priorCompletedGameIds']==[1]
+    with pytest.raises(ValueError,match='after feature cutoff'):
+        historical.team_features(10,'2025-06-02',[old],'2025-06-02T05:00:00Z')

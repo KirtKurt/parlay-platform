@@ -93,9 +93,9 @@ def compact_game(payload, receipt):
     return result
 
 
-def team_features(identity, target_day, games):
+def team_features(identity, target_day, games, cutoff_utc=None):
     """Calendar-day windows exclude same-day games and late completions."""
-    cutoff = datetime.combine(date.fromisoformat(target_day), datetime.min.time(), ET)
+    cutoff = utc(cutoff_utc) if cutoff_utc else datetime.combine(date.fromisoformat(target_day), datetime.min.time(), ET)
     batting, pitching = Counter(), Counter()
     usage = {str(n)+'d': {'pitches': 0, 'outs': 0} for n in (1, 3, 5)}
     sources = []
@@ -146,7 +146,7 @@ def materialize(record, dataset, artifact, target_game, prior_games, reconstruct
         team = target_game['teams'][side]['team']
         if bridge._norm(team['name']) != bridge._norm(record[side+'Team']):
             raise ValueError('historical team name or side mismatch')
-        sides[side] = team_features(team['id'], day, prior_games)
+        sides[side] = team_features(team['id'], day, prior_games, lock.isoformat())
     features = {'marketHomeProbability': home_p,
                 'deltaGapHome': float(record['homeSignal']['delta']) - float(record['awaySignal']['delta']),
                 'home': sides['home'], 'away': sides['away']}
@@ -161,7 +161,7 @@ def materialize(record, dataset, artifact, target_game, prior_games, reconstruct
     return {'version': VERSION, 'officialGamePk': str(record['officialGamePk']), 'slateDateEt': day,
             'homeTeam': record['homeTeam'], 'awayTeam': record['awayTeam'],
             'commenceTime': record['commenceTime'], 'marketSourceAtUtc': source_at,
-            'featureCutoffUtc': datetime.combine(date.fromisoformat(day), datetime.min.time(), ET).isoformat(),
+            'featureCutoffUtc': lock.isoformat(),
             'reconstructedAtUtc': reconstructed_at, 'evidenceKind': 'RECONSTRUCTED_HISTORICAL_DEVELOPMENT',
             'features': features, 'featureFingerprint': feature_fingerprint,
             'label': {'homeWon': winner == record['homeTeam'], 'source': 'verified_historical_settlement_archive'},

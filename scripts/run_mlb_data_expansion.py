@@ -59,6 +59,16 @@ def normalize_schedule(payload):
 
 
 def schedule(first, last):
+    if first[:4] != last[:4]:
+        games, receipts = [], []
+        # The official API silently restricts a cross-year request to one
+        # season. Query each calendar year explicitly and retain every receipt.
+        for year in range(int(first[:4]), int(last[:4])+1):
+            start=max(first,f'{year}-01-01'); end=min(last,f'{year}-12-31')
+            part,receipt=schedule(start,end);games.extend(part);receipts.append(receipt)
+        if len({g['gamePk'] for g in games})!=len(games):
+            raise ValueError('cross-year official identity conflict')
+        return games, {'requests':receipts,'uniqueGames':len(games),'startDate':first,'endDate':last}
     endpoint = 'https://statsapi.mlb.com/api/v1/schedule?' + urlencode({'sportId': 1, 'startDate': first, 'endDate': last})
     payload = advanced._http_get_json(endpoint, timeout=30)
     games = normalize_schedule(payload)
@@ -115,7 +125,10 @@ def main():
     def physical(logical):
         return cf.describe_stack_resource(StackName='parlay-platform-dev', LogicalResourceId=logical)['StackResourceDetail']['PhysicalResourceId']
     function = physical('MLBMLTrainingFunction')
-    env = lam.get_function_configuration(FunctionName=function)['Environment']['Variables']
+    deployed = lam.get_function_configuration(FunctionName=function)
+    env = deployed['Environment']['Variables']
+    from run_deployed_mlb_audit import bound_environment
+    os.environ.update(bound_environment(deployed, dict(os.environ)))
     bucket = env['MLB_ML_ARTIFACTS_BUCKET']
     if args.persist and s3.get_bucket_versioning(Bucket=bucket).get('Status') != 'Enabled':
         raise ValueError('versioned development storage required before source writes')
@@ -141,9 +154,14 @@ def main():
     today = datetime.now(timezone.utc).astimezone(historical.ET).date()
     import mlb_canonical_final_labels_v1 as canonical
     import mlb_prospective_trainer_read_repair as repair
+    import mlb_r7_source_honest_training_repair as source_honesty
     canonical.history.PULLS = table
     canonical.outcomes_tbl = ddb.Table(os.environ['OUTCOMES_TABLE'])
     repair.install(canonical)
+    # Use the same installed read/admission adapters as the deployed trainer.
+    # This verifies existing missingness masks and immutable label/lock receipts;
+    # it does not alter the snapshots or enable new admission exceptions.
+    source_honesty.install(labels=canonical)
     days, canonical_rows = [], []
     release_day = historical.utc(env['MLB_ML_RELEASE_CUTOFF_UTC']).astimezone(historical.ET).date()
     days_back = min(14, max(0, (today-release_day).days))

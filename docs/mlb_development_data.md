@@ -21,7 +21,7 @@ The outcome is stored separately in `label` and is joined after feature hashing.
 Current-game starter identities and pregame batting orders are explicitly
 missing where no archived pregame receipt exists. A historical final boxscore
 cannot establish when those identities or lineups became known. Prior source
-games must have completed before the target day's midnight in Eastern time;
+games must have completed before the archived pregame lock time;
 same-day games and later suspended-game completions cannot contribute. Later
 official statistical corrections may be present, so this dataset is labeled
 reconstructed development data, never original live or prospective evidence.
