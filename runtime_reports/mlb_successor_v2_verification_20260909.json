@@ -1,0 +1,339 @@
+{
+  "auditCreatedAtUtc": "2026-09-09T15:13:41.685824+00:00",
+  "freshness": {
+    "ok": true,
+    "checkedAtUtc": "2026-09-09T15:18:43.347509+00:00",
+    "auditCreatedAtUtc": "2026-09-09T15:13:41.685824+00:00",
+    "auditAgeMinutes": 5.03,
+    "maximumAllowedAgeMinutes": 15,
+    "reportOk": true,
+    "completedFinalGames": 15,
+    "gradedPredictionCount": 15,
+    "missingPredictionCount": 0,
+    "rolling24hOfficialAccuracyPct": null,
+    "rolling24hTargetMet": null,
+    "cleanRowCount": 12
+  },
+  "auditOk": true,
+  "auditFailures": [],
+  "sourceWorkflowRun": "https://github.com/KirtKurt/parlay-platform/actions/runs/34367199285",
+  "sourceArtifactId": 10111242702,
+  "artifactZipSha256": "4848b1303f7733d78960b3ebae5529b77cfca9641aa3623e7175f3fdcdbe985e",
+  "initializationAndCollectorArtifact": {
+    "id": 10110909428,
+    "sha256": "67e2d03c7f1c358d5e47b1beae02b21c83082566fb700e707518985c5978936b"
+  },
+  "health": {
+    "trainingHealth": {
+      "ok": true,
+      "executionMode": "training",
+      "statusPresent": true,
+      "latestRunStatus": "CANDIDATE_REGISTERED",
+      "latestRunCreatedAtUtc": "2026-09-09T15:09:29.437438+00:00",
+      "latestRunTimestampValid": true,
+      "latestRunAgeMinutes": 9.21,
+      "latestRunFresh": true,
+      "latestRunMaxAgeMinutes": 480.0,
+      "deploymentIdentity": {
+        "gitSha": "fca09e3cd9b2dc3d9f31bf5a3943268f2c6a1bcd",
+        "templateSha256": "984524a516a644e299ecc5cdb0cd2bc75c2b6912be9d41dd59238643ebc91c18"
+      },
+      "deploymentIdentityMatches": true,
+      "statusVersion": "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow",
+      "experimentId": "mlb-v2-2026-08-31-historical-live-r8",
+      "manifestDigest": "5e4450e80f1cab4320555fed68f8817da8cd68e79f0fdfd9e791f21be565bae5",
+      "statusFingerprintVersion": "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical",
+      "executionConcurrencyControl": {
+        "protectedExecutionModes": [
+          "manual_review",
+          "selection_capture",
+          "training"
+        ],
+        "trainingCannotBlockSelectionCapture": true,
+        "legacySharedLeaseSentinelExpiresWithLease": true,
+        "modeLeaseDomains": {
+          "selection_capture": "selection_capture",
+          "training": "state_mutation",
+          "manual_review": "state_mutation"
+        },
+        "rollbackSelfRecoverySeconds": 960,
+        "leaseKeys": {
+          "selection_capture": "EXECUTION_LEASE#SELECTION_CAPTURE",
+          "state_mutation": "EXECUTION_LEASE#STATE_MUTATION"
+        },
+        "version": "MLB-ML-EXECUTION-LEASE-v2-mode-isolated-ddb-conditional",
+        "selectionWriteManifestConditionCheck": true,
+        "reservedLambdaConcurrencyRequired": false,
+        "legacySharedLeaseSentinelVersion": "MLB-ML-EXECUTION-SENTINEL-v2-renewable-expiring",
+        "legacySharedLeaseSentinelKey": "EXECUTION_LEASE",
+        "migrationAnchorExperimentId": "mlb-v2-2026-07-21-future-prospective-r2",
+        "leasePartitionKey": "MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2",
+        "scope": "global_across_experiments_with_isolated_mutation_domains",
+        "acquiredForRun": true,
+        "expiredLeaseReclaimEnabled": true,
+        "strategy": "dynamodb_mode_isolated_conditional_leases",
+        "ownerConditionalRelease": true,
+        "bidirectionalLegacyRuntimeFence": true,
+        "legacySharedLeaseSentinelRenewedOnAcquire": true,
+        "leaseSeconds": 960
+      },
+      "errors": []
+    },
+    "selectionCaptureHealth": {
+      "ok": true,
+      "executionMode": "selection_capture",
+      "statusPresent": true,
+      "latestRunStatus": "PROSPECTIVE_SELECTION_CAPTURE_COMPLETE",
+      "latestRunCreatedAtUtc": "2026-09-09T15:17:12.792117+00:00",
+      "latestRunTimestampValid": true,
+      "latestRunAgeMinutes": 1.49,
+      "latestRunFresh": true,
+      "latestRunMaxAgeMinutes": 10.0,
+      "deploymentIdentity": {
+        "gitSha": "fca09e3cd9b2dc3d9f31bf5a3943268f2c6a1bcd",
+        "templateSha256": "984524a516a644e299ecc5cdb0cd2bc75c2b6912be9d41dd59238643ebc91c18"
+      },
+      "deploymentIdentityMatches": true,
+      "statusVersion": "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow",
+      "experimentId": "mlb-v2-2026-08-31-historical-live-r8",
+      "manifestDigest": "5e4450e80f1cab4320555fed68f8817da8cd68e79f0fdfd9e791f21be565bae5",
+      "statusFingerprintVersion": "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical",
+      "executionConcurrencyControl": {
+        "protectedExecutionModes": [
+          "manual_review",
+          "selection_capture",
+          "training"
+        ],
+        "trainingCannotBlockSelectionCapture": true,
+        "legacySharedLeaseSentinelExpiresWithLease": true,
+        "modeLeaseDomains": {
+          "selection_capture": "selection_capture",
+          "training": "state_mutation",
+          "manual_review": "state_mutation"
+        },
+        "rollbackSelfRecoverySeconds": 960,
+        "leaseKeys": {
+          "selection_capture": "EXECUTION_LEASE#SELECTION_CAPTURE",
+          "state_mutation": "EXECUTION_LEASE#STATE_MUTATION"
+        },
+        "version": "MLB-ML-EXECUTION-LEASE-v2-mode-isolated-ddb-conditional",
+        "selectionWriteManifestConditionCheck": true,
+        "reservedLambdaConcurrencyRequired": false,
+        "legacySharedLeaseSentinelVersion": "MLB-ML-EXECUTION-SENTINEL-v2-renewable-expiring",
+        "legacySharedLeaseSentinelKey": "EXECUTION_LEASE",
+        "migrationAnchorExperimentId": "mlb-v2-2026-07-21-future-prospective-r2",
+        "leasePartitionKey": "MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2",
+        "scope": "global_across_experiments_with_isolated_mutation_domains",
+        "acquiredForRun": true,
+        "expiredLeaseReclaimEnabled": true,
+        "strategy": "dynamodb_mode_isolated_conditional_leases",
+        "ownerConditionalRelease": true,
+        "bidirectionalLegacyRuntimeFence": true,
+        "legacySharedLeaseSentinelRenewedOnAcquire": true,
+        "leaseSeconds": 960
+      },
+      "errors": []
+    }
+  },
+  "successorDevelopment": {
+    "counts": {
+      "selection": 51,
+      "calibration": 53,
+      "train": 11
+    },
+    "observedTeamCounts": {
+      "selection": 0,
+      "calibration": 0,
+      "train": 0
+    },
+    "automaticPromotionEnabled": false,
+    "version": "MLB-SUCCESSOR-DURABLE-QUALIFIED-DIRECTION-v1",
+    "acceptedDevelopmentRows": 115,
+    "deploymentIdentity": {
+      "gitSha": "fca09e3cd9b2dc3d9f31bf5a3943268f2c6a1bcd",
+      "templateSha256": "984524a516a644e299ecc5cdb0cd2bc75c2b6912be9d41dd59238643ebc91c18"
+    },
+    "rejectedRows": {
+      "invalid immutable fundamentals snapshot": 495
+    },
+    "productionAuthorityChanged": false,
+    "protocol": {
+      "predecessorExperimentId": "mlb-successor-2026-09-09-starter-rates-v1",
+      "automaticWagerAllowed": false,
+      "starterObservedSelectionMinimum": 25,
+      "testCanBeReopened": false,
+      "penalties": [
+        0.1,
+        1,
+        10
+      ],
+      "validationMinimum": 100,
+      "teamObservedCalibrationMinimum": 25,
+      "teamObservedSelectionMinimum": 25,
+      "firstActivationRequiresManualReview": true,
+      "version": "MLB-SUCCESSOR-MARKET-OFFSET-TEAM-CONTEXT-v2",
+      "calibrationRule": "earlier_validation_only_regularized_logit_adjustment",
+      "teamObservedTrainMinimum": 100,
+      "prospectiveRule": "first_complete_whole_slates_after_durable_freeze_next_ET_day",
+      "trainMinimum": 300,
+      "maximumDevelopmentRows": 750,
+      "testMinimum": 100,
+      "features": [
+        "deltaGapHome",
+        "homeAwayVelocityPpHr60mDiff",
+        "starterEraGapHome",
+        "starterKMinusBbGapHome",
+        "starterRatesMissing",
+        "lineupOpsGapHome",
+        "bullpenPitches3dGapHome",
+        "lineupOpsMissing",
+        "bullpenWorkloadMissing"
+      ],
+      "starterObservedTrainMinimum": 100,
+      "starterObservedCalibrationMinimum": 25,
+      "teamFeaturesRequireObservedSources": true,
+      "experimentId": "mlb-successor-2026-09-09-team-context-v2",
+      "selectionRule": "later_validation_brier_then_logloss_then_configuration_name",
+      "r8ReviewedTestIsDevelopmentOnly": true
+    },
+    "experimentId": "mlb-successor-2026-09-09-team-context-v2",
+    "blockers": [
+      "INSUFFICIENT_WHOLE_SLATE_DEVELOPMENT_ROWS",
+      "INSUFFICIENT_OBSERVED_STARTER_RATES_TRAIN",
+      "INSUFFICIENT_OBSERVED_STARTER_RATES_CALIBRATION",
+      "INSUFFICIENT_OBSERVED_STARTER_RATES_SELECTION",
+      "INSUFFICIENT_OBSERVED_TEAM_CONTEXT_TRAIN",
+      "INSUFFICIENT_OBSERVED_TEAM_CONTEXT_CALIBRATION",
+      "INSUFFICIENT_OBSERVED_TEAM_CONTEXT_SELECTION"
+    ],
+    "observedStarterCounts": {
+      "selection": 0,
+      "calibration": 0,
+      "train": 0
+    },
+    "ok": true,
+    "updatedAtUtc": "2026-09-09T15:09:24.338711+00:00",
+    "status": "ACCUMULATING_TEAM_CONTEXT_DEVELOPMENT_DATA"
+  },
+  "successorCapture": {
+    "ok": true,
+    "capturedCount": 0,
+    "status": "WAITING_FOR_SUCCESSOR_DEVELOPMENT"
+  },
+  "persistedCollectorEvidence": {
+    "storedGameRows": 15,
+    "teamSnapshotRows": 15,
+    "gamesWithBothLineups": 1,
+    "gamesWithBothWorkloads": 15,
+    "readOnly": true,
+    "rows": [
+      {
+        "officialGamePk": "824226",
+        "snapshotFingerprint": "f9acef1ceb11806116db00756cb1309056bc11cc99114e1cf7386e9a6bb3cf38",
+        "bothLineups": true,
+        "bothWorkloads": true,
+        "retrievedAtUtc": "2026-09-09T15:01:15.238659+00:00"
+      },
+      {
+        "officialGamePk": "824956",
+        "snapshotFingerprint": "4f244d9dd8e1b94297818b0219bc4a0ad4825e24dd62739e4c67a54c332ad389",
+        "bothLineups": false,
+        "bothWorkloads": true,
+        "retrievedAtUtc": "2026-09-09T15:01:13.941109+00:00"
+      },
+      {
+        "officialGamePk": "823172",
+        "snapshotFingerprint": "c359d6488dddbad4fc040d0e817c1fa1a3ab4749678848df7ea24d9e73e66f0a",
+        "bothLineups": false,
+        "bothWorkloads": true,
+        "retrievedAtUtc": "2026-09-09T15:01:14.767500+00:00"
+      },
+      {
+        "officialGamePk": "823251",
+        "snapshotFingerprint": "8be43aa34a0167e0f80af7f4775ece41a0218308d078383d7cfa4c68213ef50f",
+        "bothLineups": false,
+        "bothWorkloads": true,
+        "retrievedAtUtc": "2026-09-09T15:01:14.971619+00:00"
+      },
+      {
+        "officialGamePk": "823090",
+        "snapshotFingerprint": "819c14a9f0e204542a6ee2c748f59b40c32d29eff07fdcd19ae3a1edd6e8c5ab",
+        "bothLineups": false,
+        "bothWorkloads": true,
+        "retrievedAtUtc": "2026-09-09T15:01:14.854278+00:00"
+      },
+      {
+        "officialGamePk": "824791",
+        "snapshotFingerprint": "23518db5d0620adf147c3a7de6f531eb2c22d136343bf8cf69f0732c49b4c28a",
+        "bothLineups": false,
+        "bothWorkloads": true,
+        "retrievedAtUtc": "2026-09-09T15:01:12.805693+00:00"
+      },
+      {
+        "officialGamePk": "823818",
+        "snapshotFingerprint": "17f840ce48a898a3aa48d5048db55b1fc4f09ee681254f1318a29984122bd080",
+        "bothLineups": false,
+        "bothWorkloads": true,
+        "retrievedAtUtc": "2026-09-09T15:01:14.199127+00:00"
+      },
+      {
+        "officialGamePk": "823416",
+        "snapshotFingerprint": "6af0f050e3c91abe4ccef31d5e0c8b08967bb7f01599ed4d9fd204ac27b30b95",
+        "bothLineups": false,
+        "bothWorkloads": true,
+        "retrievedAtUtc": "2026-09-09T15:01:14.660873+00:00"
+      },
+      {
+        "officialGamePk": "824713",
+        "snapshotFingerprint": "2473762b0deb123610ee0bd8ac9a861e6589d504250a2134540655a99e973922",
+        "bothLineups": false,
+        "bothWorkloads": true,
+        "retrievedAtUtc": "2026-09-09T15:01:13.230168+00:00"
+      },
+      {
+        "officialGamePk": "823497",
+        "snapshotFingerprint": "1c11ecac76682e6d16d6d54e68f65a23b84c8e89b7d6c465d16e5034909b18f1",
+        "bothLineups": false,
+        "bothWorkloads": true,
+        "retrievedAtUtc": "2026-09-09T15:01:13.036945+00:00"
+      },
+      {
+        "officialGamePk": "824871",
+        "snapshotFingerprint": "b8e1099035b25268a096f0039d730ffc0fce3e20dee6ec79ff191098f75b9360",
+        "bothLineups": false,
+        "bothWorkloads": true,
+        "retrievedAtUtc": "2026-09-09T15:01:13.479208+00:00"
+      },
+      {
+        "officialGamePk": "824064",
+        "snapshotFingerprint": "26f066757bde58538fbb78e8f61695478fdea9919eef723543ed8aa4569f6a40",
+        "bothLineups": false,
+        "bothWorkloads": true,
+        "retrievedAtUtc": "2026-09-09T15:01:13.750159+00:00"
+      },
+      {
+        "officialGamePk": "824549",
+        "snapshotFingerprint": "6043c9c85a8f84f96490fdf26aa454c04c7fb0fea302662e7dba6c8b74b835ac",
+        "bothLineups": false,
+        "bothWorkloads": true,
+        "retrievedAtUtc": "2026-09-09T15:01:15.128988+00:00"
+      },
+      {
+        "officialGamePk": "823739",
+        "snapshotFingerprint": "d254a2022b923e8bedc5e3194d6da9bfdd35f6d4405883498508199f7edab1bc",
+        "bothLineups": false,
+        "bothWorkloads": true,
+        "retrievedAtUtc": "2026-09-09T15:01:14.387030+00:00"
+      },
+      {
+        "officialGamePk": "823900",
+        "snapshotFingerprint": "0ce10390aa7ab7df1081ab875e79af4917a628c79a0aaa97f1d51d1d2c2fa7d6",
+        "bothLineups": false,
+        "bothWorkloads": true,
+        "retrievedAtUtc": "2026-09-09T15:01:14.576429+00:00"
+      }
+    ]
+  },
+  "championPresent": false,
+  "productionAuthorityChanged": false
+}
