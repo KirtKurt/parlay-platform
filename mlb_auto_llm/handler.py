@@ -6,6 +6,7 @@ import json
 import math
 import os
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -104,9 +105,18 @@ def _http_json(url: str, *, headers: Optional[Dict[str, str]] = None, timeout: i
         url,
         headers={"accept": "application/json", "user-agent": "inqsi-mlb-auto-llm/1.0", **(headers or {})},
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-        return payload, {str(k).lower(): str(v) for k, v in response.headers.items()}
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                return payload, {str(k).lower(): str(v) for k, v in response.headers.items()}
+        except urllib.error.HTTPError as exc:
+            # Retry only transient gateway/service failures for this GET.
+            # Authentication, quota, schema and final failure remain visible.
+            if exc.code not in {502, 503, 504} or attempt == 2:
+                raise
+            exc.close()
+            time.sleep(0.25 * (2 ** attempt))
 
 
 def _normalize(name: Any) -> str:

@@ -45,3 +45,33 @@ def test_unexpected_runtime_failure_is_not_suppressed(monkeypatch):
     monkeypatch.setattr(subject.strict_bedrock, "lambda_handler", fail)
     with pytest.raises(RuntimeError, match="UNEXPECTED_FAILURE"):
         subject.lambda_handler({}, None)
+
+
+@pytest.mark.parametrize("code,attempts", [(502, 3), (503, 3), (504, 3), (401, 1), (429, 1)])
+def test_provider_get_retries_are_bounded_and_do_not_hide_failures(monkeypatch, code, attempts):
+    base = subject.base
+    calls = []
+    def fail(*args, **kwargs):
+        calls.append(1)
+        raise base.urllib.error.HTTPError("https://example.test", code, "failure", {}, None)
+    monkeypatch.setattr(base.urllib.request, "urlopen", fail)
+    monkeypatch.setattr(base.time, "sleep", lambda seconds: None)
+    with pytest.raises(base.urllib.error.HTTPError):
+        base._http_json("https://example.test")
+    assert len(calls) == attempts
+
+
+def test_provider_get_recovers_from_transient_gateway_failure(monkeypatch):
+    base = subject.base
+    calls = []
+    class Response(BytesIO):
+        headers = {"x-test": "yes"}
+    def fetch(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise base.urllib.error.HTTPError("https://example.test", 502, "failure", {}, None)
+        return Response(b'{"ok":true}')
+    monkeypatch.setattr(base.urllib.request, "urlopen", fetch)
+    monkeypatch.setattr(base.time, "sleep", lambda seconds: None)
+    assert base._http_json("https://example.test") == ({"ok": True}, {"x-test": "yes"})
+    assert len(calls) == 2

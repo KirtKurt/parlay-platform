@@ -846,6 +846,8 @@ def _extract_state(
     production_changed = bool(latest.get("productionAuthorityChanged") is True)
 
     blockers: list[str] = list(discovery_errors)
+    if candidate.get("evaluationReadError"):
+        blockers.append("MLB_LEARNING_EVALUATION_READ_FAILED:" + str(candidate["evaluationReadError"]))
     for value in (
         r7_invocation.get("functionError"),
         model_invocation.get("functionError"),
