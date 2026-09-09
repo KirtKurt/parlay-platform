@@ -1887,6 +1887,26 @@ def _per_game_cutoff(lock_module: Any, game: Dict[str, Any]) -> Optional[str]:
     return (start - timedelta(minutes=lock_module.LOCK_MINUTES)).isoformat() if start else None
 
 
+def is_prediction_free_lifecycle_row(row):
+    """Identify an explicit status row with no model input or winner claim."""
+    authority = row.get("perGameCanonicalLock") or {}
+    return (
+        isinstance(authority, dict)
+        and authority.get("authorityVersion") == AUTHORITY_VERSION
+        and authority.get("canonical") is False
+        and authority.get("status") in {
+            "OPEN_PRE_LOCK", "LOCK_DUE_CANONICAL_MISSING", "MISSED_LOCK",
+            "LOCKED_NO_PREDICTION_DATA",
+        }
+        and not row.get("predictedWinner")
+        and not row.get("predictedSide")
+        and not row.get("homeSignal")
+        and not row.get("awaySignal")
+        and row.get("officialPrediction") is False
+        and row.get("trainingEligible") is False
+    )
+
+
 def _prelock_row(
     row: Dict[str, Any],
     public: Dict[str, Any],

@@ -76,12 +76,17 @@ def _lifecycle_statuses(row: Dict[str, Any]) -> List[str]:
 def _lifecycle_only_storage_row(row: Dict[str, Any]) -> bool:
     """Return True when the row is status evidence, not a pre-lock prediction.
 
-    Once a game's immutable cutoff has passed, public authority may return a
+    Before markets arrive, an explicit prediction-free OPEN_PRE_LOCK row is
+    lifecycle evidence only. Once a game's immutable cutoff has passed, public authority may return a
     ``MISSED_LOCK`` or terminal ``LOCKED_NO_PREDICTION_DATA`` row. Those rows
     must remain visible, but they must never be sent to the pre-lock prediction
     writer or counted as failed candidate persistence.
     """
 
+    from mlb_slate_coverage_patch import is_prediction_free_lifecycle_row
+
+    if is_prediction_free_lifecycle_row(row):
+        return True
     statuses = set(_lifecycle_statuses(row))
     display_group = str(row.get("displayGroup") or "").strip().lower()
     return bool(
@@ -163,7 +168,11 @@ def _store_final(module: Any, result: Dict[str, Any], requested: bool) -> Dict[s
             statuses = _lifecycle_statuses(row)
             lifecycle_skipped_statuses.update(statuses)
             row["preLockStoreSkipped"] = True
-            row["preLockStoreSkipReason"] = "post_cutoff_lifecycle_status_not_a_prediction_candidate"
+            row["preLockStoreSkipReason"] = (
+                "awaiting_market_or_prediction_not_a_prediction_candidate"
+                if "OPEN_PRE_LOCK" in statuses
+                else "post_cutoff_lifecycle_status_not_a_prediction_candidate"
+            )
             row["preLockStoreSkippedStatuses"] = statuses
             continue
         else:
