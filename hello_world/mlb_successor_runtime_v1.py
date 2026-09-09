@@ -171,6 +171,9 @@ def verify_prediction(entry, frozen):
     p = model.number(entry.get("homeProbability"))
     if p is None or abs(p-model.score(record, frozen["candidate"])) > 1e-10:
         raise ValueError("prediction does not replay exact frozen model")
+    away = model.number(entry.get("awayProbability"))
+    if away is None or abs(p + away - 1) > 1e-10:
+        raise ValueError("prediction probability pair mismatch")
     if entry.get("predictedSide") != ("home" if p >= .5 else "away"):
         raise ValueError("prediction side mismatch")
     return entry
@@ -338,7 +341,13 @@ def public_predictions(day, limit, expected_digest, repo=None):
                      "homeTeam": record["homeTeam"], "awayTeam": record["awayTeam"],
                      "predictedSide": side, "predictedWinner": record[side + "Team"],
                      "homeProbability": entry["homeProbability"], "awayProbability": entry["awayProbability"],
+                     "homeModelWinProbability": entry["homeProbability"],
+                     "awayModelWinProbability": entry["awayProbability"],
+                     "modelWinProbability": entry["homeProbability"] if side == "home" else entry["awayProbability"],
+                     "marketProbability": record["marketHomeProbability"] if side == "home" else record["marketAwayProbability"],
+                     "signalScore": None, "pickReliability": None, "playable": False,
                      "artifactDigest": expected_digest, "capturedAtUtc": entry["capturedAtUtc"],
+                     "featureLockAtUtc": record["featureLockAtUtc"],
                      "inputFingerprint": record["inputFingerprint"], "immutable": True,
                      "automaticWagerAllowed": False, "playabilityAuthorityEnabled": False})
     rows.sort(key=lambda r: (r["commenceTime"], r["officialGamePk"]))

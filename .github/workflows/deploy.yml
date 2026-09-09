@@ -723,6 +723,15 @@ jobs:
                   }, indent=2, default=str))
                   break
 
+              if public_reconciliation.get('successorPredictionAuthorityVerified') is True:
+                  print(json.dumps({
+                      'diagnostic': 'qualified_successor_persisted_predictions_verified',
+                      'publicWinnerCount': public_reconciliation['publicWinnerCount'],
+                      'separateImmutableLockHistoryVerified': True,
+                      'statusProjectionPersisted': False,
+                  }, indent=2))
+                  break
+
               winner_rows = [
                   row
                   for row in predictions.get('predictions') or []

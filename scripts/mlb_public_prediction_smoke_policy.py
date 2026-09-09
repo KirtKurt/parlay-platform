@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
+import math
+import re
 from typing import Any, Dict, Mapping, Optional, Sequence
 
 try:
@@ -23,6 +25,52 @@ except ImportError:  # pragma: no cover - direct script execution
 
 
 VERSION = "MLB-PUBLIC-PREDICTION-SMOKE-POLICY-v1-authority-closed-projection"
+SUCCESSOR_CONSUMER = "MLB-SUCCESSOR-DURABLE-QUALIFIED-DIRECTION-v1"
+
+
+def _verify_successor_predictions(payload, status_rows):
+    """Verify a separately qualified model without relabeling old engine locks."""
+    digest = str(payload.get("artifactDigest") or "")
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise ValueError("successor_model_digest_missing")
+    if payload.get("predictionSource") != SUCCESSOR_CONSUMER or payload.get("readOnly") is not True:
+        raise ValueError("successor_persisted_read_contract_missing")
+    if payload.get("playabilityAuthorityEnabled") is not False:
+        raise ValueError("successor_direction_must_not_grant_playability")
+    roster = {str(row.get("officialGamePk") or ""): row for row in status_rows}
+    rows = payload.get("predictions")
+    if not isinstance(rows, list) or payload.get("winner_predictions") != rows or payload.get("count") != len(rows):
+        raise ValueError("successor_prediction_count_mismatch")
+    seen = set()
+    def parsed(value):
+        result = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if result.tzinfo is None: raise ValueError("successor_timestamp_timezone_missing")
+        return result
+    for row in rows:
+        pk = str(row.get("officialGamePk") or "")
+        if not pk or pk in seen or pk not in roster or row.get("artifactDigest") != digest:
+            raise ValueError("successor_prediction_identity_mismatch")
+        seen.add(pk)
+        if not re.fullmatch(r"[0-9a-f]{64}", str(row.get("inputFingerprint") or "")):
+            raise ValueError("successor_input_fingerprint_missing")
+        home, away = row.get("homeProbability"), row.get("awayProbability")
+        if any(isinstance(p, bool) or not isinstance(p, (int, float)) or not math.isfinite(p) or not 0 < p < 1 for p in (home, away)) or abs(home + away - 1) > 1e-9:
+            raise ValueError("successor_probability_pair_invalid")
+        side = "home" if home >= .5 else "away"
+        if row.get("predictedSide") != side or row.get("predictedWinner") != row.get(side+"Team"):
+            raise ValueError("successor_direction_probability_mismatch")
+        original = roster[pk]
+        for field in ("homeTeam", "awayTeam"):
+            if original.get(field) and row.get(field) != original.get(field):
+                raise ValueError("successor_team_identity_mismatch")
+        start = parsed(row.get("commenceTime"))
+        original_start = original.get("commenceTime") or original.get("commence_time")
+        if original_start and start != parsed(original_start):
+            raise ValueError("successor_start_identity_mismatch")
+        if not parsed(row.get("featureLockAtUtc")) <= parsed(row.get("capturedAtUtc")) < start:
+            raise ValueError("successor_prediction_not_captured_before_start")
+        if row.get("automaticWagerAllowed") is not False or row.get("playabilityAuthorityEnabled") is not False or row.get("immutable") is not True:
+            raise ValueError("successor_prediction_authority_invalid")
 
 
 def qualified_champion_readiness_blockers(
@@ -121,6 +169,7 @@ def reconcile_public_prediction_lifecycle(
     lifecycle = deepcopy(dict(public_payload))
     historical_projection = False
     authority_closed_projection = False
+    successor_projection = False
     if authority.get("state") == "NO_QUALIFIED_CHAMPION":
         if len(status_rows) != int(game_count) or int(game_count) <= 0:
             raise ValueError("authority_closed_status_projection_incomplete")
@@ -137,6 +186,17 @@ def reconcile_public_prediction_lifecycle(
                 operational_defect=status_operational_defect,
             )
         authority_closed_projection = True
+    elif public_payload.get("successorConsumerVersion") == SUCCESSOR_CONSUMER:
+        if len(status_rows) != int(game_count) or len({str(r.get("officialGamePk") or "") for r in status_rows}) != int(game_count):
+            raise ValueError("successor_status_roster_incomplete")
+        _verify_successor_predictions(public_payload, status_rows)
+        # Public predictions retain their own namespace and outcome direction.
+        # Existing lifecycle checks inspect a detached copy of the old lock
+        # records; neither set is substituted into storage or the public API.
+        lifecycle = _status_projection(status_rows, int(game_count), operational_defect=status_operational_defect)
+        lifecycle["authorityClosedStatusProjection"] = False
+        lifecycle["successorStatusProjection"] = True
+        successor_projection = True
 
     return {
         "ok": True,
@@ -147,5 +207,6 @@ def reconcile_public_prediction_lifecycle(
         "lifecyclePayload": lifecycle,
         "historicalStatusProjectionUsed": historical_projection,
         "authorityClosedStatusProjectionUsed": authority_closed_projection,
+        "successorPredictionAuthorityVerified": successor_projection,
         "statusProjectionPersisted": False,
     }
