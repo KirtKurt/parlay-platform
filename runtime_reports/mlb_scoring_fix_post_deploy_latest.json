@@ -1,178 +1,72 @@
 {
   "allCurrentSlateCutoffsPassed": false,
   "blockers": [
-    "scheduled_pull_observation_failed",
-    "timeout_not_600",
-    "memory_not_2048",
-    "deploy_sha_mismatch",
-    "lifecycle_storage_disposition_incomplete",
-    "new_scheduled_scoring_failure_after_deploy",
     "scoring_guard_not_ready"
   ],
-  "createdAtUtc": "2026-09-09T06:31:14.268424Z",
+  "createdAtUtc": "2026-09-09T06:46:17.963409Z",
   "deployedCommit": "c812ceb3e3e8d7712594e32fc6445f1224968001",
-  "deploymentBlockers": [
-    "scheduled_pull_observation_failed",
-    "timeout_not_600",
-    "memory_not_2048",
-    "deploy_sha_mismatch",
-    "lifecycle_storage_disposition_incomplete",
-    "new_scheduled_scoring_failure_after_deploy"
-  ],
-  "deploymentHealthy": false,
+  "deploymentBlockers": [],
+  "deploymentHealthy": true,
   "deploymentSucceeded": true,
   "historicalSlateAcceptedWithoutLateBackfill": false,
   "lambdaConfiguration": {
-    "failure": {
-      "code": "fresh_scheduled_pull_lifecycle_disposition_failed",
-      "message": "fresh_scheduled_pull_lifecycle_disposition_failed:[\"mlb_statsapi:824956:open_prelock_prediction_missing\", \"open_candidate_persistence_count_mismatch\"]",
-      "type": "RuntimeError"
-    },
+    "deployedGitSha": "c812ceb3e3e8d7712594e32fc6445f1224968001",
+    "functionLastModified": "2026-09-09T06:08:14.000+0000",
+    "functionName": "parlay-platform-dev-MLBAuditedPullFunction-xYdYJJKZMe4M",
     "manualPullInvoked": false,
-    "ok": false,
+    "memorySizeMb": 2048,
+    "observedScheduledPullAtUtc": "2026-09-09T06:45:26.739076+00:00",
+    "observedScheduledPullPk": "PULLS#mlb#2026-09-09",
+    "observedScheduledPullSk": "PULL#SLOT#2026-09-09T06:45:00+00:00",
+    "observedScheduledSlotUtc": "2026-09-09T06:45:00+00:00",
+    "ok": true,
     "readOnly": true,
+    "scheduledReport": "REPORT RequestId: bb96ddab-0a5d-44df-987f-9b4d5fcc7b6c\tDuration: 15697.72 ms\tBilled Duration: 16600 ms\tMemory Size: 2048 MB\tMax Memory Used: 148 MB\tInit Duration: 902.00 ms\t\n",
+    "scheduledRequestId": "bb96ddab-0a5d-44df-987f-9b4d5fcc7b6c",
     "secretExposed": false,
-    "status": "OBSERVATION_FAILED",
+    "statusCode": 200,
     "targetDeploySha": "c812ceb3e3e8d7712594e32fc6445f1224968001",
+    "timeoutSeconds": 600,
+    "verificationStartedAtUtc": "2026-09-09T06:38:49.644204+00:00",
     "version": "MLB-POSTDEPLOY-SCHEDULED-PULL-OBSERVER-v1-no-manual-pull",
-    "winnerResults": []
+    "winnerResults": [
+      {
+        "allGamesPredicted": true,
+        "authorityClosedStatusProjectionUsed": true,
+        "canonicalLockedCount": 0,
+        "displayStatusCoverageComplete": true,
+        "gameCount": 15,
+        "gameDateEt": "2026-09-09",
+        "historicalStatusProjectionUsed": false,
+        "lifecycleCoverageComplete": true,
+        "matchedPersistedPredictionRowCount": 15,
+        "ok": true,
+        "operationalDefect": false,
+        "persistedPredictionRowCount": 15,
+        "preLockStorageCandidateCount": 15,
+        "preLockStorageComplete": true,
+        "preLockStorageDispositionComplete": true,
+        "preLockStorageDispositionCount": 15,
+        "preLockStorageLifecycleAware": true,
+        "preLockStorageLifecycleSkippedCount": 0,
+        "preLockStoredCount": 15,
+        "predictionCount": 15,
+        "publicAuthorityState": "NO_QUALIFIED_CHAMPION",
+        "publicWinnerCount": 0,
+        "statusProjectionPersisted": false,
+        "storageEvidenceSource": "DYNAMODB_STRONGLY_CONSISTENT_GAME_ROWS",
+        "stronglyConsistentStorageEvidence": true,
+        "unmatchedPersistedPredictionRowCount": 0,
+        "unpricedPendingCount": 0
+      }
+    ]
   },
   "lifecycleSkippedCount": 0,
-  "lifecycleStorageDispositionComplete": false,
-  "ok": false,
-  "openPreLockCandidateCount": 0,
-  "postDeployScheduledFailureCount": 15,
-  "postDeployScheduledFailures": [
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-09-09T05:00:29.194000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-09-09T05:01:32.698000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-09-09T05:02:26.355000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-09-09T05:15:30.364000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-09-09T05:16:30.509000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-09-09T05:17:27.412000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-09-09T05:30:31.284000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-09-09T05:31:34.985000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-09-09T05:32:27.942000+00:00"
-    },
-    {
-      "classifications": [
-        "PRELOCK_STORAGE_INCOMPLETE",
-        "SCHEDULED_PULL_FAILED"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-09-09T05:45:35.061000+00:00"
-    },
-    {
-      "classifications": [
-        "PRELOCK_STORAGE_INCOMPLETE",
-        "SCHEDULED_PULL_FAILED"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-09-09T05:46:37.787000+00:00"
-    },
-    {
-      "classifications": [
-        "PRELOCK_STORAGE_INCOMPLETE",
-        "SCHEDULED_PULL_FAILED"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-09-09T05:47:33.090000+00:00"
-    },
-    {
-      "classifications": [
-        "PRELOCK_STORAGE_INCOMPLETE",
-        "SCHEDULED_PULL_FAILED"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-09-09T06:00:36.880000+00:00"
-    },
-    {
-      "classifications": [
-        "PRELOCK_STORAGE_INCOMPLETE",
-        "SCHEDULED_PULL_FAILED"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-09-09T06:01:52.715000+00:00"
-    },
-    {
-      "classifications": [
-        "PRELOCK_STORAGE_INCOMPLETE",
-        "SCHEDULED_PULL_FAILED"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-09-09T06:02:34.370000+00:00"
-    }
-  ],
+  "lifecycleStorageDispositionComplete": true,
+  "ok": true,
+  "openPreLockCandidateCount": 15,
+  "postDeployScheduledFailureCount": 0,
+  "postDeployScheduledFailures": [],
   "postDeployTimeoutCount": 0,
   "postDeployTimeouts": [],
   "productionAuthorityChanged": false,
@@ -184,37 +78,33 @@
   "recoveredPostDeployScheduledFailureCount": 0,
   "recoveredPostDeployScheduledFailures": [],
   "runId": "34317847910",
-  "scheduledPullObservationFailure": {
-    "code": "fresh_scheduled_pull_lifecycle_disposition_failed",
-    "message": "fresh_scheduled_pull_lifecycle_disposition_failed:[\"mlb_statsapi:824956:open_prelock_prediction_missing\", \"open_candidate_persistence_count_mismatch\"]",
-    "type": "RuntimeError"
-  },
+  "scheduledPullObservationFailure": null,
   "scoringBlockers": [
-    "PERSISTED_WINNER_PREDICTION_COVERAGE_INCOMPLETE"
+    "MOVEMENT_FEATURE_COVERAGE_INCOMPLETE"
   ],
   "scoringGuardPassed": false,
   "scoringSummary": {
-    "canonicalPullCount": 7,
+    "canonicalPullCount": 8,
     "fundamentalsAppliedCount": 0,
     "fundamentalsNeutralOrSourceMissingCount": 0,
-    "fundamentalsNotActiveCount": 14,
+    "fundamentalsNotActiveCount": 15,
     "fundamentalsNotAppliedOrMissingCount": 15,
     "fundamentalsShadowEvaluatedCount": 0,
     "fundamentalsShadowInvalidCount": 0,
     "fundamentalsShadowOnlyCount": 0,
-    "fundamentalsShadowOnlyNotActiveCount": 14,
+    "fundamentalsShadowOnlyNotActiveCount": 15,
     "fundamentalsShadowWouldApplyCount": 0,
     "fundamentalsSourceIncompleteCount": 0,
     "fundamentalsUpstreamAppliedDetectedCount": 0,
     "invalidMovementTeamCount": 0,
     "invalidPredictionTeamCount": 0,
-    "latestCanonicalPullAtUtc": "2026-09-09T06:30:26.511503+00:00",
-    "missingMovementCount": 0,
-    "missingPredictionCount": 1,
+    "latestCanonicalPullAtUtc": "2026-09-09T06:45:26.739076+00:00",
+    "missingMovementCount": 1,
+    "missingPredictionCount": 0,
     "movementFeatureGameCount": 14,
     "officialGameCount": 15,
-    "persistedPredictionGameCount": 14,
-    "scoreableGameCount": 14
+    "persistedPredictionGameCount": 15,
+    "scoreableGameCount": 15
   },
   "secretExposed": false,
   "sourceDeployCreatedAtUtc": "2026-09-09T06:03:09Z",
@@ -231,7 +121,7 @@
   "sourceDeployWorkflowName": "Deploy SAM to AWS",
   "sourceDeployWorkflowPath": ".github/workflows/deploy.yml",
   "sourceSha": "72542594b42e1e7fe38083014463c35571eb3f8b",
-  "status": "DEPLOYMENT_UNHEALTHY",
-  "successfulScheduledObservationAtUtc": null,
+  "status": "DEPLOYMENT_HEALTHY_READINESS_GATED",
+  "successfulScheduledObservationAtUtc": "2026-09-09T06:45:26.739076Z",
   "version": "MLB-SCORING-FIX-POST-DEPLOY-v3-health-readiness-separated"
 }
