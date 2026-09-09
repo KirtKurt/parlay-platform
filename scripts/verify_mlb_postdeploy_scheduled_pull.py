@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import time
@@ -203,6 +204,7 @@ def classify_dispositions(
     prediction_rows: Sequence[Mapping[str, Any]],
     *,
     now: datetime,
+    unpriced_games: Optional[Mapping[str, str]] = None,
 ) -> Dict[str, Any]:
     status_ids = [row_identity(row) for row in status_rows]
     prediction_ids = [row_identity(row) for row in prediction_rows]
@@ -235,6 +237,7 @@ def classify_dispositions(
     stored_candidate_count = 0
     canonical_locked_count = 0
     lifecycle_count = 0
+    unpriced_pending_count = 0
     for game_id, status_entry in status_by_id.items():
         prediction_entry = prediction_by_id.get(game_id) or {}
         start = parse_utc(
@@ -249,6 +252,20 @@ def classify_dispositions(
             winner = prediction_entry.get("predicted_winner")
         status_value = row_status(status_entry)
         if now < cutoff:
+            # The caller binds this evidence to the freshly observed immutable
+            # official pull. A missing persisted prediction alone is not proof
+            # of an unpriced game and must continue to fail the verifier.
+            if (
+                winner in (None, "")
+                and status_value == "OPEN_PRE_LOCK"
+                and status_entry.get("predictedWinner") in (None, "")
+                and status_entry.get("predictedSide") in (None, "")
+                and status_entry.get("lockedPrediction") is not True
+                and parse_utc((unpriced_games or {}).get(game_id)) == start
+            ):
+                lifecycle_count += 1
+                unpriced_pending_count += 1
+                continue
             candidate_count += 1
             if winner not in (None, ""):
                 stored_candidate_count += 1
@@ -274,10 +291,34 @@ def classify_dispositions(
         "storedCandidateCount": stored_candidate_count,
         "canonicalLockedCount": canonical_locked_count,
         "lifecycleCount": lifecycle_count,
+        "unpricedPendingCount": unpriced_pending_count,
         "dispositionCount": disposition_count,
         "complete": not errors,
         "errors": sorted(set(errors)),
     }
+
+
+def unpriced_games_from_verified_pull(pull: Mapping[str, Any]) -> Dict[str, str]:
+    """Extract exact ID/start bindings after immutable pull validation."""
+    result: Dict[str, str] = {}
+    for game in pull.get("games") or []:
+        identity = row_identity(game) or str(game.get("id") or "")
+        start = parse_utc(game.get("commence_time") or game.get("commenceTime"))
+        if not identity or start is None:
+            continue
+        priced = False
+        for book in (game.get("books") or {}).values():
+            market = book.get("ml") or book.get("moneyline") or {}
+            try:
+                prices = [float(market[side]) for side in ("home", "away")]
+            except (KeyError, TypeError, ValueError):
+                continue
+            if all(math.isfinite(price) and price != 0 for price in prices):
+                priced = True
+                break
+        if not priced:
+            result[identity] = start.isoformat()
+    return result
 
 
 def _query_pull_items(table: Any, pk: str) -> List[Dict[str, Any]]:
@@ -630,7 +671,10 @@ def observe(
     )
     storage_evidence = _storage_disposition_rows(status_rows, persisted_rows)
     prediction_rows = storage_evidence["rows"]
-    dispositions = classify_dispositions(status_rows, prediction_rows, now=now)
+    dispositions = classify_dispositions(
+        status_rows, prediction_rows, now=now,
+        unpriced_games=unpriced_games_from_verified_pull(observed_pull),
+    )
     if not dispositions["complete"]:
         raise RuntimeError(
             "fresh_scheduled_pull_lifecycle_disposition_failed:"
@@ -662,6 +706,7 @@ def observe(
                 == dispositions["storedCandidateCount"]
             ),
             "preLockStorageLifecycleSkippedCount": dispositions["lifecycleCount"],
+            "unpricedPendingCount": dispositions["unpricedPendingCount"],
             "preLockStorageDispositionCount": dispositions["dispositionCount"],
             "preLockStorageDispositionComplete": dispositions["complete"],
             "canonicalLockedCount": dispositions["canonicalLockedCount"],
