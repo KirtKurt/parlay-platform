@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import copy
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,6 +14,46 @@ if str(HELLO) not in sys.path:
     sys.path.insert(0, str(HELLO))
 
 import mlb_ranked_primary_v15_10 as ranked
+
+
+@pytest.mark.parametrize("status", ["OPEN_PRE_LOCK", "LOCK_DUE_CANONICAL_MISSING", "MISSED_LOCK", "LOCKED_NO_PREDICTION_DATA"])
+def test_official_lifecycle_without_odds_does_not_abort_scored_games(status):
+    import mlb_slate_coverage_patch as coverage
+
+    placeholder = coverage._prelock_row({
+        "slate_date": "2026-09-09", "gameId": "unpriced-game",
+        "predictedWinner": None, "predictedSide": None,
+    }, {}, "2026-09-09T22:25:00Z", status)
+    before = copy.deepcopy(placeholder)
+    module = SimpleNamespace(predict_all=lambda *a, **kw: {
+        "slate_date": "2026-09-09", "predictions": [_row("2026-09-09"), placeholder],
+        "allGamesPredicted": False,
+    })
+    ranked.apply_direction(module)
+    directed = module.predict_all("2026-09-09")
+    assert directed["predictions"][1] == before
+    assert directed["predictions"][0]["rankedWinnerModel"]["version"] == ranked.VERSION
+    result = ranked._guard_result(directed, args=("2026-09-09",), kwargs={}, direction=False)
+    assert result["predictions"][1] == before
+    assert placeholder == before
+    assert result["count"] == 2
+    assert result["productionSelectionCount"] == 1
+    assert result["actionablePickCount"] == 1
+    assert result["allGamesPredicted"] is False
+    assert result["predictions"][1].get("winProbability") is None
+
+
+def test_missing_market_on_prediction_is_still_an_error():
+    row = _row("2026-09-09")
+    for key in ("homeSignal", "awaySignal", "homeMarketDeVigProbability", "awayMarketDeVigProbability"):
+        row.pop(key)
+    with pytest.raises(ValueError, match="valid two-way"):
+        ranked.apply_model_direction(row)
+
+
+def test_unattested_empty_row_is_still_an_error():
+    with pytest.raises(ValueError, match="valid two-way"):
+        ranked.apply_model_direction({"slate_date": "2026-09-09"})
 
 
 def _row(date: str, *, home_market: float = 0.62, official: bool = False) -> dict:
