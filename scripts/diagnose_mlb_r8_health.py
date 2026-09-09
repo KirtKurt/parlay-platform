@@ -113,6 +113,8 @@ def main():
                 window[namespace + "/" + metric] = {
                     "sum": sum(float(p.get("Sum", 0)) for p in points),
                     "datapointCount": len(points),
+                    "datapoints": [{"timestamp": p["Timestamp"].isoformat(), "sum": p.get("Sum", 0)}
+                                   for p in sorted(points, key=lambda p: p["Timestamp"])],
                 }
             windows.append(window)
         result["resultsDeliveryDiagnostics"] = {

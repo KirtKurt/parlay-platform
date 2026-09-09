@@ -1807,7 +1807,9 @@ def wait_for_schedule_metrics(
                 "eventBridgeInvocations": rule_invocations,
                 "eventBridgeFailedInvocations": rule_failures,
                 "publicationSettleSeconds": publication_settle_seconds,
-                "eventBridgeDeliveryAuthoritative": True,
+                "eventBridgeDeliveryAuthoritative": False,
+                "eventBridgeMetricAvailable": True,
+                "deliveryCountIsCompleteAccounting": False,
                 "lambdaAggregateMetricsAuthoritative": False,
                 "lambdaAggregateMetricsDiagnosticReason": (
                     "The same function serves public GET/OPTIONS concurrently; "
@@ -1827,10 +1829,24 @@ def wait_for_schedule_metrics(
         remaining = active_deadline - time.monotonic()
         if remaining <= 0:
             if visible_at is None:
-                raise VerificationError(
-                    "CloudWatch did not expose one EventBridge delivery metric "
-                    "before the visibility deadline"
-                )
+                # AWS documents these metrics as best-effort, with no guarantee
+                # of completeness or timeliness. Absence cannot refute the
+                # native event + persisted summary + request-bound platform log.
+                # The caller still requires that complete causal proof below.
+                return {
+                    "windowStartUtc": _iso(metric_start), "windowEndUtc": _iso(end),
+                    "lambdaInvocations": lambda_invocations, "lambdaErrors": lambda_errors,
+                    "eventBridgeInvocations": None,
+                    "eventBridgeFailedInvocations": rule_failures,
+                    "eventBridgeMetricAvailable": False,
+                    "eventBridgeDeliveryAuthoritative": False,
+                    "lambdaAggregateMetricsAuthoritative": False,
+                    "deliveryCountIsCompleteAccounting": False,
+                    "diagnostic": "EVENTBRIDGE_DELIVERY_METRIC_UNAVAILABLE",
+                    "documentation": "https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-monitoring.html",
+                    "requestBoundCausalProofRequired": True,
+                    "clean": None,
+                }
             raise VerificationError(
                 "CloudWatch EventBridge delivery metric did not remain stable "
                 "for the independent publication settle window"
@@ -2564,7 +2580,9 @@ def run(args: argparse.Namespace, evidence: Dict[str, Any]) -> None:
     )
     evidence["scheduledAdvance"]["binding"] = {
         "oneEnabledExactRuleTarget": True,
-        "oneEventBridgeDelivery": True,
+        "oneEventBridgeDelivery": None,
+        "exactDeliveryCountAsserted": False,
+        "oneNativeScheduledInvocationProven": True,
         "aggregateLambdaInvocationCountAuthoritative": False,
         "requestBoundLambdaRequestId": evidence["scheduledAdvance"]["lambdaPlatformLog"][
             "requestId"

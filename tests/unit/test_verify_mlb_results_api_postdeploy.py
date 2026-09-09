@@ -1059,6 +1059,38 @@ def test_metric_visibility_must_remain_exactly_one_during_settle(monkeypatch):
     assert clock["now"] == 120.0
 
 
+def test_missing_best_effort_delivery_metric_is_explicitly_unavailable(monkeypatch):
+    class Metrics:
+        def get_metric_statistics(self, **kwargs):
+            return {"Datapoints": []}
+
+    proof = subject.wait_for_schedule_metrics(
+        Metrics(), function_name="results", rule_name="results-rule",
+        start=datetime(2026, 9, 9, 9, 21, tzinfo=timezone.utc), timeout_seconds=0,
+    )
+    assert proof["eventBridgeMetricAvailable"] is False
+    assert proof["eventBridgeInvocations"] is None
+    assert proof["eventBridgeDeliveryAuthoritative"] is False
+    assert proof["deliveryCountIsCompleteAccounting"] is False
+    assert proof["requestBoundCausalProofRequired"] is True
+    assert proof["clean"] is None
+
+
+@pytest.mark.parametrize("metric,count", [("Invocations", 2), ("FailedInvocations", 1)])
+def test_delivery_failure_or_ambiguity_still_blocks_verification(metric, count):
+    class Metrics:
+        def get_metric_statistics(self, **kwargs):
+            return {"Datapoints": [{"Sum": count}]} if (
+                kwargs["Namespace"] == "AWS/Events" and kwargs["MetricName"] == metric
+            ) else {"Datapoints": []}
+
+    with pytest.raises(subject.VerificationError):
+        subject.wait_for_schedule_metrics(
+            Metrics(), function_name="results", rule_name="results-rule",
+            start=datetime(2026, 9, 9, 9, 21, tzinfo=timezone.utc), timeout_seconds=0,
+        )
+
+
 def test_request_bound_timeout_report_cannot_pass_as_clean():
     window_start = datetime(2026, 8, 28, 1, 6, tzinfo=timezone.utc)
     request_id = "11111111-1111-4111-8111-111111111111"
