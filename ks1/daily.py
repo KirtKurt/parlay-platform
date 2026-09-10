@@ -20,6 +20,7 @@ from ks1.features import Features, day, utc
 from ks1.inventory import encode
 from ks1.poisson import home_probability, predict_exported
 from ks1.publish import parquet_bytes
+from ks1.refresh import change_reason, fingerprint, observe
 from ks1.table import american, team_identity
 
 PREFIX = 'mlb/ks1/predictions-v1/'
@@ -30,7 +31,9 @@ STRINGS = ['date', 'game_id', 'bbs_game_id', 'odds_event_id', 'home_team', 'away
            'bbs_home_id', 'bbs_away_id', 'home_starter_name', 'away_starter_name', 'home_starter_id', 'away_starter_id',
            'home_starter_status', 'away_starter_status', 'starter_source', 'commence_time', 'model_version',
            'as_of', 'lineup_status', 'prediction_status', 'market_status', 'history_source_as_of',
-           'environment_status', 'history_status', 'input_fingerprint']
+           'environment_status', 'history_status', 'input_fingerprint', 'status',
+           'home_lineup_status', 'away_lineup_status', 'home_lineup_ids', 'away_lineup_ids',
+           'home_offense_source', 'away_offense_source', 'lineup_source_status', 'starter_feature_source']
 # Dictionary date also reads cleanly with Arrow's automatic Hive partitioning.
 SCHEMA = pa.schema([pa.field(k, pa.dictionary(pa.int32(), pa.string()) if k == 'date' else pa.string())
                     for k in STRINGS] + [pa.field(k, pa.float64()) for k in FLOATS])
@@ -154,6 +157,12 @@ def load_inputs(folder):
     manifest = json.loads((folder/'capture.json').read_bytes())
     if manifest.get('system') != 'KS1' or manifest.get('errors'):
         raise ValueError('incomplete KS1 capture')
+    required = {'bbs.json', 'odds.json', 'official.json', 'history.json.gz', 'model.txt'}
+    if manifest.get('phase', 4) >= 5:
+        required.add('feeds.json')
+    required.update(name for name in ('feeds.json', 'previous.parquet') if (folder/name).exists())
+    if required - set(manifest['files']):
+        raise ValueError('unbound capture input')
     for name, expected in manifest['files'].items():
         if Path(name).name != name or hashlib.sha256((folder/name).read_bytes()).hexdigest() != expected:
             raise ValueError('capture file hash mismatch')
@@ -167,6 +176,7 @@ def load_inputs(folder):
             raise ValueError('capture contains stale or future provider data')
         values[provider] = value
     values['history'] = json.loads(gzip.decompress((folder/'history.json.gz').read_bytes()))
+    values['feeds'] = json.loads((folder/'feeds.json').read_bytes()) if (folder/'feeds.json').exists() else {'games': {}}
     return manifest, values
 
 
@@ -195,6 +205,7 @@ def predict(folder, output):
         raise ValueError('accepted model hash mismatch')
     classifier = lgb.Booster(model_str=model_bytes.decode())
     poisson = json.loads(poisson_bytes)
+    needed = set(classifier.feature_name()) | set(poisson['home']['features']) | set(poisson['away']['features'])
     model_version = 'KS1-LGB-'+refs['lightgbm']['sha256'][:12]+'-DP-'+refs['poisson']['sha256'][:12]
     official = inputs['official']['payload']
     schedule = [g for d in official['dates'] for g in d['games']]
@@ -205,12 +216,31 @@ def predict(folder, output):
     crosswalk = Crosswalk(history, schedule)
     assignments = bbs_assignments(inputs['bbs']['payload'], schedule, crosswalk, target_date)
     engine, rows, feature_rows, exclusions = Features(history), [], [], []
+    previous = pq.ParquetFile(folder/'previous.parquet').read().to_pandas() if (folder/'previous.parquet').exists() else None
+    frozen = preserve_frozen(previous.iloc[:0], previous, target_date, as_of) if previous is not None else pd.DataFrame()
+    frozen_ids = set(frozen.game_id) if len(frozen) else set()
+    prior_rows = {r['game_id']: r for r in pq.ParquetFile(folder/'previous.parquet').read().to_pylist()} if previous is not None else {}
+    retained, changes, unchanged = [], [], []
+    # Frozen Phase 4 rows acquire only conservative status defaults; their
+    # predictions and original cutoff are retained, never rescored postgame.
+    migrated_frozen = []
+    for pk in sorted(frozen_ids):
+        row = dict(prior_rows[pk])
+        if not row.get('status'):
+            migrated_frozen.append(row['game_id'])
+            row.update(status=row.get('prediction_status') or 'projected', lineup_status='projected',
+                       lineup_source_status='legacy_projected', starter_feature_source='team_starter_prior')
+            for side in ('home', 'away'):
+                row.update({side+'_lineup_status': 'projected', side+'_lineup_ids': None, side+'_offense_source': 'team_prior'})
+        retained.append(row)
     history_ids = {str(g['officialGamePk']) for g in history}
     missing_boxes = [g for g in inputs['history'].get('schedule', []) if str(g['gamePk']) not in history_ids
                      and g.get('status', {}).get('abstractGameState') == 'Final'
                      and str(day(g['gameDate'])) < target_date]
     for game in sorted(schedule, key=lambda g: (g['gameDate'], str(g['gamePk']))):
         pk, start = str(game['gamePk']), utc(game['gameDate'])
+        if pk in frozen_ids:
+            continue
         if (game['status'].get('abstractGameState') != 'Preview'
                 or game['status'].get('detailedState') in ('Postponed', 'Cancelled')
                 or utc(as_of) > start-timedelta(minutes=10)):
@@ -222,20 +252,17 @@ def predict(folder, output):
         if bbs['status'].lower() != 'scheduled':
             raise ValueError('BBS and official pregame status disagree: '+pk)
         row = {'date': target_date, 'game_id': pk, 'bbs_game_id': bbs['id'], 'commence_time': start.isoformat(),
-               'model_version': model_version, 'as_of': as_of, 'lineup_status': 'projected',
-               'starter_source': 'existing_MLB_schedule_probablePitcher',
+               'model_version': model_version, 'as_of': as_of,
                'environment_status': 'unavailable_in_accepted_models',
                'history_status': 'available_retained_history',
                'history_source_as_of': inputs['history'].get('prior_observed_at')}
+        row.update(observe(game, inputs['feeds']['games'].get(pk), as_of))
         features = {}
         for side in ('home', 'away'):
             team = game['teams'][side]
             tid, name = team_identity(team)
-            probable = team.get('probablePitcher') or {}
-            pid = str(probable['id']) if probable.get('id') else None
-            row.update({side+'_id': tid, side+'_team': name, 'bbs_'+side+'_id': str(bbs[side]['id']),
-                        side+'_starter_id': pid, side+'_starter_name': probable.get('fullName'),
-                        side+'_starter_status': 'probable' if pid else 'missing'})
+            pid = row[side+'_starter_id']
+            row.update({side+'_id': tid, side+'_team': name, 'bbs_'+side+'_id': str(bbs[side]['id'])})
             features.update({side+'_'+k: v for k, v in engine.at(as_of, tid, pid, game_date=target_date).items()})
             gaps = [g for g in missing_boxes if any(str(t['team']['id']) == tid for t in g['teams'].values())]
             for window in (1, 3, 5):
@@ -246,15 +273,17 @@ def predict(folder, output):
                 row['history_status'] = 'partial_known_missing_boxes'
         row.update(market_for(game, inputs['odds']['payload'], crosswalk, as_of))
         features['market_home_prob'] = row['market_home_prob']
-        row['prediction_status'] = 'projected' if row['home_starter_id'] and row['away_starter_id'] else 'projected_missing_starter'
-        row['input_fingerprint'] = hashlib.sha256(encode({'features': features, 'model_version': model_version,
-                                                       'home_starter': row['home_starter_id'], 'away_starter': row['away_starter_id']})).hexdigest()
+        if needed - set(features):
+            raise ValueError('inference feature contract missing: '+','.join(sorted(needed-set(features))))
+        row['input_fingerprint'] = fingerprint(row, features, needed)
+        old = prior_rows.get(pk)
+        if old and old.get('status') and old.get('input_fingerprint') == row['input_fingerprint']:
+            retained.append(old); unchanged.append(pk)
+            continue
+        changes.append({'game_id': pk, 'reason': change_reason(old, row)})
         rows.append(row); feature_rows.append(features)
     if rows:
         features = pd.DataFrame(feature_rows)
-        needed = set(classifier.feature_name()) | set(poisson['home']['features']) | set(poisson['away']['features'])
-        if needed - set(features):
-            raise ValueError('inference feature contract missing: '+','.join(sorted(needed-set(features))))
         x = features[classifier.feature_name()].astype(float)
         p_home = classifier.predict(x)
         h, a = [predict_exported(poisson[side], features) for side in ('home', 'away')]
@@ -266,13 +295,14 @@ def predict(folder, output):
                        proj_total=float(h[i]+a[i]), p_home_poisson=float(p_poisson[i]),
                        edge_home=float(p_home[i]-row['market_home_prob']) if row['market_home_prob'] is not None else None,
                        edge_total=float(h[i]+a[i]-row['market_total']) if row['market_total'] is not None else None)
-    current = pa.Table.from_pylist(rows, schema=SCHEMA).to_pandas()
-    previous = pd.read_parquet(folder/'previous.parquet') if (folder/'previous.parquet').exists() else None
-    frame = preserve_frozen(current, previous, target_date, as_of).sort_values(['commence_time', 'game_id']).reset_index(drop=True)
+    current = pa.Table.from_pylist(rows+retained, schema=SCHEMA).to_pandas()
+    frame = current.sort_values(['commence_time', 'game_id']).reset_index(drop=True)
     table = pa.Table.from_pandas(frame, schema=SCHEMA, preserve_index=False)
     if frame.game_id.duplicated().any() or (len(frame) and set(frame.date) != {target_date}):
         raise ValueError('duplicate or wrong-date predictions')
     if len(frame):
+        if frame.status.isna().any() or frame.lineup_status.isna().any():
+            raise ValueError('every prediction requires status and lineup_status')
         rates = frame[['lambda_home', 'lambda_away', 'proj_total']].to_numpy(float)
         if not (np.isfinite(rates).all() and (rates > 0).all()):
             raise ValueError('invalid predicted runs')
@@ -287,25 +317,37 @@ def predict(folder, output):
                  for e in inputs['odds']['payload']]
     odds_table = pa.Table.from_pylist(odds_rows, schema=pa.schema([(k, pa.string()) for k in ('event_id', 'as_of', 'payload_json')]))
     (output/'odds_cache.parquet').write_bytes(parquet_bytes(odds_table))
+    (output/'lineup_cache.json').write_bytes(encode(inputs['feeds']))
     (output/'crosswalk.json').write_bytes(encode({'teams': crosswalk.rows, 'fuzzy_matches': 0}))
-    report = {'system': 'KS1', 'phase': 4, 'date': target_date, 'as_of': as_of, 'model_version': model_version,
-              'rows': len(frame), 'newly_scored': len(rows), 'preserved_pregame_rows': len(frame)-len(rows),
+    report = {'system': 'KS1', 'phase': 5, 'date': target_date, 'as_of': as_of, 'model_version': model_version,
+              'rows': len(frame), 'newly_scored': len(rows), 'preserved_pregame_rows': len(frozen_ids),
+              'unchanged_rows': len(unchanged), 'unchanged_game_ids': unchanged, 'changes': changes,
+              'migrated_frozen_game_ids': migrated_frozen,
+              'removed_game_ids': sorted(set(prior_rows)-set(frame.game_id)),
+              'confirmed_lineups': int((frame.lineup_status == 'confirmed').sum()),
+              'projected_lineups': int((frame.lineup_status == 'projected').sum()),
               'official_games': len(schedule), 'bbs_matched_games': len(assignments), 'exclusions': exclusions,
               'with_both_starters': int((frame.home_starter_id.notna() & frame.away_starter_id.notna()).sum()),
               'with_market_home_prob': int(frame.market_home_prob.notna().sum()), 'with_market_total': int(frame.market_total.notna().sum()),
               'parquet_sha256': hashlib.sha256(body).hexdigest(), 'parquet_readback_verified': True,
               'source_capture': manifest, 'provider_receipts': {k: inputs[k]['receipt'] for k in ('bbs', 'odds', 'official')},
+              'lineup_receipts': {pk: entry['receipt'] for pk, entry in inputs['feeds']['games'].items()},
               'edge_home_units': 'probability difference', 'edge_total_units': 'runs', 'published': False,
               'limitations': ['Fixed research models; no model retraining or R8 authority change.',
-                  'Probable pitchers come from the existing official schedule because BBS match rows lack them.',
+                  'Probable pitchers come from the verified pregame MLB feed, falling back to the existing official schedule.',
                   'Missing starters use the accepted team-starter features; individual-starter fields were not learned in 2025.',
-                  'Lineups remain projected. Stored history can lag games completed since its last refresh.']}
+                  'Confirmed batting orders are recorded; the accepted models still use shrunk team offense priors.',
+                  'An identity-only scratch rebuilds the game but can leave the accepted model probabilities unchanged.',
+                  'Unchanged rows retain their original as_of; this report records the latest poll. T-10 remains the cutoff.',
+                  'Stored history can lag games completed since its last refresh.']}
     (output/'report.json').write_bytes(encode(report))
-    print(json.dumps({k: v for k, v in report.items() if k not in ('source_capture', 'provider_receipts')}, indent=2))
+    print(json.dumps({k: v for k, v in report.items() if k not in ('source_capture', 'provider_receipts', 'lineup_receipts')}, indent=2))
     return table, report, output
 
 
 def publish(s3, bucket, table, report, output):
+    if report.get('source_capture', {}).get('verification_only'):
+        raise ValueError('synthetic verification captures cannot be published')
     if not (os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('GITHUB_REPOSITORY') == 'KirtKurt/parlay-platform'
             and os.environ.get('GITHUB_REF') == 'refs/heads/main'
             and os.environ.get('GITHUB_EVENT_NAME') in ('schedule', 'push', 'workflow_dispatch')
@@ -318,7 +360,7 @@ def publish(s3, bucket, table, report, output):
     prediction_body = (output/'predictions.parquet').read_bytes()
     if hashlib.sha256(prediction_body).hexdigest() != report['parquet_sha256'] or not pq.read_table(io.BytesIO(prediction_body)).equals(table):
         raise ValueError('prediction publication content mismatch')
-    for name in ('odds_cache.parquet', 'crosswalk.json', 'predictions.parquet'):
+    for name in ('odds_cache.parquet', 'lineup_cache.json', 'crosswalk.json', 'predictions.parquet'):
         key, body = prefix+name, (output/name).read_bytes()
         sha = hashlib.sha256(body).hexdigest()
         existing = None

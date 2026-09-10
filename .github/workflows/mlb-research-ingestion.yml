@@ -2,7 +2,7 @@ name: MLB research source ingestion
 on:
   workflow_dispatch:
   pull_request:
-    paths: ['ks1/**', 'tests/ks1_phase4/**', '.github/workflows/mlb-research-ingestion.yml']
+    paths: ['ks1/**', 'tests/ks1_phase4/**', 'tests/ks1_phase5/**', '.github/workflows/mlb-research-ingestion.yml']
   schedule:
     - cron: '23 * * * *'
   push:
@@ -40,7 +40,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
       - run: python scripts/run_mlb_research_ingestion.py --seconds 2400
-      - name: Capture and score KS1 using the existing hourly trigger
+      - name: Refresh KS1 lineups, starters and changed games using the existing hourly trigger
         env:
           BBS_API_KEY: ${{ secrets.BBS_API_KEY }}
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
@@ -74,4 +74,4 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -r ks1/poisson-requirements.txt 'pytest>=8,<9' 'PyYAML>=6,<7'
-      - run: python -m pytest -q tests/ks1 tests/ks1_phase4
+      - run: python -m pytest -q tests/ks1 tests/ks1_phase4 tests/ks1_phase5
