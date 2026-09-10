@@ -421,3 +421,57 @@ def test_provider_alignment_rejects_ambiguous_identity_and_stale_prices(monkeypa
     monkeypatch.setenv('ODDS_API_KEY','test-only')
     monkeypatch.setattr(source,'fetch',lambda url:(events,{'retrievedAtUtc':AT.isoformat()}))
     assert source.markets(games)=={}
+
+
+def cached_market(captured_age=10,quote_age=30,p=.55):
+    return {'capturedAtUtc':(AT-timedelta(seconds=captured_age)).isoformat(),
+            'marketHomeProbability':p,
+            'books':[{'book':'book','sourceAtUtc':(AT-timedelta(seconds=quote_age)).isoformat()}]}
+
+
+@pytest.mark.parametrize('quote_age,accepted',[(0,True),(900,True),(901,False),(-1,False)])
+def test_cached_baseline_uses_original_quote_age(quote_age,accepted):
+    assert bool(signals.market_path([cached_market(quote_age=quote_age)],AT))==accepted
+
+
+@pytest.mark.parametrize('case',['old_capture','empty_books','missing_books','missing_time','invalid_time','one_stale_book'])
+def test_cached_baseline_requires_fresh_evidence_for_every_book(case):
+    market=cached_market()
+    if case=='old_capture':market=cached_market(captured_age=901)
+    if case=='empty_books':market['books']=[]
+    if case=='missing_books':market.pop('books')
+    if case=='missing_time':market['books'][0].pop('sourceAtUtc')
+    if case=='invalid_time':market['books'][0]['sourceAtUtc']='invalid'
+    if case=='one_stale_book':market['books'].append(cached_market(quote_age=901)['books'][0])
+    assert signals.market_path([market],AT)=={}
+
+
+def test_market_movement_keeps_old_history_with_fresh_latest_baseline():
+    old=cached_market(captured_age=3600,quote_age=3610,p=.5)
+    latest=cached_market(p=.6)
+    future=cached_market(captured_age=-10,p=.9)
+    features=signals.market_path([future,latest,old],AT)
+    assert features['marketHomeProbability']==.6
+    assert features['marketObservationCount']==2
+    assert features['marketMovement']==pytest.approx(.1)
+    assert signals.market_path([latest],AT+timedelta(seconds=871))=={}
+
+
+@pytest.mark.parametrize('collection_seconds',[0,31])
+def test_snapshot_rechecks_quote_age_after_source_collection(store,monkeypatch,collection_seconds):
+    times=iter([AT,AT,AT+timedelta(seconds=collection_seconds)])
+    monkeypatch.setattr(runtime,'now',lambda:next(times))
+    monkeypatch.setattr(source,'feed',lambda game:({},{}))
+    monkeypatch.setattr(players,'observe',lambda *args:{'teams':{side:{'battingOrder':[]} for side in ('home','away')}})
+    monkeypatch.setattr(players,'features',lambda *args:{})
+    monkeypatch.setattr(signals,'conditions',lambda *args:{'features':{}})
+    monkeypatch.setattr(signals,'prior_features',lambda *args:{})
+    monkeypatch.setattr(signals,'statcast_features',lambda *args:{})
+    args=(store,game(),'T10',[cached_market(quote_age=870)],[],{}, {})
+    if collection_seconds:
+        with pytest.raises(ValueError,match='same-time market unavailable'):
+            runtime.snapshot(*args)
+    else:
+        result=runtime.snapshot(*args)
+        assert result['features']['marketHomeProbability']==.55
+        assert result['capturedAtUtc']==AT.isoformat()
