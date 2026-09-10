@@ -41,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --quiet pytest
-          PYTHONPATH=tennis_alpha python -m pytest -q tests/test_tennis_alpha_engine.py tests/test_tennis_alpha_features.py tests/test_tennis_alpha_names.py tests/test_tennis_alpha_store.py tests/test_tennis_alpha_elo.py tests/test_tennis_alpha_clv.py
+          PYTHONPATH=tennis_alpha python -m pytest -q tests/test_tennis_alpha_*.py
           sam validate --template-file tennis-alpha-template.yaml
 
       - name: Guard isolation
