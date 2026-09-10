@@ -222,21 +222,21 @@ def main():
     parser.add_argument('--inputs', type=Path, required=True)
     parser.add_argument('--model', type=Path, default=MODEL_PATH)
     parser.add_argument('--temperature-model', type=Path, default=TEMPERATURE_PATH)
-    parser.add_argument('--fit-temperature-after-ledger', action='store_true')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     from ks1.platt_inputs import dataset
     capture = json.loads(args.inputs.read_bytes())
     rows, admission = dataset(capture)
+    if capture.get('committed_ledger'):
+        from ks1.nightly import ledger_rows
+        rows = ledger_rows(capture['committed_ledger'], capture['as_of'])
+        admission['eligible_graded_rows'] = len(rows)
+        admission['source'] = 'committed_nightly_ledger'
     previous = capture.get('platt_model') or identity()
     model, decision = refit(rows, previous, capture['as_of'])
     temperature_model = capture.get('temperature_model') or temperature_identity()
-    temperature_decision = {'status': 'waiting_for_post_ledger_hook'}
-    if args.fit_temperature_after_ledger:
-        written_at = capture.get('ledger_write_completed_at')
-        if not written_at or utc(written_at) > utc(capture['as_of']):
-            raise ValueError('temperature refit requires a completed ledger-write receipt')
-        temperature_model, temperature_decision = refit_temperature(rows, temperature_model, capture['as_of'])
+    temperature_decision = {'status': 'retained_nightly_temperature' if capture.get('committed_ledger')
+                            else 'waiting_for_first_nightly_ledger'}
     comparison = compare(rows, capture['as_of'])
     args.model.parent.mkdir(parents=True, exist_ok=True)
     args.model.write_bytes(encode(model))

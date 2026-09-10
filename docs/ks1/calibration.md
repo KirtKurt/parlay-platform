@@ -3,7 +3,7 @@
 PR only, based on accepted Phase 6 commit
 `d0ce308f037b623087ba868b89161598555630b6`. The simulation PR #704 remains
 separate. This diff adds no simulation, features, vendors, model refit, production
-engine switch, lock-rule change, audit rewrite, scheduler, merge, or deployment.
+engine switch, lock-rule change, audit rewrite, second scheduler, merge, or deployment.
 
 ## Installed temperature module
 
@@ -16,7 +16,7 @@ python src/temperature_calibrator.py
 The self-test passed. It verifies exact identity at T=1, the 30-row minimum,
 T>1 for overconfident synthetic data, 80% weight on previous T, both metric
 gates and idempotent refitting. The full local calibration/KS1 suite has
-**65 passing tests**.
+**81 passing tests**.
 
 `calibrate_p(p_raw)` reads `data/models/temperature.json`. The existing KS1
 publisher chooses the raw LightGBM probability first, then applies temperature
@@ -38,7 +38,7 @@ by lock time, requires **30 graded rows**, fits the latest **100**, and proposes
 either previous T or raw probabilities**. Rejected candidates leave T, n and
 fitted_at intact. A signature prevents repeated fitting of the same ledger.
 
-### Nightly hook is ready; the KS1 writer is missing
+### Connected nightly grading and temperature fit
 
 The requested post-ledger entry point is:
 
@@ -49,23 +49,45 @@ from src.temperature_calibrator import fit_from_ledger
 fit_from_ledger(locked_official_rows)
 ```
 
-Rows require game_id, p_raw, home_win, locked_at and graded_at. They must already
-have been admitted as official locks by the caller. The module does not create
-or rewrite a ledger, lock, pick, or AWS resource. It atomically replaces only its
-local parameter JSON; the existing GitHub publisher can retain the parameter
-artifact in the same KS1 date prefix.
+`ks1/nightly.py` now supplies the missing caller inside the **existing**
+`mlb-research-ingestion.yml` workflow. Its single hourly cron moves from minute
+23 to minute 0; no additional trigger is added. Grading is due at **01:00
+America/New_York**, including daylight saving time, before the research ingest
+and daily publication steps. GitHub may delay scheduled runs; the next hourly
+tick catches up if the nightly checkpoint is incomplete. A completed date never
+fits twice, including the repeated 01:00 hour in autumn.
 
-**There is no KS1 01:00 ledger-writing job on the accepted base.** The existing
-`InqsiNightlyAutopsyAt1AM` invokes `hello_world/inqsi_autopsy_scheduler.py` at
-`cron(13 6 * * ? *)` and grades the separate Inqsi pipeline. The canonical MLB
-settlement job is another existing authority. Neither is rewritten or used as
-a substitute KS1 ledger. The after-write connection therefore remains pending
-identification of the KS1 writer. The hourly prediction job does **not** fit T.
+The runner reads only existing versioned KS1 predictions and the retained
+`prior-games.json` final-score source. It admits the original prospective lock
+using the unchanged T-10 rule, preserves `p_raw`, and grades the **stored official
+`p_home`**. Existing grades and their original probabilities are retained.
+Conflicting outcomes or changed probabilities stop the run; no other pipeline's
+ledger, audit, or predictions are modified.
 
-The calibration CLI exposes `--fit-temperature-after-ledger` only when the
-capture includes a completed `ledger_write_completed_at` receipt. This is an
-internal callback contract, not a newly assumed provider field. Current
-read-only captures intentionally do not claim such a ledger write.
+Two new checkpoint files live under the existing bucket and KS1 date prefix:
+
+- `mlb/ks1/predictions-v1/date=YYYY-MM-DD/graded_ledger.json`: cumulative verified
+  official grades, raw and locked probabilities, scores, and source evidence.
+- `mlb/ks1/predictions-v1/date=YYYY-MM-DD/calibration_state.json`: the verified
+  ledger receipt, temperature and Platt parameters, decisions, and completed date.
+
+The date is the Eastern nightly processing date. Writes are conditional and
+restricted to that date's two checkpoint files. **Ledger write and byte readback
+must succeed before `fit_from_ledger(...)` runs.** A failed ledger write or
+readback cannot fit either mapping. A failure saving the final state leaves the
+previous accepted parameters authoritative; retry resumes the committed ledger
+and does not apply shrinkage twice. This replaces the former caller-supplied
+`--fit-temperature-after-ledger` receipt flag with an actual committed write.
+
+The module saves `data/models/temperature.json` under the runner's output
+directory. Accepted parameters also persist in the date checkpoint. Subsequent
+daily input captures load that checkpoint ahead of older per-slate model copies,
+so an empty slate or a disposable runner cannot reset T. Platt's seven-new-pick
+gate runs after the same ledger commit. Hourly publication applies the retained
+temperature and never refits it. The previous Inqsi and R8 audit jobs are untouched.
+
+Writes require the existing main-branch workflow. PR/local verification uses
+local files only. No AWS mutation or deployment was performed for this PR.
 
 ## Resumed Platt work
 
@@ -120,10 +142,11 @@ accuracy. Source SHA and full-precision values are in `calibration_sample.json`.
 python -m pip install -r ks1/poisson-requirements.txt pytest PyYAML
 python src/temperature_calibrator.py
 python -m pytest -q tests/ks1 tests/ks1_phase4 tests/ks1_phase5 tests/ks1_calibration
+python -m ks1.nightly --inputs /path/to/verified/locked/capture.json --output /tmp/ks1-nightly
 python -m ks1.platt --inputs /path/to/verified/locked/capture.json --output /tmp/ks1-calibration
 ```
 
 The existing PR verification job downloads the pinned retained capture and
-writes comparison/parameter artifacts locally. It has no AWS credentials or
+writes the ledger, comparison and parameter artifacts locally. It has no AWS credentials or
 provider calls. No new archive is downloaded. Existing main-only publication
 guards and conditional date writes remain in force.

@@ -4,7 +4,7 @@ on:
   pull_request:
     paths: ['ks1/**', 'src/temperature_calibrator.py', 'tests/ks1_phase4/**', 'tests/ks1_phase5/**', 'tests/ks1_calibration/**', 'data/models/platt.json', 'data/models/temperature.json', '.github/workflows/mlb-research-ingestion.yml']
   schedule:
-    - cron: '23 * * * *'
+    - cron: '0 * * * *'
   push:
     branches: [main]
     paths:
@@ -43,6 +43,15 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
+      - name: Grade KS1 at 01:00 Eastern, then fit calibration after verified ledger write
+        run: python -m ks1.nightly --output /tmp/ks1-nightly --publish
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ks1-nightly-${{ github.run_id }}
+          path: /tmp/ks1-nightly/
+          if-no-files-found: ignore
+          retention-days: 90
       - run: python scripts/run_mlb_research_ingestion.py --seconds 2400
       - name: Refresh KS1 lineups, starters and changed games using the existing hourly trigger
         env:
@@ -90,7 +99,9 @@ jobs:
           path: /tmp/ks1-observed-locks
       - name: Compare calibration on verified retained locked rows only
         if: github.head_ref == 'codex/ks1-platt-only-20260910'
-        run: python -m ks1.platt --inputs /tmp/ks1-observed-locks/locked/capture.json --model /tmp/ks1-calibration/data/models/platt.json --temperature-model /tmp/ks1-calibration/data/models/temperature.json --output /tmp/ks1-calibration
+        run: |
+          python -m ks1.nightly --inputs /tmp/ks1-observed-locks/locked/capture.json --output /tmp/ks1-calibration/nightly
+          python -m ks1.platt --inputs /tmp/ks1-observed-locks/locked/capture.json --model /tmp/ks1-calibration/data/models/platt.json --temperature-model /tmp/ks1-calibration/data/models/temperature.json --output /tmp/ks1-calibration
       - uses: actions/upload-artifact@v4
         if: github.head_ref == 'codex/ks1-platt-only-20260910'
         with:

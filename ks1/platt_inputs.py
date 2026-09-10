@@ -85,8 +85,16 @@ def capture(s3, bucket, as_of, prior, final_sources):
         model = json.loads(s3.get_object(Bucket=bucket, Key=key)['Body'].read())
         if model.get('fitted_at') is None or utc(model['fitted_at']) <= utc(as_of):
             models[kind] = model; found.add(kind)
+    from ks1.calibration_store import latest_checkpoint
+    checkpoint = latest_checkpoint(s3, bucket, as_of)
+    if checkpoint:
+        # The nightly commit is authoritative even when today's slate is empty
+        # or a later hourly prediction file still contains an older model copy.
+        for kind in models:
+            models[kind] = checkpoint['state'][kind+'_model']
     return {'system': 'KS1', 'as_of': as_of, 'locked': locked, 'finals': finals,
             'inventory': inventory, 'final_sources': final_sources, 'platt_model': models['platt'], 'temperature_model': models['temperature'],
+            'committed_ledger': checkpoint['ledger'] if checkpoint else None,
             'aws_writes': 0, 'provider_calls': 0}
 
 

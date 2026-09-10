@@ -148,10 +148,10 @@ def test_partition_parquet_is_readable_by_default_pandas_reader(tmp_path):
     assert pd.read_parquet(p/'predictions.parquet').date.tolist() == ['2026-09-10']
 
 
-def test_existing_workflow_has_one_unchanged_schedule_and_no_pr_publication():
+def test_existing_workflow_has_one_hourly_schedule_and_no_pr_publication():
     path = Path(__file__).resolve().parents[2]/'.github/workflows/mlb-research-ingestion.yml'
     workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
-    assert workflow['on']['schedule'] == [{'cron': '23 * * * *'}]
+    assert workflow['on']['schedule'] == [{'cron': '0 * * * *'}]
     assert workflow['on']['push']['branches'] == ['main']
     assert workflow['jobs']['ingest']['if'] == "github.ref == 'refs/heads/main' && github.event_name != 'pull_request'"
     assert workflow['jobs']['verify-ks1']['if'] == "github.event_name == 'pull_request'"
