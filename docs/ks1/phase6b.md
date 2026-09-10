@@ -14,7 +14,9 @@ archive does not provide an accepted PA transition model. No extra-inning or
 automatic-runner rates are invented. Conditioning changes the expected runs
 and win probability from the analytic model's half-tie convention.
 
-Seeds bind game ID, recipe and accepted run inputs. Unchanged input rows reuse
+Seeds bind game ID, recipe and accepted input-model identity. Run rates
+parameterize the draws, not the seed; insignificant floating-point variation
+cannot replace the complete Monte Carlo sample. Unchanged input rows reuse
 the complete previous row, including simulation values and `as_of`. A changed
 mapping invalidates only eligible unlocked rows. It never changes the raw
 simulation seed. Each game records recipe, calibration version and path count.
@@ -97,15 +99,15 @@ The accepted **retrospective, not locked** holdout remains 2,166 games,
 | --- | ---: | ---: | ---: |
 | LightGBM champion | 2,166 | 0.250463 | N/A — classifier has no run head |
 | Poisson champion | 2,166 | 0.250961 | 3.601466 |
-| Simulation candidate | 2,166 | 0.252244 | 3.610815 |
+| Simulation candidate | 2,166 | 0.252367 | 3.607828 |
 
-The candidate is worse here and remains shadow-only. Local replay took 3.73s
-overall; the slowest historical slate took 0.043s. Read-only CI run [34442132009](https://github.com/KirtKurt/parlay-platform/actions/runs/34442132009)
+The candidate is worse here and remains shadow-only. Local replay took 3.85s
+overall; the slowest historical slate took 0.038s. Read-only CI run [34442132009](https://github.com/KirtKurt/parlay-platform/actions/runs/34442132009)
 found **zero existing KS1 prediction keys/versions and zero locked rows** at
 2026-09-10T05:42:49Z. Consequently the locked comparison has n=0 and null Brier /
 totals MAE for all three models. This requested prospective comparison is
 blocked on actual retained KS1 locks; historical replay is not a substitute.
-CI retrospective replay took 2.32s, slowest slate 0.018s. Artifact
+The initial read-only capture artifact
 `ks1-phase6b-34442132009` (ID 10138321573) was downloaded and verified against
 SHA-256 `00d5ba9ca627765f2997badc97ebf416e79cb08941c9811f0b43882368495571`.
 The locked comparison is a separate artifact produced from storage evidence. All three models

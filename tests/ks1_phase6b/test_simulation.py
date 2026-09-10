@@ -24,6 +24,7 @@ def test_paths_are_decisive_reproducible_and_every_output_uses_same_paths():
     assert (scores[:, 0] != scores[:, 1]).all()
     np.testing.assert_array_equal(scores, paths('1', 5, 4, 'original'))
     assert not np.array_equal(scores, paths('2', 5, 4, 'original'))
+    np.testing.assert_array_equal(scores, paths('1', 5+1e-13, 4-1e-13, 'original'))
     out = summarize(scores)
     assert out['p_home_sim_raw'] == np.mean(scores[:, 0] > scores[:, 1])
     assert out['lambda_home_sim']+out['lambda_away_sim'] == pytest.approx(out['proj_total_sim'])

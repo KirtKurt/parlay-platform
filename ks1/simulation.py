@@ -24,14 +24,14 @@ def calibrate(p, mapping=None):
     return expit(slope * logit(np.clip(p, 1e-6, 1-1e-6)) + intercept)
 
 
-def paths(game_id, home_rate, away_rate, fingerprint, n=5000, recipe=RECIPE):
+def paths(game_id, home_rate, away_rate, input_model_version, n=5000, recipe=RECIPE):
     if recipe != RECIPE or n not in (3000, 5000):
         raise ValueError('unregistered recipe or unsupported path count')
     rates = np.asarray([home_rate, away_rate], float)
     if not np.isfinite(rates).all() or (rates < .05).any() or (rates > 50).any():
         raise ValueError('run inputs outside supported range [.05, 50]')
     seed = int.from_bytes(hashlib.sha256(
-        f'{recipe}|{game_id}|{fingerprint}'.encode()).digest()[:16], 'big')
+        f'{recipe}|{game_id}|{input_model_version}'.encode()).digest()[:16], 'big')
     rng = np.random.Generator(np.random.PCG64(seed))
     scores = rng.poisson(rates, size=(n, 2))
     tied = scores[:, 0] == scores[:, 1]
@@ -64,11 +64,11 @@ class SlateSimulator:
         self.n = 3000 if previous_seconds > 240 else 5000
         self.counts = []
 
-    def score(self, game_id, h, a, fingerprint):
+    def score(self, game_id, h, a, input_model_version):
         elapsed = self.clock()-self.started
         if elapsed > 240 or (self.counts and elapsed / len(self.counts) * self.games > 240):
             self.n = 3000
-        result = summarize(paths(game_id, h, a, fingerprint, self.n), self.mapping)
+        result = summarize(paths(game_id, h, a, input_model_version, self.n), self.mapping)
         self.counts.append(self.n)
         return {**result, 'sim_paths': str(self.n), 'sim_recipe': RECIPE,
                 'sim_calibration_version': self.mapping['version']}

@@ -39,7 +39,7 @@ def run(phase2, output):
                 slate_timings.append({'date': current_date, **simulator.report()})
             current_date = row['date']
             simulator = SlateSimulator(int(counts[current_date]))
-        seed = hashlib.sha256(encode([float(h[i]), float(a[i]), refs['poisson']['sha256']])).hexdigest()
+        seed = refs['poisson']['sha256']
         sim = simulator.score(row['game_id'], h[i], a[i], seed)
         rows.append({k: row[k] for k in ('game_id', 'date', 'home_score', 'away_score')} |
                     {'p_home': float(ref.iloc[i].p_home), 'p_home_poisson': float(p[i]),

@@ -303,7 +303,7 @@ def predict(folder, output):
                        proj_total=float(h[i]+a[i]), p_home_poisson=float(p_poisson[i]),
                        edge_home=float(p_home[i]-row['market_home_prob']) if row['market_home_prob'] is not None else None,
                        edge_total=float(h[i]+a[i]-row['market_total']) if row['market_total'] is not None else None)
-            seed_inputs = hashlib.sha256(encode([float(h[i]), float(a[i]), refs['poisson']['sha256']])).hexdigest()
+            seed_inputs = refs['poisson']['sha256']
             sim = simulator.score(row['game_id'], h[i], a[i], seed_inputs)
             row.update(lambda_home_poisson=float(h[i]), lambda_away_poisson=float(a[i]), proj_total_poisson=float(h[i]+a[i]), **sim)
     current = pa.Table.from_pylist(rows+retained, schema=SCHEMA).to_pandas()
