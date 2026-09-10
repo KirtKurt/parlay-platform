@@ -1,0 +1,38 @@
+name: Bootstrap Soccer Predictor Source
+
+on:
+  push:
+    branches:
+      - agent/soccer-predictor-integration
+    paths:
+      - '.github/workflows/soccer-bootstrap.yml'
+      - 'soccer-predictor/.import/source.tar.gz'
+
+permissions:
+  contents: write
+
+jobs:
+  expand-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/soccer-predictor-integration
+          fetch-depth: 0
+      - name: Expand isolated soccer predictor source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f soccer-predictor/.import/source.tar.gz
+          tar -xzf soccer-predictor/.import/source.tar.gz -C soccer-predictor
+          rm -rf soccer-predictor/.import
+          rm -f .github/workflows/soccer-bootstrap.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add soccer-predictor .github/workflows/soccer-bootstrap.yml
+          if git diff --cached --quiet; then
+            echo 'No source changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Add isolated soccer predictor source [skip ci]'
+          git push origin HEAD:agent/soccer-predictor-integration
