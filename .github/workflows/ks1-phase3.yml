@@ -1,0 +1,35 @@
+name: KS1 Phase 3 Poisson comparison only
+on:
+  pull_request:
+    paths: ['ks1/poisson.py', 'ks1/poisson-requirements.txt', 'tests/ks1_phase3/**', '.github/workflows/ks1-phase3.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r ks1/poisson-requirements.txt 'pytest>=8,<9'
+      - run: python -m pytest -q tests/ks1_phase2 tests/ks1_phase3
+      - uses: actions/download-artifact@v4
+        with:
+          name: ks1-phase2-34431359524
+          run-id: 34431359524
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: /tmp/ks1-phase2-accepted
+      - name: Compare on the accepted Phase 2 games
+        run: python -m ks1.poisson --phase2-dir /tmp/ks1-phase2-accepted --output /tmp/ks1-phase3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ks1-phase3-${{ github.run_id }}
+          path: /tmp/ks1-phase3/
+          if-no-files-found: error
+          retention-days: 90
