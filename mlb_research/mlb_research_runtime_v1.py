@@ -38,7 +38,7 @@ def snapshot(store,game,checkpoint,market,history,prior,statcast):
     completed={g['officialGamePk']:g for g in prior.get('games',[]) if utc(g['completedAtUtc'])<observed}
     observation=players.observe(game,payload,completed,observed)
     conditions=signals.conditions(game,payload,list(completed.values()),observed)
-    features={**signals.market_path(market,observed), **players.features(observation),
+    features={**players.features(observation),
               **signals.prior_features(game,list(completed.values()),history,observed),
               **signals.statcast_features(observation,statcast,observed), **conditions['features']}
     day=utc(game['gameDate']).astimezone(source.ET).date().isoformat()
@@ -52,11 +52,12 @@ def snapshot(store,game,checkpoint,market,history,prior,statcast):
         prior_order=previous['playerWindows']['teams'][side]['battingOrder'] if previous else None
         features[side+'LineupChangesSincePreviousCheckpoint']=(sum(a!=b for a,b in zip(current,prior_order))
             if current and prior_order and len(current)==len(prior_order)==9 else None)
-    if source.number(features.get('marketHomeProbability')) is None:
-        raise ValueError('same-time market unavailable')
     captured=now()
     if captured>cutoff:
         raise ValueError('source collection crossed snapshot deadline')
+    features.update(signals.market_path(market,captured))
+    if source.number(features.get('marketHomeProbability')) is None:
+        raise ValueError('same-time market unavailable')
     features=signals.interactions(features)
     return {'version':VERSION,'officialGamePk':str(game['gamePk']),
             'deploymentGitSha':os.environ.get('INQSI_DEPLOY_GIT_SHA'),

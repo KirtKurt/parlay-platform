@@ -12,6 +12,18 @@ def market_path(observations, cutoff):
     values = sorted((o for o in observations if utc(o['capturedAtUtc']) <= cutoff), key=lambda o:o['capturedAtUtc'])
     if not values:
         return {}
+    latest = values[-1]
+    # A quote that was fresh when fetched can expire while cached or while
+    # collecting other sources. Keep old movement history, but require every
+    # book in the current baseline to remain fresh at the snapshot time.
+    try:
+        ages = [(cutoff-utc(latest['capturedAtUtc'])).total_seconds()]
+        books = latest['books']
+        ages.extend((cutoff-utc(book['sourceAtUtc'])).total_seconds() for book in books)
+        if not books or not all(0 <= age <= source.MAX_MARKET_AGE_SECONDS for age in ages):
+            return {}
+    except (KeyError, TypeError, ValueError):
+        return {}
     p = [o['marketHomeProbability'] for o in values]
     changes = [b-a for a,b in zip(p,p[1:])]
     signs = [1 if x > 0 else -1 for x in changes if abs(x) > 1e-8]

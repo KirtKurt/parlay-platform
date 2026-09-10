@@ -15,6 +15,7 @@ ET = ZoneInfo('America/New_York')
 API = 'https://statsapi.mlb.com/api'
 GAME_TYPES = {'R', 'F', 'D', 'L', 'W'}
 MAX_PROVIDER_START_OFFSET_SECONDS = 90
+MAX_MARKET_AGE_SECONDS = 900
 
 
 def number(value):
@@ -185,7 +186,7 @@ def markets(games):
                 if market['key'] == 'h2h' and set(prices) == {home, away} and all(v and v > 1 for v in prices.values()):
                     at = utc(market.get('last_update') or book['last_update'])
                     age = (utc(receipt['retrievedAtUtc'])-at).total_seconds()
-                    if 0 <= age <= 900:
+                    if 0 <= age <= MAX_MARKET_AGE_SECONDS:
                         h, a = 1/prices[home], 1/prices[away]
                         pairs.append({'book': book['key'], 'homeProbability': h/(h+a), 'sourceAtUtc': at.isoformat()})
         if pairs:
