@@ -193,6 +193,17 @@ def capture(target_date, output):
     except Exception as exc:
         if getattr(exc, 'response', {}).get('Error', {}).get('Code') not in ('NoSuchKey', '404'):
             raise
+    from ks1.sim_nightly import optional
+    from ks1.simulation import IDENTITY, RECIPE, STATE_KEY
+    state, _ = optional(s3, bucket, STATE_KEY)
+    # Capture only serving metadata, not the cumulative grade ledger.
+    serving = {'recipe': RECIPE, 'mapping': IDENTITY} if not state else {k: state[k] for k in ('recipe', 'mapping', 'as_of')}
+    prior_report, _ = optional(s3, bucket, 'mlb/ks1/predictions-v1/date='+target_date+'/report.json')
+    if not prior_report:
+        previous_date = (date.fromisoformat(target_date)-timedelta(days=1)).isoformat()
+        prior_report, _ = optional(s3, bucket, 'mlb/ks1/predictions-v1/date='+previous_date+'/report.json')
+    serving['last_slate_seconds'] = (prior_report or {}).get('max_slate_seconds', 0)
+    (output/'simulation_state.json').write_bytes(encode(serving))
     manifest = {'system': 'KS1', 'phase': 5, 'date': target_date, 'as_of': datetime.now(timezone.utc).isoformat(),
                 'bucket': bucket, 'aws_writes': 0, 'errors': errors,
                 'source_history_games': len(games), 'github_sha': os.environ.get('GITHUB_SHA'), 'previous_etag': previous_etag,
