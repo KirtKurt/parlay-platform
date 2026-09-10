@@ -385,3 +385,39 @@ def test_new_deployment_refreshes_training_from_existing_capture_owner(monkeypat
     assert store.get('training.json')['deploymentGitSha']=='new-release'
     runtime.lambda_handler({'mode':'capture'},Context())
     assert calls==['train']
+
+
+def market_event(g,offset=60,event_id='provider-one',age=30):
+    return {'id':event_id,'home_team':'Home','away_team':'Away',
+        'commence_time':(storage.utc(g['gameDate'])+timedelta(seconds=offset)).isoformat(),
+        'bookmakers':[{'key':'book','last_update':(AT-timedelta(seconds=age)).isoformat(),
+            'markets':[{'key':'h2h','outcomes':[{'name':'Home','price':1.8},{'name':'Away','price':2.1}]}]}]}
+
+
+@pytest.mark.parametrize('offset,accepted',[(-91,False),(-90,True),(-60,True),(0,True),(60,True),(90,True),(91,False)])
+def test_provider_minute_rounding_keeps_official_identity_and_deadline(monkeypatch,offset,accepted):
+    g=game();event=market_event(g,offset)
+    monkeypatch.setenv('ODDS_API_KEY','test-only')
+    monkeypatch.setattr(source,'fetch',lambda url:([event],{'retrievedAtUtc':AT.isoformat()}))
+    result=source.markets([g])
+    assert bool(result)==accepted
+    if accepted:
+        assert result['1']['officialCommenceTime']==g['gameDate']
+        assert result['1']['officialGamePk']=='1'
+        assert result['1']['providerEventId']=='provider-one'
+        assert result['1']['providerStartOffsetSeconds']==offset
+        assert 0<result['1']['marketHomeProbability']<1
+
+
+@pytest.mark.parametrize('case',['two_events','two_games','reused_event_id','missing_event_id','stale_quotes','reversed_teams'])
+def test_provider_alignment_rejects_ambiguous_identity_and_stale_prices(monkeypatch,case):
+    g=game();events=[market_event(g)];games=[g]
+    if case=='two_events':events.append(market_event(g,-30,'provider-two'))
+    if case=='two_games':games.append(game(2,start=(storage.utc(g['gameDate'])+timedelta(seconds=60)).isoformat()))
+    if case=='reused_event_id':events.append(market_event(g,1800))
+    if case=='missing_event_id':events[0]['id']=''
+    if case=='stale_quotes':events=[market_event(g,age=901)]
+    if case=='reversed_teams':events[0].update(home_team='Away',away_team='Home')
+    monkeypatch.setenv('ODDS_API_KEY','test-only')
+    monkeypatch.setattr(source,'fetch',lambda url:(events,{'retrievedAtUtc':AT.isoformat()}))
+    assert source.markets(games)=={}
