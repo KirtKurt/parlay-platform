@@ -47,19 +47,24 @@ lost local commit was deployed.
   retaining `NO_QUALIFIED_CHAMPION` and zero official picks. This is existing
   production evidence, not proof that this pending release has been deployed.
 
-## Publication blocker
+## Publication and pending-work audit
 
-The attempted push was rejected by automatic approval review. Its stated reason
-was that publishing potentially private code to a public GitHub destination
-requires explicit destination authorization; the general instruction to deploy
-all pending items was not accepted as sufficient. No workaround or alternate
-publication path was used. The exact pending destination is the public
-`KirtKurt/parlay-platform` repository, branch
-`codex/mlb-player-signal-release-20260909`, followed by the normal CI/merge/deploy
-flow for the existing `parlay-platform-dev` AWS stack.
+The user explicitly authorized publication to the public
+`KirtKurt/parlay-platform` repository and deployment to `parlay-platform-dev`.
+PR #690 contains this release. The Lambda packaging gate identified a NumPy
+wheel incompatibility; NumPy is now pinned to 2.2.6, and verification uses the
+same research requirements as the deployed worker. The compatible Python 3.11
+manylinux2014 wheel was downloaded successfully, and all 40 research tests
+pass with the pinned dependency.
 
-Repository CI, SAM packaging, AWS deployment and post-deployment execution proof
-remain pending that authorization. The code and local verification are complete.
+The older pending deployment/quarantine proposals (#597, #601, #604) already
+have their required behavior in current main. Temporary diagnosis-only drafts
+and retired R6/R7 recovery proposals are not reactivated. The still-applicable
+bounded candidate-review error diagnostic from #623 was missing and is included
+here with its four regression cases. It changes error reporting only.
+
+AWS deployment and natural-execution verification are tracked in PR #690's
+workflow runs; packaging or local-test success alone is not deployment proof.
 
 ## Release boundaries
 

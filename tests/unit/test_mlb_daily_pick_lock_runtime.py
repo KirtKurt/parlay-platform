@@ -4282,6 +4282,76 @@ def test_prelock_candidate_review_v2_proof_failure_never_writes():
         )
 
 
+def test_prelock_candidate_review_v2_handler_exposes_only_safe_proof_code():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, _, _, _, _ = (
+            _seed_prelock_candidate_review_v2_incident(handler, table)
+        )
+        before = copy.deepcopy(table.queue_item)
+        updates_before = len(table.update_calls)
+
+        def fail_proof(**_kwargs):
+            raise RuntimeError(
+                "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_"
+                "CANDIDATE_INVALID"
+            )
+
+        handler.mlb_daily_pick_lock.prove_cooperative_prelock_candidate_review_v2 = (
+            fail_proof
+        )
+
+        with pytest.raises(RuntimeError) as raised:
+            handler.lambda_handler(
+                _prelock_candidate_review_v2_event(slate_date),
+                FakeContext(),
+            )
+
+        message = str(raised.value)
+        assert "MLB_SCHEDULED_LOCK_PREREQUISITE_FAILED" in message
+        assert (
+            "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_"
+            "CANDIDATE_INVALID"
+        ) in message
+        assert table.queue_item == before
+        assert len(table.update_calls) == updates_before
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_CANDIDATE_INVALID:raw",
+        "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_CANDIDATE_INVALID raw",
+        "unbounded internal detail",
+    ),
+)
+def test_prelock_candidate_review_v2_handler_redacts_untrusted_error_text(
+    message,
+):
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, _, _, _, _ = (
+            _seed_prelock_candidate_review_v2_incident(handler, table)
+        )
+
+        def fail_proof(**_kwargs):
+            raise RuntimeError(message)
+
+        handler.mlb_daily_pick_lock.prove_cooperative_prelock_candidate_review_v2 = (
+            fail_proof
+        )
+
+        with pytest.raises(RuntimeError) as raised:
+            handler.lambda_handler(
+                _prelock_candidate_review_v2_event(slate_date),
+                FakeContext(),
+            )
+
+        failure = str(raised.value)
+        assert '"errorCode": "RuntimeError"' in failure
+        assert message not in failure
+
+
 def test_prelock_candidate_review_v2_full_progress_fingerprint_covers_attempt_metadata():
     table = FakeLeaseTable()
     with _load_handler(lease_table=table) as (handler, _, _):
