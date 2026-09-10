@@ -2,9 +2,11 @@ name: MLB research source ingestion
 on:
   workflow_dispatch:
   pull_request:
-    paths: ['ks1/**', 'tests/ks1_phase4/**', 'tests/ks1_phase5/**', '.github/workflows/mlb-research-ingestion.yml']
+    paths: ['ks1/**', 'tests/ks1_phase4/**', 'tests/ks1_phase5/**', 'tests/ks1_phase6b/**', '.github/workflows/mlb-research-ingestion.yml']
   schedule:
     - cron: '23 * * * *'
+    # Same workflow, 01:00 America/New_York; runtime gate handles DST.
+    - cron: '0 5,6 * * *'
   push:
     branches: [main]
     paths:
@@ -20,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   ingest:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && github.event.schedule != '0 5,6 * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 50
     env:
@@ -74,4 +76,33 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -r ks1/poisson-requirements.txt 'pytest>=8,<9' 'PyYAML>=6,<7'
-      - run: python -m pytest -q tests/ks1 tests/ks1_phase4 tests/ks1_phase5
+      - run: python -m pytest -q tests/ks1 tests/ks1_phase4 tests/ks1_phase5 tests/ks1_phase6b
+
+  grade-ks1:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'schedule' && github.event.schedule == '0 5,6 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: 'true'
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r ks1/poisson-requirements.txt
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - run: python -m ks1.sim_nightly --output /tmp/ks1-nightly --nightly-gate --publish
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ks1-nightly-${{ github.run_id }}
+          path: /tmp/ks1-nightly/
+          if-no-files-found: warn
+          retention-days: 90

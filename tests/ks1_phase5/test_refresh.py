@@ -255,7 +255,7 @@ def test_feed_collection_is_bounded_and_missing_feed_is_optional(capture):
     assert len(calls) == 2
 
 
-def test_phase4_rows_upgrade_once_including_frozen_status_defaults(capture):
+def test_phase4_rows_upgrade_only_before_freeze(capture):
     folder, output, calls, _ = capture
     table, _, out = daily.predict(folder, output)
     new_columns = ['status', 'home_lineup_status', 'away_lineup_status', 'home_lineup_ids', 'away_lineup_ids',
@@ -269,8 +269,9 @@ def test_phase4_rows_upgrade_once_including_frozen_status_defaults(capture):
     advance(folder, out, DATE+'T19:51:00+00:00')
     frozen, report, out = daily.predict(folder, output)
     assert frozen.select(['p_home', 'lambda_home', 'lambda_away', 'as_of']).equals(old.select(['p_home', 'lambda_home', 'lambda_away', 'as_of']))
-    assert all(r['status'] and r['lineup_status'] == 'projected' for r in frozen.to_pylist())
-    assert report['migrated_frozen_game_ids'] == ['1', '2'] and calls == [2, 2]
+    assert frozen.select(old.column_names).equals(old)
+    assert all(r['status'] is None for r in frozen.to_pylist())
+    assert report['migrated_frozen_game_ids'] == [] and calls == [2, 2]
     advance(folder, out, DATE+'T19:52:00+00:00')
     repeated, report, _ = daily.predict(folder, output)
     assert repeated.equals(frozen) and report['migrated_frozen_game_ids'] == []

@@ -1,7 +1,7 @@
 name: KS1 Phase 3 Poisson comparison only
 on:
   pull_request:
-    paths: ['ks1/poisson.py', 'ks1/poisson-requirements.txt', 'ks1/accuracy*.py', 'ks1/phase6*.py', 'tests/ks1_phase6/**', 'tests/ks1_accuracy/**', 'tests/ks1_phase3/**', '.github/workflows/ks1-phase3.yml']
+    paths: ['ks1/poisson.py', 'ks1/poisson-requirements.txt', 'ks1/accuracy*.py', 'ks1/phase6*.py', 'tests/ks1_phase6/**', 'tests/ks1_phase6b/**', 'ks1/sim*.py', 'tests/ks1_accuracy/**', 'tests/ks1_phase3/**', '.github/workflows/ks1-phase3.yml']
 permissions:
   contents: read
   actions: read
@@ -37,6 +37,42 @@ jobs:
         with:
           name: ks1-phase6-${{ github.run_id }}
           path: /tmp/ks1-phase6/
+          if-no-files-found: error
+          retention-days: 90
+  phase6b-simulation:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/ks1-phase6b-simulation-20260910'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '2'
+      AWS_EC2_METADATA_DISABLED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r ks1/poisson-requirements.txt 'pytest>=8,<9' 'PyYAML>=6,<7'
+      - run: python -m pytest -q tests/ks1 tests/ks1_phase4 tests/ks1_phase5 tests/ks1_phase6b
+      - uses: actions/download-artifact@v4
+        with:
+          name: ks1-phase2-34431359524
+          run-id: 34431359524
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: /tmp/ks1-phase2-accepted
+      - run: python -m ks1.phase6b --phase2-dir /tmp/ks1-phase2-accepted --output /tmp/ks1-phase6b/retrospective
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Read existing KS1 versions and finals; no AWS writes or provider requests
+        run: python -m ks1.sim_nightly --capture-only --output /tmp/ks1-phase6b/locked
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ks1-phase6b-${{ github.run_id }}
+          path: /tmp/ks1-phase6b/
           if-no-files-found: error
           retention-days: 90
   compare:

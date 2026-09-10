@@ -122,6 +122,8 @@ def test_date_publication_isolated_idempotent_and_restricted_to_existing_job(tmp
     (tmp_path/'crosswalk.json').write_text('{}')
     (tmp_path/'lineup_cache.json').write_text('{"games":{}}')
     report = {'date': '2026-09-10', 'as_of': '2026-09-10T10:00:00Z', 'parquet_sha256': hashlib.sha256(body).hexdigest(), 'source_capture': {}}
+    (tmp_path/'report.json').write_text(json.dumps(report))
+    (tmp_path/'simulation.parquet').write_bytes(body)
     for name in ('GITHUB_ACTIONS', 'GITHUB_REPOSITORY', 'GITHUB_REF', 'GITHUB_EVENT_NAME', 'GITHUB_WORKFLOW_REF'):
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(ValueError, match='existing main'):
@@ -143,10 +145,10 @@ def test_partition_parquet_is_readable_by_default_pandas_reader(tmp_path):
     assert pd.read_parquet(p/'predictions.parquet').date.tolist() == ['2026-09-10']
 
 
-def test_existing_workflow_has_one_unchanged_schedule_and_no_pr_publication():
+def test_existing_workflow_retains_hourly_and_adds_nightly_without_pr_publication():
     path = Path(__file__).resolve().parents[2]/'.github/workflows/mlb-research-ingestion.yml'
     workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
-    assert workflow['on']['schedule'] == [{'cron': '23 * * * *'}]
+    assert workflow['on']['schedule'] == [{'cron': '23 * * * *'}, {'cron': '0 5,6 * * *'}]
     assert workflow['on']['push']['branches'] == ['main']
-    assert workflow['jobs']['ingest']['if'] == "github.ref == 'refs/heads/main' && github.event_name != 'pull_request'"
+    assert workflow['jobs']['ingest']['if'] == "github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && github.event.schedule != '0 5,6 * * *'"
     assert workflow['jobs']['verify-ks1']['if'] == "github.event_name == 'pull_request'"
