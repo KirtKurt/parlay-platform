@@ -21,7 +21,10 @@ def ingest(store,seconds=2400):
     errors=[]
     try:
         if not store.get('historical-input.json'):
-            publish_historical(store)
+            try:
+                publish_historical(store)
+            except Exception as exc:
+                errors.append({'source':'historical','error':type(exc).__name__})
         day=started.astimezone(source.ET).date()
         first=(day-timedelta(days=30)).isoformat()
         games,receipt=source.schedule(first,day.isoformat())
@@ -100,6 +103,12 @@ def ingest(store,seconds=2400):
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--seconds',type=int,default=2400);args=parser.parse_args()
     if not 60<=args.seconds<=2400: raise ValueError('source budget must be 60..2400 seconds')
-    result=ingest(store_for_stack(),args.seconds)
-    (ROOT/'runtime_reports/mlb_research_ingestion_latest.json').write_text(json.dumps(result,indent=2)+'\n')
+    output=ROOT/'runtime_reports/mlb_research_ingestion_latest.json'
+    try:
+        result=ingest(store_for_stack(),args.seconds)
+    except Exception as exc:
+        output.write_text(json.dumps({'ok':False,'status':'FAILED','error':type(exc).__name__,
+                                    'updatedAtUtc':now().isoformat()},indent=2)+'\n')
+        raise
+    output.write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps(result,indent=2))

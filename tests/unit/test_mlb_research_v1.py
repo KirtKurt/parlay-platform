@@ -322,3 +322,42 @@ def test_research_report_exposes_missing_sources_and_deadline_misses():
         'training':{'health':'STALE','evidence':{}},
         'ingestion':{'health':'PARTIAL','evidence':{'statcastDays':9,'errors':[{}]}}}}))
     assert 'PARTIAL' in lines and 'STALE' in lines and '123' in lines and '9/30' in lines
+
+
+def test_schedule_queries_each_season_and_counts_makeup_once(monkeypatch):
+    from urllib.parse import parse_qs,urlsplit
+    calls=[]
+    postponed=game(1,day='2025-09-09',state='Final')
+    postponed['status']['detailedState']='Postponed'
+    makeup=game(1,day='2025-09-10',state='Final')
+    resumed=game(2,day='2025-09-11',state='Final')
+    resumed['resumedFrom']='2025-09-10T18:18:00+00:00'
+    original=game(2,day='2025-09-10',state='Final')
+    def fetch(url):
+        q=parse_qs(urlsplit(url).query);calls.append(q)
+        entries=[postponed,makeup,original,resumed] if q['season']==['2025'] else [game(3)]
+        return {'totalGames':len(entries),'dates':[{'games':entries}]},{'sha256':'receipt'}
+    monkeypatch.setattr(source,'fetch',fetch)
+    games,receipt=source.schedule('2025-09-01','2026-09-09')
+    assert [g['gamePk'] for g in games]==[1,2,3]
+    assert [q['season'] for q in calls]==[['2025'],['2026']]
+    assert calls[0]['endDate']==['2025-12-31'] and calls[1]['startDate']==['2026-01-01']
+    assert len(receipt['pages'])==2 and len(receipt['excludedNonPlayableEntries'])==2
+    assert not source.final(postponed) and not source.playable(resumed)
+
+
+def test_schedule_still_rejects_duplicate_playable_games(monkeypatch):
+    monkeypatch.setattr(source,'fetch',lambda url:({'totalGames':2,'dates':[{'games':[game(),game()]}]},{}))
+    with pytest.raises(ValueError,match='duplicate or ambiguous'):
+        source.schedule('2026-09-09')
+
+
+def test_historical_failure_does_not_stop_current_source_ingestion(monkeypatch,store):
+    import run_mlb_research_ingestion as ingestion
+    monkeypatch.setattr(ingestion,'now',lambda:AT)
+    monkeypatch.setattr(ingestion,'publish_historical',lambda store:(_ for _ in ()).throw(ValueError('bad historical source')))
+    monkeypatch.setattr(source,'schedule',lambda *args:([],{}))
+    result=ingestion.ingest(store,seconds=60)
+    assert result['status']=='PARTIAL' and result['statcastDays']==30
+    assert result['errors']==[{'source':'historical','error':'ValueError'}]
+    assert store.get('dataset.json')['rows']==0
