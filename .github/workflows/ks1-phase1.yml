@@ -1,0 +1,53 @@
+name: KS1 Phase 1 existing-data inventory and game table
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['ks1/**', 'tests/ks1/**', 'docs/ks1/**', '.github/workflows/ks1-phase1.yml']
+permissions:
+  contents: read
+concurrency:
+  group: ks1-phase1-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  phase1:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: 'true'
+      OPENBLAS_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'boto3>=1.34,<2'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Inventory existing sources without AWS writes or provider downloads
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          BIG_BALLS_DATA_API_KEY: ${{ secrets.BIG_BALLS_DATA_API_KEY }}
+          BBD_API_KEY: ${{ secrets.BBD_API_KEY }}
+          BIGBALLS_DATA_API_KEY: ${{ secrets.BIGBALLS_DATA_API_KEY }}
+          BIG_BALLS_API_KEY: ${{ secrets.BIG_BALLS_API_KEY }}
+          BIGBALLS_API_KEY: ${{ secrets.BIGBALLS_API_KEY }}
+          BIGBALLSDATA_API_KEY: ${{ secrets.BIGBALLSDATA_API_KEY }}
+          BIG_BALLS_DATA_KEY: ${{ secrets.BIG_BALLS_DATA_KEY }}
+          BBD_API_TOKEN: ${{ secrets.BBD_API_TOKEN }}
+          BIGBALLS_DATA_KEY: ${{ secrets.BIGBALLS_DATA_KEY }}
+          BIGBALLSDATA_KEY: ${{ secrets.BIGBALLSDATA_KEY }}
+          BIG_BALLS_KEY: ${{ secrets.BIG_BALLS_KEY }}
+          BBD_KEY: ${{ secrets.BBD_KEY }}
+        run: python -m ks1.inventory --output /tmp/ks1-phase1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ks1-phase1-${{ github.run_id }}
+          path: /tmp/ks1-phase1/inventory.json
+          if-no-files-found: error
+          retention-days: 90
