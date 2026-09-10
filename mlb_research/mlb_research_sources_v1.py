@@ -5,6 +5,7 @@ import json
 import math
 import os
 from collections import Counter
+from datetime import date
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
@@ -45,23 +46,48 @@ def fetch(url, *, raw=False):
 
 
 def schedule(first, last=None):
-    payload, receipt = fetch(API+'/v1/schedule?'+urlencode({'sportId': 1, 'startDate': first,
-                           'endDate': last or first, 'hydrate': 'probablePitcher,venue(location)'}))
-    games = [g for d in payload.get('dates', []) for g in d.get('games', [])]
-    if payload.get('totalGames') != len(games):
-        raise ValueError('incomplete official schedule')
+    start, end = date.fromisoformat(first), date.fromisoformat(last or first)
+    if start > end:
+        raise ValueError('invalid official schedule range')
+    games, receipts, excluded = [], [], []
+    # StatsAPI scopes a schedule response to one season, even when the requested
+    # date range crosses seasons. Query each year explicitly and retain receipts.
+    for year in range(start.year, end.year + 1):
+        left, right = max(start, date(year, 1, 1)), min(end, date(year, 12, 31))
+        payload, receipt = fetch(API+'/v1/schedule?'+urlencode({
+            'sportId': 1, 'season': year, 'startDate': left.isoformat(),
+            'endDate': right.isoformat(), 'hydrate': 'probablePitcher,venue(location)'}))
+        entries = [g for d in payload.get('dates', []) for g in d.get('games', [])]
+        if payload.get('totalGames') != len(entries):
+            raise ValueError('incomplete official schedule')
+        receipts.append(receipt)
+        for g in entries:
+            if not count(g['gamePk']):
+                raise ValueError('invalid official game identity')
+            if g['gameType'] not in GAME_TYPES:
+                continue
+            if not playable(g):
+                excluded.append({'gamePk': g['gamePk'], 'gameDate': g['gameDate'],
+                                 'state': g.get('status', {}).get('detailedState'),
+                                 'resumedFrom': g.get('resumedFrom')})
+                continue
+            games.append(g)
     ids = [count(g['gamePk']) for g in games]
-    if 0 in ids or len(set(ids)) != len(ids):
+    if len(set(ids)) != len(ids):
         raise ValueError('duplicate or ambiguous official game')
-    return [g for g in games if g['gameType'] in GAME_TYPES], receipt
+    return games, {'pages': receipts, 'excludedNonPlayableEntries': excluded,
+                   'retrievedAtUtc': now().isoformat(), 'sha256': digest(games)}
 
 
 def final(game):
-    return game.get('status', {}).get('abstractGameState') == 'Final'
+    return game.get('status', {}).get('abstractGameState') == 'Final' and playable(game)
 
 
 def playable(game):
-    return game.get('status', {}).get('detailedState') not in ('Postponed', 'Cancelled')
+    # A makeup replaces its postponed entry. A resumption is the continuation of
+    # the original game, not a second fresh pregame prediction or training row.
+    return (game.get('status', {}).get('detailedState') not in ('Postponed', 'Cancelled')
+            and not game.get('resumedFrom'))
 
 
 def feed(game,fields=None):

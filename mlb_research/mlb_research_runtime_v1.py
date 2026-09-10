@@ -265,10 +265,11 @@ def lambda_handler(event,context):
         if mode=='train': return train(store)
         result=capture(store)
         pointer=store.get('dataset.json'); previous=store.get('training.json')
-        # New source data can arrive between six-hour runs. The same canonical
-        # capture owner requests development once, under the training lease.
+        # New source data or a new deployment can arrive between six-hour runs.
+        # The same canonical capture owner refreshes training evidence once.
         # No second schedule or external trainer is introduced.
-        if (pointer and (not previous or previous.get('datasetRowsHash')!=pointer['rowsHash'])
+        if (pointer and (not previous or previous.get('datasetRowsHash')!=pointer['rowsHash']
+                or previous.get('deploymentGitSha')!=os.environ.get('INQSI_DEPLOY_GIT_SHA'))
                 and (not previous or (now()-utc(previous['updatedAtUtc'])).total_seconds()>900)
                 and context.get_remaining_time_in_millis()>180000):
             training_owner=store.acquire('train')
