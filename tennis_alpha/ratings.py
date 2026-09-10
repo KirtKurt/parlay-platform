@@ -14,6 +14,7 @@ class RatingStore:
         self.form: Dict[FormKey, Deque[int]] = defaultdict(lambda: deque(maxlen=form_window))
         self.h2h: Dict[Tuple[str, str], list[int]] = defaultdict(list)
         self.last_date: Dict[str, int] = {}
+        self.rank_points: Dict[str, float] = {}
         self.matches = 0
 
     def pre_match(self, player: str, opponent: str, surface: str, date: int = 0) -> dict:
@@ -39,11 +40,20 @@ class RatingStore:
             "recent_surface_wr_diff": p_wr - o_wr,
             "h2h_edge": h2h_edge,
             "rest_days_diff": rest_p - rest_o,
+            "rank_points_edge": float(self.rank_points.get(player, 0.0) - self.rank_points.get(opponent, 0.0)),
             "player_elo": p_elo,
             "opponent_elo": o_elo,
         }
 
-    def observe(self, winner: str, loser: str, surface: str, date: int = 0) -> None:
+    def observe(
+        self,
+        winner: str,
+        loser: str,
+        surface: str,
+        date: int = 0,
+        winner_pts: float = 0.0,
+        loser_pts: float = 0.0,
+    ) -> None:
         surface = (surface or "hard").lower()
         self.elo.update(winner, loser, surface, str(date))
         self.form[(winner, surface)].append(1)
@@ -52,6 +62,10 @@ class RatingStore:
         self.h2h[pair].append(1 if winner == pair[0] else 0)
         self.last_date[winner] = date
         self.last_date[loser] = date
+        if winner_pts:
+            self.rank_points[winner] = float(winner_pts)
+        if loser_pts:
+            self.rank_points[loser] = float(loser_pts)
         self.matches += 1
 
     def names(self) -> list[str]:
@@ -64,6 +78,7 @@ class RatingStore:
             "form": {f"{p}|{s}": list(q) for (p, s), q in self.form.items()},
             "h2h": {f"{a}|{b}": list(vals) for (a, b), vals in self.h2h.items()},
             "last_date": {k: int(v) for k, v in self.last_date.items()},
+            "rank_points": {k: float(v) for k, v in self.rank_points.items()},
             "matches": int(self.matches),
         }
 
@@ -89,6 +104,7 @@ class RatingStore:
             a, b = str(key).split("|", 1)
             store.h2h[(a, b)] = [int(x) for x in vals]
         store.last_date = {str(k): int(v) for k, v in (payload.get("last_date") or {}).items()}
+        store.rank_points = {str(k): float(v) for k, v in (payload.get("rank_points") or {}).items()}
         store.matches = int(payload.get("matches") or 0)
         return store
 
@@ -107,6 +123,15 @@ def _rest(current: int, last: int | None) -> float:
         return 7.0
 
 
+def _num(value) -> float:
+    try:
+        if value in (None, "", "NA"):
+            return 0.0
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def replay(matches: Iterable[dict]) -> RatingStore:
     store = RatingStore()
     for row in matches:
@@ -118,5 +143,12 @@ def replay(matches: Iterable[dict]) -> RatingStore:
             d = int(row.get("tourney_date") or 0)
         except ValueError:
             d = 0
-        store.observe(w, l, str(row.get("surface") or "hard"), d)
+        store.observe(
+            w,
+            l,
+            str(row.get("surface") or "hard"),
+            d,
+            _num(row.get("winner_rank_points")),
+            _num(row.get("loser_rank_points")),
+        )
     return store
