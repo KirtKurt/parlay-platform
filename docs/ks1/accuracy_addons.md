@@ -1,5 +1,10 @@
 # KS1 accuracy add-ons: comparison only
 
+This document preserves the first-pass result. The follow-up restores the
+exact champion feature lists and tests eight isolated toggles; see
+[accuracy_addons_v2.md](accuracy_addons_v2.md). The existing comparison job now
+runs that isolated experiment instead of repeating the combined first pass.
+
 The tested additions did **not** beat the compact-core control. No model was
 promoted, no serving reference changed, and nothing was deployed. This PR is
 stacked on Phase 5 (#701) and uses existing archive sources only.

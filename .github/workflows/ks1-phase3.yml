@@ -6,7 +6,7 @@ permissions:
   contents: read
   actions: read
 jobs:
-  accuracy-comparison:
+  accuracy-isolated-v2:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/ks1-accuracy-addons-20260910'
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -32,11 +32,12 @@ jobs:
           run-id: 34436464918
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: /tmp/ks1-accuracy-inputs
-      - run: python -m ks1.accuracy --phase2-dir /tmp/ks1-phase2-accepted --archive-dir /tmp/ks1-accuracy-inputs --output /tmp/ks1-accuracy-comparison
+      - run: python -m ks1.accuracy_v2 --phase2-dir /tmp/ks1-phase2-accepted --archive-dir /tmp/ks1-accuracy-inputs --output /tmp/ks1-addon-v2
       - uses: actions/upload-artifact@v4
         with:
-          name: ks1-accuracy-comparison-${{ github.run_id }}
-          path: /tmp/ks1-accuracy-comparison/
+          name: ks1-addon-v2-${{ github.run_id }}
+          path: /tmp/ks1-addon-v2/
+          if-no-files-found: error
           retention-days: 90
   compare:
     runs-on: ubuntu-latest
