@@ -197,7 +197,7 @@ def test_missing_or_corrupt_committed_ledger_fails_closed(main_job, tmp_path):
 def test_existing_workflow_runs_nightly_before_ingestion_and_publish_without_extra_scheduler():
     path = Path(__file__).resolve().parents[2]/'.github/workflows/mlb-research-ingestion.yml'
     workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
-    assert workflow['on']['schedule'] == [{'cron': '0 * * * *'}]
+    assert workflow['on']['schedule'] == [{'cron': '17 * * * *'}]
     steps = workflow['jobs']['ingest']['steps']
     commands = [s['run'] for s in steps if 'run' in s]
     night = next(i for i, s in enumerate(commands) if 'ks1.nightly' in s)
