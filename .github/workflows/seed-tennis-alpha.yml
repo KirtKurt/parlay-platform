@@ -1,0 +1,65 @@
+name: Seed Tennis Alpha Model
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tennis-alpha-seed
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Invoke seed_model
+        run: |
+          set -euo pipefail
+          aws lambda invoke \
+            --function-name tennis-alpha-live \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"seed_model"}' \
+            --cli-read-timeout 930 \
+            /tmp/ta-seed.json \
+            > /tmp/ta-seed-meta.json
+          python - <<'PY'
+          import json
+          meta = json.load(open("/tmp/ta-seed-meta.json"))
+          body = json.load(open("/tmp/ta-seed.json"))
+          if meta.get("FunctionError"):
+              raise SystemExit(json.dumps({"meta": meta, "body": body}, default=str))
+          payload = body
+          if isinstance(body, dict) and "body" in body:
+              payload = json.loads(body["body"]) if isinstance(body["body"], str) else body["body"]
+          print(json.dumps(payload, indent=2, default=str)[:4000])
+          for tour in ("atp", "wta"):
+              block = payload.get(tour) or {}
+              assert int(block.get("training_samples") or 0) >= 200, payload
+              assert block.get("eligible") is True, payload
+          PY
+
+      - name: Verify health eligible
+        run: |
+          set -euo pipefail
+          url=$(aws cloudformation describe-stacks --stack-name tennis-alpha --query "Stacks[0].Outputs[?OutputKey=='TennisAlphaHealthUrl'].OutputValue" --output text)
+          curl --fail --silent --show-error "$url" > /tmp/health.json
+          python - <<'PY'
+          import json
+          h=json.load(open("/tmp/health.json"))
+          print(json.dumps(h, indent=2))
+          assert h["atp"]["eligible"] is True, h
+          assert h["wta"]["eligible"] is True, h
+          assert int(h["atp"]["training_samples"]) >= 200, h
+          assert int(h["wta"]["training_samples"]) >= 200, h
+          assert h["atp"].get("source") == "tennis_engine_full_history", h
+          PY
