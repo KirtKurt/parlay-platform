@@ -1,22 +1,30 @@
 name: MLB research source ingestion
 on:
   workflow_dispatch:
+  pull_request:
+    paths: ['ks1/**', 'src/temperature_calibrator.py', 'tests/ks1_phase4/**', 'tests/ks1_phase5/**', 'tests/ks1_calibration/**', 'data/models/platt.json', 'data/models/temperature.json', '.github/workflows/mlb-research-ingestion.yml']
   schedule:
-    - cron: '23 * * * *'
+    - cron: '0 * * * *'
   push:
     branches: [main]
     paths:
+      - 'ks1/**'
+      - 'data/models/platt.json'
+      - 'data/models/temperature.json'
+      - 'src/temperature_calibrator.py'
       - 'mlb_research/**'
       - 'scripts/run_mlb_research_ingestion.py'
       - 'scripts/publish_mlb_research_dataset.py'
       - '.github/workflows/mlb-research-ingestion.yml'
 permissions:
   contents: read
+  actions: read
 concurrency:
-  group: mlb-research-source-ingestion
+  group: mlb-research-source-ingestion-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   ingest:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 50
     env:
@@ -28,17 +36,76 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m pip install -r mlb_research/requirements.txt pytest PyYAML
+      - run: python -m pip install -r mlb_research/requirements.txt -r ks1/poisson-requirements.txt pytest PyYAML
       - run: python -m pytest -q tests/unit/test_mlb_research_v1.py
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
+      - name: Grade KS1 at 01:00 Eastern, then fit calibration after verified ledger write
+        run: python -m ks1.nightly --output /tmp/ks1-nightly --publish
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ks1-nightly-${{ github.run_id }}
+          path: /tmp/ks1-nightly/
+          if-no-files-found: ignore
+          retention-days: 90
       - run: python scripts/run_mlb_research_ingestion.py --seconds 2400
+      - name: Refresh KS1 lineups, starters and changed games using the existing hourly trigger
+        env:
+          BBS_API_KEY: ${{ secrets.BBS_API_KEY }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          python -m ks1.live_inputs --output /tmp/ks1-daily-inputs
+          python -m ks1.platt --inputs /tmp/ks1-daily-inputs/calibration_inputs.json --output /tmp/ks1-calibration
+          python -m ks1.daily --inputs /tmp/ks1-daily-inputs --output /tmp/ks1-daily --publish
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ks1-daily-${{ github.run_id }}
+          path: /tmp/ks1-daily/
+          if-no-files-found: warn
+          retention-days: 90
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: mlb-research-ingestion-${{ github.run_id }}
           path: runtime_reports/mlb_research_ingestion_latest.json
+          retention-days: 90
+
+  verify-ks1:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r ks1/poisson-requirements.txt 'pytest>=8,<9' 'PyYAML>=6,<7'
+      - run: python src/temperature_calibrator.py
+      - run: python -m pytest -q tests/ks1 tests/ks1_phase2 tests/ks1_phase3 tests/ks1_phase4 tests/ks1_phase5 tests/ks1_calibration
+      - uses: actions/download-artifact@v4
+        if: github.head_ref == 'codex/ks1-platt-only-20260910' || github.head_ref == 'codex/ks1-publish-release-20260910'
+        with:
+          name: ks1-phase6b-34442723793
+          run-id: 34442723793
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: /tmp/ks1-observed-locks
+      - name: Compare calibration on verified retained locked rows only
+        if: github.head_ref == 'codex/ks1-platt-only-20260910' || github.head_ref == 'codex/ks1-publish-release-20260910'
+        run: |
+          python -m ks1.nightly --inputs /tmp/ks1-observed-locks/locked/capture.json --output /tmp/ks1-calibration/nightly
+          python -m ks1.platt --inputs /tmp/ks1-observed-locks/locked/capture.json --model /tmp/ks1-calibration/data/models/platt.json --temperature-model /tmp/ks1-calibration/data/models/temperature.json --output /tmp/ks1-calibration
+      - uses: actions/upload-artifact@v4
+        if: github.head_ref == 'codex/ks1-platt-only-20260910' || github.head_ref == 'codex/ks1-publish-release-20260910'
+        with:
+          name: ks1-calibration-${{ github.run_id }}
+          path: /tmp/ks1-calibration/
+          if-no-files-found: error
           retention-days: 90
