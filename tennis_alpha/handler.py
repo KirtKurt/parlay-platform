@@ -36,6 +36,15 @@ def _tour_key(tour: str) -> str:
     return f"MODEL#{tour.upper()}"
 
 
+def _ratings_meta(tour: str) -> Dict[str, Any]:
+    item = table.get_item(Key={"PK": f"RATINGS#{tour.upper()}", "SK": "META"}, ConsistentRead=True).get("Item") or {}
+    return {
+        "elo_matches": int(item.get("matches") or 0),
+        "elo_players": int(item.get("players") or 0),
+        "elo_updated_at": item.get("updated_at"),
+    }
+
+
 def _load_state(tour: str) -> Dict[str, Any]:
     key = {"PK": _tour_key(tour), "SK": "STATE"}
     item = table.get_item(Key=key, ConsistentRead=True).get("Item")
@@ -183,23 +192,28 @@ def settle(payload: Mapping[str, Any]) -> Dict[str, Any]:
 def status() -> Dict[str, Any]:
     atp = _load_state("atp")
     wta = _load_state("wta")
+    atp_elo = _ratings_meta("atp")
+    wta_elo = _ratings_meta("wta")
     return {
         "stack": "tennis-alpha",
         "isolated": True,
         "touches_tennis_learning": False,
         "features": list(FEATURE_NAMES),
         "min_training_samples": MIN_SAMPLES,
+        "schedules_enabled": False,
         "atp": {
             "model_version": int(atp["version"]),
             "training_samples": int(atp["training_samples"]),
             "eligible": int(atp["training_samples"]) >= MIN_SAMPLES,
             "updated_at": atp.get("updated_at"),
+            **atp_elo,
         },
         "wta": {
             "model_version": int(wta["version"]),
             "training_samples": int(wta["training_samples"]),
             "eligible": int(wta["training_samples"]) >= MIN_SAMPLES,
             "updated_at": wta.get("updated_at"),
+            **wta_elo,
         },
     }
 
