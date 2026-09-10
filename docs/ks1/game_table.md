@@ -74,6 +74,11 @@ There is no future-derived cold-start prior. Raw ERA and raw W-L are absent.
 
 Small samples remain visible through count columns. Null means unavailable;
 zero is used only for observed counts/no appearances with available history.
+Known earlier finals without retained boxes are counted in each side's
+`missing_history_boxes_75d` and mark its history partial. Any such gap inside a
+bullpen workload window makes that workload null, rather than an assumed zero
+or an incomplete sum. Offensive/pitching shrinkage still exposes the observed
+sample counts.
 The compact historical boxes contain starter groups but no individual starter
 IDs or hits allowed, so individual identity and historical WHIP coverage are
 limited. The report separates **both pregame starters** from **both actual

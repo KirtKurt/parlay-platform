@@ -98,6 +98,19 @@ def test_missing_target_box_reuses_exact_existing_crosswalk():
     assert report["exclusions"] == [{"game_id": "4", "reason": "missing_official_team_identity"}]
 
 
+def test_missing_known_prior_box_does_not_become_zero_or_complete_workload():
+    bundle = fixture()
+    bundle["finals"] = [{"officialGamePk": 99, "officialDate": "2026-08-02", "completed": True,
+                         "homeTeam": "Home", "awayTeam": "Away", "homeScore": 3, "awayScore": 1,
+                         "source_key": "retained-final"}]
+    table, *_ = build(bundle)
+    row = table.to_pylist()[-1]
+    assert row["home_missing_history_boxes_75d"] == 1
+    assert row["home_history_status"] == "partial_known_missing_boxes"
+    assert row["home_bullpen_pitches_1d"] is None
+    assert row["home_offense_games_10d"] == 2  # counts expose observed sample
+
+
 def test_original_starter_requires_timing_identity_and_hash():
     bundle = fixture()
     features = {"marketHomeProbability": 0.55}

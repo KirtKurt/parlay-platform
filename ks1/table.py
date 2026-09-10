@@ -1,6 +1,6 @@
 """One row per official game; final-box identities are audit labels, never features."""
 from collections import defaultdict
-from datetime import timedelta
+from datetime import date as calendar_date, timedelta
 import hashlib
 import json
 import statistics
@@ -124,6 +124,17 @@ def build(bundle, selected_date=None):
     for tid, names in crosswalk.items():
         for name in names:
             name_to_ids[name].add(tid)
+    missing_boxes = defaultdict(list)
+    for pk, entries in finals.items():
+        if pk in games:
+            continue
+        for entry in entries:
+            if not entry.get("officialDate") or entry.get("completed") is not True:
+                continue
+            for side in ("home", "away"):
+                ids = name_to_ids.get(entry.get(side+"Team"), set())
+                if len(ids) == 1:
+                    missing_boxes[next(iter(ids))].append((pk, entry["officialDate"]))
     rows, exclusions = [], []
     for pk in sorted(set(reconstructed) | set(schedule) | set(snapshots)):
         r, sch, game = reconstructed.get(pk, {}), schedule.get(pk, {}), games.get(pk, {})
@@ -220,6 +231,17 @@ def build(bundle, selected_date=None):
                 row[f"{side}_actual_starter_id"] = str(actuals[0]["person"]["id"])
                 row[f"{side}_actual_starter_name"] = actuals[0]["person"].get("fullName")
             row.update({f"{side}_{k}": v for k, v in history.at(cutoff, tid, row[f"{side}_starter_id"]).items()})
+            cutoff_day = day(cutoff)
+            gaps = {key: calendar_date.fromisoformat(date)
+                    for key, date in missing_boxes[tid]
+                    if date[:4] == str(cutoff_day.year) and date < str(cutoff_day)}
+            gaps = {key: date for key, date in gaps.items() if (cutoff_day-date).days <= 75}
+            row[f"{side}_missing_history_boxes_75d"] = len(gaps)
+            row[f"{side}_history_status"] = "partial_known_missing_boxes" if gaps else "complete_for_retained_finals"
+            for window in (1, 3, 5):
+                if any((cutoff_day-date).days <= window for date in gaps.values()):
+                    for stat in ("pitches", "outs"):
+                        row[f"{side}_bullpen_{stat}_{window}d"] = None
         if missing_identity:
             exclusions.append({"game_id": pk, "reason": "missing_official_team_identity"})
             continue
@@ -319,6 +341,9 @@ def contract(example):
         if any(t in column for t in ("_offense_", "_team_starter_", "_starter_k_", "_starter_whip", "_starter_bf", "_starter_appearances", "_bullpen_", "_rest_days", "_history_games")):
             dtype, role, source = pa.float64(), "feature", "strictly earlier completed compact/full game boxes"
             meaning += "; calendar-day windows; same-day excluded; current-season empirical prior; OPS/ISO 100 PA/AB, K-BB 100 BF, WHIP 75 outs shrinkage; *_games/*_pa/*_bf/*_appearances are observed counts"
+        elif column.endswith("_missing_history_boxes_75d"):
+            dtype, role, source = pa.int64(), "audit", "retained official finals lacking a compact or full box"
+            meaning = "Known earlier same-season final games with missing boxes in 75 calendar days; partial history flag, never interpreted as zero workload."
         elif column.endswith("_identity_confidence"):
             dtype, role, source = pa.float64(), "audit", "official team ID or exact unique alias in observed official-ID crosswalk"
             meaning = "1.0 for deterministic official-ID or exact unique observed-name match; ambiguous names excluded, no fuzzy matches."
