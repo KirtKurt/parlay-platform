@@ -44,6 +44,7 @@ Resources:
         Variables:
           TA_TABLE: !Ref TennisAlphaTable
           TA_MIN_TRAINING_SAMPLES: "200"
+          TA_SCHEDULES_ENABLED: "true"
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref TennisAlphaTable
@@ -79,6 +80,7 @@ Resources:
           TA_ODDS_REGIONS: "us,us2,uk,eu,au"
           TA_PREDICTION_CUTOFF_MINUTES: "10"
           TA_MIN_TRAINING_SAMPLES: "200"
+          TA_SCHEDULES_ENABLED: "true"
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref TennisAlphaTable
@@ -89,14 +91,14 @@ Resources:
             Name: tennis-alpha-collect
             Schedule: cron(8,38 * * * ? *)
             Input: '{"action":"collect"}'
-            Enabled: false
+            Enabled: true
         Settle:
           Type: Schedule
           Properties:
             Name: tennis-alpha-settle
             Schedule: cron(23,53 * * * ? *)
             Input: '{"action":"settle"}'
-            Enabled: false
+            Enabled: true
         CollectApi:
           Type: Api
           Properties: {Path: /v1/tennis-alpha/collect, Method: POST}
