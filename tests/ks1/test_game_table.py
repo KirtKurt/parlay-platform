@@ -159,10 +159,28 @@ def test_atomic_date_scoped_publication_and_noop():
     assert s3.writes[-1].endswith("manifest.json")
 
 
-def test_publish_requires_main_pipeline():
+@pytest.mark.parametrize("actions,repository,ref,event,allowed", [
+    ("true", "KirtKurt/parlay-platform", "refs/heads/main", "push", True),
+    ("true", "KirtKurt/parlay-platform", "refs/heads/main", "workflow_dispatch", True),
+    ("true", "KirtKurt/parlay-platform", "refs/pull/696/merge", "pull_request", False),
+    ("true", "KirtKurt/parlay-platform", "refs/heads/feature", "workflow_dispatch", False),
+    ("false", "KirtKurt/parlay-platform", "refs/heads/main", "push", False),
+    ("true", "different/repository", "refs/heads/main", "push", False),
+])
+def test_publish_requires_main_pipeline(monkeypatch, actions, repository, ref, event, allowed):
+    # Simulate each context explicitly; the test must not inherit its own CI
+    # job's main/PR identity when asserting whether publication is permitted.
+    for key, value in {"GITHUB_ACTIONS": actions, "GITHUB_REPOSITORY": repository,
+                       "GITHUB_REF": ref, "GITHUB_EVENT_NAME": event}.items():
+        monkeypatch.setenv(key, value)
     table, *_ = build(fixture())
-    with pytest.raises(ValueError, match="restricted"):
-        publish(MemoryS3(), "test", table, [])
+    s3 = MemoryS3()
+    if allowed:
+        assert len(publish(s3, "test", table, [])["partitions"]) == 3
+    else:
+        with pytest.raises(ValueError, match="restricted"):
+            publish(s3, "test", table, [])
+        assert s3.writes == []
 
 
 def test_odds_freshness_vig_and_doubleheader_binding():
