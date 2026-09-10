@@ -14,6 +14,7 @@ from mlb_research_store_v1 import digest, now, utc
 ET = ZoneInfo('America/New_York')
 API = 'https://statsapi.mlb.com/api'
 GAME_TYPES = {'R', 'F', 'D', 'L', 'W'}
+MAX_PROVIDER_START_OFFSET_SECONDS = 90
 
 
 def number(value):
@@ -160,11 +161,22 @@ def markets(games):
     payload, receipt = fetch('https://api.the-odds-api.com/v4/sports/baseball_mlb/odds?'+urlencode(
         {'regions': 'us,us2,uk,eu,au', 'markets': 'h2h', 'oddsFormat': 'decimal', 'apiKey': key}))
     result = {}
+    def aligned(event, game):
+        return (event['home_team'] == game['teams']['home']['team']['name']
+                and event['away_team'] == game['teams']['away']['team']['name']
+                and abs((utc(event['commence_time'])-utc(game['gameDate'])).total_seconds())
+                    <= MAX_PROVIDER_START_OFFSET_SECONDS)
+    event_ids = Counter(e.get('id') for e in payload)
     for game in games:
         home, away = (game['teams'][s]['team']['name'] for s in ('home', 'away'))
-        matches = [e for e in payload if e['home_team'] == home and e['away_team'] == away
-                   and utc(e['commence_time']) == utc(game['gameDate'])]
+        matches = [e for e in payload if aligned(e, game)]
         if len(matches) != 1:
+            continue
+        matched = matches[0]
+        # Providers sometimes round first-pitch time by one minute. Bind a
+        # unique event in both directions; official time still owns all cutoffs.
+        if (not matched.get('id') or event_ids[matched['id']] != 1
+                or sum(aligned(matched, candidate) for candidate in games) != 1):
             continue
         pairs = []
         for book in matches[0].get('bookmakers', []):
@@ -178,5 +190,8 @@ def markets(games):
                         pairs.append({'book': book['key'], 'homeProbability': h/(h+a), 'sourceAtUtc': at.isoformat()})
         if pairs:
             result[str(game['gamePk'])] = {'marketHomeProbability': sum(p['homeProbability'] for p in pairs)/len(pairs),
-                                         'books': pairs, 'receipt': receipt}
+                'officialGamePk': str(game['gamePk']), 'officialCommenceTime': game['gameDate'],
+                'providerEventId': matched['id'], 'providerCommenceTime': matched['commence_time'],
+                'providerStartOffsetSeconds': (utc(matched['commence_time'])-utc(game['gameDate'])).total_seconds(),
+                'books': pairs, 'receipt': receipt}
     return result
