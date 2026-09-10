@@ -31,7 +31,7 @@ from .storage import SoccerStore, now_utc, plain
 
 
 HEALTH_CONTRACT_VERSION = "soccer-auto-health-proof-v1"
-HEALTH_SCAN_LIMIT = 2000
+HEALTH_SCAN_LIMIT = 10000
 RECENT_DECISION_AUDIT_HOURS = 24
 UPCOMING_DECISION_AUDIT_HOURS = 24
 
