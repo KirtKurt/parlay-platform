@@ -1,7 +1,7 @@
 """Collect bounded live MLB inputs and existing S3 history; no AWS writes."""
 import argparse
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import gzip
 import hashlib
 import json
@@ -112,6 +112,33 @@ def bbs_catalogue(target_date, official_games, key, requester=fetch):
              'body_shape': shape(payload)}}
 
 
+def lineup_feeds(target_date, official_games, *, requester=fetch, now=None):
+    """One cached feed per eligible game; use the repo's existing MLB source.
+
+    BBS's stored lineups route is unpopulated. No per-player or archive calls.
+    Missing/failed feeds are optional and explicitly use projected team priors.
+    """
+    at = now or datetime.now(timezone.utc)
+    games = [g for g in official_games if str(day(g['gameDate'])) == target_date
+             and g.get('status', {}).get('abstractGameState') == 'Preview'
+             and g.get('status', {}).get('detailedState') not in ('Postponed', 'Cancelled')
+             and at <= utc(g['gameDate'])-timedelta(minutes=10)]
+    if len(games) > 40 or len({g['gamePk'] for g in games}) != len(games):
+        raise ValueError('invalid lineup feed slate')
+    entries = {}
+    for game in games:
+        pk = game['gamePk']
+        if not isinstance(pk, int) or isinstance(pk, bool) or pk <= 0:
+            raise ValueError('invalid official game ID')
+        try:
+            entries[str(pk)] = requester('official_feed', 'https://statsapi.mlb.com',
+                                         f'/api/v1.1/game/{pk}/feed/live', {})
+        except ProviderFailure as exc:
+            entries[str(pk)] = {'payload': None, 'receipt': exc.receipt}
+            print(json.dumps(exc.receipt))
+    return {'games': entries}
+
+
 def capture(target_date, output):
     date.fromisoformat(target_date)
     output.mkdir(parents=True, exist_ok=True)
@@ -120,6 +147,7 @@ def capture(target_date, output):
                      {'sportId': 1, 'date': target_date, 'hydrate': 'probablePitcher,venue(location)'})
     (output / 'official.json').write_bytes(encode(official))
     official_games = [g for d in official['payload']['dates'] for g in d['games']]
+    (output / 'feeds.json').write_bytes(encode(lineup_feeds(target_date, official_games)))
     try:
         bbs = bbs_catalogue(target_date, official_games, os.environ.get('BBS_API_KEY'))
         (output / 'bbs.json').write_bytes(encode(bbs)); print(json.dumps(bbs['receipt']))
@@ -165,7 +193,7 @@ def capture(target_date, output):
     except Exception as exc:
         if getattr(exc, 'response', {}).get('Error', {}).get('Code') not in ('NoSuchKey', '404'):
             raise
-    manifest = {'system': 'KS1', 'phase': 4, 'date': target_date, 'as_of': datetime.now(timezone.utc).isoformat(),
+    manifest = {'system': 'KS1', 'phase': 5, 'date': target_date, 'as_of': datetime.now(timezone.utc).isoformat(),
                 'bucket': bucket, 'aws_writes': 0, 'errors': errors,
                 'source_history_games': len(games), 'github_sha': os.environ.get('GITHUB_SHA'), 'previous_etag': previous_etag,
                 'files': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in output.iterdir()

@@ -120,6 +120,7 @@ def test_date_publication_isolated_idempotent_and_restricted_to_existing_job(tmp
     body = parquet_bytes(table);(tmp_path/'predictions.parquet').write_bytes(body)
     (tmp_path/'odds_cache.parquet').write_bytes(parquet_bytes(pa.table({'event_id': ['one']})))
     (tmp_path/'crosswalk.json').write_text('{}')
+    (tmp_path/'lineup_cache.json').write_text('{"games":{}}')
     report = {'date': '2026-09-10', 'as_of': '2026-09-10T10:00:00Z', 'parquet_sha256': hashlib.sha256(body).hexdigest(), 'source_capture': {}}
     for name in ('GITHUB_ACTIONS', 'GITHUB_REPOSITORY', 'GITHUB_REF', 'GITHUB_EVENT_NAME', 'GITHUB_WORKFLOW_REF'):
         monkeypatch.delenv(name, raising=False)
