@@ -1,11 +1,42 @@
 name: KS1 Phase 3 Poisson comparison only
 on:
   pull_request:
-    paths: ['ks1/poisson.py', 'ks1/poisson-requirements.txt', 'tests/ks1_phase3/**', '.github/workflows/ks1-phase3.yml']
+    paths: ['ks1/poisson.py', 'ks1/poisson-requirements.txt', 'ks1/accuracy*.py', 'tests/ks1_accuracy/**', 'tests/ks1_phase3/**', '.github/workflows/ks1-phase3.yml']
 permissions:
   contents: read
   actions: read
 jobs:
+  accuracy-inventory:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/ks1-accuracy-addons-20260910'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: 'true'
+      OPENBLAS_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r ks1/poisson-requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ks1-phase2-34431359524
+          run-id: 34431359524
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: /tmp/ks1-phase2-accepted
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - run: python -m ks1.accuracy_data --phase2-dir /tmp/ks1-phase2-accepted --output /tmp/ks1-accuracy-inputs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ks1-accuracy-inputs-${{ github.run_id }}
+          path: /tmp/ks1-accuracy-inputs/
+          retention-days: 90
   compare:
     runs-on: ubuntu-latest
     timeout-minutes: 15
