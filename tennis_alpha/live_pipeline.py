@@ -14,6 +14,7 @@ from handler import predict, settle, status
 from live_signals import live_signals
 from odds_client import active_tennis_keys, best_h2h, get
 from persist import load_ratings, save_ratings
+from seed_model import seed_tour
 from surface import surface_from_sport_key
 
 TABLE_NAME = os.environ["TA_TABLE"]
@@ -189,10 +190,14 @@ def lambda_handler(event: Mapping, context: Any) -> Dict[str, Any]:
         action = "bootstrap"
     elif path.endswith("/pipeline/settle"):
         action = "settle"
+    elif path.endswith("/seed"):
+        action = "seed_model"
     if action == "settle":
         body = settle_recent()
     elif action == "bootstrap":
         body = {"atp": bootstrap_tour("atp"), "wta": bootstrap_tour("wta")}
+    elif action == "seed_model":
+        body = {"atp": seed_tour("atp"), "wta": seed_tour("wta"), "model": status()}
     else:
         body = collect_live()
     return {"statusCode": 200, "body": json.dumps(body, default=str)}
