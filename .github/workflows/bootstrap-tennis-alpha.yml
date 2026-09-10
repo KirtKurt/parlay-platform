@@ -1,0 +1,56 @@
+name: Bootstrap Tennis Alpha
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tennis-alpha-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Invoke tennis-alpha-live bootstrap
+        run: |
+          set -euo pipefail
+          aws lambda invoke \
+            --function-name tennis-alpha-live \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"bootstrap"}' \
+            --cli-read-timeout 930 \
+            /tmp/ta-bootstrap.json \
+            > /tmp/ta-bootstrap-meta.json
+          python - <<'PY'
+          import json
+          meta = json.load(open("/tmp/ta-bootstrap-meta.json"))
+          body = json.load(open("/tmp/ta-bootstrap.json"))
+          if meta.get("FunctionError"):
+              raise SystemExit(json.dumps({"meta": meta, "body": body}, default=str))
+          payload = body
+          if isinstance(body, dict) and "body" in body:
+              payload = json.loads(body["body"]) if isinstance(body["body"], str) else body["body"]
+          print(json.dumps(payload, indent=2, default=str))
+          atp = payload.get("atp") or {}
+          wta = payload.get("wta") or {}
+          assert int(atp.get("matches") or 0) > 1000, payload
+          assert int(wta.get("matches") or 0) > 1000, payload
+          PY
+
+      - name: Health after bootstrap
+        run: |
+          set -euo pipefail
+          url=$(aws cloudformation describe-stacks --stack-name tennis-alpha --query "Stacks[0].Outputs[?OutputKey=='TennisAlphaHealthUrl'].OutputValue" --output text)
+          curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 3 "$url"
+          echo
