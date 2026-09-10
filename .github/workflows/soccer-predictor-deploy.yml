@@ -1,0 +1,98 @@
+name: Deploy isolated soccer predictor
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'soccer-predictor/**'
+      - '.github/workflows/soccer-predictor-deploy.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soccer-predictor-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: soccer-predictor
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      BBD_API_KEY: ${{ secrets.BBD_API_KEY }}
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: soccer-predictor/requirements.txt
+
+      - uses: aws-actions/setup-sam@v2
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run soccer unit tests
+        run: PYTHONPATH=src python -m unittest discover -s tests -v
+
+      - name: Download football-data history
+        run: python scripts/download_data.py
+
+      - name: Train production model
+        run: python scripts/train.py --cutoff "$(date -u +%F)"
+
+      - name: Build SAM package
+        run: sam build --template-file infra/template.yaml
+
+      - name: Deploy soccer stack only
+        shell: bash
+        run: |
+          OWNER_SLUG="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name soccer-predictor \
+            --region "$AWS_REGION" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              OwnerSlug="$OWNER_SLUG" \
+              OddsApiKey="$ODDS_API_KEY" \
+              BbdApiKey="$BBD_API_KEY" \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+      - name: Invoke and verify Lambda
+        shell: bash
+        run: |
+          aws lambda invoke \
+            --function-name soccer-predictor-run \
+            --region "$AWS_REGION" \
+            /tmp/soccer-response.json
+          cat /tmp/soccer-response.json
+          python - <<'PY'
+          import json
+          p=json.load(open('/tmp/soccer-response.json'))
+          assert p.get('status') == 'ok', p
+          PY
+          OWNER_SLUG="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          aws s3api head-object \
+            --bucket "soccer-predictor-${OWNER_SLUG}-${AWS_REGION}" \
+            --key predictions.json \
+            --region "$AWS_REGION"
