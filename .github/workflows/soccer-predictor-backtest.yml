@@ -1,6 +1,12 @@
 name: Soccer Predictor Backtest
 
 on:
+  push:
+    branches:
+      - agent/soccer-predictor-initial
+    paths:
+      - soccer-predictor/**
+      - .github/workflows/soccer-predictor-backtest.yml
   workflow_dispatch:
     inputs:
       start:
@@ -39,9 +45,15 @@ jobs:
       - name: Download football-data.co.uk history
         run: python scripts/download_data.py
       - name: Walk-forward backtest
-        run: python scripts/backtest.py --start ${{ inputs.start }} --end ${{ inputs.end }} --refit-every ${{ inputs.refit_every }}
+        env:
+          START: ${{ github.event.inputs.start || '2018-08-01' }}
+          END: ${{ github.event.inputs.end || '2026-09-07' }}
+          REFIT: ${{ github.event.inputs.refit_every || '7' }}
+        run: python scripts/backtest.py --start "$START" --end "$END" --refit-every "$REFIT"
       - name: Train through cutoff
-        run: python scripts/train.py --cutoff ${{ inputs.end }}
+        env:
+          END: ${{ github.event.inputs.end || '2026-09-07' }}
+        run: python scripts/train.py --cutoff "$END"
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
