@@ -1,0 +1,90 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Isolated soccer predictor daily inference stack
+
+Parameters:
+  OwnerSlug:
+    Type: String
+    Default: kirtkurt
+  OddsApiKey:
+    Type: String
+    Default: ''
+    NoEcho: true
+  BbdApiKey:
+    Type: String
+    Default: ''
+    NoEcho: true
+
+Resources:
+  PredictionBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub 'soccer-predictor-${OwnerSlug}-${AWS::Region}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+
+  SoccerLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SoccerPredictionBucketOnly
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub '${PredictionBucket.Arn}/predictions.json'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*'
+
+  SoccerPredictionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: soccer-predictor-run
+      CodeUri: ../
+      Handler: scripts.daily_job.lambda_handler
+      Runtime: python3.12
+      MemorySize: 512
+      Timeout: 180
+      ReservedConcurrentExecutions: 1
+      Role: !GetAtt SoccerLambdaRole.Arn
+      Environment:
+        Variables:
+          PREDICTION_BUCKET: !Ref PredictionBucket
+          ODDS_API_KEY: !Ref OddsApiKey
+          BBD_API_KEY: !Ref BbdApiKey
+          OPENBLAS_NUM_THREADS: '1'
+          OMP_NUM_THREADS: '1'
+      Events:
+        Daily0700UTC:
+          Type: Schedule
+          Properties:
+            Name: soccer-predictor-daily
+            Schedule: cron(0 7 * * ? *)
+            Enabled: true
+
+Outputs:
+  BucketName:
+    Value: !Ref PredictionBucket
+  FunctionName:
+    Value: !Ref SoccerPredictionFunction
