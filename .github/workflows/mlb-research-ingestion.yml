@@ -4,7 +4,9 @@ on:
   pull_request:
     paths: ['ks1/**', 'src/temperature_calibrator.py', 'tests/ks1_phase4/**', 'tests/ks1_phase5/**', 'tests/ks1_calibration/**', 'data/models/platt.json', 'data/models/temperature.json', '.github/workflows/mlb-research-ingestion.yml']
   schedule:
-    - cron: '0 * * * *'
+    # Run once per hour away from GitHub's congested top-of-hour queue.
+    # The nightly command still enforces its 01:00 America/New_York due gate.
+    - cron: '17 * * * *'
   push:
     branches: [main]
     paths:
