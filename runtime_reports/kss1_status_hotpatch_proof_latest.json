@@ -1,0 +1,787 @@
+{
+  "proofType": "KSS1_STATUS_HOTPATCH_PROOF",
+  "observedAtUtc": "2026-09-10T23:53:44.477619+00:00",
+  "statusHttpOk": true,
+  "authority": "DEGRADED",
+  "automatic_prediction_allowed": false,
+  "failures": [
+    "evidence_health:bounded_scan_truncated"
+  ],
+  "queues": {
+    "collection": 0,
+    "dead_letter": 0
+  },
+  "consecutive_failures": 525,
+  "reason": "OPERATIONAL_INTEGRITY_FAILURE",
+  "counts": {
+    "admissibility_certificates": 1158,
+    "competitions": 67,
+    "events": 1000,
+    "locks": 66,
+    "models": 0,
+    "predictions": 0,
+    "settlement_table_items": 807,
+    "settlements": 842,
+    "snapshot_slots": 394,
+    "training_rows_ready": 136
+  },
+  "controller": {
+    "PK": "AUTONOMY",
+    "SK": "STATE",
+    "entity_type": "SOCCER_AUTONOMY_STATE",
+    "ok": true,
+    "system": "soccer_auto",
+    "authority": "DEGRADED",
+    "reason": "OPERATIONAL_INTEGRITY_FAILURE",
+    "promotion_blocked": true,
+    "automatic_prediction_allowed": false,
+    "consecutive_failures": 525,
+    "failures": [
+      "evidence_health:bounded_scan_truncated"
+    ],
+    "operational_warnings": [
+      "settlement_conflicts:training_labels_quarantined",
+      "evidence_health:availability_warnings"
+    ],
+    "actions": {
+      "catalog": {
+        "scheduled": true,
+        "invoked_by_controller": false,
+        "registry_empty": false
+      },
+      "inventory": {
+        "scheduled": true,
+        "invoked_by_controller": false,
+        "liveness": {
+          "healthy": true,
+          "reason": "HEALTHY",
+          "function_name": "parlay-platform-soccer-aut-SoccerInventoryFunction-PBamjII6AKMy",
+          "lookback_minutes": 45,
+          "invocations": 3,
+          "errors": 0,
+          "latest_metric_bucket_at": "2026-09-10T23:47:00+00:00",
+          "latest_error_metric_bucket_at": null
+        }
+      },
+      "dispatch": {
+        "scheduled": true,
+        "invoked_by_controller": false,
+        "liveness": {
+          "healthy": true,
+          "reason": "HEALTHY",
+          "function_name": "parlay-platform-soccer-auto-SoccerDispatchFunction-1ifvUl8Yj5dK",
+          "lookback_minutes": 10,
+          "invocations": 10,
+          "errors": 0,
+          "latest_metric_bucket_at": "2026-09-10T23:52:00+00:00",
+          "latest_error_metric_bucket_at": null
+        }
+      },
+      "freeze": {
+        "scheduled": true,
+        "invoked_by_controller": false,
+        "liveness": {
+          "healthy": true,
+          "reason": "HEALTHY",
+          "function_name": "parlay-platform-soccer-auto-SoccerFreezeFunction-POXp2e3u5Hg2",
+          "lookback_minutes": 10,
+          "invocations": 10,
+          "errors": 0,
+          "latest_metric_bucket_at": "2026-09-10T23:52:00+00:00",
+          "latest_error_metric_bucket_at": null
+        }
+      },
+      "settlement": {
+        "scheduled": true,
+        "invoked_by_controller": false,
+        "liveness": {
+          "healthy": true,
+          "reason": "HEALTHY",
+          "function_name": "parlay-platform-soccer-au-SoccerSettlementFunction-gEgL7wF6quPi",
+          "lookback_minutes": 20,
+          "invocations": 3,
+          "errors": 0,
+          "latest_metric_bucket_at": "2026-09-10T23:43:00+00:00",
+          "latest_error_metric_bucket_at": null
+        }
+      },
+      "trainer": {
+        "scheduled": true,
+        "invoked_by_controller": false,
+        "liveness": {
+          "healthy": true,
+          "reason": "HEALTHY",
+          "function_name": "parlay-platform-soccer-auto-SoccerTrainerFunction-TWBv5lurcuf3",
+          "lookback_minutes": 780,
+          "invocations": 2,
+          "errors": 0,
+          "latest_metric_bucket_at": "2026-09-10T19:37:00+00:00",
+          "latest_error_metric_bucket_at": null
+        }
+      },
+      "llm_analyst": {
+        "scheduled": true,
+        "invoked_by_controller": false,
+        "liveness": {
+          "healthy": true,
+          "reason": "HEALTHY",
+          "function_name": "parlay-platform-soccer-au-SoccerLlmAnalystFunction-qdW6oFhUcgLS",
+          "lookback_minutes": 130,
+          "invocations": 2,
+          "errors": 0,
+          "latest_metric_bucket_at": "2026-09-10T23:22:00+00:00",
+          "latest_error_metric_bucket_at": null
+        }
+      },
+      "historical": {
+        "scheduled": true,
+        "invoked_by_controller": false,
+        "liveness": {
+          "healthy": true,
+          "reason": "HEALTHY",
+          "function_name": "parlay-platform-soccer-au-SoccerHistoricalFunction-SFTGZ2pWfUG2",
+          "lookback_minutes": 130,
+          "invocations": 7,
+          "errors": 0,
+          "latest_metric_bucket_at": "2026-09-10T23:47:00+00:00",
+          "latest_error_metric_bucket_at": null
+        }
+      }
+    },
+    "component_liveness": {
+      "inventory": {
+        "healthy": true,
+        "reason": "HEALTHY",
+        "function_name": "parlay-platform-soccer-aut-SoccerInventoryFunction-PBamjII6AKMy",
+        "lookback_minutes": 45,
+        "invocations": 3,
+        "errors": 0,
+        "latest_metric_bucket_at": "2026-09-10T23:47:00+00:00",
+        "latest_error_metric_bucket_at": null
+      },
+      "dispatch": {
+        "healthy": true,
+        "reason": "HEALTHY",
+        "function_name": "parlay-platform-soccer-auto-SoccerDispatchFunction-1ifvUl8Yj5dK",
+        "lookback_minutes": 10,
+        "invocations": 10,
+        "errors": 0,
+        "latest_metric_bucket_at": "2026-09-10T23:52:00+00:00",
+        "latest_error_metric_bucket_at": null
+      },
+      "freeze": {
+        "healthy": true,
+        "reason": "HEALTHY",
+        "function_name": "parlay-platform-soccer-auto-SoccerFreezeFunction-POXp2e3u5Hg2",
+        "lookback_minutes": 10,
+        "invocations": 10,
+        "errors": 0,
+        "latest_metric_bucket_at": "2026-09-10T23:52:00+00:00",
+        "latest_error_metric_bucket_at": null
+      },
+      "settlement": {
+        "healthy": true,
+        "reason": "HEALTHY",
+        "function_name": "parlay-platform-soccer-au-SoccerSettlementFunction-gEgL7wF6quPi",
+        "lookback_minutes": 20,
+        "invocations": 3,
+        "errors": 0,
+        "latest_metric_bucket_at": "2026-09-10T23:43:00+00:00",
+        "latest_error_metric_bucket_at": null
+      },
+      "trainer": {
+        "healthy": true,
+        "reason": "HEALTHY",
+        "function_name": "parlay-platform-soccer-auto-SoccerTrainerFunction-TWBv5lurcuf3",
+        "lookback_minutes": 780,
+        "invocations": 2,
+        "errors": 0,
+        "latest_metric_bucket_at": "2026-09-10T19:37:00+00:00",
+        "latest_error_metric_bucket_at": null
+      },
+      "llm_analyst": {
+        "healthy": true,
+        "reason": "HEALTHY",
+        "function_name": "parlay-platform-soccer-au-SoccerLlmAnalystFunction-qdW6oFhUcgLS",
+        "lookback_minutes": 130,
+        "invocations": 2,
+        "errors": 0,
+        "latest_metric_bucket_at": "2026-09-10T23:22:00+00:00",
+        "latest_error_metric_bucket_at": null
+      },
+      "historical": {
+        "healthy": true,
+        "reason": "HEALTHY",
+        "function_name": "parlay-platform-soccer-au-SoccerHistoricalFunction-SFTGZ2pWfUG2",
+        "lookback_minutes": 130,
+        "invocations": 7,
+        "errors": 0,
+        "latest_metric_bucket_at": "2026-09-10T23:47:00+00:00",
+        "latest_error_metric_bucket_at": null
+      }
+    },
+    "component_liveness_complete": true,
+    "all_component_liveness_complete": true,
+    "queues": {
+      "collection": 0,
+      "dead_letter": 0
+    },
+    "settlement_conflicts": 28,
+    "settlement_conflict_state": {
+      "count": 28,
+      "count_is_lower_bound": false,
+      "reason_counts": {
+        "SCORE_SCHEDULE_IDENTITY_MISMATCH": 18,
+        "SETTLEMENT_EVIDENCE_CONFLICT": 24
+      },
+      "latest_observed_at": "2026-09-09T01:34:20.586204Z",
+      "training_labels_quarantined": 28,
+      "records_examined": 171,
+      "blocking_records_examined": 69,
+      "ignored_nonblocking_records": 102,
+      "latest_record_observed_at": "2026-09-09T01:34:20.586204Z"
+    },
+    "counts": {
+      "competitions": 67,
+      "events": 1000,
+      "snapshot_slots": 394,
+      "locks": 66,
+      "settlements": 842,
+      "settlement_table_items": 807,
+      "admissibility_certificates": 1158,
+      "training_rows_ready": 136,
+      "predictions": 0,
+      "models": 0
+    },
+    "counts_are_lower_bounds_at": 1000,
+    "model": {
+      "champion_digest": null,
+      "automatic_prediction_allowed": false,
+      "prospective_challengers": 0,
+      "challenger_digests": []
+    },
+    "llm_analyst": {
+      "configured": true,
+      "analyses": 1,
+      "fresh": true,
+      "analysis_digest": "de1a96d0735781e29ff64276a906764bf7ae995bc8744909a9ff8078daf74ec6",
+      "attempt_id": "2026-09-10T09:22:33.946396Z#d4e1cb13716b4c9099f043881be0ec5c",
+      "attempt_started_at": "2026-09-10T09:22:33.946396Z",
+      "validated_trials": 2,
+      "created_at": "2026-09-10T09:22:43.895994Z",
+      "expires_at": 1789161763,
+      "model_id": "us.amazon.nova-2-lite-v1:0",
+      "analysis_origin": "BEDROCK_CONVERSE",
+      "last_attempt": {
+        "entity_type": "SOCCER_LLM_ATTEMPT",
+        "observed_at": "2026-09-10T09:22:43.895994Z",
+        "status": "ANALYZED",
+        "PK": "LLM_ANALYSIS",
+        "model_id": "us.amazon.nova-2-lite-v1:0",
+        "expires_at": 1791624163,
+        "attempted_model_ids": [
+          "us.amazon.nova-2-lite-v1:0"
+        ],
+        "request_byte_count": 4164,
+        "max_output_tokens": 384,
+        "context_byte_count": 2552,
+        "attempt_started_order": 1789032153946396,
+        "attempt_id": "2026-09-10T09:22:33.946396Z#d4e1cb13716b4c9099f043881be0ec5c",
+        "attempt_started_at": "2026-09-10T09:22:33.946396Z",
+        "analysis_digest": "de1a96d0735781e29ff64276a906764bf7ae995bc8744909a9ff8078daf74ec6",
+        "SK": "LAST_ATTEMPT"
+      }
+    },
+    "prediction_and_training_health": {
+      "contract_version": "soccer-auto-health-proof-v1",
+      "observed_at": "2026-09-10T23:53:24.199394Z",
+      "state": "INCOMPLETE_PROOF",
+      "healthy": false,
+      "proof_complete": false,
+      "integrity_failures": 0,
+      "availability_warnings": 39,
+      "scan_truncated": true,
+      "t10_decisions": {
+        "due_events": 2,
+        "open_capture_events": 0,
+        "valid_or_present_locks": 2,
+        "missing_locks": 0,
+        "missed_locks": 0,
+        "late_discovered_due_events": 0,
+        "invalid_locks": 0,
+        "missing_sample": [],
+        "invalid_sample": [],
+        "capture_lead_seconds": 90,
+        "publication_cutoff_minutes": 10,
+        "commit_headroom_seconds": 10.0
+      },
+      "public_authority": {
+        "t10_public_rows": 0,
+        "legacy_t45_rows_suppressed": 0,
+        "duplicate_public_authorities": 0,
+        "public_prediction_after_cutoff": 0,
+        "public_prediction_after_commit_deadline": 0,
+        "binding_integrity_failures": 0
+      },
+      "training": {
+        "validated_final_score_rows": 842,
+        "admissible_final_score_rows": 175,
+        "admissibility_certificates": 1158,
+        "training_rows_ready": 136,
+        "conversion_backlog": 39,
+        "invalid_existing_locks": 0,
+        "nontraining_live_locks": 23,
+        "duplicate_training_eligible_locks": 0,
+        "exclusion_reasons": {
+          "no_t45_lock": 19,
+          "live:settlement_conflict": 20,
+          "live:live_provenance": 2,
+          "live:lock_ineligible": 1
+        },
+        "state": "CONVERTING_ADMISSIBLE_SETTLEMENTS",
+        "latest_certificate_at": "2026-09-10T23:43:18.475012Z"
+      }
+    },
+    "latest_quota": {
+      "operation": "scores",
+      "entity_type": "SOCCER_AUTO_QUOTA_OBSERVATION",
+      "observed_at": "2026-09-10T23:53:39.948034Z",
+      "remaining": 14834096,
+      "last_cost": 2,
+      "used": 10165904,
+      "PK": "QUOTA",
+      "expires_at": 1796860419,
+      "SK": "OBSERVED#2026-09-10T23:53:39.948034Z#59a0fb83d390"
+    },
+    "shared_provider_safety": {
+      "shared_quota_reserve_percent": 0.0,
+      "quota_race_buffer_credits": 2000,
+      "soccer_request_limit_per_second": 3,
+      "burst_capacity": 1,
+      "minimum_spacing_ms": 334,
+      "distributed_lease": true,
+      "fail_closed": true
+    },
+    "distributed_rate_limit_state": {
+      "PK": "RATE_LIMIT",
+      "burst_capacity": 1,
+      "configured_rps": 3,
+      "entity_type": "SOCCER_DISTRIBUTED_RATE_LIMIT_STATE",
+      "last_granted_slot_ms": 1789084419896,
+      "last_operation": "sports/soccer_uefa_champs_league/scores",
+      "last_provider_attempt": 1,
+      "minimum_spacing_ms": 334,
+      "next_allowed_ms": 1789084420230,
+      "updated_at": "2026-09-10T23:53:39.896000Z",
+      "SK": "ODDS_API_REQUESTS"
+    },
+    "provider_429_telemetry": {
+      "lookback_hours": 24,
+      "rolling_count": 1,
+      "count_is_lower_bound": false,
+      "count_cap": 1000,
+      "latest_rows": [
+        {
+          "operation": "sports/soccer_conmebol_copa_libertadores/events/a3d3128f59c408c8b51a9a7b3f8b3e08/odds",
+          "entity_type": "SOCCER_ODDS_API_PROVIDER_429",
+          "observed_at": "2026-09-10T21:00:05.512294Z",
+          "retry_after": null,
+          "PK": "PROVIDER_429",
+          "attempt": 1,
+          "expires_at": 1791666005,
+          "SK": "OBSERVED#2026-09-10T21:00:05.512294Z#3699550f58fc"
+        }
+      ]
+    },
+    "updated_at": "2026-09-10T23:53:24.199394Z",
+    "updated_at_epoch_ms": 1789084404199
+  },
+  "status": {
+    "PK": "AUTONOMY",
+    "SK": "STATE",
+    "actions": {
+      "catalog": {
+        "invoked_by_controller": false,
+        "registry_empty": false,
+        "scheduled": true
+      },
+      "dispatch": {
+        "invoked_by_controller": false,
+        "liveness": {
+          "errors": 0,
+          "function_name": "parlay-platform-soccer-auto-SoccerDispatchFunction-1ifvUl8Yj5dK",
+          "healthy": true,
+          "invocations": 10,
+          "latest_error_metric_bucket_at": null,
+          "latest_metric_bucket_at": "2026-09-10T23:52:00+00:00",
+          "lookback_minutes": 10,
+          "reason": "HEALTHY"
+        },
+        "scheduled": true
+      },
+      "freeze": {
+        "invoked_by_controller": false,
+        "liveness": {
+          "errors": 0,
+          "function_name": "parlay-platform-soccer-auto-SoccerFreezeFunction-POXp2e3u5Hg2",
+          "healthy": true,
+          "invocations": 10,
+          "latest_error_metric_bucket_at": null,
+          "latest_metric_bucket_at": "2026-09-10T23:52:00+00:00",
+          "lookback_minutes": 10,
+          "reason": "HEALTHY"
+        },
+        "scheduled": true
+      },
+      "historical": {
+        "invoked_by_controller": false,
+        "liveness": {
+          "errors": 0,
+          "function_name": "parlay-platform-soccer-au-SoccerHistoricalFunction-SFTGZ2pWfUG2",
+          "healthy": true,
+          "invocations": 7,
+          "latest_error_metric_bucket_at": null,
+          "latest_metric_bucket_at": "2026-09-10T23:47:00+00:00",
+          "lookback_minutes": 130,
+          "reason": "HEALTHY"
+        },
+        "scheduled": true
+      },
+      "inventory": {
+        "invoked_by_controller": false,
+        "liveness": {
+          "errors": 0,
+          "function_name": "parlay-platform-soccer-aut-SoccerInventoryFunction-PBamjII6AKMy",
+          "healthy": true,
+          "invocations": 3,
+          "latest_error_metric_bucket_at": null,
+          "latest_metric_bucket_at": "2026-09-10T23:47:00+00:00",
+          "lookback_minutes": 45,
+          "reason": "HEALTHY"
+        },
+        "scheduled": true
+      },
+      "llm_analyst": {
+        "invoked_by_controller": false,
+        "liveness": {
+          "errors": 0,
+          "function_name": "parlay-platform-soccer-au-SoccerLlmAnalystFunction-qdW6oFhUcgLS",
+          "healthy": true,
+          "invocations": 2,
+          "latest_error_metric_bucket_at": null,
+          "latest_metric_bucket_at": "2026-09-10T23:22:00+00:00",
+          "lookback_minutes": 130,
+          "reason": "HEALTHY"
+        },
+        "scheduled": true
+      },
+      "settlement": {
+        "invoked_by_controller": false,
+        "liveness": {
+          "errors": 0,
+          "function_name": "parlay-platform-soccer-au-SoccerSettlementFunction-gEgL7wF6quPi",
+          "healthy": true,
+          "invocations": 3,
+          "latest_error_metric_bucket_at": null,
+          "latest_metric_bucket_at": "2026-09-10T23:43:00+00:00",
+          "lookback_minutes": 20,
+          "reason": "HEALTHY"
+        },
+        "scheduled": true
+      },
+      "trainer": {
+        "invoked_by_controller": false,
+        "liveness": {
+          "errors": 0,
+          "function_name": "parlay-platform-soccer-auto-SoccerTrainerFunction-TWBv5lurcuf3",
+          "healthy": true,
+          "invocations": 2,
+          "latest_error_metric_bucket_at": null,
+          "latest_metric_bucket_at": "2026-09-10T19:37:00+00:00",
+          "lookback_minutes": 780,
+          "reason": "HEALTHY"
+        },
+        "scheduled": true
+      }
+    },
+    "all_component_liveness_complete": true,
+    "authority": "DEGRADED",
+    "automatic_prediction_allowed": false,
+    "component_liveness": {
+      "dispatch": {
+        "errors": 0,
+        "function_name": "parlay-platform-soccer-auto-SoccerDispatchFunction-1ifvUl8Yj5dK",
+        "healthy": true,
+        "invocations": 10,
+        "latest_error_metric_bucket_at": null,
+        "latest_metric_bucket_at": "2026-09-10T23:52:00+00:00",
+        "lookback_minutes": 10,
+        "reason": "HEALTHY"
+      },
+      "freeze": {
+        "errors": 0,
+        "function_name": "parlay-platform-soccer-auto-SoccerFreezeFunction-POXp2e3u5Hg2",
+        "healthy": true,
+        "invocations": 10,
+        "latest_error_metric_bucket_at": null,
+        "latest_metric_bucket_at": "2026-09-10T23:52:00+00:00",
+        "lookback_minutes": 10,
+        "reason": "HEALTHY"
+      },
+      "historical": {
+        "errors": 0,
+        "function_name": "parlay-platform-soccer-au-SoccerHistoricalFunction-SFTGZ2pWfUG2",
+        "healthy": true,
+        "invocations": 7,
+        "latest_error_metric_bucket_at": null,
+        "latest_metric_bucket_at": "2026-09-10T23:47:00+00:00",
+        "lookback_minutes": 130,
+        "reason": "HEALTHY"
+      },
+      "inventory": {
+        "errors": 0,
+        "function_name": "parlay-platform-soccer-aut-SoccerInventoryFunction-PBamjII6AKMy",
+        "healthy": true,
+        "invocations": 3,
+        "latest_error_metric_bucket_at": null,
+        "latest_metric_bucket_at": "2026-09-10T23:47:00+00:00",
+        "lookback_minutes": 45,
+        "reason": "HEALTHY"
+      },
+      "llm_analyst": {
+        "errors": 0,
+        "function_name": "parlay-platform-soccer-au-SoccerLlmAnalystFunction-qdW6oFhUcgLS",
+        "healthy": true,
+        "invocations": 2,
+        "latest_error_metric_bucket_at": null,
+        "latest_metric_bucket_at": "2026-09-10T23:22:00+00:00",
+        "lookback_minutes": 130,
+        "reason": "HEALTHY"
+      },
+      "settlement": {
+        "errors": 0,
+        "function_name": "parlay-platform-soccer-au-SoccerSettlementFunction-gEgL7wF6quPi",
+        "healthy": true,
+        "invocations": 3,
+        "latest_error_metric_bucket_at": null,
+        "latest_metric_bucket_at": "2026-09-10T23:43:00+00:00",
+        "lookback_minutes": 20,
+        "reason": "HEALTHY"
+      },
+      "trainer": {
+        "errors": 0,
+        "function_name": "parlay-platform-soccer-auto-SoccerTrainerFunction-TWBv5lurcuf3",
+        "healthy": true,
+        "invocations": 2,
+        "latest_error_metric_bucket_at": null,
+        "latest_metric_bucket_at": "2026-09-10T19:37:00+00:00",
+        "lookback_minutes": 780,
+        "reason": "HEALTHY"
+      }
+    },
+    "component_liveness_complete": true,
+    "consecutive_failures": 525,
+    "counts": {
+      "admissibility_certificates": 1158,
+      "competitions": 67,
+      "events": 1000,
+      "locks": 66,
+      "models": 0,
+      "predictions": 0,
+      "settlement_table_items": 807,
+      "settlements": 842,
+      "snapshot_slots": 394,
+      "training_rows_ready": 136
+    },
+    "counts_are_lower_bounds_at": 1000,
+    "distributed_rate_limit_state": {
+      "PK": "RATE_LIMIT",
+      "SK": "ODDS_API_REQUESTS",
+      "burst_capacity": 1,
+      "configured_rps": 3,
+      "entity_type": "SOCCER_DISTRIBUTED_RATE_LIMIT_STATE",
+      "last_granted_slot_ms": 1789084419896,
+      "last_operation": "sports/soccer_uefa_champs_league/scores",
+      "last_provider_attempt": 1,
+      "minimum_spacing_ms": 334,
+      "next_allowed_ms": 1789084420230,
+      "updated_at": "2026-09-10T23:53:39.896000Z"
+    },
+    "entity_type": "SOCCER_AUTONOMY_STATE",
+    "failures": [
+      "evidence_health:bounded_scan_truncated"
+    ],
+    "historical_backfill": {
+      "calls_completed": 11613,
+      "completed_cursor_rows": 0,
+      "cursor_rows": 41,
+      "cursors_truncated": false,
+      "enabled": true,
+      "historical_training_rows": 0,
+      "latest_progress_at": "2026-09-10T23:47:59.950300Z",
+      "mode": "RAW_ARCHIVE_PLUS_AUTHORITATIVE_T45",
+      "state": "RUNNING",
+      "supervised_materialization": {
+        "deferred": true,
+        "reason": "STATUS_PATH_SKIPS_FULL_SCAN"
+      },
+      "training_note": "Recent rows are admitted only after immutable Odds API final-score evidence is joined to a point-in-time T45 snapshot; older odds-only archives remain training-ineligible."
+    },
+    "latest_quota": {
+      "PK": "QUOTA",
+      "SK": "OBSERVED#2026-09-10T23:53:39.948034Z#59a0fb83d390",
+      "entity_type": "SOCCER_AUTO_QUOTA_OBSERVATION",
+      "expires_at": 1796860419,
+      "last_cost": 2,
+      "observed_at": "2026-09-10T23:53:39.948034Z",
+      "operation": "scores",
+      "remaining": 14834096,
+      "used": 10165904
+    },
+    "llm_analyst": {
+      "analyses": 1,
+      "analysis_digest": "de1a96d0735781e29ff64276a906764bf7ae995bc8744909a9ff8078daf74ec6",
+      "analysis_origin": "BEDROCK_CONVERSE",
+      "attempt_id": "2026-09-10T09:22:33.946396Z#d4e1cb13716b4c9099f043881be0ec5c",
+      "attempt_started_at": "2026-09-10T09:22:33.946396Z",
+      "configured": true,
+      "created_at": "2026-09-10T09:22:43.895994Z",
+      "expires_at": 1789161763,
+      "fresh": true,
+      "last_attempt": {
+        "PK": "LLM_ANALYSIS",
+        "SK": "LAST_ATTEMPT",
+        "analysis_digest": "de1a96d0735781e29ff64276a906764bf7ae995bc8744909a9ff8078daf74ec6",
+        "attempt_id": "2026-09-10T09:22:33.946396Z#d4e1cb13716b4c9099f043881be0ec5c",
+        "attempt_started_at": "2026-09-10T09:22:33.946396Z",
+        "attempt_started_order": 1789032153946396,
+        "attempted_model_ids": [
+          "us.amazon.nova-2-lite-v1:0"
+        ],
+        "context_byte_count": 2552,
+        "entity_type": "SOCCER_LLM_ATTEMPT",
+        "expires_at": 1791624163,
+        "max_output_tokens": 384,
+        "model_id": "us.amazon.nova-2-lite-v1:0",
+        "observed_at": "2026-09-10T09:22:43.895994Z",
+        "request_byte_count": 4164,
+        "status": "ANALYZED"
+      },
+      "model_id": "us.amazon.nova-2-lite-v1:0",
+      "validated_trials": 2
+    },
+    "model": {
+      "automatic_prediction_allowed": false,
+      "challenger_digests": [],
+      "champion_digest": null,
+      "prospective_challengers": 0
+    },
+    "ok": true,
+    "operational_warnings": [
+      "settlement_conflicts:training_labels_quarantined",
+      "evidence_health:availability_warnings"
+    ],
+    "prediction_and_training_health": {
+      "availability_warnings": 39,
+      "contract_version": "soccer-auto-health-proof-v1",
+      "healthy": false,
+      "integrity_failures": 0,
+      "observed_at": "2026-09-10T23:53:24.199394Z",
+      "proof_complete": false,
+      "public_authority": {
+        "binding_integrity_failures": 0,
+        "duplicate_public_authorities": 0,
+        "legacy_t45_rows_suppressed": 0,
+        "public_prediction_after_commit_deadline": 0,
+        "public_prediction_after_cutoff": 0,
+        "t10_public_rows": 0
+      },
+      "scan_truncated": true,
+      "state": "INCOMPLETE_PROOF",
+      "t10_decisions": {
+        "capture_lead_seconds": 90,
+        "commit_headroom_seconds": 10,
+        "due_events": 2,
+        "invalid_locks": 0,
+        "invalid_sample": [],
+        "late_discovered_due_events": 0,
+        "missed_locks": 0,
+        "missing_locks": 0,
+        "missing_sample": [],
+        "open_capture_events": 0,
+        "publication_cutoff_minutes": 10,
+        "valid_or_present_locks": 2
+      },
+      "training": {
+        "admissibility_certificates": 1158,
+        "admissible_final_score_rows": 175,
+        "conversion_backlog": 39,
+        "duplicate_training_eligible_locks": 0,
+        "exclusion_reasons": {
+          "live:live_provenance": 2,
+          "live:lock_ineligible": 1,
+          "live:settlement_conflict": 20,
+          "no_t45_lock": 19
+        },
+        "invalid_existing_locks": 0,
+        "latest_certificate_at": "2026-09-10T23:43:18.475012Z",
+        "nontraining_live_locks": 23,
+        "state": "CONVERTING_ADMISSIBLE_SETTLEMENTS",
+        "training_rows_ready": 136,
+        "validated_final_score_rows": 842
+      }
+    },
+    "promotion_blocked": true,
+    "provider_429_telemetry": {
+      "count_cap": 1000,
+      "count_is_lower_bound": false,
+      "latest_rows": [
+        {
+          "PK": "PROVIDER_429",
+          "SK": "OBSERVED#2026-09-10T21:00:05.512294Z#3699550f58fc",
+          "attempt": 1,
+          "entity_type": "SOCCER_ODDS_API_PROVIDER_429",
+          "expires_at": 1791666005,
+          "observed_at": "2026-09-10T21:00:05.512294Z",
+          "operation": "sports/soccer_conmebol_copa_libertadores/events/a3d3128f59c408c8b51a9a7b3f8b3e08/odds",
+          "retry_after": null
+        }
+      ],
+      "lookback_hours": 24,
+      "rolling_count": 1
+    },
+    "queues": {
+      "collection": 0,
+      "dead_letter": 0
+    },
+    "reason": "OPERATIONAL_INTEGRITY_FAILURE",
+    "settlement_conflict_state": {
+      "blocking_records_examined": 69,
+      "count": 28,
+      "count_is_lower_bound": false,
+      "ignored_nonblocking_records": 102,
+      "latest_observed_at": "2026-09-09T01:34:20.586204Z",
+      "latest_record_observed_at": "2026-09-09T01:34:20.586204Z",
+      "reason_counts": {
+        "SCORE_SCHEDULE_IDENTITY_MISMATCH": 18,
+        "SETTLEMENT_EVIDENCE_CONFLICT": 24
+      },
+      "records_examined": 171,
+      "training_labels_quarantined": 28
+    },
+    "settlement_conflicts": 28,
+    "shared_provider_safety": {
+      "burst_capacity": 1,
+      "distributed_lease": true,
+      "fail_closed": true,
+      "minimum_spacing_ms": 334,
+      "quota_race_buffer_credits": 2000,
+      "shared_quota_reserve_percent": 0.0,
+      "soccer_request_limit_per_second": 3
+    },
+    "system": "soccer_auto",
+    "updated_at": "2026-09-10T23:53:24.199394Z",
+    "updated_at_epoch_ms": 1789084404199
+  },
+  "operational": true
+}

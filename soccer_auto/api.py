@@ -285,8 +285,6 @@ def _query_partition(table: Any, pk: str, *, limit: int = 1000) -> tuple[list[di
 
 
 def _historical_status(store: SoccerStore) -> dict[str, Any]:
-    from .historical_materializer import materialization_status
-
     cursors, truncated = _query_partition(store.ops, "HISTORICAL_CURSOR", limit=1000)
     detail = [row for row in cursors if not str(row.get("SK") or "").endswith("#SUMMARY")]
     completed = [row for row in detail if row.get("status") == "COMPLETE"]
@@ -299,7 +297,15 @@ def _historical_status(store: SoccerStore) -> dict[str, Any]:
         (str(row.get("last_progress_at") or row.get("updated_at") or "") for row in detail),
         default="",
     )
-    materialization = materialization_status(store)
+    include_materialization = (
+        os.getenv("SOCCER_AUTO_STATUS_INCLUDE_MATERIALIZATION", "false").lower()
+        == "true"
+    )
+    materialization: dict[str, Any] = {}
+    if include_materialization:
+        from .historical_materializer import materialization_status
+
+        materialization = materialization_status(store)
     return {
         "enabled": os.getenv("SOCCER_AUTO_HISTORICAL_BACKFILL_ENABLED", "true").lower()
         == "true",
@@ -318,7 +324,11 @@ def _historical_status(store: SoccerStore) -> dict[str, Any]:
             "evidence is joined to a point-in-time T45 snapshot; older odds-only "
             "archives remain training-ineligible."
         ),
-        "supervised_materialization": materialization,
+        "supervised_materialization": materialization
+        or {
+            "deferred": True,
+            "reason": "STATUS_PATH_SKIPS_FULL_SCAN",
+        },
     }
 
 

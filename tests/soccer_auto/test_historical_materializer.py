@@ -116,6 +116,13 @@ class Store:
         self.archives.append((category, payload, kwargs, uri))
         return uri, digest(payload)
 
+    def list_competitions(self, *, active_only=False):
+        return list(getattr(self, "competitions", []) or [])
+
+    def put_settlement(self, item):
+        self.settlements.append(dict(item))
+        return True
+
 
 class RaceStore(Store):
     def __init__(self, final, winner):
