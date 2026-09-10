@@ -35,12 +35,13 @@ def capture(phase2, output):
             discovery.append({'bucket': archive, 'prefix': prefix,
                               'children': [p['Prefix'] for p in page.get('CommonPrefixes', [])],
                               'truncated': page.get('IsTruncated', False)})
-        keys = reader.keys('mlb/v8/historical-bbs/manifests/', bucket=archive)
-        if keys:
+        for context_prefix in ('mlb/v8/historical-bbs/manifests/', 'mlb/v8/historical-context/manifests/'):
             objects = [o for page in s3.get_paginator('list_objects_v2').paginate(
-                Bucket=archive, Prefix='mlb/v8/historical-bbs/manifests/') for o in page.get('Contents', [])]
-            latest = max(objects, key=lambda o: o['LastModified'])
-            contexts.append({'bucket': archive, 'key': latest['Key'], 'payload': reader.read(latest['Key'], bucket=archive)})
+                Bucket=archive, Prefix=context_prefix) for o in page.get('Contents', [])]
+            discovery.append({'bucket': archive, 'prefix': context_prefix, 'objects': len(objects)})
+            if objects:
+                latest = max(objects, key=lambda o: o['LastModified'])
+                contexts.append({'bucket': archive, 'key': latest['Key'], 'payload': reader.read(latest['Key'], bucket=archive)})
         refs = [r for r in proof['baseline_sources'] if r['bucket'] == archive and '/official-finals/' in r['key']]
         with ThreadPoolExecutor(max_workers=8) as pool:
             finals.extend(pool.map(read, refs))
