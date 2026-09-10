@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Isolated tennis-alpha stack inside parlay-platform repo. Separate from tennis_learning.
+
+Parameters:
+  OddsApiKey:
+    Type: String
+    NoEcho: true
+
+Resources:
+  TennisAlphaTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: tennis_alpha
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: stack
+          Value: tennis-alpha
+
+  TennisAlphaApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: tennis-alpha-api
+      CodeUri: tennis_alpha/
+      Handler: handler.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          TA_TABLE: !Ref TennisAlphaTable
+          TA_MIN_TRAINING_SAMPLES: "200"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TennisAlphaTable
+      Events:
+        Health:
+          Type: Api
+          Properties: {Path: /v1/tennis-alpha/health, Method: GET}
+        Status:
+          Type: Api
+          Properties: {Path: /v1/tennis-alpha/status, Method: GET}
+        Predict:
+          Type: Api
+          Properties: {Path: /v1/tennis-alpha/predict, Method: POST}
+        Settle:
+          Type: Api
+          Properties: {Path: /v1/tennis-alpha/settle, Method: POST}
+      Tags:
+        stack: tennis-alpha
+
+  TennisAlphaLiveFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: tennis-alpha-live
+      CodeUri: tennis_alpha/
+      Handler: live_pipeline.lambda_handler
+      Runtime: python3.11
+      Timeout: 900
+      MemorySize: 1024
+      Environment:
+        Variables:
+          TA_TABLE: !Ref TennisAlphaTable
+          TA_ODDS_API_KEY: !Ref OddsApiKey
+          TA_ODDS_REGIONS: "us,us2,uk,eu,au"
+          TA_PREDICTION_CUTOFF_MINUTES: "10"
+          TA_MIN_TRAINING_SAMPLES: "200"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TennisAlphaTable
+      Events:
+        Collect:
+          Type: Schedule
+          Properties:
+            Name: tennis-alpha-collect
+            Schedule: cron(8,38 * * * ? *)
+            Input: '{"action":"collect"}'
+            Enabled: false
+        Settle:
+          Type: Schedule
+          Properties:
+            Name: tennis-alpha-settle
+            Schedule: cron(23,53 * * * ? *)
+            Input: '{"action":"settle"}'
+            Enabled: false
+        CollectApi:
+          Type: Api
+          Properties: {Path: /v1/tennis-alpha/collect, Method: POST}
+        SettleApi:
+          Type: Api
+          Properties: {Path: /v1/tennis-alpha/pipeline/settle, Method: POST}
+        BootstrapApi:
+          Type: Api
+          Properties: {Path: /v1/tennis-alpha/bootstrap, Method: POST}
+      Tags:
+        stack: tennis-alpha
+
+Outputs:
+  TennisAlphaHealthUrl:
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/tennis-alpha/health"
+  TennisAlphaStackName:
+    Value: tennis-alpha

@@ -1,0 +1,66 @@
+name: Deploy Tennis Alpha
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tennis_alpha/**'
+      - 'tennis-alpha-template.yaml'
+      - 'tests/test_tennis_alpha_*.py'
+      - '.github/workflows/deploy-tennis-alpha.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tennis-alpha-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Test isolated engine
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet pytest
+          PYTHONPATH=tennis_alpha python -m pytest -q tests/test_tennis_alpha_engine.py tests/test_tennis_alpha_features.py tests/test_tennis_alpha_names.py tests/test_tennis_alpha_store.py tests/test_tennis_alpha_elo.py tests/test_tennis_alpha_clv.py
+          sam validate --template-file tennis-alpha-template.yaml
+
+      - name: Guard isolation
+        run: |
+          set -euo pipefail
+          echo "Deploying stack tennis-alpha only."
+          test -f tennis-alpha-template.yaml
+          ! grep -n 'inqis_tennis_learning\|tennis_learning\|parlay-platform-tennis-learning' tennis-alpha-template.yaml
+
+      - name: Build and deploy isolated tennis-alpha stack
+        run: |
+          set -euo pipefail
+          sam build --template-file tennis-alpha-template.yaml
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name tennis-alpha \
+            --region "${{ secrets.AWS_REGION }}" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides OddsApiKey="${{ secrets.ODDS_API_KEY }}" \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
