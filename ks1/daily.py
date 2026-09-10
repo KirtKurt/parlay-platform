@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import statistics
+import time
 
 import lightgbm as lgb
 import numpy as np
@@ -198,6 +199,7 @@ def preserve_frozen(current, previous, target_date, as_of):
 
 
 def predict(folder, output):
+    prediction_started = time.perf_counter()
     manifest, inputs = load_inputs(folder)
     target_date, as_of = manifest['date'], manifest['as_of']
     state = json.loads((folder/'simulation_state.json').read_bytes()) if (folder/'simulation_state.json').exists() else {}
@@ -287,6 +289,7 @@ def predict(folder, output):
         changes.append({'game_id': pk, 'reason': change_reason(old, row)})
         rows.append(row); feature_rows.append(features)
     simulator = SlateSimulator(len(rows), state.get('last_slate_seconds', 0), mapping)
+    simulator.started = prediction_started  # Include feature assembly/model loading in the budget.
     if rows:
         features = pd.DataFrame(feature_rows)
         x = features[classifier.feature_name()].astype(float)

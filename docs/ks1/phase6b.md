@@ -75,9 +75,10 @@ recipe/mapping. No retrospective result promotes this initial shadow recipe.
 
 ## Runtime and verification
 
-The default is 5,000 paths. A prior measured slate above 240 seconds starts
+The default is 5,000 paths. A prior measured prediction slate above 240 seconds starts
 subsequent work at 3,000; measured current-slate time also projects remaining
-work and can reduce later games to 3,000. Path count is recorded on each row.
+work and can reduce later games to 3,000. Daily timing includes model loading
+and feature assembly; provider capture is separate. Path count is recorded on each row.
 Unchanged/frozen rows remain cached. This is a downgrade guard, not a hard
 four-minute timeout. No Fargate task was found in this repository; local and
 GitHub timings must not be labeled Fargate measurements.
@@ -99,8 +100,15 @@ The accepted **retrospective, not locked** holdout remains 2,166 games,
 | Simulation candidate | 2,166 | 0.252244 | 3.610815 |
 
 The candidate is worse here and remains shadow-only. Local replay took 3.73s
-overall; the slowest historical slate took 0.043s. The locked comparison is a
-separate PR artifact produced from verified storage evidence. All three models
+overall; the slowest historical slate took 0.043s. Read-only CI run [34442132009](https://github.com/KirtKurt/parlay-platform/actions/runs/34442132009)
+found **zero existing KS1 prediction keys/versions and zero locked rows** at
+2026-09-10T05:42:49Z. Consequently the locked comparison has n=0 and null Brier /
+totals MAE for all three models. This requested prospective comparison is
+blocked on actual retained KS1 locks; historical replay is not a substitute.
+CI retrospective replay took 2.32s, slowest slate 0.018s. Artifact
+`ks1-phase6b-34442132009` (ID 10138321573) was downloaded and verified against
+SHA-256 `00d5ba9ca627765f2997badc97ebf416e79cb08941c9811f0b43882368495571`.
+The locked comparison is a separate artifact produced from storage evidence. All three models
 use the same complete-game intersection; unavailable metrics remain null.
 
 ## Run locally

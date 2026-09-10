@@ -65,12 +65,17 @@ def update(state, locked, finals, as_of):
                               'grades': {}, 'calibration_attempts': [], 'refit_requests': []})
     if state['recipe'] != RECIPE:
         raise ValueError('keep old recipe: unregistered candidate cannot replace it')
+    state.setdefault('result_corrections', {})
     grades = state['grades']
     for entry in locked:
         row, evidence = entry['row'], entry['evidence']
         pk = str(row['game_id'])
         if pk in grades:
-            # Keep the original result/probability; expose corrections separately.
+            # Preserve the original grade and expose corrected results for review.
+            if pk in finals and any(grades[pk][k] != finals[pk][k] for k in ('home_score', 'away_score')):
+                state['result_corrections'][pk] = {'original_home': grades[pk]['home_score'],
+                    'original_away': grades[pk]['away_score'], 'observed_final': finals[pk],
+                    'status': 'requires_review_no_automatic_regrade'}
             if grades[pk]['locked_row_sha256'] != hashlib.sha256(encode(row)).hexdigest():
                 raise ValueError('previously graded locked row changed: '+pk)
             continue
@@ -111,9 +116,10 @@ def update(state, locked, finals, as_of):
         train = [r for r in eligible[:end-7] if utc(r['graded_at']) < first_lock_asof]
         attempt = {'block': block, 'locked_sim_games': end, 'as_of': as_of,
                    'test_game_ids': [r['game_id'] for r in test],
-                   'train_game_ids': [r['game_id'] for r in train], 'status': 'insufficient_prior_labels'}
+                   'train_game_ids': [r['game_id'] for r in train],
+                   'status': 'blocked_result_correction' if state['result_corrections'] else 'insufficient_prior_labels'}
         y = np.array([r['home_score'] > r['away_score'] for r in train], int)
-        if len(train) >= 7 and len(set(y)) == 2:
+        if len(train) >= 7 and len(set(y)) == 2 and not state['result_corrections']:
             x = logit(np.clip([r['p_home_sim_raw'] for r in train], 1e-6, 1-1e-6)).reshape(-1, 1)
             # Strong shrinkage; keep identity/old mapping if slope reverses.
             fit = LogisticRegression(C=.1, solver='lbfgs', random_state=1729).fit(x, y)
@@ -135,5 +141,6 @@ def update(state, locked, finals, as_of):
         state['refit_requests'].append({'after_locked_games': block*50, 'as_of': as_of,
                                        'status': 'optional_disabled', 'automatic_promotion': False,
                                        'reason': 'Full refit requires a separate candidate and later locked champion gate.'})
-    state.update(as_of=as_of, comparison=comparison(ordered), locked_graded_games=len(ordered))
+    state.update(as_of=as_of, comparison=comparison(ordered), locked_graded_games=len(ordered),
+                 pending_game_ids=sorted({str(e['row']['game_id']) for e in locked}-set(grades)))
     return state

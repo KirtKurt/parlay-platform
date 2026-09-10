@@ -152,6 +152,7 @@ def main():
     report = {'as_of': captured['as_of'], 'inventory': captured['inventory'],
               'comparison': state['comparison'], 'graded_games': state['locked_graded_games'],
               'calibration_attempts': state['calibration_attempts'], 'refit_requests': state['refit_requests'],
+              'pending_game_ids': state['pending_game_ids'], 'result_corrections': state['result_corrections'],
               'published': False, 'comparison_status': 'verified_locked' if state['comparison']['game_ids'] else 'no_complete_verified_locked_cohort'}
     if args.publish:
         publish_state(s3, captured, state); report['published'] = True
