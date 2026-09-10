@@ -1,0 +1,42 @@
+name: MLB research deployed execution proof
+on:
+  workflow_run:
+    workflows: [Deploy SAM to AWS]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mlb-research-deployed-proof
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+      OPENBLAS_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r mlb_research/requirements.txt
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Prove deployed code and natural scheduled execution
+        env:
+          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: python scripts/verify_mlb_research_deployment.py --expected-sha "$EXPECTED_SHA" --wait-seconds 1800
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-research-deployment-proof-${{ github.run_id }}
+          path: runtime_reports/mlb_research_deployment_proof_latest.json
+          retention-days: 90

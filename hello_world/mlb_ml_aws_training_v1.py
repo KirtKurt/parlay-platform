@@ -3268,6 +3268,16 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
                 f"{execution_mode} returned an unhealthy status: "
                 f"{result.get('status')}"
             )
+        if execution_mode in {"training", "selection_capture"}:
+            try:
+                from mlb_research_dispatch_v1 import dispatch
+                research_dispatch = dispatch(execution_mode)
+                if research_dispatch.get("status") == "DISPATCHED":
+                    print(json.dumps({"researchDispatch": research_dispatch}))
+            except Exception as exc:
+                # A research outage must remain visible without changing the
+                # existing canonical training result or releasing its authority.
+                print(json.dumps({"researchDispatch": {"status": "FAILED", "error": type(exc).__name__}}))
         return result
     except Exception as exc:
         primary_error = exc

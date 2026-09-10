@@ -896,6 +896,7 @@ Resources:
         MaximumRetryAttempts: 0
       Environment:
         Variables:
+          MLB_RESEARCH_FUNCTION: !Ref MLBResearchFunction
           MLB_ML_ARTIFACTS_BUCKET: !Ref MLBMLArtifactsBucket
           SNAPSHOTS_TABLE: !Ref SnapshotsTable
           OUTCOMES_TABLE: !Ref OutcomesTable
@@ -908,6 +909,8 @@ Resources:
           MLB_R7_HISTORICAL_MAX_ROWS: '500'
           INQSI_MLB_ML_AUTO_PROMOTE: 'false'
       Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref MLBResearchFunction
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
         - DynamoDBCrudPolicy:
@@ -950,6 +953,35 @@ Resources:
             RetryPolicy:
               MaximumEventAgeInSeconds: 300
               MaximumRetryAttempts: 0
+
+  MLBResearchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: mlb_research/
+      Handler: mlb_research_runtime_v1.lambda_handler
+      Timeout: 900
+      MemorySize: 3072
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 60
+        MaximumRetryAttempts: 0
+      Environment:
+        Variables:
+          MLB_ML_ARTIFACTS_BUCKET: !Ref MLBMLArtifactsBucket
+          OPENBLAS_NUM_THREADS: '1'
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: s3:GetBucketVersioning
+              Resource: !GetAtt MLBMLArtifactsBucket.Arn
+            - Effect: Allow
+              Action: s3:ListBucket
+              Resource: !GetAtt MLBMLArtifactsBucket.Arn
+              Condition:
+                StringLike:
+                  s3:prefix: 'mlb/development-data/research-v1/*'
+            - Effect: Allow
+              Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
+              Resource: !Sub '${MLBMLArtifactsBucket.Arn}/mlb/development-data/research-v1/*'
 
   SoccerSchedulerFunction:
     Type: AWS::Serverless::Function

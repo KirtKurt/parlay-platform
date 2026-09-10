@@ -11,6 +11,7 @@ on:
       - 'scripts/mlb_historical_development_data.py'
       - 'scripts/run_mlb_data_expansion.py'
       - 'scripts/publish_mlb_data_admission.py'
+      - 'scripts/publish_mlb_research_dataset.py'
       - 'tests/unit/test_mlb_data_expansion.py'
 permissions:
   contents: write
@@ -39,6 +40,8 @@ jobs:
           aws-region: us-east-1
       - name: Prepare historical development data and inspect live admission
         run: python scripts/run_mlb_data_expansion.py --persist --max-rows 5000
+      - name: Publish isolated research development inputs
+        run: python scripts/publish_mlb_research_dataset.py
       - name: Publish daily admission reports
         if: github.ref == 'refs/heads/main'
         run: python scripts/publish_mlb_data_admission.py

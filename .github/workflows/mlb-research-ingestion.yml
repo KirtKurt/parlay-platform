@@ -1,0 +1,44 @@
+name: MLB research source ingestion
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'mlb_research/**'
+      - 'scripts/run_mlb_research_ingestion.py'
+      - 'scripts/publish_mlb_research_dataset.py'
+      - '.github/workflows/mlb-research-ingestion.yml'
+permissions:
+  contents: read
+concurrency:
+  group: mlb-research-source-ingestion
+  cancel-in-progress: false
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+      OPENBLAS_NUM_THREADS: '1'
+      AWS_EC2_METADATA_DISABLED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r mlb_research/requirements.txt pytest PyYAML
+      - run: python -m pytest -q tests/unit/test_mlb_research_v1.py
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - run: python scripts/run_mlb_research_ingestion.py --seconds 2400
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-research-ingestion-${{ github.run_id }}
+          path: runtime_reports/mlb_research_ingestion_latest.json
+          retention-days: 90
