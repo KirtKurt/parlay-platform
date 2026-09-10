@@ -96,11 +96,18 @@ def legacy_inventory(cf, lam, s3):
                         data.update(latestSampleKey=latest["Key"], columns=sorted(value),
                                     sampleRows=len(rows), rowColumns=sorted({k for r in rows if isinstance(r, dict) for k in r}),
                                     sampleSha256=hashlib.sha256(body).hexdigest())
-                        dates = sorted({str(r.get("slateDateEt") or r.get("gameDate") or r.get("date"))[:10]
-                                        for r in rows if isinstance(r, dict) and any(r.get(k) for k in ("slateDateEt", "gameDate", "date"))})
+                        dates = sorted({str(r.get("slateDateEt") or r.get("gameDate") or r.get("date") or r.get("commenceTime"))[:10]
+                                        for r in rows if isinstance(r, dict) and any(r.get(k) for k in ("slateDateEt", "gameDate", "date", "commenceTime"))})
                         data["sampleRowDateRange"] = [dates[0], dates[-1]] if dates else None
-                        key_dates = sorted({m.group(0) for o in objects for m in re.finditer(r"20\d{2}-\d{2}-\d{2}", o["Key"])})
+                        key_dates = {m.group(0) for o in objects for m in re.finditer(r"20\d{2}-\d{2}-\d{2}", o["Key"])}
+                        key_dates.update(datetime.strptime(m.group(1), "%Y%m%d").date().isoformat()
+                                         for o in objects for m in re.finditer(r"/(20\d{6})T", o["Key"]))
+                        key_dates = sorted(key_dates)
                         data["objectKeyDateRange"] = [key_dates[0], key_dates[-1]] if key_dates else None
+                        data["storedSummary"] = {k: value[k] for k in ("eligibleGameCount", "ineligibleGameCount", "processedGameCount", "coverageStartDate") if k in value}
+                        if rows and isinstance(rows[0], dict) and isinstance(rows[0].get("snapshot"), dict):
+                            data["snapshotColumns"] = sorted(rows[0]["snapshot"])
+                        data["featureSources"] = sorted({str(r["featureSource"]) for r in rows if isinstance(r, dict) and r.get("featureSource")})
                         data["scope"] = "all object keys listed; latest object schema sampled; no availability or training eligibility claim"
                     item["datasets"].append(data)
             item["status"] = "INSPECTED" if bucket else "BUCKET_OUTPUT_NOT_PRESENT"
