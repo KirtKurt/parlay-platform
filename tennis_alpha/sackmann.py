@@ -7,6 +7,7 @@ from typing import Iterator
 
 ARCHIVE = "https://raw.githubusercontent.com/Aneeshers/tennis-sackmann-archive/main"
 ATP_MIRROR = "https://raw.githubusercontent.com/elitemajik-ship-it/tennis_atp/master"
+INCOMPLETE_TAGS = ("RET", "W/O", "WALKOVER", "DEF", "ABD", "DEFAULT")
 
 
 def _fetch(url: str) -> str:
@@ -27,12 +28,24 @@ def _urls(tour: str, year: int) -> list[str]:
     raise ValueError("tour must be atp or wta")
 
 
+def is_complete_match(row: dict) -> bool:
+    score = str(row.get("score") or "").strip().upper()
+    if not score:
+        return False
+    compact = score.replace(" ", "").replace(".", "")
+    if compact in {"WO", "W/O"} or score in {"W/O", "WO"}:
+        return False
+    if "W/O" in score or compact.endswith("WO"):
+        return False
+    return not any(tag in score for tag in INCOMPLETE_TAGS)
+
+
 def tour_matches(tour: str, year: int) -> list[dict]:
     last_err: Exception | None = None
     for url in _urls(tour, year):
         try:
             text = _fetch(url)
-            return list(csv.DictReader(io.StringIO(text)))
+            return [row for row in csv.DictReader(io.StringIO(text)) if is_complete_match(row)]
         except Exception as exc:
             last_err = exc
             continue
