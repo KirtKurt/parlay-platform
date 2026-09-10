@@ -1,5 +1,5 @@
 """Past-only, count-based calendar windows with empirical shrinkage."""
-from datetime import datetime, timedelta
+from datetime import date as calendar_date, datetime, timedelta
 from zoneinfo import ZoneInfo
 import math
 
@@ -119,10 +119,10 @@ class Features:
         self.cache = {}
         self.priors = {}
 
-    def at(self, cutoff, team_id, starter_id=None):
+    def at(self, cutoff, team_id, starter_id=None, *, game_date=None):
         # Conservative same-day exclusion also prevents game-one results from
         # leaking into a doubleheader unless original observations say otherwise.
-        date = day(cutoff)
+        date = calendar_date.fromisoformat(game_date) if game_date else day(cutoff)
         eligible = [r for r in self.rows if r["completed"] < utc(cutoff) and r["day"] < date
                     and r["day"].year == date.year]
         # Within one day the eligible set only grows with cutoff. Its length
