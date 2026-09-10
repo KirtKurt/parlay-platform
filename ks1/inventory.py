@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RESEARCH = "mlb/development-data/research-v1/"
 RECONSTRUCTED = "mlb/development-data/reconstructed-v1/"
 BBS_SECRET_NAMES = (
+    "BBS_API_KEY", "BBS_API_SECRET_ARN",
     "BIG_BALLS_DATA_API_KEY", "BBD_API_KEY", "BIGBALLS_DATA_API_KEY",
     "BIG_BALLS_API_KEY", "BIGBALLS_API_KEY", "BIGBALLSDATA_API_KEY",
     "BIG_BALLS_DATA_KEY", "BBD_API_TOKEN", "BIGBALLS_DATA_KEY",
