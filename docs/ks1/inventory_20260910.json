@@ -1,0 +1,559 @@
+{
+  "awsReadOnly": true,
+  "bucket": "parlay-platform-dev-mlbmlartifactsbucket-rtsuugrwreet",
+  "createdAtUtc": "2026-09-10T01:36:56.416473+00:00",
+  "credentialNames": {
+    "ODDS_API_KEY": {
+      "configuredInJob": true,
+      "configuredInTrainer": true
+    },
+    "BIG_BALLS_DATA_API_KEY": {
+      "configuredInJob": false,
+      "configuredInTrainer": false
+    },
+    "BBD_API_KEY": {
+      "configuredInJob": false,
+      "configuredInTrainer": false
+    },
+    "BIGBALLS_DATA_API_KEY": {
+      "configuredInJob": false,
+      "configuredInTrainer": false
+    },
+    "BIG_BALLS_API_KEY": {
+      "configuredInJob": false,
+      "configuredInTrainer": false
+    },
+    "BIGBALLS_API_KEY": {
+      "configuredInJob": false,
+      "configuredInTrainer": false
+    },
+    "BIGBALLSDATA_API_KEY": {
+      "configuredInJob": false,
+      "configuredInTrainer": false
+    },
+    "BIG_BALLS_DATA_KEY": {
+      "configuredInJob": false,
+      "configuredInTrainer": false
+    },
+    "BBD_API_TOKEN": {
+      "configuredInJob": false,
+      "configuredInTrainer": false
+    },
+    "BIGBALLS_DATA_KEY": {
+      "configuredInJob": false,
+      "configuredInTrainer": false
+    },
+    "BIGBALLSDATA_KEY": {
+      "configuredInJob": false,
+      "configuredInTrainer": false
+    },
+    "BIG_BALLS_KEY": {
+      "configuredInJob": false,
+      "configuredInTrainer": false
+    },
+    "BBD_KEY": {
+      "configuredInJob": false,
+      "configuredInTrainer": false
+    }
+  },
+  "datasets": [
+    {
+      "path": "s3://parlay-platform-dev-mlbmlartifactsbucket-rtsuugrwreet/mlb/development-data/reconstructed-v1/752590eb846038a43e4824225978b0b8b527c6d89c370e54c39837bccaf35269/dataset.json",
+      "grain": "game; reconstructed pregame features and separate label",
+      "rows": 4481,
+      "dateRange": [
+        "2025-04-01",
+        "2026-09-08"
+      ],
+      "columns": [
+        "awayTeam",
+        "commenceTime",
+        "evidenceKind",
+        "featureCutoffUtc",
+        "featureFingerprint",
+        "features",
+        "historicalCorrectionsMayBePresent",
+        "homeTeam",
+        "label",
+        "marketSourceAtUtc",
+        "missingFeatures",
+        "officialGamePk",
+        "originalObservation",
+        "productionAuthority",
+        "prospectiveQualificationEvidence",
+        "reconstructedAtUtc",
+        "slateDateEt",
+        "sourceArtifact",
+        "version"
+      ]
+    },
+    {
+      "path": "s3://parlay-platform-dev-mlbmlartifactsbucket-rtsuugrwreet/mlb/development-data/research-v1/dataset.json",
+      "grain": "game; whole-slate research inputs and final scores",
+      "rows": 3747,
+      "dateRange": [
+        "2025-04-01",
+        "2026-09-08"
+      ],
+      "columns": [
+        "awayRuns",
+        "evidenceKind",
+        "featureFingerprint",
+        "features",
+        "homeRuns",
+        "homeWon",
+        "officialGamePk",
+        "originalObservation",
+        "slateComplete",
+        "slateDateEt"
+      ]
+    },
+    {
+      "path": "s3://parlay-platform-dev-mlbmlartifactsbucket-rtsuugrwreet/mlb/development-data/reconstructed-v1/source-games/",
+      "grain": "completed game; team batting, starter-group pitching, relief usage",
+      "rows": 4610,
+      "dateRange": [
+        "2025-03-18",
+        "2026-09-09"
+      ],
+      "columns": [
+        "completedAtUtc",
+        "fingerprint",
+        "gameType",
+        "officialGamePk",
+        "receipt",
+        "startAtUtc",
+        "teams"
+      ]
+    },
+    {
+      "path": "s3://parlay-platform-dev-mlbmlartifactsbucket-rtsuugrwreet/mlb/development-data/research-v1/prior-games.json",
+      "grain": "completed game; full team/player boxes",
+      "rows": 409,
+      "dateRange": [
+        "2026-08-10",
+        "2026-09-09"
+      ],
+      "columns": [
+        "completedAtUtc",
+        "gameType",
+        "homeWon",
+        "officialGamePk",
+        "receipt",
+        "startAtUtc",
+        "teams",
+        "venue"
+      ]
+    },
+    {
+      "path": "s3://parlay-platform-dev-mlbmlartifactsbucket-rtsuugrwreet/mlb/development-data/research-v1/prior-games.json#schedule",
+      "grain": "official scheduled game",
+      "rows": 419,
+      "dateRange": [
+        "2026-08-10",
+        "2026-09-10"
+      ],
+      "columns": [
+        "calendarEventID",
+        "content",
+        "dayNight",
+        "description",
+        "doubleHeader",
+        "gameDate",
+        "gameGuid",
+        "gameNumber",
+        "gamePk",
+        "gameType",
+        "gamedayType",
+        "gamesInSeries",
+        "ifNecessary",
+        "ifNecessaryDescription",
+        "inningBreakLength",
+        "isTie",
+        "link",
+        "officialDate",
+        "publicFacing",
+        "recordSource",
+        "rescheduledFrom",
+        "rescheduledFromDate",
+        "reverseHomeAwayStatus",
+        "scheduledInnings",
+        "season",
+        "seasonDisplay",
+        "seriesDescription",
+        "seriesGameNumber",
+        "status",
+        "teams",
+        "tiebreaker",
+        "venue"
+      ]
+    },
+    {
+      "path": "s3://parlay-platform-dev-mlbmlartifactsbucket-rtsuugrwreet/mlb/development-data/research-v1/statcast.json",
+      "grain": "pitch",
+      "rows": 119830,
+      "dateRange": [
+        "2026-08-10",
+        "2026-09-08"
+      ],
+      "columns": [
+        "at_bat_number",
+        "batter",
+        "estimated_woba_using_speedangle",
+        "events",
+        "game_date",
+        "game_pk",
+        "launch_speed",
+        "p_throws",
+        "pitch_number",
+        "pitch_type",
+        "pitcher",
+        "release_speed",
+        "stand",
+        "type"
+      ]
+    },
+    {
+      "path": "s3://parlay-platform-dev-mlbmlartifactsbucket-rtsuugrwreet/mlb/development-data/research-v1/snapshots/",
+      "grain": "original pregame game/checkpoint",
+      "rows": 3,
+      "dateRange": [
+        "2026-09-09",
+        "2026-09-09"
+      ],
+      "columns": [
+        "capturedAtUtc",
+        "checkpoint",
+        "commenceTime",
+        "conditions",
+        "deploymentGitSha",
+        "featureCutoffUtc",
+        "featureFingerprint",
+        "features",
+        "feedReceipt",
+        "ks1SourceKey",
+        "officialGamePk",
+        "originalObservation",
+        "outcomeKnownAtCapture",
+        "playerWindows",
+        "productionAuthority",
+        "slateDateEt",
+        "version"
+      ]
+    },
+    {
+      "path": "s3://parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5/mlb/historical-daily-v1/datasets-versioned/2026-05-03/4190c93172b56cde0c69d4fa86aa85c743db3f49b7b9bd5455e2f6f44ea8bb26.json",
+      "grain": "archived slate; records are games, snapshotAudit records market observations",
+      "referencedSlateArtifacts": 367,
+      "dateRange": [
+        "2025-04-01",
+        "2026-09-08"
+      ],
+      "columns": [
+        "completeSlate",
+        "eligibleGameCount",
+        "exactSlateCoverage",
+        "exclusions",
+        "featureDatasetVersion",
+        "fingerprint",
+        "gameSpecificLockClipping",
+        "grid",
+        "historicalFirstFiveEnrichmentReady",
+        "officialGameCount",
+        "paidHistoricalCallsMade",
+        "plannedSnapshotCount",
+        "postLockDataExcluded",
+        "providerEventIdCoverage",
+        "providerEventIdRecordCount",
+        "quarantineContractVersion",
+        "quarantinedRequests",
+        "quarantinedSnapshotCount",
+        "records",
+        "rematerializationVersion",
+        "rematerializedAtUtc",
+        "requestLedgerComplete",
+        "sameSlateOutcomeFeaturesProhibited",
+        "skippedStaleArchivedSlots",
+        "slateDateEt",
+        "snapshotAudit",
+        "sourceHistoricalOddsRequestsReused",
+        "strictlyPastTeamHistoryDerivedAtTraining",
+        "supervisedFeatureContractVersion",
+        "v8TrainableCoverage",
+        "v8TrainableRecordCount",
+        "validSnapshotCount",
+        "version"
+      ],
+      "gameColumns": [
+        "awaySignal",
+        "awayTeam",
+        "commenceTime",
+        "gameSpecificLockClipping",
+        "homeSignal",
+        "homeTeam",
+        "homeWon",
+        "observedAwayPullCount",
+        "observedHomePullCount",
+        "officialGamePk",
+        "postLockDataExcluded",
+        "predictionLockAtUtc",
+        "providerEventId",
+        "providerEventIdAvailable",
+        "requestedSlotCount",
+        "slateDateEt",
+        "version",
+        "winner"
+      ],
+      "scope": "date range covers references; one source archive inspected"
+    }
+  ],
+  "evidenceRun": "https://github.com/KirtKurt/parlay-platform/actions/runs/34426148629",
+  "existingModelLocation": "s3://parlay-platform-dev-mlbmlartifactsbucket-rtsuugrwreet/mlb/experiments/",
+  "legacyStores": [
+    {
+      "stack": "parlay-platform-mlb-v8-fundamentals-shadow",
+      "awsReadOnly": true,
+      "datasets": [],
+      "status": "NOT_VERIFIED",
+      "errorCode": "ValidationError"
+    },
+    {
+      "stack": "parlay-platform-mlb-odds-v8-shadow",
+      "awsReadOnly": true,
+      "datasets": [
+        {
+          "path": "s3://parlay-platform-mlb-odds-v8--shadowartifactsbucket-i9zj7b1lvqey/mlb/odds-v8-shadow/",
+          "objects": 1868,
+          "latestSampleKey": "mlb/odds-v8-shadow/20260814T1805302372200000/1a21a27af845aa105e1a28a6b1ac2eac28dc752b16b5369d1db493bbeee4e571.json",
+          "columns": [
+            "affordableEventLimit",
+            "budget",
+            "collectedAtUtc",
+            "contract",
+            "discoveries",
+            "eventEnrichment",
+            "eventEnrichmentErrors",
+            "featuredEvents",
+            "featuredHeaders",
+            "historicalAtUtc",
+            "marketExpansionVersion",
+            "productionAuthorityChanged",
+            "selectedEventCount",
+            "selectedMarketRequestCount",
+            "version"
+          ],
+          "sampleRows": 24,
+          "rowColumns": [
+            "awayTeam",
+            "bookmakers",
+            "commenceTime",
+            "eventId",
+            "fingerprint",
+            "homeTeam",
+            "sportKey",
+            "version"
+          ],
+          "sampleSha256": "1a21a27af845aa105e1a28a6b1ac2eac28dc752b16b5369d1db493bbeee4e571",
+          "sampleRowDateRange": [
+            "2026-08-14",
+            "2026-08-16"
+          ],
+          "objectKeyDateRange": [
+            "2026-07-26",
+            "2026-08-14"
+          ],
+          "storedSummary": {},
+          "featureSources": [],
+          "scope": "all object keys listed; latest object schema sampled; no availability or training eligibility claim"
+        }
+      ],
+      "bucket": "parlay-platform-mlb-odds-v8--shadowartifactsbucket-i9zj7b1lvqey",
+      "status": "INSPECTED"
+    },
+    {
+      "stack": "parlay-platform-mlb-historical-optimizer",
+      "awsReadOnly": true,
+      "datasets": [
+        {
+          "path": "s3://parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5/mlb/v8/historical-bbs/manifests/",
+          "objects": 18,
+          "latestSampleKey": "mlb/v8/historical-bbs/manifests/f6bdf048d9629fbdbc0c135091d618d2bdf31e70ff850a1192227fee2b324225.json",
+          "columns": [
+            "authority",
+            "backfillVersion",
+            "coverageStartDate",
+            "createdAtUtc",
+            "eligibleGameCount",
+            "ineligibleGameCount",
+            "manifestDigest",
+            "pointInTimeRequired",
+            "processedGameCount",
+            "productionAuthorityChanged",
+            "records",
+            "remainingGameCount",
+            "remainingSupportedGameCount",
+            "sameDayResultsExcluded",
+            "selectionRule",
+            "selectionUsedOutcomes",
+            "sourceCorpusFingerprint",
+            "sourceFeatureDatasetVersion",
+            "sourceHistoricalStateRevision",
+            "sourceSha",
+            "supportedCanonicalGameCount",
+            "supportedTrainingCoverage",
+            "targetGameOutcomeUsed",
+            "totalCanonicalGameCount",
+            "trainingCoverage",
+            "unsupportedCanonicalGameCount",
+            "version"
+          ],
+          "sampleRows": 1611,
+          "rowColumns": [
+            "awayTeam",
+            "eligibilityErrors",
+            "featureSource",
+            "homeTeam",
+            "officialGamePk",
+            "predictionLockAtUtc",
+            "providerMatchId",
+            "slateDateEt",
+            "snapshot",
+            "trainingEligible"
+          ],
+          "sampleSha256": "44c92f97581829bb85e22b1b3742b9bad2e9f04e89ae67582f91eefc9d17099c",
+          "sampleRowDateRange": [
+            "2026-03-25",
+            "2026-07-28"
+          ],
+          "objectKeyDateRange": null,
+          "storedSummary": {
+            "eligibleGameCount": 1611,
+            "ineligibleGameCount": 0,
+            "processedGameCount": 1611,
+            "coverageStartDate": "2026-03-01"
+          },
+          "snapshotColumns": [
+            "authority",
+            "away",
+            "awayTeam",
+            "createdAtUtc",
+            "eligibilityErrors",
+            "fingerprint",
+            "historyBoundary",
+            "home",
+            "homeTeam",
+            "officialGamePk",
+            "pointInTimeVerified",
+            "postgameFieldsExcluded",
+            "predictionLockAtUtc",
+            "priorCompletedGamesUsed",
+            "productionAuthorityChanged",
+            "providerEvidence",
+            "providerMatchId",
+            "sameDayResultsExcluded",
+            "selectionUsedOutcomes",
+            "slateDateEt",
+            "snapshotRole",
+            "targetGameOutcomeUsed",
+            "trainingEligible",
+            "version"
+          ],
+          "featureSources": [
+            "MLB-V8-HISTORICAL-BBS-PRIOR-GAME-v1"
+          ],
+          "scope": "all object keys listed; latest object schema sampled; no availability or training eligibility claim"
+        }
+      ],
+      "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
+      "configuredProviderCredentialNames": [
+        "ODDS_API_KEY"
+      ],
+      "status": "INSPECTED"
+    }
+  ],
+  "phase": 1,
+  "providerCalls": 0,
+  "providerCapabilities": {
+    "bbsFieldsAssumed": [],
+    "newArchiveDownload": false
+  },
+  "rawArchiveBucketConfiguredInTrainer": false,
+  "repositoryJobs": [
+    [
+      "Live MLB odds ingestion",
+      "template.yaml: MLBAuditedPullFunction / MLBHotEvery15Min",
+      "Every 15 minutes (runtime gates apply)",
+      "hello_world/mlb_manual_pull_protected.py"
+    ],
+    [
+      "R8 training owner",
+      "template.yaml: MLBMLTrainingFunction / MLBMLTrainingEvery6Hours",
+      "01:11, 07:11, 13:11, 19:11 UTC",
+      "hello_world/mlb_ml_aws_training_v1_compat.py"
+    ],
+    [
+      "Pregame selection capture owner",
+      "template.yaml: MLBMLSelectionCaptureEvery2Minutes",
+      "Every two minutes, starting at minute 01",
+      "Same training function; dispatches the existing research worker"
+    ],
+    [
+      "Existing research worker",
+      "template.yaml: MLBResearchFunction",
+      "Invoked by the existing owner; no independent schedule",
+      "mlb_research/mlb_research_runtime_v1.py"
+    ],
+    [
+      "Historical preparation and daily admission",
+      ".github/workflows/mlb-data-expansion.yml",
+      "10:37 UTC daily, selected main changes, or manual dispatch",
+      "scripts/run_mlb_data_expansion.py; scripts/publish_mlb_research_dataset.py"
+    ],
+    [
+      "Recent game/Statcast ingestion",
+      ".github/workflows/mlb-research-ingestion.yml",
+      "Hourly at :23, selected main changes, or manual dispatch",
+      "scripts/run_mlb_research_ingestion.py"
+    ],
+    [
+      "Immutable lock check / playability check",
+      "template.yaml: MLBDailyPickLockFunction / MLBPlayabilityCheckpointFunction",
+      "Every minute",
+      "hello_world/mlb_daily_pick_lock_protected.py; hello_world/mlb_playability_checkpoint_scheduler.py"
+    ],
+    [
+      "Production reporting",
+      ".github/workflows/mlb-30m-progress-pulse.yml",
+      ":11 and :41 UTC, plus workflow completion/manual triggers",
+      "Existing MLB progress issue #567"
+    ],
+    [
+      "Research execution proof",
+      ".github/workflows/mlb-research-postdeploy-proof.yml",
+      "Successful Deploy SAM to AWS, diagnostic-file main changes, or manual dispatch",
+      "scripts/verify_mlb_research_deployment.py"
+    ],
+    [
+      "Results API proof",
+      ".github/workflows/verify-mlb-results-api-read-only-postdeploy.yml",
+      "Successful Deploy SAM to AWS or manual dispatch",
+      "Read-only verification"
+    ],
+    [
+      "Historical optimizer (legacy tooling)",
+      ".github/workflows/mlb-historical-optimizer.yml",
+      "Scoped PR/push validation or explicit manual inputs",
+      "Existing separate stack; not started by KS1"
+    ],
+    [
+      "KS1 inventory (new draft PR only)",
+      ".github/workflows/ks1-phase1.yml",
+      "Same-repository PR or manual dispatch; no cron",
+      "ks1/inventory.py; CloudFormation/Lambda config/S3 reads only"
+    ]
+  ],
+  "scope": "Inventory only; no KS1 game table, training, provider ingestion, deployment, or new scheduler.",
+  "sourcePointersOmittedFromSummary": true,
+  "stack": "parlay-platform-dev",
+  "system": "KS1"
+}
