@@ -56,6 +56,10 @@ team identities are reported as exclusions. A future cutoff does not make a
 late-fetched source an original observation.
 
 Crosswalks are built once from observed official team/player IDs and aliases.
+When a target box is absent, an exact archived team name is resolved only if the
+observed crosswalk contains exactly one official team ID for that name. Each
+side records its identity method and deterministic match confidence; ambiguous
+names remain exclusions.
 No BBS IDs are invented. Market name matching is exact and uniquely time-bound;
 ambiguous mappings remain null. There is no fuzzy matching in this release.
 

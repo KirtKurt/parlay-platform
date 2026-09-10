@@ -80,6 +80,24 @@ def test_conflicting_final_scores_fail():
         build(bundle)
 
 
+def test_missing_target_box_reuses_exact_existing_crosswalk():
+    bundle = fixture()
+    bundle["reconstructed"] = [{"officialGamePk": 4, "slateDateEt": "2026-08-04",
+                                "commenceTime": "2026-08-04T20:00:00Z",
+                                "homeTeam": "Home", "awayTeam": "Away"}]
+    table, report, *_ = build(bundle)
+    row = table.to_pylist()[-1]
+    assert row["game_id"] == "4" and row["home_id"] == "1"
+    assert row["home_identity_method"] == "exact_unique_observed_name_crosswalk"
+    assert report["exclusions"] == []
+    # A same-name second official ID cannot be guessed away.
+    extra = game(10, "2026-07-31")
+    extra["teams"]["home"]["id"] = 777
+    bundle["compact"].append(extra)
+    _, report, *_ = build(bundle)
+    assert report["exclusions"] == [{"game_id": "4", "reason": "missing_official_team_identity"}]
+
+
 def test_original_starter_requires_timing_identity_and_hash():
     bundle = fixture()
     features = {"marketHomeProbability": 0.55}

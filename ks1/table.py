@@ -120,6 +120,10 @@ def build(bundle, selected_date=None):
                 person = player["person"]
                 if person.get("fullName"):
                     player_names[str(person["id"])].add(person["fullName"])
+    name_to_ids = defaultdict(set)
+    for tid, names in crosswalk.items():
+        for name in names:
+            name_to_ids[name].add(tid)
     rows, exclusions = [], []
     for pk in sorted(set(reconstructed) | set(schedule) | set(snapshots)):
         r, sch, game = reconstructed.get(pk, {}), schedule.get(pk, {}), games.get(pk, {})
@@ -161,12 +165,20 @@ def build(bundle, selected_date=None):
                "market_probability_source_at": None, "market_archive_source": None,
                "market_archive_as_of": None, "odds_event_id": None,
                "home_score": None, "away_score": None, "home_win": None,
+               "game_status": sch.get("status", {}).get("abstractGameState") or "Final" if (sch or game or r.get("label")) else "Unknown",
                "label_source": None, "final_score_status": "missing",
                "pregame_source_key": snapshot.get("source_key"),
                "reconstructed_source": json.dumps(r.get("sourceArtifact"), sort_keys=True) if r else None}
         missing_identity = False
         for side in ("home", "away"):
             team = sch.get("teams", {}).get(side) or game.get("teams", {}).get(side)
+            identity_method = "official_game_team_id"
+            if not team and r.get(side+"Team"):
+                name = r[side+"Team"]
+                ids = name_to_ids.get(name, set())
+                if len(ids) == 1:
+                    team = {"team": {"id": next(iter(ids)), "name": name}}
+                    identity_method = "exact_unique_observed_name_crosswalk"
             if not team:
                 missing_identity = True
                 break
@@ -175,6 +187,7 @@ def build(bundle, selected_date=None):
                 raise ValueError(f"official team ID conflict: {pk}")
             crosswalk[tid].add(name)
             row.update({f"{side}_id": tid, f"{side}_team": name,
+                        f"{side}_identity_method": identity_method, f"{side}_identity_confidence": 1.0,
                         f"{side}_starter_id": None, f"{side}_starter_name": None,
                         f"{side}_starter_status": "missing_pregame_evidence",
                         f"{side}_actual_starter_id": None, f"{side}_actual_starter_name": None,
@@ -238,6 +251,8 @@ def build(bundle, selected_date=None):
                        label_source=source, final_score_status="final")
         elif r.get("label", {}).get("homeWon") is not None:
             row.update(home_win=bool(r["label"]["homeWon"]), label_source="reconstructed/label")
+        elif sch.get("status", {}).get("abstractGameState") in ("Live", "Preview"):
+            row["final_score_status"] = "not_final_at_source_observation"
         if row["home_win"] is not None and r.get("label", {}).get("homeWon") is not None and row["home_win"] != bool(r["label"]["homeWon"]):
             raise ValueError(f"winner disagrees with stored label: {pk}")
         market = (snapshot or r).get("features", {}).get("marketHomeProbability")
@@ -266,6 +281,9 @@ def build(bundle, selected_date=None):
     report = {"system": "KS1", "phase": 1, "table_version": VERSION, "rows": len(frame),
               "date_range": [frame.date.min(), frame.date.max()], "seasons": [],
               "provider_calls": 0, "new_archive_download": False, "models_trained": 0,
+              "source_counts": {"reconstructed_games": len(reconstructed), "recent_schedule_games": len(schedule),
+                                "compact_games": len(compact), "full_box_games": len(full),
+                                "final_archive_games": sum(bool(values) for values in finals.values())},
               "exclusions": exclusions, "optional_reads": bundle.get("optional_reads", []),
               "coverage": coverage(frame),
               "gaps": {c: int(frame[c].isna().sum()) for c in frame if frame[c].isna().any()},
@@ -301,6 +319,9 @@ def contract(example):
         if any(t in column for t in ("_offense_", "_team_starter_", "_starter_k_", "_starter_whip", "_starter_bf", "_starter_appearances", "_bullpen_", "_rest_days", "_history_games")):
             dtype, role, source = pa.float64(), "feature", "strictly earlier completed compact/full game boxes"
             meaning += "; calendar-day windows; same-day excluded; current-season empirical prior; OPS/ISO 100 PA/AB, K-BB 100 BF, WHIP 75 outs shrinkage; *_games/*_pa/*_bf/*_appearances are observed counts"
+        elif column.endswith("_identity_confidence"):
+            dtype, role, source = pa.float64(), "audit", "official team ID or exact unique alias in observed official-ID crosswalk"
+            meaning = "1.0 for deterministic official-ID or exact unique observed-name match; ambiguous names excluded, no fuzzy matches."
         elif column in ("park_run_factor", "park_hr_factor", "temp", "wind_speed", "market_home_prob", "market_total", "market_spread") or column.endswith("_travel_km"):
             dtype, role = pa.float64(), "feature"
             source = "archived pregame no-vig probability / retained odds books" if column.startswith("market_") else "unavailable in admitted pregame sources; null"
