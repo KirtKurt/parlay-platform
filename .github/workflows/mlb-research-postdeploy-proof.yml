@@ -4,6 +4,11 @@ on:
     workflows: [Deploy SAM to AWS]
     types: [completed]
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/diagnose_mlb_research_capture.py'
+      - '.github/workflows/mlb-research-postdeploy-proof.yml'
 permissions:
   contents: read
 concurrency:
@@ -11,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   verify:
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -31,12 +36,17 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
       - name: Prove deployed code and natural scheduled execution
+        if: github.event_name != 'push'
         env:
           EXPECTED_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: python scripts/verify_mlb_research_deployment.py --expected-sha "$EXPECTED_SHA" --wait-seconds 1800
+      - name: Diagnose failed capture without source or prediction writes
+        run: python scripts/diagnose_mlb_research_capture.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: mlb-research-deployment-proof-${{ github.run_id }}
-          path: runtime_reports/mlb_research_deployment_proof_latest.json
+          path: |
+            runtime_reports/mlb_research_deployment_proof_latest.json
+            runtime_reports/mlb_research_capture_diagnostic_latest.json
           retention-days: 90
