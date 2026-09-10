@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-import gzip
 import hashlib
 import json
 import os
@@ -174,15 +173,10 @@ def inventory(output, *, region="us-east-1", stack="parlay-platform-dev"):
               "sourcePointers": sorted(reader.receipts, key=lambda r: (r["bucket"], r["key"])),
               "legacyStores": legacy_inventory(cf, lam, s3),
               "providerCapabilities": {"bbsFieldsAssumed": [], "newArchiveDownload": False}}
-    bundle = {"reconstructed": reconstructed["rows"], "research": research["rows"],
-              "compact": compact, "prior": prior, "statcast": statcast, "snapshots": snapshots,
-              "inventory": result}
     output.mkdir(parents=True, exist_ok=True)
     (output / "inventory.json").write_bytes(encode(result) + b"\n")
-    with gzip.GzipFile(filename=str(output / "existing-inputs.json.gz"), mode="wb", mtime=0) as handle:
-        handle.write(encode(bundle))
     print(json.dumps({k: v for k, v in result.items() if k != "sourcePointers"}, indent=2))
-    return bundle
+    return result
 
 
 if __name__ == "__main__":
