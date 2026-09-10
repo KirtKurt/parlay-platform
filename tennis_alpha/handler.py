@@ -14,6 +14,7 @@ from model import initial_state, predict_probability, sgd_step
 
 TABLE_NAME = os.environ["TA_TABLE"]
 MIN_SAMPLES = int(os.getenv("TA_MIN_TRAINING_SAMPLES", "200"))
+SCHEDULES_ENABLED = os.getenv("TA_SCHEDULES_ENABLED", "false").lower() in {"1", "true", "yes"}
 table = boto3.resource("dynamodb").Table(TABLE_NAME)
 
 
@@ -232,7 +233,7 @@ def status() -> Dict[str, Any]:
         "touches_tennis_learning": False,
         "features": list(FEATURE_NAMES),
         "min_training_samples": MIN_SAMPLES,
-        "schedules_enabled": False,
+        "schedules_enabled": SCHEDULES_ENABLED,
         "atp": {
             "model_version": int(atp["version"]),
             "training_samples": int(atp["training_samples"]),
