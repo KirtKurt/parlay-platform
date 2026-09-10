@@ -1,0 +1,96 @@
+name: KSS1 Raise Health Scan Limit
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Raise health scan and refresh controller
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('soccer_auto/health.py')
+          s = p.read_text()
+          old = 'HEALTH_SCAN_LIMIT = 2000'
+          new = 'HEALTH_SCAN_LIMIT = 10000'
+          if old not in s and 'HEALTH_SCAN_LIMIT = 10000' not in s:
+              raise SystemExit('HEALTH_SCAN_LIMIT anchor missing')
+          p.write_text(s.replace(old, new, 1))
+          print('health scan limit', '10000' if 'HEALTH_SCAN_LIMIT = 10000' in p.read_text() else 'unchanged')
+          PY
+          mkdir -p /tmp/kss1b/pkg/soccer_auto runtime_reports
+          cp soccer_auto/*.py /tmp/kss1b/pkg/soccer_auto/
+          (cd /tmp/kss1b/pkg && zip -qr /tmp/kss1b/code.zip soccer_auto)
+          stack=parlay-platform-soccer-auto
+          for logical in SoccerApiFunction SoccerControllerFunction SoccerTrainerFunction SoccerFreezeFunction SoccerHistoricalFunction; do
+            fn=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id "$logical" --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+            aws lambda update-function-code --function-name "$fn" --region "$REGION" --zip-file fileb:///tmp/kss1b/code.zip >/dev/null
+            aws lambda wait function-updated-v2 --function-name "$fn" --region "$REGION"
+            echo updated "$logical"
+          done
+          ctrl=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerControllerFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          aws lambda invoke --function-name "$ctrl" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"post_dlq_controller_refresh"}' /tmp/kss1b/controller.json >/tmp/kss1b/controller-meta.json
+          status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text)
+          sleep 3
+          curl --fail --silent --show-error --max-time 25 "$status_url" >/tmp/kss1b/status.json
+          python3 - <<'PY'
+          import json, pathlib, datetime
+          status = json.load(open('/tmp/kss1b/status.json'))
+          ctrl = json.load(open('/tmp/kss1b/controller.json'))
+          health = (status.get('prediction_and_training_health') or {})
+          report = {
+            'proofType': 'KSS1_HEALTH_SCAN_PROOF',
+            'observedAtUtc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'authority': status.get('authority'),
+            'reason': status.get('reason'),
+            'failures': status.get('failures') or [],
+            'queues': status.get('queues'),
+            'consecutive_failures': status.get('consecutive_failures'),
+            'promotion_blocked': status.get('promotion_blocked'),
+            'automatic_prediction_allowed': status.get('automatic_prediction_allowed'),
+            'counts': status.get('counts'),
+            'scan_truncated': health.get('scan_truncated'),
+            'health_state': health.get('state'),
+            'health_healthy': health.get('healthy'),
+            'proof_complete': health.get('proof_complete'),
+            'controller_authority': ctrl.get('authority'),
+          }
+          report['operational'] = (
+              status.get('ok') is True
+              and status.get('authority') != 'DEGRADED'
+              and 'collection_dead_letter_queue_not_empty' not in report['failures']
+              and 'evidence_health:bounded_scan_truncated' not in report['failures']
+              and int((status.get('queues') or {}).get('dead_letter') or 0) == 0
+          )
+          pathlib.Path('runtime_reports/kss1_health_scan_proof_latest.json').write_text(
+              json.dumps(report, indent=2, default=str) + '\n'
+          )
+          print(json.dumps(report, indent=2, default=str))
+          if not report['operational']:
+              raise SystemExit('KSS1 still not operational')
+          PY
+      - name: Publish
+        run: |
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add soccer_auto/health.py runtime_reports/kss1_health_scan_proof_latest.json
+          git commit -m 'fix(KSS1): raise health scan limit so proof can complete [skip ci]' || exit 0
+          for i in 1 2 3 4 5 6 7 8; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            git rebase --abort 2>/dev/null || true
+            sleep $((i*2))
+          done
+          exit 1
