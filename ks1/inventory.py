@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 RESEARCH = "mlb/development-data/research-v1/"
@@ -60,6 +61,53 @@ def describe(path, grain, rows, date_field, columns=None):
     return {"path": path, "grain": grain, "rows": len(rows),
             "dateRange": [dates[0], dates[-1]] if dates else None,
             "columns": columns or sorted({k for r in rows for k in r})}
+
+
+def legacy_inventory(cf, lam, s3):
+    """Inspect retained stores referenced by repo templates; never activate them."""
+    definitions = (
+        ("parlay-platform-mlb-v8-fundamentals-shadow", "FundamentalsArtifactsBucketName",
+         "FundamentalsCollectorFunctionName", ("mlb/v8/fundamentals/", "mlb/v8/historical-bbs/manifests/")),
+        ("parlay-platform-mlb-odds-v8-shadow", "ShadowArtifactsBucketName", None, ("mlb/odds-v8-shadow/",)),
+        ("parlay-platform-mlb-historical-optimizer", "HistoricalArtifactsBucketName",
+         "HistoricalOptimizerFunctionName", ("mlb/v8/historical-bbs/manifests/",)),
+    )
+    results = []
+    for stack, bucket_output, function_output, prefixes in definitions:
+        item = {"stack": stack, "awsReadOnly": True, "datasets": []}
+        try:
+            response = cf.describe_stacks(StackName=stack)
+            outputs = {r["OutputKey"]: r["OutputValue"] for r in response["Stacks"][0].get("Outputs", [])}
+            bucket = outputs.get(bucket_output)
+            item["bucket"] = bucket
+            if function_output and outputs.get(function_output):
+                values = lam.get_function_configuration(FunctionName=outputs[function_output]).get("Environment", {}).get("Variables", {})
+                item["configuredProviderCredentialNames"] = sorted(k for k in ("ODDS_API_KEY", *BBS_SECRET_NAMES) if values.get(k))
+            if bucket:
+                for prefix in prefixes:
+                    objects = [o for p in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix)
+                               for o in p.get("Contents", [])]
+                    data = {"path": f"s3://{bucket}/{prefix}", "objects": len(objects)}
+                    if objects:
+                        latest = max(objects, key=lambda o: o["LastModified"])
+                        body = s3.get_object(Bucket=bucket, Key=latest["Key"])["Body"].read()
+                        value = json.loads(body)
+                        rows = value.get("records", value.get("games", value.get("featuredEvents", [])))
+                        data.update(latestSampleKey=latest["Key"], columns=sorted(value),
+                                    sampleRows=len(rows), rowColumns=sorted({k for r in rows if isinstance(r, dict) for k in r}),
+                                    sampleSha256=hashlib.sha256(body).hexdigest())
+                        dates = sorted({str(r.get("slateDateEt") or r.get("gameDate") or r.get("date"))[:10]
+                                        for r in rows if isinstance(r, dict) and any(r.get(k) for k in ("slateDateEt", "gameDate", "date"))})
+                        data["sampleRowDateRange"] = [dates[0], dates[-1]] if dates else None
+                        key_dates = sorted({m.group(0) for o in objects for m in re.finditer(r"20\d{2}-\d{2}-\d{2}", o["Key"])})
+                        data["objectKeyDateRange"] = [key_dates[0], key_dates[-1]] if key_dates else None
+                        data["scope"] = "all object keys listed; latest object schema sampled; no availability or training eligibility claim"
+                    item["datasets"].append(data)
+            item["status"] = "INSPECTED" if bucket else "BUCKET_OUTPUT_NOT_PRESENT"
+        except Exception as exc:
+            item.update(status="NOT_VERIFIED", errorCode=getattr(exc, "response", {}).get("Error", {}).get("Code", type(exc).__name__))
+        results.append(item)
+    return results
 
 
 def inventory(output, *, region="us-east-1", stack="parlay-platform-dev"):
@@ -117,6 +165,7 @@ def inventory(output, *, region="us-east-1", stack="parlay-platform-dev"):
               "existingModelLocation": f"s3://{bucket}/mlb/experiments/",
               "rawArchiveBucketConfiguredInTrainer": bool(env.get("RAW_ARCHIVE_BUCKET")),
               "sourcePointers": sorted(reader.receipts, key=lambda r: (r["bucket"], r["key"])),
+              "legacyStores": legacy_inventory(cf, lam, s3),
               "providerCapabilities": {"bbsFieldsAssumed": [], "newArchiveDownload": False}}
     bundle = {"reconstructed": reconstructed["rows"], "research": research["rows"],
               "compact": compact, "prior": prior, "statcast": statcast, "snapshots": snapshots,
