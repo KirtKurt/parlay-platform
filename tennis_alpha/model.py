@@ -4,7 +4,7 @@ import math
 from decimal import Decimal
 from typing import Any, Dict, Mapping
 
-from .features import FEATURE_NAMES, build, vector
+from features import FEATURE_NAMES, build, vector
 
 LEARNING_RATE = Decimal("0.03")
 L2 = Decimal("0.0005")

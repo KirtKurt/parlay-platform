@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from typing import Deque, Dict, Iterable, Tuple
 
-from .elo import EloBook
+from elo import EloBook
 
 FormKey = Tuple[str, str]
 
