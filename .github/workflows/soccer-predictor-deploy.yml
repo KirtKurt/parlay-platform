@@ -65,16 +65,16 @@ jobs:
         shell: bash
         run: |
           OWNER_SLUG="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          PARAMS=("OwnerSlug=$OWNER_SLUG")
+          if [ -n "$ODDS_API_KEY" ]; then PARAMS+=("OddsApiKey=$ODDS_API_KEY"); fi
+          if [ -n "$BBD_API_KEY" ]; then PARAMS+=("BbdApiKey=$BBD_API_KEY"); fi
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
             --stack-name soccer-predictor \
             --region "$AWS_REGION" \
             --resolve-s3 \
             --capabilities CAPABILITY_IAM \
-            --parameter-overrides \
-              OwnerSlug="$OWNER_SLUG" \
-              OddsApiKey="$ODDS_API_KEY" \
-              BbdApiKey="$BBD_API_KEY" \
+            --parameter-overrides "${PARAMS[@]}" \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
 
