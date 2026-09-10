@@ -1,0 +1,64 @@
+name: Soccer Predictor Daily Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: America/New_York date to audit (YYYY-MM-DD). Empty = yesterday.
+        required: false
+        default: ""
+  schedule:
+    # 1:30 AM America/New_York during EDT. Becomes 12:30 AM during EST.
+    - cron: "30 5 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: soccer-predictor-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: soccer-predictor
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/soccer-predictor-initial
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Download latest results
+        run: python scripts/download_data.py
+      - name: Audit prior-day cards
+        env:
+          AUDIT_DATE: ${{ github.event.inputs.date }}
+        run: |
+          if [ -n "$AUDIT_DATE" ]; then
+            python scripts/audit_yesterday.py --date "$AUDIT_DATE"
+          else
+            python scripts/audit_yesterday.py
+          fi
+      - name: Upload audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: soccer-predictor-audit
+          if-no-files-found: warn
+          path: soccer-predictor/artifacts/audits/
+      - name: Commit audit ledger if changed
+        run: |
+          git config user.name "soccer-predictor-audit"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add soccer-predictor/artifacts/audits || true
+          if git diff --cached --quiet; then
+            echo "No audit files to commit"
+          else
+            git commit -m "Soccer prior-day audit $(date -u +%F)"
+            git push origin HEAD:agent/soccer-predictor-initial
+          fi
