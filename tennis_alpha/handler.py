@@ -4,7 +4,7 @@ import json
 import os
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, Mapping, Sequence
 
 import boto3
 from botocore.exceptions import ClientError
@@ -45,6 +45,36 @@ def _ratings_meta(tour: str) -> Dict[str, Any]:
     }
 
 
+def write_model_state(
+    tour: str,
+    weights: Sequence[float],
+    bias: float,
+    samples: int,
+    source: str = "seed",
+) -> Dict[str, Any]:
+    if len(weights) != len(FEATURE_NAMES):
+        raise ValueError(f"expected {len(FEATURE_NAMES)} weights, got {len(weights)}")
+    item = {
+        "PK": _tour_key(tour),
+        "SK": "STATE",
+        "tour": tour.lower(),
+        "weights": [Decimal(str(round(float(w), 8))) for w in weights],
+        "bias": Decimal(str(round(float(bias), 8))),
+        "version": max(1, int(samples)),
+        "training_samples": int(samples),
+        "source": source,
+        "updated_at": _now(),
+        "stack": "tennis-alpha",
+    }
+    table.put_item(Item=item)
+    return {
+        "tour": tour.lower(),
+        "training_samples": int(samples),
+        "eligible": int(samples) >= MIN_SAMPLES,
+        "source": source,
+    }
+
+
 def _load_state(tour: str) -> Dict[str, Any]:
     key = {"PK": _tour_key(tour), "SK": "STATE"}
     item = table.get_item(Key=key, ConsistentRead=True).get("Item")
@@ -59,6 +89,7 @@ def _load_state(tour: str) -> Dict[str, Any]:
         "bias": seed["bias"],
         "version": seed["version"],
         "training_samples": seed["training_samples"],
+        "source": "initial",
         "updated_at": _now(),
         "stack": "tennis-alpha",
     }
@@ -107,6 +138,7 @@ def predict(payload: Mapping[str, Any]) -> Dict[str, Any]:
         "model_version": int(state["version"]),
         "training_samples": samples,
         "eligible": samples >= MIN_SAMPLES,
+        "source": state.get("source"),
         "reason": "trained_model" if samples >= MIN_SAMPLES else f"shadow_until_{MIN_SAMPLES}",
     }
 
@@ -205,6 +237,7 @@ def status() -> Dict[str, Any]:
             "model_version": int(atp["version"]),
             "training_samples": int(atp["training_samples"]),
             "eligible": int(atp["training_samples"]) >= MIN_SAMPLES,
+            "source": atp.get("source"),
             "updated_at": atp.get("updated_at"),
             **atp_elo,
         },
@@ -212,6 +245,7 @@ def status() -> Dict[str, Any]:
             "model_version": int(wta["version"]),
             "training_samples": int(wta["training_samples"]),
             "eligible": int(wta["training_samples"]) >= MIN_SAMPLES,
+            "source": wta.get("source"),
             "updated_at": wta.get("updated_at"),
             **wta_elo,
         },
