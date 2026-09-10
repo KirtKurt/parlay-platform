@@ -193,6 +193,9 @@ def capture(target_date, output):
     except Exception as exc:
         if getattr(exc, 'response', {}).get('Error', {}).get('Code') not in ('NoSuchKey', '404'):
             raise
+    from ks1.platt_inputs import capture as calibration_capture
+    captured_calibration = calibration_capture(s3, bucket, datetime.now(timezone.utc).isoformat(), prior, reader.receipts)
+    (output/'calibration_inputs.json').write_bytes(encode(captured_calibration))
     manifest = {'system': 'KS1', 'phase': 5, 'date': target_date, 'as_of': datetime.now(timezone.utc).isoformat(),
                 'bucket': bucket, 'aws_writes': 0, 'errors': errors,
                 'source_history_games': len(games), 'github_sha': os.environ.get('GITHUB_SHA'), 'previous_etag': previous_etag,

@@ -310,7 +310,7 @@ def test_scratch_overwrites_same_date_object_and_preserves_other_date(capture, m
     daily.publish(store, 'test', current, report, out)
     assert objects[key] != old and objects[other] == b'untouched'
     assert all(k.startswith(daily.PREFIX+'date='+DATE+'/') for k in writes)
-    assert pq.read_table(pa.BufferReader(objects[key])).to_pylist()[1] == table.to_pylist()[1]
+    assert pq.read_table(pa.BufferReader(objects[key])).to_pylist()[1] == pq.read_table(pa.BufferReader(old)).to_pylist()[1]
     assert daily.publish(store, 'test', current, report, out)['write_keys'] == []
     report['source_capture']['verification_only'] = True
     with pytest.raises(ValueError, match='synthetic'):

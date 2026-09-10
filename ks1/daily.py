@@ -26,14 +26,14 @@ from ks1.table import american, team_identity
 PREFIX = 'mlb/ks1/predictions-v1/'
 ROOT = Path(__file__).parent
 FLOATS = ['p_home', 'lambda_home', 'lambda_away', 'proj_total', 'market_home_prob', 'edge_home',
-          'market_total', 'edge_total', 'market_spread', 'p_home_poisson', 'odds_match_confidence']
+          'market_total', 'edge_total', 'market_spread', 'p_home_poisson', 'odds_match_confidence', 'p_raw']
 STRINGS = ['date', 'game_id', 'bbs_game_id', 'odds_event_id', 'home_team', 'away_team', 'home_id', 'away_id',
            'bbs_home_id', 'bbs_away_id', 'home_starter_name', 'away_starter_name', 'home_starter_id', 'away_starter_id',
            'home_starter_status', 'away_starter_status', 'starter_source', 'commence_time', 'model_version',
            'as_of', 'lineup_status', 'prediction_status', 'market_status', 'history_source_as_of',
            'environment_status', 'history_status', 'input_fingerprint', 'status',
            'home_lineup_status', 'away_lineup_status', 'home_lineup_ids', 'away_lineup_ids',
-           'home_offense_source', 'away_offense_source', 'lineup_source_status', 'starter_feature_source']
+           'home_offense_source', 'away_offense_source', 'lineup_source_status', 'starter_feature_source', 'calibration_version', 'calibration_method']
 # Dictionary date also reads cleanly with Arrow's automatic Hive partitioning.
 SCHEMA = pa.schema([pa.field(k, pa.dictionary(pa.int32(), pa.string()) if k == 'date' else pa.string())
                     for k in STRINGS] + [pa.field(k, pa.float64()) for k in FLOATS])
@@ -345,7 +345,7 @@ def predict(folder, output):
     return table, report, output
 
 
-def publish(s3, bucket, table, report, output):
+def publish(s3, bucket, table, report, output, *, calibration='temperature', platt_model_path=None, temperature_model_path=None):
     if report.get('source_capture', {}).get('verification_only'):
         raise ValueError('synthetic verification captures cannot be published')
     if not (os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('GITHUB_REPOSITORY') == 'KirtKurt/parlay-platform'
@@ -358,9 +358,31 @@ def publish(s3, bucket, table, report, output):
         raise ValueError('publication escaped date scope')
     prefix, writes = PREFIX+'date='+date+'/', []
     prediction_body = (output/'predictions.parquet').read_bytes()
-    if hashlib.sha256(prediction_body).hexdigest() != report['parquet_sha256'] or not pq.read_table(io.BytesIO(prediction_body)).equals(table):
+    if hashlib.sha256(prediction_body).hexdigest() != report['parquet_sha256']:
         raise ValueError('prediction publication content mismatch')
-    for name in ('odds_cache.parquet', 'lineup_cache.json', 'crosswalk.json', 'predictions.parquet'):
+    local_table = pq.read_table(io.BytesIO(prediction_body))
+    from ks1.platt import MODEL_PATH, TEMPERATURE_PATH, prepare_rows
+    models = {'platt': json.loads((platt_model_path or MODEL_PATH).read_bytes()),
+              'temperature': json.loads((temperature_model_path or TEMPERATURE_PATH).read_bytes())}
+    if calibration not in models:
+        raise ValueError('unknown publication calibration')
+    # The raw scorer and lock function are unchanged. Apply exactly once here.
+    prepared, changed = prepare_rows(table.to_pylist(), models[calibration], report['as_of'], calibration)
+    prepared_table = pa.Table.from_pylist(prepared, schema=table.schema) if changed else table
+    if not (local_table.equals(table) or local_table.equals(prepared_table)):
+        raise ValueError('prediction publication content mismatch')
+    if changed:
+        table = prepared_table
+        prediction_body = parquet_bytes(table)
+        (output/'predictions.parquet').write_bytes(prediction_body)
+        table.to_pandas().to_csv(output/'predictions.csv', index=False)
+        report['parquet_sha256'] = hashlib.sha256(prediction_body).hexdigest()
+    report['calibration'] = {'method': calibration, 'changed_game_ids': changed,
+                             'n': models[calibration]['n'], 'fitted_at': models[calibration]['fitted_at']}
+    for method, model in models.items():
+        (output/(method+'.json')).write_bytes(encode(model))
+    (output/'report.json').write_bytes(encode(report))
+    for name in ('odds_cache.parquet', 'lineup_cache.json', 'crosswalk.json', 'predictions.parquet', 'platt.json', 'temperature.json'):
         key, body = prefix+name, (output/name).read_bytes()
         sha = hashlib.sha256(body).hexdigest()
         existing = None
@@ -394,12 +416,16 @@ def main():
     parser.add_argument('--inputs', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--publish', action='store_true')
+    parser.add_argument('--calibration', choices=['platt', 'temperature'], default='temperature')
+    parser.add_argument('--platt-model', type=Path)
+    parser.add_argument('--temperature-model', type=Path)
     args = parser.parse_args()
     table, report, output = predict(args.inputs, args.output)
     if args.publish:
         from ks1.sources import aws_clients
         _, s3, bucket = aws_clients('us-east-1', 'parlay-platform-dev')
-        result = publish(s3, bucket, table, report, output)
+        result = publish(s3, bucket, table, report, output, calibration=args.calibration,
+                         platt_model_path=args.platt_model, temperature_model_path=args.temperature_model)
         report.update(published=True, publication=result)
         (output/'report.json').write_bytes(encode(report))
         (output/'publication.json').write_bytes(encode(result))

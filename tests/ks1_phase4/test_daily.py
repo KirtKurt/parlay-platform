@@ -116,7 +116,10 @@ class MemoryS3:
 
 def test_date_publication_isolated_idempotent_and_restricted_to_existing_job(tmp_path, monkeypatch):
     s3 = MemoryS3(); other = PREFIX+'date=2026-09-09/predictions.parquet'; s3.objects[other] = b'previous-date'
-    table = pa.Table.from_pylist([{'date': '2026-09-10', 'game_id': '1', 'as_of': '2026-09-10T10:00:00Z'}], schema=SCHEMA)
+    from ks1.platt import raw_model_version
+    table = pa.Table.from_pylist([{'date': '2026-09-10', 'game_id': '1', 'as_of': '2026-09-10T10:00:00Z',
+                                   'commence_time': '2026-09-10T20:00:00Z', 'p_home': .55,
+                                   'model_version': raw_model_version()}], schema=SCHEMA)
     body = parquet_bytes(table);(tmp_path/'predictions.parquet').write_bytes(body)
     (tmp_path/'odds_cache.parquet').write_bytes(parquet_bytes(pa.table({'event_id': ['one']})))
     (tmp_path/'crosswalk.json').write_text('{}')
@@ -133,7 +136,9 @@ def test_date_publication_isolated_idempotent_and_restricted_to_existing_job(tmp
     result = publish(s3, 'test', table, report, tmp_path)
     assert all(k.startswith(PREFIX+'date=2026-09-10/') for k in result['write_keys'])
     assert s3.objects[other] == b'previous-date'
-    assert publish(s3, 'test', table, report, tmp_path)['write_keys'] == []
+    published = pq.ParquetFile(tmp_path/'predictions.parquet').read()
+    assert published.to_pylist()[0]['p_raw'] == published.to_pylist()[0]['p_home'] == .55
+    assert publish(s3, 'test', published, report, tmp_path)['write_keys'] == []
 
 
 def test_partition_parquet_is_readable_by_default_pandas_reader(tmp_path):
