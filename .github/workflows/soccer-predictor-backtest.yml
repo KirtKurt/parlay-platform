@@ -1,12 +1,6 @@
 name: Soccer Predictor Backtest
 
 on:
-  push:
-    branches:
-      - agent/soccer-predictor-initial
-    paths:
-      - soccer-predictor/**
-      - .github/workflows/soccer-predictor-backtest.yml
   workflow_dispatch:
     inputs:
       start:

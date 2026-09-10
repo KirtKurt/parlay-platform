@@ -1,0 +1,43 @@
+name: Soccer Predictor Daily Card
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soccer-predictor-daily
+  cancel-in-progress: true
+
+jobs:
+  weekend-card:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: soccer-predictor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Download latest results
+        run: python scripts/download_data.py
+      - name: Train if models missing
+        run: python scripts/train.py --cutoff 2026-09-07
+      - name: Predict upcoming card
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          BBD_API_KEY: ${{ secrets.BBS_API_KEY }}
+        run: python scripts/daily_job.py
+      - name: Upload card
+        uses: actions/upload-artifact@v4
+        with:
+          name: soccer-predictor-daily-card
+          if-no-files-found: warn
+          path: |
+            soccer-predictor/artifacts/predictions.csv
+            soccer-predictor/artifacts/predictions.json
