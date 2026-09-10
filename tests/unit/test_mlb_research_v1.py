@@ -361,3 +361,27 @@ def test_historical_failure_does_not_stop_current_source_ingestion(monkeypatch,s
     assert result['status']=='PARTIAL' and result['statcastDays']==30
     assert result['errors']==[{'source':'historical','error':'ValueError'}]
     assert store.get('dataset.json')['rows']==0
+
+
+def test_new_deployment_refreshes_training_from_existing_capture_owner(monkeypatch,store):
+    monkeypatch.setenv('INQSI_DEPLOY_GIT_SHA','old-release')
+    store.latest('dataset.json',{'rowsHash':'unchanged-data'})
+    store.latest('training.json',{'ok':True,'datasetRowsHash':'unchanged-data',
+                                 'updatedAtUtc':(AT-timedelta(minutes=20)).isoformat()})
+    monkeypatch.setenv('INQSI_DEPLOY_GIT_SHA','new-release')
+    monkeypatch.setattr(runtime,'Store',lambda:store)
+    monkeypatch.setattr(runtime,'now',lambda:AT)
+    monkeypatch.setattr(runtime,'capture',lambda store:{'ok':True})
+    calls=[]
+    def train(store):
+        calls.append('train')
+        store.latest('training.json',{'ok':True,'status':'REFRESHED','datasetRowsHash':'unchanged-data',
+                                     'updatedAtUtc':AT.isoformat()})
+        return {'status':'REFRESHED'}
+    monkeypatch.setattr(runtime,'train',train)
+    class Context:
+        def get_remaining_time_in_millis(self):return 400000
+    assert runtime.lambda_handler({'mode':'capture'},Context())['newDataTraining']=='REFRESHED'
+    assert store.get('training.json')['deploymentGitSha']=='new-release'
+    runtime.lambda_handler({'mode':'capture'},Context())
+    assert calls==['train']
