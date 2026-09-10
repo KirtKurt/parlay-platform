@@ -1,0 +1,53 @@
+name: Soccer Predictor Backtest
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: Walk-forward start date
+        default: "2018-08-01"
+      end:
+        description: Exclusive end date
+        default: "2026-09-07"
+      refit_every:
+        description: Refit cadence in days
+        default: "7"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soccer-predictor-backtest
+  cancel-in-progress: true
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    defaults:
+      run:
+        working-directory: soccer-predictor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Unit tests
+        run: PYTHONPATH=src python -m unittest discover -s tests -v
+      - name: Download football-data.co.uk history
+        run: python scripts/download_data.py
+      - name: Walk-forward backtest
+        run: python scripts/backtest.py --start ${{ inputs.start }} --end ${{ inputs.end }} --refit-every ${{ inputs.refit_every }}
+      - name: Train through cutoff
+        run: python scripts/train.py --cutoff ${{ inputs.end }}
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: soccer-predictor-backtest
+          if-no-files-found: warn
+          path: |
+            soccer-predictor/artifacts/
+            soccer-predictor/models/bundle.json
+            soccer-predictor/data/raw/manifest.json
