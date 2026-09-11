@@ -288,6 +288,46 @@ def test_frozen_rows_do_not_change_or_rescore_after_cutoff(capture):
     assert first.equals(second) and calls == [2] and report['preserved_pregame_rows'] == 2
 
 
+@pytest.mark.parametrize('transition', ['Live', 'Final', 'earlier_start'])
+def test_early_ineligible_transition_cannot_erase_a_published_pick(capture, transition):
+    folder, output, calls, _ = capture
+    first, _, out = daily.predict(folder, output)
+    original_bytes = (out/'predictions.parquet').read_bytes()
+    at = DATE+'T19:42:00+00:00'  # Eight minutes before the stored T-10.
+    advance(folder, out, at)
+    official = json.loads((folder/'official.json').read_bytes())['payload']
+    game = official['dates'][0]['games'][0]
+    if transition == 'earlier_start':
+        game['gameDate'] = DATE+'T19:49:00Z'
+        bbs = json.loads((folder/'bbs.json').read_bytes())['payload']
+        bbs['data'][0]['kickoff_utc'] = game['gameDate']
+        (folder/'bbs.json').write_bytes(encode(envelope(bbs, at)))
+    else:
+        game['status'].update(abstractGameState=transition, detailedState=transition)
+    (folder/'official.json').write_bytes(encode(envelope(official, at))); seal(folder, at)
+    with pytest.raises(ValueError, match='unexpected published prediction removal: 1'):
+        daily.predict(folder, output)
+    assert (out/'predictions.parquet').read_bytes() == original_bytes
+    # The failed attempt cannot invent a lock or overwrite history. A later
+    # capture can preserve the original bytes using the existing stored T-10.
+    advance(folder, out, DATE+'T19:51:00+00:00')
+    after, report, _ = daily.predict(folder, output)
+    assert after.equals(first) and report['preserved_pregame_rows'] == 2
+
+
+@pytest.mark.parametrize('reason', ['Postponed', 'Cancelled'])
+def test_explicit_pre_cutoff_withdrawal_remains_possible(capture, reason):
+    folder, output, _, _ = capture
+    _, _, out = daily.predict(folder, output); advance(folder, out)
+    official = json.loads((folder/'official.json').read_bytes())['payload']
+    official['dates'][0]['games'][0]['status']['detailedState'] = reason
+    (folder/'official.json').write_bytes(encode(envelope(official, DATE+'T10:01:00+00:00')))
+    seal(folder, DATE+'T10:01:00+00:00')
+    table, report, _ = daily.predict(folder, output)
+    assert table['game_id'].to_pylist() == ['2']
+    assert report['withdrawn_games'] == [{'date': DATE, 'game_id': '1', 'reason': reason}]
+
+
 def test_stale_previous_and_unbound_cache_fail_before_inference(capture):
     folder, output, calls, _ = capture
     _, _, out = daily.predict(folder, output); advance(folder, out, DATE+'T09:59:00+00:00')

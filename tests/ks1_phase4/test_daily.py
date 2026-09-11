@@ -190,6 +190,36 @@ def test_partition_parquet_is_readable_by_default_pandas_reader(tmp_path):
     assert pd.read_parquet(p/'predictions.parquet').date.tolist() == ['2026-09-10']
 
 
+@pytest.mark.parametrize('fault', ['missing', 'p_home', 'p_raw', 'as_of', 'commence_time', 'home_lineup_ids'])
+def test_publication_preflight_rejects_frozen_changes_before_any_writes(tmp_path, monkeypatch, fault):
+    from ks1.platt import raw_model_version
+    for k, v in {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': 'KirtKurt/parlay-platform',
+                 'GITHUB_REF': 'refs/heads/main', 'GITHUB_EVENT_NAME': 'schedule',
+                 'GITHUB_WORKFLOW_REF': 'KirtKurt/parlay-platform/.github/workflows/mlb-research-ingestion.yml@refs/heads/main'}.items():
+        monkeypatch.setenv(k, v)
+    original = {'date': '2026-09-10', 'game_id': '1', 'as_of': '2026-09-10T10:00:00Z',
+                'commence_time': '2026-09-10T20:00:00Z', 'p_home': .55, 'p_raw': .55,
+                'model_version': raw_model_version(), 'status': 'confirmed_lineups', 'home_lineup_ids': '[1,2]'}
+    old = parquet_bytes(pa.Table.from_pylist([original], schema=SCHEMA))
+    changed = dict(original)
+    if fault in ('p_home', 'p_raw'): changed[fault] = .6
+    if fault == 'as_of': changed[fault] = '2026-09-10T11:00:00Z'
+    if fault == 'commence_time': changed[fault] = '2026-09-10T21:00:00Z'
+    if fault == 'home_lineup_ids': changed[fault] = '[2,1]'
+    table = pa.Table.from_pylist([] if fault == 'missing' else [changed], schema=SCHEMA)
+    body = parquet_bytes(table); (tmp_path/'predictions.parquet').write_bytes(body)
+    for name in ('odds_cache.parquet', 'crosswalk.json', 'lineup_cache.json'):
+        (tmp_path/name).write_bytes(b'new sidecar must not be written')
+    store = MemoryS3(); key = PREFIX+'date=2026-09-10/predictions.parquet'
+    store.objects[key] = old
+    report = {'date': '2026-09-10', 'as_of': '2026-09-10T20:01:00Z',
+              'parquet_sha256': hashlib.sha256(body).hexdigest(),
+              'source_capture': {'previous_etag': hashlib.sha256(old).hexdigest()}}
+    with pytest.raises(ValueError, match='changed or missing frozen prediction'):
+        publish(store, 'test', table, report, tmp_path)
+    assert store.writes == [] and store.objects[key] == old
+
+
 def test_existing_workflow_has_one_hourly_schedule_and_no_pr_publication():
     path = Path(__file__).resolve().parents[2]/'.github/workflows/mlb-research-ingestion.yml'
     workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
