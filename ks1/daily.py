@@ -20,7 +20,7 @@ from ks1.features import Features, day, utc
 from ks1.inventory import encode
 from ks1.poisson import home_probability, predict_exported
 from ks1.publish import parquet_bytes
-from ks1.refresh import change_reason, fingerprint, observe
+from ks1.refresh import change_reason, fingerprint, observe, pregame_status
 from ks1.table import american, team_identity
 
 PREFIX = 'mlb/ks1/predictions-v1/'
@@ -297,8 +297,7 @@ def predict(folder, output):
         pk, start = str(game['gamePk']), utc(game['gameDate'])
         if pk in frozen_ids:
             continue
-        if (game['status'].get('abstractGameState') != 'Preview'
-                or game['status'].get('detailedState') in ('Postponed', 'Cancelled')
+        if (not pregame_status(game.get('status'))
                 or utc(as_of) > start-timedelta(minutes=10)):
             exclusions.append({'game_id': pk, 'reason': 'not_scheduled_before_T10'})
             if game['status'].get('detailedState') in ('Postponed', 'Cancelled'):
