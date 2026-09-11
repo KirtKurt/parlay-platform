@@ -11,6 +11,7 @@ import { normalizeRepoPath } from './publication.js';
 import { isPublishableScope } from './publication-policy.js';
 import { assertMainAncestor } from './publication-git-guard.js';
 import { cancelPublication } from './publication-decision.js';
+import { markPublicationCancellationPending } from './publication-cancellation.js';
 import { stopExecution } from './ecs-job.js';
 import { createBrowserAuth } from './browser-auth.js';
 
@@ -103,21 +104,7 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
         if (!cancellableStatus) return send(409, { error: 'job_not_cancellable' });
         if (publicationVisible && !cancelPublication(config.dataDir, id)) return send(409, { error: 'publication_merge_already_committed' });
         queue.cancel(id);
-        if (publicationVisible) {
-          const pending = store.owned(id, actor.id);
-          if (['merged', 'merge_conflict', 'cancelled'].includes(pending?.publicationState)) {
-            return send(202, { job: publicJob(pending) });
-          }
-          // Accepting the durable cancellation decision is not proof that an
-          // already-visible GitHub PR was closed rather than concurrently merged.
-          // Keep the UI/state pending until the trusted publisher confirms the
-          // remote outcome and emits a terminal cancelled or merge_conflict receipt.
-          pending.status = pending.pullRequest ? 'published' : 'awaiting_publication';
-          pending.publicationState = 'cancellation_pending';
-          pending.error = 'publication_cancellation_pending_confirmation';
-          pending.cancelRequested = true;
-          store.save(pending);
-        }
+        if (publicationVisible) markPublicationCancellationPending(store, id, actor.id);
         return send(202, { job: publicJob(store.owned(id, actor.id)) });
       }
       if (request.method === 'POST' && action === 'continue') {
