@@ -217,3 +217,160 @@ def test_focus_scan_must_use_full_filtered_evidence_not_prompt_tail() -> None:
     filtered = _filter_superseded_evidence(early_blocker + "\n" + late_large_report)
     assert next_focus_domain(filtered, []) == "challenger_model"
     assert next_focus_domain(filtered[-28000:], []) is None
+
+
+# Issue #781 acceptance evidence. These tests intentionally expose current
+# defects; do not mark them xfail or merge a failing controller contract.
+# Only external I/O is substituted. Production validation and run() stay real.
+
+
+def _acceptance_task(title: str, objective: str) -> dict:
+    value = _task(title, objective, "Report read-only metrics.")
+    value["likelyFiles"] = ["hello_world/mlb_metric_diagnostics.py"]
+    value["evidenceBasis"] = ["Synthetic offline fixture; not production evidence."]
+    return value
+
+
+def _acceptance_response(task) -> dict:
+    return {
+        "ok": True,
+        "mode": "engineering_plan",
+        "text": task if isinstance(task, str) else json.dumps(task),
+        "routeId": "offline-fixture",
+        "decisionAuthority": "PLANNING_ONLY",
+        "bedrockAvailable": True,
+    }
+
+
+def _offline_cycle(monkeypatch, tmp_path, replies, *, evidence="", history=None):
+    import copy
+    import engineering_agent.runtime as runtime
+
+    prompts = []
+    pending = iter(copy.deepcopy(replies))
+    monkeypatch.setattr(runtime, "load_decision_history", lambda: copy.deepcopy(history or {"decisions": []}))
+    monkeypatch.setattr(runtime, "_function_name", lambda *_: "offline-fixture-only")
+
+    def invoke(_function_name, prompt):
+        prompts.append(json.loads(prompt))
+        try:
+            return next(pending)
+        except StopIteration:
+            raise AssertionError("controller exceeded the supplied offline attempt sequence") from None
+
+    monkeypatch.setattr(runtime, "_invoke", invoke)
+    evidence_path = tmp_path / "evidence.jsonl"
+    evidence_path.write_text(evidence)
+    kwargs = {
+        "evidence_path": evidence_path,
+        "output_path": tmp_path / "next-task.json",
+        "response_path": tmp_path / "response.json",
+        "attempts_path": tmp_path / "attempts.json",
+        "stack_name": "offline-no-aws",
+        "logical_id": "offline-no-aws",
+        "max_attempts": 3,
+    }
+    return runtime, kwargs, prompts
+
+
+@pytest.mark.parametrize("returned_domain", ["deployment_identity", "other"])
+def test_781_failed_requested_domain_is_exhausted_even_for_wrong_or_malformed_reply(returned_domain):
+    evidence = "CALIBRATION_ERROR_TOO_HIGH INSUFFICIENT_OBSERVED_TEAM_CONTEXT_TRAIN"
+    rejected = [{
+        "title": "Unusable fixture proposal",
+        "domain": returned_domain,
+        "requiredFocusDomain": "calibration",
+        "reason": "wrong-domain or malformed response",
+    }]
+    assert next_focus_domain(evidence, rejected) == "challenger_model"
+
+
+def test_781_unconstrained_fallback_cannot_accept_a_rejected_domain(monkeypatch, tmp_path):
+    first = _acceptance_task("Assess Brier bins", "Read-only diagnostic counts.")
+    first["safetyReceipts"].remove("no_secret_mutation")
+    second = _acceptance_task("Inspect calibration error histogram", "Read-only histogram totals.")
+    eligible = _acceptance_task("Summarize residual bins", "Read-only numeric summaries.")
+    assert classify_task_domain(first) == classify_task_domain(second) == "calibration"
+    assert classify_task_domain(eligible) == "other"
+    runtime, kwargs, prompts = _offline_cycle(
+        monkeypatch, tmp_path,
+        [_acceptance_response(t) for t in (first, second, eligible)],
+        evidence="CALIBRATION_ERROR_TOO_HIGH",
+    )
+    result = runtime.run(**kwargs)
+    assert result["title"] == eligible["title"], "prompt exclusions must also govern acceptance"
+    assert result["plannerAttempt"] == 3
+    assert "calibration" in prompts[1]["excludedFocusDomains"]
+    ledger = json.loads(kwargs["attempts_path"].read_text())
+    assert "rejected" in ledger[1] and ledger[2]["accepted"] is True
+
+
+def test_781_post_normalization_domain_failure_is_recorded_and_replanned(monkeypatch, tmp_path):
+    closed = _acceptance_task("Previously closed deployment identity probe", "Read-only deployment identity report.")
+    filtered = _acceptance_task("Inspect membership counts", "Read-only sample summaries.")
+    # No path is read or written. Removing this non-allowlisted fixture path
+    # changes the classifier result and must follow the normal rejection path.
+    filtered["likelyFiles"] = ["outside_allowlist/clean_cohort_admission_quarantine.txt"]
+    eligible = _acceptance_task("Summarize residual bins", "Read-only numeric summaries.")
+    assert classify_task_domain(filtered) == "clean_cohort"
+    history = {"decisions": [{"title": closed["title"], "status": "COMPLETED"}]}
+    runtime, kwargs, _ = _offline_cycle(
+        monkeypatch, tmp_path,
+        [_acceptance_response(t) for t in (closed, filtered, eligible)],
+        evidence="insufficient_clean_rows", history=history,
+    )
+    result = runtime.run(**kwargs)
+    assert result["title"] == eligible["title"]
+    ledger = json.loads(kwargs["attempts_path"].read_text())
+    assert len(ledger) == 3 and "rejected" in ledger[1]
+    assert ledger[2]["accepted"] is True
+
+
+@pytest.mark.parametrize("receipt", [
+    "no_direct_production_deploy", "no_main_branch_write", "no_model_promotion",
+    "no_secret_mutation", "no_other_sport_change",
+])
+def test_781_missing_authority_receipt_never_publishes_a_task(monkeypatch, tmp_path, receipt):
+    proposed = _acceptance_task("Read-only health counters", "Record heartbeat totals without writes.")
+    proposed["safetyReceipts"].remove(receipt)
+    runtime, kwargs, prompts = _offline_cycle(
+        monkeypatch, tmp_path, [_acceptance_response(proposed) for _ in range(3)],
+    )
+    with pytest.raises(RuntimeError, match="no acceptable planner task"):
+        runtime.run(**kwargs)
+    assert not kwargs["output_path"].exists()
+    ledger = json.loads(kwargs["attempts_path"].read_text())
+    assert len(prompts) == len(ledger) == 3
+    assert receipt in ledger[0]["rejected"]
+    assert all("accepted" not in attempt for attempt in ledger)
+
+
+def test_781_exhaustion_remains_bounded_and_never_fabricates_an_accepted_task(monkeypatch, tmp_path):
+    evidence = (
+        "health failed MISSING_T10_SNAPSHOTS CALIBRATION_ERROR_TOO_HIGH "
+        "INSUFFICIENT_OBSERVED_TEAM_CONTEXT_TRAIN INSUFFICIENT_CLEAN_ROWS"
+    )
+    runtime, kwargs, prompts = _offline_cycle(
+        monkeypatch, tmp_path, [_acceptance_response("not-json") for _ in range(6)],
+        evidence=evidence,
+    )
+    kwargs["max_attempts"] = 999
+    with pytest.raises(RuntimeError, match="no acceptable planner task after 6 bounded attempts"):
+        runtime.run(**kwargs)
+    assert len(prompts) == 6
+    assert not kwargs["output_path"].exists()
+    ledger = json.loads(kwargs["attempts_path"].read_text())
+    assert len(ledger) == 6
+    assert all("rejected" in attempt and "accepted" not in attempt for attempt in ledger)
+
+
+def test_781_distinct_valid_task_keeps_all_five_authority_restrictions(monkeypatch, tmp_path):
+    task = _acceptance_task("Summarize residual bins", "Read-only numeric summaries.")
+    runtime, kwargs, prompts = _offline_cycle(monkeypatch, tmp_path, [_acceptance_response(task)])
+    accepted = runtime.run(**kwargs)
+    assert accepted["plannerAttempt"] == 1 and len(prompts) == 1
+    assert accepted["runtimeDecisionAuthority"] == "PLANNING_ONLY"
+    for key in ("noDirectProductionDeploy", "noMainBranchWrite", "noModelPromotion", "noSecretMutation", "noOtherSportChange"):
+        assert accepted[key] is True
+    ledger = json.loads(kwargs["attempts_path"].read_text())
+    assert len(ledger) == 1 and ledger[0]["accepted"] is True

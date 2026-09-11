@@ -217,10 +217,16 @@ def prioritized_focus_domains(evidence: str) -> list[str]:
 
 def _rejected_domains(rejected: list[dict[str, Any]]) -> set[str]:
     return {
-        str(item.get("domain"))
+        str(item.get(field))
         for item in rejected
-        if str(item.get("domain") or "") in FOCUS_DOMAINS
+        for field in ("domain", "requiredFocusDomain")
+        if str(item.get(field) or "") in FOCUS_DOMAINS
     }
+
+
+def excluded_focus_domains(rejected: list[dict[str, Any]]) -> set[str]:
+    """Use the same exclusions in the prompt and the acceptance validator."""
+    return {"deployment_identity", *_rejected_domains(rejected)}
 
 
 def next_focus_domain(
@@ -262,16 +268,7 @@ def _planner_payload(
     required_receipts = [
         str(x) for x in POLICY.get("required_negative_authority_receipts") or []
     ]
-    excluded_domains = sorted(
-        {
-            "deployment_identity",
-            *(
-                str(item.get("domain"))
-                for item in rejected
-                if str(item.get("domain") or "") in FOCUS_DOMAINS
-            ),
-        }
-    )
+    excluded_domains = sorted(excluded_focus_domains(rejected))
     focus_instruction = ""
     if required_focus_domain:
         focus_instruction = (
@@ -361,9 +358,12 @@ def _reject_cycle_repeat(title: str, rejected: list[dict[str, Any]]) -> None:
 
 
 def _validate_focus_domain(
-    task: dict[str, Any], required_focus_domain: str | None
+    task: dict[str, Any], required_focus_domain: str | None,
+    *, excluded_domains: set[str] | None = None,
 ) -> str:
     domain = classify_task_domain(task)
+    if excluded_domains is not None and domain in excluded_domains:
+        raise ValueError("task belongs to excluded focus domain: " + domain)
     if required_focus_domain and domain != required_focus_domain:
         raise ValueError(
             "task does not satisfy required focus domain: "
@@ -411,6 +411,7 @@ def run(
             "requestedAttemptBudget": max_attempts,
             "promptBytes": prompt_bytes,
             "requiredFocusDomain": required_focus_domain,
+            "excludedFocusDomains": sorted(excluded_focus_domains(rejected)),
             "ok": response.get("ok"),
             "mode": response.get("mode"),
             "routeId": response.get("routeId"),
@@ -422,7 +423,8 @@ def run(
             reason = "planner Lambda failed: " + json.dumps(response, default=str)
             summary["rejected"] = reason
             attempts.append(summary)
-            rejected.append({"title": "<lambda-failure>", "domain": "other", "reason": reason[:1000]})
+            rejected.append({"title": "<lambda-failure>", "domain": "other",
+                             "requiredFocusDomain": required_focus_domain, "reason": reason[:1000]})
             continue
 
         text = str(response.get("text") or "").strip()
@@ -430,7 +432,8 @@ def run(
             reason = "planner Lambda returned empty task text"
             summary["rejected"] = reason
             attempts.append(summary)
-            rejected.append({"title": "<empty>", "domain": "other", "reason": reason})
+            rejected.append({"title": "<empty>", "domain": "other",
+                             "requiredFocusDomain": required_focus_domain, "reason": reason})
             continue
 
         proposed_title = "<unparsed>"
@@ -440,17 +443,23 @@ def run(
             proposed_title = str(parsed.get("title") or "<untitled>")
             proposal_domain = classify_task_domain(parsed)
             _reject_cycle_repeat(proposed_title, rejected)
-            _validate_focus_domain(parsed, required_focus_domain)
+            exclusions = excluded_focus_domains(rejected)
+            _validate_focus_domain(parsed, required_focus_domain, excluded_domains=exclusions)
             validate_against_history(parsed, history)
             task = validate(parsed, decision_history=history)
+            # Normalization can remove path-derived domain signals. Any resulting
+            # rejection must be retained and must not escape the bounded loop.
+            task["focusDomain"] = _validate_focus_domain(
+                task, required_focus_domain, excluded_domains=exclusions
+            )
         except Exception as exc:
             reason = f"{type(exc).__name__}: {exc}"
             summary.update({"title": proposed_title, "domain": proposal_domain, "rejected": reason})
             attempts.append(summary)
-            rejected.append({"title": proposed_title, "domain": proposal_domain, "reason": reason[:1000]})
+            rejected.append({"title": proposed_title, "domain": proposal_domain,
+                             "requiredFocusDomain": required_focus_domain, "reason": reason[:1000]})
             continue
 
-        task["focusDomain"] = _validate_focus_domain(task, required_focus_domain)
         task["plannerRoute"] = {
             key: response.get(key)
             for key in ("routeId", "region", "modelId", "endpointFamily")
