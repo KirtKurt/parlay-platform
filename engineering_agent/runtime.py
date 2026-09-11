@@ -237,6 +237,21 @@ def next_focus_domain(
     return ranked[0]
 
 
+def planner_attempt_budget(requested: int, evidence: str) -> int:
+    """Bound retries while allowing one pass across every evidenced focus domain.
+
+    The workflow historically requested three attempts even when the evidence packet
+    contained three or four independent focus domains. An initial unconstrained
+    proposal can consume one slot, so a three-attempt budget can terminate before a
+    still-actionable domain is reached. Expand only to the number needed to cover the
+    evidenced domains plus that initial proposal, capped at the five-domain controller
+    contract. This does not weaken any task validator or authority gate.
+    """
+    requested_budget = max(1, int(requested))
+    evidenced_budget = len(prioritized_focus_domains(evidence)) + 1
+    return min(len(FOCUS_DOMAINS), max(requested_budget, evidenced_budget))
+
+
 def _planner_payload(
     evidence: str,
     history: dict[str, Any],
@@ -373,8 +388,9 @@ def run(
     function_name = _function_name(stack_name, logical_id)
     rejected: list[dict[str, Any]] = []
     attempts: list[dict[str, Any]] = []
+    effective_max_attempts = planner_attempt_budget(max_attempts, focus_evidence)
 
-    for attempt in range(1, max(1, max_attempts) + 1):
+    for attempt in range(1, effective_max_attempts + 1):
         required_focus_domain = (
             None if attempt == 1 else next_focus_domain(focus_evidence, rejected)
         )
@@ -390,6 +406,8 @@ def run(
         response = _invoke(function_name, prompt)
         summary: dict[str, Any] = {
             "attempt": attempt,
+            "attemptBudget": effective_max_attempts,
+            "requestedAttemptBudget": max_attempts,
             "promptBytes": prompt_bytes,
             "requiredFocusDomain": required_focus_domain,
             "ok": response.get("ok"),
@@ -439,6 +457,7 @@ def run(
         task["runtimeDecisionAuthority"] = response.get("decisionAuthority")
         task["bedrockAvailable"] = response.get("bedrockAvailable")
         task["plannerAttempt"] = attempt
+        task["plannerAttemptBudget"] = effective_max_attempts
         task["rejectedProposalsThisCycle"] = rejected
         output_path.write_text(
             json.dumps(task, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -456,7 +475,10 @@ def run(
     attempts_path.write_text(
         json.dumps(attempts, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    raise RuntimeError(f"no acceptable planner task after {max_attempts} bounded attempts")
+    raise RuntimeError(
+        f"no acceptable planner task after {effective_max_attempts} bounded attempts "
+        f"(requested={max_attempts})"
+    )
 
 
 def main() -> int:
