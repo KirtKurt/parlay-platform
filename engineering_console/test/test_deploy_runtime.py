@@ -42,4 +42,40 @@ class DeploymentBoundaryTest(unittest.TestCase):
         for bad in [dict(safe, IpPermissions=[{}]), {'IpPermissionsEgress': [{'IpProtocol': '-1'}]}, {'IpPermissionsEgress': [{'IpProtocol': 'tcp', 'FromPort': 443, 'ToPort': 443, 'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}]}]:
             with self.assertRaises(ValueError): deploy.validate_job_egress(bad)
 
+    def test_trusted_task_roles_must_be_distinct(self):
+        cfg = {
+            'ControllerTaskRoleArn': 'arn:aws:iam::123456789012:role/controller',
+            'BrokerTaskRoleArn': 'arn:aws:iam::123456789012:role/broker',
+            'PublisherTaskRoleArn': 'arn:aws:iam::123456789012:role/publisher'
+        }
+        deploy.validate_trusted_task_roles(cfg)
+        for key in deploy.TRUSTED_TASK_ROLE_KEYS:
+            bad = dict(cfg)
+            bad[key] = cfg['ControllerTaskRoleArn']
+            if len(set(bad.values())) == 3:
+                continue
+            with self.assertRaises(ValueError): deploy.validate_trusted_task_roles(bad)
+        with self.assertRaises(ValueError): deploy.validate_trusted_task_roles({**cfg, 'PublisherTaskRoleArn': ''})
+
+    def test_recovery_ready_requires_one_complete_identity(self):
+        source = 'a' * 40
+        ready = {
+            'recoveryReady': True,
+            'source': source,
+            'jobId': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            'executionId': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            'executionTask': 'arn:aws:ecs:us-east-1:123456789012:task/cluster/task'
+        }
+        self.assertEqual(deploy.select_recovery_ready([ready], source), ready)
+        self.assertIsNone(deploy.select_recovery_ready([], source))
+        with self.assertRaises(ValueError): deploy.select_recovery_ready([ready, dict(ready)], source)
+        with self.assertRaises(ValueError): deploy.select_recovery_ready([{**ready, 'executionId': 'not-a-uuid'}], source)
+
+    def test_recovery_execution_must_be_unique(self):
+        expected = 'arn:aws:ecs:region:acct:task/one'
+        deploy.require_single_execution_task([expected], expected)
+        deploy.require_single_execution_task([expected, expected], expected)
+        for observed in [[], [expected, 'arn:aws:ecs:region:acct:task/two']]:
+            with self.assertRaises(ValueError): deploy.require_single_execution_task(observed, expected)
+
 if __name__ == '__main__': unittest.main()
