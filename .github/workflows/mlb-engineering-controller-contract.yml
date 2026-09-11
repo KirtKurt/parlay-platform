@@ -9,6 +9,7 @@ on:
       - 'tests/unit/test_mlb_engineering_evidence.py'
       - 'tests/unit/test_mlb_engineering_evidence_freshness.py'
       - 'tests/unit/test_mlb_engineering_outcome.py'
+      - 'tests/unit/test_mlb_engineering_feature_pipeline_focus.py'
       - '.github/workflows/mlb-engineering-planner.yml'
       - '.github/workflows/mlb-engineering-controller-contract.yml'
   push:
@@ -19,6 +20,7 @@ on:
       - 'tests/unit/test_mlb_engineering_evidence.py'
       - 'tests/unit/test_mlb_engineering_evidence_freshness.py'
       - 'tests/unit/test_mlb_engineering_outcome.py'
+      - 'tests/unit/test_mlb_engineering_feature_pipeline_focus.py'
       - '.github/workflows/mlb-engineering-planner.yml'
       - '.github/workflows/mlb-engineering-controller-contract.yml'
   workflow_dispatch:
@@ -58,4 +60,5 @@ jobs:
             tests/unit/test_mlb_engineering_runtime.py \
             tests/unit/test_mlb_engineering_evidence.py \
             tests/unit/test_mlb_engineering_evidence_freshness.py \
-            tests/unit/test_mlb_engineering_outcome.py
+            tests/unit/test_mlb_engineering_outcome.py \
+            tests/unit/test_mlb_engineering_feature_pipeline_focus.py
