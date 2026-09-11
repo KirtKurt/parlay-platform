@@ -9,6 +9,12 @@ const JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
 const MAX_JOB_RECORD_BYTES = 16 * 1024 * 1024;
 const WRITER = fileURLToPath(new URL('../scripts/store-write.mjs', import.meta.url));
 
+function recoverablePersistedInstruction(instruction) {
+  if (typeof instruction !== 'string') return false;
+  if (/\[REDACTED(?:_[A-Z_]+)?\]/.test(instruction)) return false;
+  return sanitizeValue(instruction) === instruction;
+}
+
 export class JobStore {
   constructor(directory) {
     this.directory = path.resolve(directory);
@@ -66,9 +72,7 @@ export class JobStore {
       // has been lost.
       persistedJob.instructionRecoverable = persistedJob.instruction === runtimeInstruction;
     } else if (typeof persistedJob.instructionRecoverable !== 'boolean') {
-      // Legacy records predate this marker. Treat them as recoverable only when
-      // durable sanitization is demonstrably a no-op on the stored instruction.
-      persistedJob.instructionRecoverable = sanitizeValue(persistedJob.instruction) === persistedJob.instruction;
+      persistedJob.instructionRecoverable = recoverablePersistedInstruction(persistedJob.instruction);
     }
     const jobBytes = Buffer.byteLength(JSON.stringify(persistedJob));
     if (jobBytes > MAX_JOB_RECORD_BYTES) {
@@ -161,7 +165,11 @@ export class JobStore {
     catch (error) { if (error.code === 'EINVAL') return null; throw error; }
     try {
       const job = JSON.parse(fs.readFileSync(target, 'utf8'));
-      this.snapshots.set(job, structuredClone(job));
+      const durableSnapshot = structuredClone(job);
+      if (typeof job.instructionRecoverable !== 'boolean') {
+        job.instructionRecoverable = recoverablePersistedInstruction(job.instruction);
+      }
+      this.snapshots.set(job, durableSnapshot);
       return job;
     }
     catch (error) { if (error.code === 'ENOENT') return null; throw error; }
