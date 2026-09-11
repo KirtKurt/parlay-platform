@@ -6,6 +6,7 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
+HOST_PATH="$PATH"
 
 if ! command -v codex >/dev/null 2>&1; then
   echo "codex CLI is not installed" >&2
@@ -29,6 +30,12 @@ git fetch --no-tags origin main
 git checkout --detach "$BASE_SHA"
 git checkout -b "$BRANCH"
 
+# actions/checkout persists a repository-scoped credential in local git config.
+# Remove it before Codex starts. Merely dropping GITHUB_TOKEN from the child
+# environment is insufficient because git can otherwise authenticate through
+# that persisted extraheader and publish before independent validation.
+git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
+
 PROMPT=$(cat <<'EOF'
 You are the bounded Inqsi ARB coding worker in KirtKurt/parlay-platform.
 
@@ -38,7 +45,7 @@ STRICT WRITE SCOPE:
 - inqsi-arb/**
 - .github/workflows/inqsi-arb-*
 
-Do not modify anything else. Do not modify MLB, Tennis, Soccer, KS1, engineering_console, shared prediction authority, credentials, or unrelated workflows. Do not place wagers or add wager-placement capability. Do not weaken fail-closed settlement, identity, freshness, security, arbitrage proof, or no-wager protections. Do not merge or deploy.
+Do not modify anything else. Do not modify MLB, Tennis, Soccer, KS1, engineering_console, shared prediction authority, credentials, or unrelated workflows. Do not place wagers or add wager-placement capability. Do not weaken fail-closed settlement, identity, freshness, security, arbitrage proof, or no-wager protections. Do not merge or deploy. Do not push, open a pull request, alter remotes, or publish repository changes. The supervising wrapper alone may publish after independent validation.
 
 Before finishing, run the relevant ARB tests. Keep the repository building. If the requested backlog item depends on an unavailable credential or external entitlement, implement only the independent safe portion and document the blocker in an ARB-scoped status/backlog file.
 EOF
@@ -46,27 +53,55 @@ EOF
 
 # The workflow prepares the ephemeral Ubuntu runner so Codex can use its
 # current workspace-write sandbox. Keep the coding worker non-interactive and
-# sandboxed; independent path validation and tests run again after Codex exits.
-codex --ask-for-approval never exec --sandbox workspace-write "$PROMPT"
+# sandboxed. Do not pass GitHub/AWS credentials to the coding subprocess.
+env \
+  -u GITHUB_TOKEN -u GH_TOKEN \
+  -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+  -u AWS_REGION -u AWS_DEFAULT_REGION -u AWS_PROFILE \
+  PATH="$HOST_PATH" \
+  codex --ask-for-approval never exec --sandbox workspace-write "$PROMPT"
 
-mapfile -t CHANGED < <(git status --porcelain=v1 | sed -E 's/^.. //' | sed -E 's/.* -> //' | sed '/^$/d')
+# Codex may leave worktree edits, staged edits, or local commits. Treat all
+# repository differences from the controller-selected base as candidate output.
+mapfile -t CHANGED < <(
+  {
+    git diff --name-only "$BASE_SHA"...HEAD
+    git diff --name-only
+    git diff --name-only --cached
+    git ls-files --others --exclude-standard
+  } | sed '/^$/d' | sort -u
+)
 if [[ ${#CHANGED[@]} -eq 0 ]]; then
   echo "Codex produced no repository changes" >&2
   exit 23
 fi
 
-for path in "${CHANGED[@]}"; do
-  case "$path" in
-    inqsi-arb/*|.github/workflows/inqsi-arb-*) ;;
-    *)
-      echo "scope violation: $path" >&2
-      git reset --hard "$BASE_SHA"
-      git clean -fd
-      exit 24
-      ;;
-  esac
-done
+validate_scope() {
+  local path
+  for path in "$@"; do
+    case "$path" in
+      inqsi-arb/*|.github/workflows/inqsi-arb-*) ;;
+      *)
+        echo "scope violation: $path" >&2
+        git reset --hard "$BASE_SHA"
+        git clean -fd
+        exit 24
+        ;;
+    esac
+  done
+}
+validate_scope "${CHANGED[@]}"
 
+# Normalize any Codex-created local commits back into uncommitted candidate
+# changes. This makes the wrapper the sole commit/publish authority and ensures
+# its independent validation covers the exact bytes that will be published.
+if [[ "$(git rev-parse HEAD)" != "$BASE_SHA" ]]; then
+  git reset --mixed "$BASE_SHA"
+fi
+
+# Restore the host toolchain path before independent validation. setup-python's
+# Python 3.11 location is required by SAM's PythonPipBuilder runtime check.
+export PATH="$HOST_PATH"
 python -m pytest -q inqsi-arb/tests
 
 if command -v sam >/dev/null 2>&1; then
@@ -74,25 +109,29 @@ if command -v sam >/dev/null 2>&1; then
   sam build --no-cached --template-file inqsi-arb/template.yaml
 fi
 
-mapfile -t FINAL_CHANGED < <(git status --porcelain=v1 | sed -E 's/^.. //' | sed -E 's/.* -> //' | sed '/^$/d')
-for path in "${FINAL_CHANGED[@]}"; do
-  case "$path" in
-    inqsi-arb/*|.github/workflows/inqsi-arb-*) ;;
-    *)
-      echo "post-test scope violation: $path" >&2
-      git reset --hard "$BASE_SHA"
-      git clean -fd
-      exit 25
-      ;;
-  esac
-done
+mapfile -t FINAL_CHANGED < <(
+  {
+    git diff --name-only
+    git diff --name-only --cached
+    git ls-files --others --exclude-standard
+  } | sed '/^$/d' | sort -u
+)
+if [[ ${#FINAL_CHANGED[@]} -eq 0 ]]; then
+  echo "No candidate changes remain after validation" >&2
+  exit 26
+fi
+validate_scope "${FINAL_CHANGED[@]}"
+
+# Only now restore GitHub authentication. Codex has exited and cannot use this
+# credential. gh configures git without exposing the token in a remote URL.
+gh auth setup-git >/dev/null
 
 git config user.name "inqsi-arb-aec[bot]"
 git config user.email "inqsi-arb-aec@users.noreply.github.com"
 git add -- 'inqsi-arb' '.github/workflows/inqsi-arb-'* 2>/dev/null || true
 if git diff --cached --quiet; then
   echo "No allowed changes staged" >&2
-  exit 26
+  exit 27
 fi
 
 git commit -m "ARB AEC: autonomous Codex increment"
@@ -103,6 +142,6 @@ PR_URL=$(gh pr create \
   --base main \
   --head "$BRANCH" \
   --title "ARB AEC: autonomous Codex increment" \
-  --body "Autonomous bounded Inqsi ARB engineering increment. Codex CLI was restricted to ARB-scoped paths, then the ARB test suite and available SAM validation/build were run before this draft PR was opened. No merge or deployment was performed by the coding worker.")
+  --body "Autonomous bounded Inqsi ARB engineering increment. Codex CLI was denied repository publication credentials and restricted to ARB-scoped paths. The supervising wrapper independently normalized the candidate, validated scope, reran the complete ARB test suite and available SAM validation/build, then committed and pushed these exact validated bytes before requesting this draft PR. No merge or deployment was performed by the coding worker.")
 
 echo "draft_pr=$PR_URL"
