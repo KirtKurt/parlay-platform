@@ -10,10 +10,10 @@ from provider import normalize_games
 from app import lambda_handler
 
 
-def test_two_way_arb_and_cent_reconciliation():
+def test_two_way_verified_arb_and_cent_reconciliation():
     row = scan_market(
         market_id="x", event="A @ B", market="h2h", bankroll=1000,
-        expected_outcomes=["A", "B"],
+        expected_outcomes=["A", "B"], rules_status="compatible",
         quotes=[
             {"outcome": "A", "book": "one", "american": 115},
             {"outcome": "A", "book": "two", "american": 105},
@@ -25,10 +25,10 @@ def test_two_way_arb_and_cent_reconciliation():
     assert row["minimum_profit"] > 0
 
 
-def test_three_way_arb():
+def test_three_way_verified_arb():
     row = scan_market(
         market_id="soccer", event="A v B", market="h2h_3_way", bankroll=500,
-        expected_outcomes=["A", "Draw", "B"],
+        expected_outcomes=["A", "Draw", "B"], rules_status="compatible",
         quotes=[
             {"outcome": "A", "book": "one", "decimal": 3.4},
             {"outcome": "Draw", "book": "two", "decimal": 3.6},
@@ -42,7 +42,7 @@ def test_three_way_arb():
 def test_incomplete_outcome_universe_rejected():
     row = scan_market(
         market_id="bad", event="A v B", market="h2h_3_way", bankroll=100,
-        expected_outcomes=["A", "Draw", "B"],
+        expected_outcomes=["A", "Draw", "B"], rules_status="compatible",
         quotes=[{"outcome": "A", "book": "one", "decimal": 3.0}, {"outcome": "B", "book": "two", "decimal": 3.0}],
     )
     assert row and not row["arb"]
@@ -56,6 +56,28 @@ def test_unknown_rules_never_labelled_arb():
         quotes=[{"outcome": "A", "book": "one", "decimal": 2.2}, {"outcome": "B", "book": "two", "decimal": 2.2}],
     )
     assert row and not row["arb"]
+    assert row["math_arb"] is True
+    assert row["validation"]["qualification_reason"] == "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
+
+
+def test_provider_identity_only_is_unverified_not_arb():
+    row = scan_market(
+        market_id="provider-only", event="A v B", market="h2h", bankroll=100,
+        expected_outcomes=["A", "B"], rules_status="provider_identity_only",
+        quotes=[{"outcome": "A", "book": "one", "decimal": 2.2}, {"outcome": "B", "book": "two", "decimal": 2.2}],
+    )
+    assert row and row["math_arb"] is True
+    assert row["arb"] is False
+    assert row["validation"]["rules_compatible"] is False
+
+
+def test_default_rules_are_fail_closed():
+    row = scan_market(
+        market_id="default-rules", event="A v B", market="h2h", bankroll=100,
+        expected_outcomes=["A", "B"],
+        quotes=[{"outcome": "A", "book": "one", "decimal": 2.2}, {"outcome": "B", "book": "two", "decimal": 2.2}],
+    )
+    assert row and row["math_arb"] is True and row["arb"] is False
 
 
 def test_normalizer_groups_opposing_spreads_together():
@@ -89,16 +111,18 @@ def test_api_health_does_not_claim_betting():
     assert result["statusCode"] == 200 and body["places_bets"] is False
 
 
-def test_scan_all_ranks_feasible_profit():
+def test_scan_all_separates_verified_from_unverified_math_arbs():
     payload = {"bankroll": 1000, "events": [
-        {"id": "a", "event": "A", "market": "x", "expected_outcomes": ["1", "2"], "quotes": [
+        {"id": "a", "event": "A", "market": "x", "rules_status": "compatible", "expected_outcomes": ["1", "2"], "quotes": [
             {"outcome": "1", "book": "b1", "decimal": 2.1}, {"outcome": "2", "book": "b2", "decimal": 2.1}]},
-        {"id": "b", "event": "B", "market": "x", "expected_outcomes": ["1", "2"], "quotes": [
+        {"id": "b", "event": "B", "market": "x", "rules_status": "unknown", "expected_outcomes": ["1", "2"], "quotes": [
             {"outcome": "1", "book": "b1", "decimal": 2.05}, {"outcome": "2", "book": "b2", "decimal": 2.05}]},
     ]}
     result = scan_all(payload)
-    assert result["n_arbs"] == 2
-    assert result["hits"][0]["minimum_profit"] >= result["hits"][1]["minimum_profit"]
+    assert result["n_arbs"] == 1
+    assert result["n_detected_unverified"] == 1
+    assert result["hits"][0]["market_id"] == "a"
+    assert result["detected_unverified"][0]["market_id"] == "b"
 
 
 def test_american_conversion():
