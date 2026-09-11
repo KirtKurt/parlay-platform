@@ -7,17 +7,19 @@ from typing import Any
 
 # Operational snapshots from these reports describe the fundamentals scoring /
 # provenance implementation that existed when the report was observed. Once a
-# newer reviewed fundamentals repair lands on main, an older snapshot must not
-# continue to authorize new engineering work as though the repair never happened.
+# newer reviewed fundamentals source change lands on main, an older snapshot
+# must not continue to authorize new engineering work as though that code change
+# never happened.
 _FUNDAMENTALS_RUNTIME_REPORT_TOKENS = (
     "mlb_scoring_guard_status",
     "mlb_scoring_fix_post_deploy",
     "mlb_fundamentals_provenance_diagnostic",
 )
 
-# Require both an action verb and an MLB-fundamentals subject token. This avoids
-# treating planner/evidence documentation commits as proof that an operational
-# defect was repaired.
+# Recent-main history remains a backwards-compatible signal when an evidence
+# packet predates the path-specific source-history receipt. Require both an
+# action verb and an MLB-fundamentals subject token so planner/documentation
+# commits alone do not look like an operational repair.
 _REPAIR_ACTION_TOKENS = (
     " repair",
     " fix",
@@ -70,26 +72,44 @@ def _is_fundamentals_repair_subject(subject: str) -> bool:
     )
 
 
+def _commit_lines(content: Any):
+    for commit_line in str(content or "").splitlines():
+        parts = commit_line.split(" ", 2)
+        if len(parts) != 3:
+            continue
+        sha, timestamp, subject = parts
+        epoch = _parse_commit_epoch(timestamp)
+        if epoch is not None:
+            yield sha, epoch, subject
+
+
 def recent_fundamentals_repair_cutoff(evidence: str) -> float | None:
-    """Return the newest relevant main-history repair timestamp in a JSONL packet."""
+    """Return the newest source/repair timestamp represented by the packet.
+
+    New packets include ``operational_source_history`` derived from full Git
+    history for the exact MLB fundamentals/scoring paths. This makes the cutoff
+    durable even when noisy automated main commits push the original repair out
+    of the short recent-history window. Older packets can still use a narrowly
+    classified recent-main repair subject.
+    """
     latest: float | None = None
     for line in evidence.splitlines():
         try:
             item = json.loads(line)
         except Exception:
             continue
-        if item.get("kind") != "recent_main_history":
+        kind = item.get("kind")
+        if kind == "operational_source_history" and item.get("topic") == "mlb_fundamentals_runtime":
+            for _sha, epoch, _subject in _commit_lines(item.get("content")):
+                if latest is None or epoch > latest:
+                    latest = epoch
             continue
-        content = str(item.get("content") or "")
-        for commit_line in content.splitlines():
-            parts = commit_line.split(" ", 2)
-            if len(parts) != 3:
-                continue
-            _sha, timestamp, subject = parts
+        if kind != "recent_main_history":
+            continue
+        for _sha, epoch, subject in _commit_lines(item.get("content")):
             if not _is_fundamentals_repair_subject(subject):
                 continue
-            epoch = _parse_commit_epoch(timestamp)
-            if epoch is not None and (latest is None or epoch > latest):
+            if latest is None or epoch > latest:
                 latest = epoch
     return latest
 
@@ -107,13 +127,13 @@ def _hit_is_superseded(hit: Any, cutoff: float) -> bool:
 
 
 def filter_superseded_fundamentals_evidence(evidence: str) -> str:
-    """Remove only operational evidence made stale by a newer main repair.
+    """Remove only operational evidence made stale by newer source on main.
 
     The filter is fail-closed for task authority: an old runtime snapshot can no
-    longer authorize work after a relevant repair landed. A newer observation
-    after that repair remains visible and can prove the defect persists. This
-    function never changes source reports, predictions, ledgers, locks, models,
-    or production authority.
+    longer authorize work after relevant source changed. A newer observation
+    after that source change remains visible and can prove the defect persists.
+    This function never changes source reports, predictions, ledgers, locks,
+    models, calibration, or production authority.
     """
     cutoff = recent_fundamentals_repair_cutoff(evidence)
     if cutoff is None:
@@ -177,7 +197,7 @@ def filter_superseded_fundamentals_evidence(evidence: str) -> str:
                     "repairCutoffEpoch": cutoff,
                     "removedRuntimeReportCount": removed_reports,
                     "removedDerivedHitCount": removed_hits,
-                    "rule": "OLDER_THAN_OR_EQUAL_TO_NEWER_REVIEWED_MAIN_REPAIR",
+                    "rule": "OLDER_THAN_OR_EQUAL_TO_NEWER_MAIN_OPERATIONAL_SOURCE",
                     "readOnly": True,
                     "productionAuthorityChanged": False,
                 },
