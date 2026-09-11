@@ -40,6 +40,10 @@ def test_safe_source_and_test_increment_is_eligible(tmp_path):
 @pytest.mark.parametrize("path", [
     "inqsi-arb/ops/codex_cli_runner.sh",
     "inqsi-arb/template.yaml",
+    "inqsi-arb/src/release_identity.py",
+    "inqsi-arb/tests/test_release_identity.py",
+    "inqsi-arb/tests/test_codex_cli_runner_contract.py",
+    "inqsi-arb/tests/test_engineering_controller.py",
     ".github/workflows/inqsi-arb-deploy.yml",
     "arb_supervisor/promote.py",
     "README.md",
