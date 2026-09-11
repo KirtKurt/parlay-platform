@@ -35,6 +35,14 @@ export const sportVisuals: Record<SportSlug, SportVisual> = {
     accent: 'gold',
     description: 'NBA market board.'
   },
+  wnba: {
+    slug: 'wnba',
+    label: 'WNBA',
+    equipment: '🏀',
+    equipmentLabel: 'basketball',
+    accent: 'orange',
+    description: 'WNBA market board.'
+  },
   ncaam: {
     slug: 'ncaam',
     label: 'NCAAM',
@@ -128,72 +136,32 @@ export function getTeamVisual(name: string) {
 }
 
 export function SportEquipmentIcon({ slug, size = 'normal', showLabel = false }: { slug: SportSlug | string; size?: 'small' | 'normal' | 'large'; showLabel?: boolean }) {
-  const visual = sportVisuals[slug as SportSlug] ?? sportVisuals.nfl;
+  const fallback: SportVisual = {
+    slug: 'mlb',
+    label: String(slug || 'Sport').toUpperCase(),
+    equipment: '◆',
+    equipmentLabel: 'sport',
+    accent: 'blue',
+    description: 'Sports market board.'
+  };
+  const visual = sportVisuals[slug as SportSlug] || fallback;
   return (
-    <span className={`sport-equipment sport-equipment-${size} accent-${visual.accent}`} aria-label={`${visual.label} icon`} title={visual.label}>
-      <span className="sport-equipment-symbol">{visual.equipment}</span>
-      {showLabel && <strong>{visual.label}</strong>}
+    <span className={`sport-equipment sport-equipment-${size}`} aria-label={visual.equipmentLabel}>
+      <span aria-hidden="true">{visual.equipment}</span>
+      {showLabel ? <span>{visual.label}</span> : null}
     </span>
   );
 }
 
-export function SportIconStrip({ compact = false }: { compact?: boolean }) {
+export function SportVisualNav() {
   return (
-    <section className={`equipment-strip ${compact ? 'compact' : ''}`} aria-label="Sports available">
-      {sports.map((sport) => {
-        const visual = sportVisuals[sport.slug];
-        return (
-          <Link href={`/sports/${sport.slug}`} className={`equipment-card accent-${visual.accent}`} key={sport.slug} style={{ textDecoration: 'none' }} aria-label={`Open ${sport.label} board`}>
-            <SportEquipmentIcon slug={sport.slug} />
-            <strong>{sport.label}</strong>
-          </Link>
-        );
-      })}
-    </section>
-  );
-}
-
-export function TeamJerseyBadge({ teamName, abbr, tone, number, size = 'normal' }: { teamName?: string; abbr?: string; tone?: string; number?: string; size?: 'small' | 'normal' | 'large' }) {
-  const team = teamName ? getTeamVisual(teamName) : { abbr: abbr ?? 'SS', name: abbr ?? 'Team', tone: tone ?? 'blue', number: number ?? '00' };
-  return (
-    <span className={`jersey-badge jersey-${size} tone-${tone ?? team.tone}`} aria-label={`${team.abbr} team marker`} title={`${team.abbr} team marker`}>
-      <span className="jersey-collar" />
-      <b>{abbr ?? team.abbr}</b>
-      <small>{number ?? team.number ?? '00'}</small>
-    </span>
-  );
-}
-
-export function TeamBadgeRow({ leftTeam, rightTeam, league }: { leftTeam: string; rightTeam: string; league?: string }) {
-  const sportSlug = league ? league.toLowerCase().replace(/\s+/g, '-') : undefined;
-  return (
-    <div className="team-badge-row">
-      {league && <SportEquipmentIcon slug={sportSlug ?? 'nfl'} size="small" />}
-      <div>
-        <TeamJerseyBadge teamName={leftTeam} />
-        <span>{getTeamVisual(leftTeam).name}</span>
-      </div>
-      <b>vs</b>
-      <div>
-        <TeamJerseyBadge teamName={rightTeam} />
-        <span>{getTeamVisual(rightTeam).name}</span>
-      </div>
-    </div>
-  );
-}
-
-export function SportHeroPanel({ sportSlug, title, copy }: { sportSlug: SportSlug | string; title: string; copy: string }) {
-  const visual = sportVisuals[sportSlug as SportSlug] ?? sportVisuals.nfl;
-  return (
-    <aside className={`sport-hero-panel accent-${visual.accent}`} aria-label={`${visual.label} panel`}>
-      <SportEquipmentIcon slug={sportSlug} size="large" showLabel />
-      <h3>{title}</h3>
-      <p>{copy}</p>
-      <div className="mini-equipment-line">
-        <span>Market board</span>
-        <span>Line movement</span>
-        <span>Signal check</span>
-      </div>
-    </aside>
+    <nav className="sport-visual-nav" aria-label="Sports">
+      {sports.map((sport) => (
+        <Link key={sport.slug} href={`/sports/${sport.slug}`} className="sport-visual-nav-item">
+          <SportEquipmentIcon slug={sport.slug} />
+          <span>{sport.label}</span>
+        </Link>
+      ))}
+    </nav>
   );
 }
