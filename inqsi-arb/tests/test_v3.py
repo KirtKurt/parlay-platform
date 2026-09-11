@@ -9,7 +9,8 @@ from arb_engine import scan_all
 from constraints import apply_book_constraints
 from lifecycle import record_leg, outcome_pnl
 from market_catalog import candidate_markets_for_sport, expand_market_families
-from validation import validate_event
+from rules import registry_rows, registry_size
+from validation import market_family, validate_event, validate_events
 from app import lambda_handler
 
 
@@ -31,6 +32,14 @@ def test_family_expansion_has_periods_and_props():
     assert "player_points" in rows
 
 
+def test_reviewed_registry_is_versioned_and_sourced():
+    assert registry_size() >= 6
+    rows = registry_rows()
+    assert all(r["reviewed"] for r in rows)
+    assert all(r["version"] and r["source"].startswith("https://") for r in rows)
+    assert {r["book"] for r in rows} >= {"draftkings", "fanduel"}
+
+
 def test_unknown_settlement_rules_fail_closed():
     event = {
         "sport": "baseball_mlb", "market": "h2h",
@@ -38,10 +47,34 @@ def test_unknown_settlement_rules_fail_closed():
         "expected_outcomes": ["A", "B"], "id": "x", "event": "A @ B",
     }
     validated = validate_event(event)
-    assert validated["rules_status"] == "unknown"
-    result = scan_all({"bankroll": 100, "events": [validated]})
+    assert len(validated) == 1 and validated[0]["rules_status"] == "unknown"
+    result = scan_all({"bankroll": 100, "events": validated})
     assert result["n_arbs"] == 0
     assert result["n_detected_unverified"] == 1
+
+
+def test_unreviewed_book_does_not_poison_reviewed_pair():
+    event = {
+        "sport": "baseball_mlb", "market": "h2h", "id": "g1", "event": "A @ B",
+        "expected_outcomes": ["A", "B"],
+        "quotes": [
+            {"book": "draftkings", "outcome": "A", "decimal": 2.2},
+            {"book": "fanduel", "outcome": "B", "decimal": 2.2},
+            {"book": "unknownbook", "outcome": "A", "decimal": 9.9},
+        ],
+    }
+    rows = validate_events([event])
+    compatible = [r for r in rows if r["rules_status"] == "compatible"]
+    assert len(compatible) == 1
+    assert {q["book"] for q in compatible[0]["quotes"]} == {"draftkings", "fanduel"}
+    assert compatible[0]["context"]["excluded_unreviewed_books"] == ["unknownbook"]
+    result = scan_all({"bankroll": 100, "events": rows})
+    assert result["n_arbs"] == 1
+
+
+def test_period_classification_precedes_total_and_spread():
+    assert market_family("totals_h1") == "periods"
+    assert market_family("spreads_1st_5_innings") == "periods"
 
 
 def test_constraint_analysis_flags_cap():
@@ -68,6 +101,7 @@ def test_v3_health_and_ui_routes():
     body = json.loads(h["body"])
     assert body["version"] == "INQSI-ARB-v3"
     assert body["automatic_market_discovery"] is True
+    assert body["rules_registry_entries"] >= 6
     ui = lambda_handler({"httpMethod": "GET", "path": "/v1/arb/ui"}, None)
     assert ui["statusCode"] == 200
     assert "text/html" in ui["headers"]["content-type"]
