@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Inqsi ARB live sportsbook inventory API
+Parameters:
+  OddsApiKey:
+    Type: String
+    NoEcho: true
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 300
+    MemorySize: 1024
+    Environment:
+      Variables:
+        ODDS_API_KEY: !Ref OddsApiKey
+        ARB_SPORTSBOOK_AUDIT_REGIONS: us,us2,uk,eu,au
+        ARB_SPORTSBOOK_AUDIT_MARKETS: h2h
+        ARB_SPORTSBOOK_AUDIT_WORKERS: '12'
+Resources:
+  SportsbookCatalogApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowMethods: "'GET,OPTIONS'"
+        AllowHeaders: "'Content-Type'"
+        AllowOrigin: "'*'"
+  SportsbookCatalogFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: sportsbook_api.lambda_handler
+      Events:
+        Sportsbooks:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SportsbookCatalogApi
+            Path: /v1/arb/sportsbooks
+            Method: GET
+Outputs:
+  SportsbooksUrl:
+    Value: !Sub 'https://${SportsbookCatalogApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/v1/arb/sportsbooks'
