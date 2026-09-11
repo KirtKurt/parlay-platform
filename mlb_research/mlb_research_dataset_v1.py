@@ -1,6 +1,7 @@
 """One conditional publisher merges original and reconstructed source indexes."""
 import time
 from mlb_research_store_v1 import digest, now
+from mlb_feature_discovery_runner_v1 import publish as publish_feature_discovery
 
 
 def publish_dataset(store):
@@ -39,6 +40,9 @@ def publish_dataset(store):
             pointer=store.artifact('datasets',value)
             store.latest('dataset.json',{'artifact':pointer,'rows':len(rows),'rowsHash':value['rowsHash'],
                                         'originalRows':value['originalRows'],'updatedAtUtc':value['updatedAtUtc']})
+            # Discovery is a fail-isolated research sidecar. Its runner catches
+            # its own failures so canonical dataset publication remains valid.
+            publish_feature_discovery(store, value)
             return value
         raise ValueError('source indexes changed during dataset publication')
     finally:

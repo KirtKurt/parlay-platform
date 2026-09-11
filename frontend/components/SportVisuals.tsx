@@ -11,94 +11,18 @@ export type SportVisual = {
 };
 
 export const sportVisuals: Record<SportSlug, SportVisual> = {
-  nfl: {
-    slug: 'nfl',
-    label: 'NFL',
-    equipment: '🏈',
-    equipmentLabel: 'football',
-    accent: 'blue',
-    description: 'NFL market board.'
-  },
-  cfb: {
-    slug: 'cfb',
-    label: 'CFB',
-    equipment: '🏈',
-    equipmentLabel: 'college football',
-    accent: 'teal',
-    description: 'College football market board.'
-  },
-  nba: {
-    slug: 'nba',
-    label: 'NBA',
-    equipment: '🏀',
-    equipmentLabel: 'basketball',
-    accent: 'gold',
-    description: 'NBA market board.'
-  },
-  ncaam: {
-    slug: 'ncaam',
-    label: 'NCAAM',
-    equipment: '🏀',
-    equipmentLabel: 'college basketball',
-    accent: 'purple',
-    description: 'College basketball market board.'
-  },
-  nhl: {
-    slug: 'nhl',
-    label: 'NHL',
-    equipment: '🏒',
-    equipmentLabel: 'hockey',
-    accent: 'ice',
-    description: 'NHL market board.'
-  },
-  mlb: {
-    slug: 'mlb',
-    label: 'MLB',
-    equipment: '⚾',
-    equipmentLabel: 'baseball',
-    accent: 'cream',
-    description: 'MLB market board.'
-  },
-  tennis: {
-    slug: 'tennis',
-    label: 'Tennis',
-    equipment: '🎾',
-    equipmentLabel: 'tennis',
-    accent: 'lime',
-    description: 'Tennis match board.'
-  },
-  soccer: {
-    slug: 'soccer',
-    label: 'Soccer',
-    equipment: '⚽',
-    equipmentLabel: 'soccer',
-    accent: 'green',
-    description: 'Soccer match board.'
-  },
-  darts: {
-    slug: 'darts',
-    label: 'Darts',
-    equipment: '🎯',
-    equipmentLabel: 'darts',
-    accent: 'red',
-    description: 'Darts match board.'
-  },
-  lacrosse: {
-    slug: 'lacrosse',
-    label: 'Lacrosse',
-    equipment: '🥍',
-    equipmentLabel: 'lacrosse',
-    accent: 'aqua',
-    description: 'Lacrosse market board.'
-  },
-  'table-tennis': {
-    slug: 'table-tennis',
-    label: 'Table Tennis',
-    equipment: '🏓',
-    equipmentLabel: 'table tennis',
-    accent: 'mint',
-    description: 'Table tennis match board.'
-  }
+  nfl: { slug: 'nfl', label: 'NFL', equipment: '🏈', equipmentLabel: 'football', accent: 'blue', description: 'NFL market board.' },
+  cfb: { slug: 'cfb', label: 'CFB', equipment: '🏈', equipmentLabel: 'college football', accent: 'teal', description: 'College football market board.' },
+  nba: { slug: 'nba', label: 'NBA', equipment: '🏀', equipmentLabel: 'basketball', accent: 'gold', description: 'NBA market board.' },
+  wnba: { slug: 'wnba', label: 'WNBA', equipment: '🏀', equipmentLabel: 'basketball', accent: 'orange', description: 'WNBA market board.' },
+  ncaam: { slug: 'ncaam', label: 'NCAAM', equipment: '🏀', equipmentLabel: 'college basketball', accent: 'purple', description: 'College basketball market board.' },
+  nhl: { slug: 'nhl', label: 'NHL', equipment: '🏒', equipmentLabel: 'hockey', accent: 'ice', description: 'NHL market board.' },
+  mlb: { slug: 'mlb', label: 'MLB', equipment: '⚾', equipmentLabel: 'baseball', accent: 'cream', description: 'MLB market board.' },
+  tennis: { slug: 'tennis', label: 'Tennis', equipment: '🎾', equipmentLabel: 'tennis', accent: 'lime', description: 'Tennis match board.' },
+  soccer: { slug: 'soccer', label: 'Soccer', equipment: '⚽', equipmentLabel: 'soccer', accent: 'green', description: 'Soccer match board.' },
+  darts: { slug: 'darts', label: 'Darts', equipment: '🎯', equipmentLabel: 'darts', accent: 'red', description: 'Darts match board.' },
+  lacrosse: { slug: 'lacrosse', label: 'Lacrosse', equipment: '🥍', equipmentLabel: 'lacrosse', accent: 'aqua', description: 'Lacrosse market board.' },
+  'table-tennis': { slug: 'table-tennis', label: 'Table Tennis', equipment: '🏓', equipmentLabel: 'table tennis', accent: 'mint', description: 'Table tennis match board.' }
 };
 
 export const teamVisuals: Record<string, { abbr: string; name: string; tone: string; number?: string; sport?: SportSlug }> = {
@@ -114,7 +38,7 @@ export const teamVisuals: Record<string, { abbr: string; name: string; tone: str
   'Example State': { abbr: 'EXS', name: 'Example State', tone: 'silver', number: '8', sport: 'ncaam' },
   Price: { abbr: 'PRI', name: 'Price', tone: 'red', number: '180', sport: 'darts' },
   Smith: { abbr: 'SMI', name: 'Smith', tone: 'blue', number: '60', sport: 'darts' },
-  'Maryland': { abbr: 'MD', name: 'Maryland', tone: 'red', number: '22', sport: 'lacrosse' },
+  Maryland: { abbr: 'MD', name: 'Maryland', tone: 'red', number: '22', sport: 'lacrosse' },
   Duke: { abbr: 'DUK', name: 'Duke', tone: 'blue', number: '2', sport: 'lacrosse' },
   Chen: { abbr: 'CHN', name: 'Chen', tone: 'mint', number: '24', sport: 'table-tennis' },
   Novak: { abbr: 'NOV', name: 'Novak', tone: 'silver', number: '7', sport: 'table-tennis' }

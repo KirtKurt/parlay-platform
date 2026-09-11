@@ -12,9 +12,12 @@ from pathlib import Path
 
 VERSION = 'MLB-RESEARCH-IMPLEMENTATION-v1'
 SOURCE_FILES = (
+    'mlb_feature_discovery_runner_v1.py',
+    'mlb_feature_discovery_v1.py',
     'mlb_player_windows_v1.py',
     'mlb_research_dataset_v1.py',
     'mlb_research_feature_programs_v1.py',
+    'mlb_research_feature_replay_v1.py',
     'mlb_research_models_v1.py',
     'mlb_research_provenance_v1.py',
     'mlb_research_runtime_v1.py',
@@ -41,8 +44,8 @@ def implementation_manifest(root: Path | None = None) -> dict:
 
     directory = Path(root) if root is not None else Path(__file__).resolve().parent
     files = {}
-    # Discover future conventionally named MLB modules too, rather than
-    # silently ignoring code introduced after this required-file baseline.
+    # Include future conventionally named MLB modules without dropping any
+    # source files required by the independent discovery owner on main.
     names = sorted(set(SOURCE_FILES) | {path.name for path in directory.glob('mlb_*.py')})
     for name in names:
         path = directory / name
