@@ -13,6 +13,13 @@
       "plannerRun": 34586321335,
       "reason": "The reported clean_row_final_label_time_invalid and clean_row_not_after_release_cutoff errors are expected on historical-training-only rows whose immutable bridge explicitly records labelObservationTimeUnavailable=true. Inventing or relaxing label times would weaken chronological evidence. Recent 2026-09-02, 2026-09-03, 2026-09-07, and 2026-09-09 slate proofs already achieve exact clean-slate equality with no such error.",
       "reconsiderOnlyIf": "The same error occurs on a current non-historical row that is expected to carry a genuine write-once label observation timestamp, or new evidence proves the historical bridge possesses an immutable real observation timestamp that is currently discarded."
+    },
+    {
+      "status": "REJECTED_AS_UNSAFE_OR_INAPPLICABLE",
+      "title": "Increase observed starter rate training data",
+      "plannerRun": 34596065164,
+      "reason": "The accepted proposal attempted to count synthetic data augmentation and unspecified historical-window expansion toward observed starter-rate minima. The current StatsAPI starter adapter explicitly refuses historical reconstruction, and the retained completed-game/final-box corpora do not prove when target-game pregame starter observations were known. Those rows cannot be converted into observed pre-lock evidence without violating source honesty and chronology.",
+      "reconsiderOnlyIf": "A verified immutable point-in-time pregame archive with exact game/starter identity, retrieval/effective timestamps, and payload provenance is available, or a current live pre-lock capture defect is demonstrated. Natural future source-honest accumulation remains valid."
     }
   ]
 }
