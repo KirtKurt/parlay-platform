@@ -5,15 +5,19 @@ on:
     branches: [main]
     paths:
       - 'hello_world/mlb_reliability_calibration_v1.py'
+      - 'hello_world/mlb_reliability_calibration_selection_v1.py'
       - 'scripts/mlb_reliability_calibration_shadow_audit.py'
       - 'tests/unit/test_mlb_reliability_calibration_v1.py'
+      - 'tests/unit/test_mlb_reliability_calibration_selection_v1.py'
       - '.github/workflows/mlb-reliability-calibration-contract.yml'
   push:
     branches: [main]
     paths:
       - 'hello_world/mlb_reliability_calibration_v1.py'
+      - 'hello_world/mlb_reliability_calibration_selection_v1.py'
       - 'scripts/mlb_reliability_calibration_shadow_audit.py'
       - 'tests/unit/test_mlb_reliability_calibration_v1.py'
+      - 'tests/unit/test_mlb_reliability_calibration_selection_v1.py'
       - '.github/workflows/mlb-reliability-calibration-contract.yml'
   workflow_dispatch:
 
@@ -40,16 +44,20 @@ jobs:
       - name: Install test runtime
         run: python -m pip install --quiet 'pytest>=8,<9'
 
-      - name: Compile chronology-safe calibration helper and audit
+      - name: Compile chronology-safe calibration helper, selector, and audit
         run: |
           python -m py_compile hello_world/mlb_reliability_calibration_v1.py
+          python -m py_compile hello_world/mlb_reliability_calibration_selection_v1.py
           python -m py_compile scripts/mlb_reliability_calibration_shadow_audit.py
 
       - name: Verify calibration chronology and negative authority
         env:
           AWS_DEFAULT_REGION: us-east-1
           AWS_EC2_METADATA_DISABLED: 'true'
-        run: python -m pytest -q tests/unit/test_mlb_reliability_calibration_v1.py
+        run: |
+          python -m pytest -q \
+            tests/unit/test_mlb_reliability_calibration_v1.py \
+            tests/unit/test_mlb_reliability_calibration_selection_v1.py
 
   shadow-audit:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
