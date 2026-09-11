@@ -150,6 +150,53 @@ def test_malformed_current_roster_is_omitted_without_poisoning_lineup_or_workloa
         assert key not in bullpen
 
 
+def test_roster_observation_survives_unavailable_history_without_changing_analyst_authority():
+    import mlb_three_api_llm_analyst as analyst
+
+    game, history, feed, teams, historical_teams, get = _fixtures()
+    unavailable_history = {"ok": False, "payload": {"totalGames": 0, "dates": []}}
+    lineup, bullpen = source.observe("2026-09-09", game, unavailable_history, get, now=lambda: NOW)
+
+    assert lineup["source_status"] == "CONNECTED"
+    assert bullpen["source_status"] == "NOT_CONNECTED_SOURCE_REQUIRED"
+    assert bullpen["bullpenRosterObservationStatus"] == "OBSERVED_ROSTER_ONLY"
+    assert bullpen["home_bullpen_roster_player_ids"] == [111, 112]
+    assert bullpen["away_bullpen_roster_player_ids"] == [211, 212]
+    assert "home_reliever_usage_1d_3d_5d" not in bullpen
+    assert "away_reliever_usage_1d_3d_5d" not in bullpen
+
+    with_roster = {"confirmed_lineups": lineup, "bullpen_fatigue": bullpen}
+    without_roster = deepcopy(with_roster)
+    for key in PASSIVE_KEYS:
+        without_roster["bullpen_fatigue"].pop(key, None)
+    analyst_game = {"officialGamePk": 123, "homeTeam": "Home", "awayTeam": "Away"}
+    assert analyst.build_evidence(analyst_game, with_roster, as_of_utc=NOW.isoformat()) == analyst.build_evidence(
+        analyst_game, without_roster, as_of_utc=NOW.isoformat()
+    )
+
+
+@pytest.mark.parametrize(
+    ("target", "side", "bad_value"),
+    (
+        ("game", None, 123.0),
+        ("team", "home", True),
+        ("team", "away", 2.0),
+        ("team", "home", "1"),
+    ),
+)
+def test_current_feed_identity_requires_strict_positive_integers(target, side, bad_value):
+    game, history, feed, teams, historical_teams, get = _fixtures()
+    if target == "game":
+        feed["gameData"]["game"]["pk"] = bad_value
+    else:
+        teams[side]["team"] = {"id": bad_value}
+
+    lineup, bullpen = source.observe("2026-09-09", game, history, get, now=lambda: NOW)
+    assert lineup["source_status"] == "NOT_CONNECTED_SOURCE_REQUIRED"
+    for key in PASSIVE_KEYS:
+        assert key not in bullpen
+
+
 def test_roster_observation_does_not_complete_bullpen_group_or_change_strict_features():
     import mlb_fundamentals_snapshot_v2 as snapshots
     import mlb_ml_dual_model_v2 as r8
