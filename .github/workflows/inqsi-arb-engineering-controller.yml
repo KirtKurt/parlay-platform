@@ -4,6 +4,13 @@ on:
   schedule:
     - cron: '3,23,43 * * * *'
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'inqsi-arb/ops/engineering_controller.py'
+      - 'inqsi-arb/tests/test_engineering_controller.py'
+      - 'inqsi-arb/ARB_ENGINEERING_CONTROLLER.md'
+      - '.github/workflows/inqsi-arb-engineering-controller.yml'
 
 permissions:
   contents: write
