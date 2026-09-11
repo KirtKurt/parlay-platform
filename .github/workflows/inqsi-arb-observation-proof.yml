@@ -3,6 +3,9 @@ on:
   schedule:
     - cron: '37 * * * *'
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Deploy Inqsi Arb"]
+    types: [completed]
 permissions:
   contents: read
 concurrency:
@@ -10,6 +13,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   observe:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
