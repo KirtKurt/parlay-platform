@@ -151,6 +151,13 @@ def validate(value: dict[str, Any], *, decision_history: dict[str, Any] | None =
     for key in ("title", "objective"):
         if not isinstance(value.get(key), str) or not value[key].strip():
             raise ValueError(f"{key} must be a non-empty string")
+
+    # Reject completed/rejected work before schema diagnostics so the bounded retry
+    # loop receives the highest-signal reason even when a repeated proposal is malformed.
+    # All schema, safety-receipt, path, and negative-authority gates remain mandatory
+    # for any task that is not already blocked by decision memory.
+    validate_against_history(value, decision_history)
+
     for key in ("implementation", "acceptanceTests", "safetyReceipts", "evidenceBasis"):
         _require_string_list(value, key)
     if "likelyFiles" in value and value["likelyFiles"] is not None and not isinstance(value["likelyFiles"], list):
@@ -177,7 +184,7 @@ def validate(value: dict[str, Any], *, decision_history: dict[str, Any] | None =
     value["noModelPromotion"] = True
     value["noSecretMutation"] = True
     value["noOtherSportChange"] = True
-    return validate_against_history(value, decision_history)
+    return value
 
 
 def main() -> int:
