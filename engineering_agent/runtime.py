@@ -27,6 +27,13 @@ _SUPERSEDED_HEALTH_TOKENS = (
     "mlb_trainer_runtime_error",
     "mlb_trainer_function_error",
 )
+_RETIRED_DIAGNOSTIC_REPORTS = (
+    "mlb_ml_optimization_status_latest.json",
+    "mlb_ml_clean_cohort_latest.json",
+    "mlb_ml_outcome_challenger_latest.json",
+    "mlb_ml_reliability_challenger_latest.json",
+    "mlb_ml_challenger_bundle_latest.json",
+)
 
 FOCUS_DOMAINS = (
     "clean_cohort",
@@ -166,6 +173,8 @@ def _filter_superseded_evidence(text: str) -> str:
             continue
         path = str(item.get("path") or "").lower()
         observed = float(item.get("observedEpoch") or 0.0)
+        if any(path.endswith(name) for name in _RETIRED_DIAGNOSTIC_REPORTS):
+            continue
         if (
             any(token in path for token in _SUPERSEDED_HEALTH_TOKENS)
             and observed <= _SUPERSEDED_HEALTH_CUTOFF_EPOCH
