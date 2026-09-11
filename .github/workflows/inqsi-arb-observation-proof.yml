@@ -1,0 +1,153 @@
+name: Inqsi ARB Observation Proof
+on:
+  schedule:
+    - cron: '37 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: inqsi-arb-observation-proof
+  cancel-in-progress: false
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Resolve production ARB API
+        id: endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ArbApiUrl'].OutputValue" --output text)
+          test -n "$API_URL" && test "$API_URL" != "None"
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+      - name: Prove event enumeration and append a genuine scan audit row
+        env:
+          API_URL: ${{ steps.endpoint.outputs.api_url }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.error, urllib.parse, urllib.request
+          from datetime import datetime, timezone
+
+          base = os.environ['API_URL'].rstrip('/')
+          agent = 'inqsi-arb-observation-proof/1.0'
+
+          def get(path, timeout=60):
+              req = urllib.request.Request(base + path, headers={'accept':'application/json','user-agent':agent})
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as response:
+                      raw = response.read()
+                      return response.status, json.loads(raw or b'{}')
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read()
+                  try:
+                      body = json.loads(raw or b'{}')
+                  except Exception:
+                      body = {'text': raw.decode('utf-8','replace')[:1000]}
+                  return exc.code, body
+
+          status, health = get('/v1/arb/health')
+          assert status == 200 and health.get('ok') is True, health
+          assert health.get('places_bets') is False, health
+          assert health.get('audit_persistence') is True, health
+          assert health.get('automatic_market_discovery') is True, health
+
+          status, catalog = get('/v1/arb/catalog')
+          assert status == 200 and catalog.get('ok') is True, catalog
+          sports = [str(row.get('key') or '').strip() for row in catalog.get('sports', []) if isinstance(row, dict)]
+          sports = [sport for sport in sports if sport]
+          assert sports, catalog
+
+          preferred = [
+              'baseball_mlb', 'americanfootball_nfl', 'basketball_nba',
+              'icehockey_nhl', 'soccer_epl', 'soccer_usa_mls',
+          ]
+          candidates = [sport for sport in preferred if sport in sports]
+          candidates.extend(sport for sport in sports if sport not in candidates)
+
+          selected = None
+          attempts = []
+          for sport in candidates[:12]:
+              status, events_body = get('/v1/arb/markets?' + urllib.parse.urlencode({'sport': sport}), timeout=90)
+              events = events_body.get('events', []) if isinstance(events_body, dict) else []
+              attempts.append({'sport': sport, 'events_status': status, 'events_count': len(events) if isinstance(events, list) else None})
+              if status != 200 or not isinstance(events_body, dict) or events_body.get('ok') is not True or not isinstance(events, list):
+                  continue
+              for event in events[:2]:
+                  if not isinstance(event, dict):
+                      continue
+                  event_id = str(event.get('id') or event.get('event_id') or '').strip()
+                  if not event_id:
+                      continue
+                  status, markets_body = get('/v1/arb/markets?' + urllib.parse.urlencode({'sport': sport, 'event_id': event_id}), timeout=90)
+                  markets = markets_body.get('markets', []) if isinstance(markets_body, dict) else []
+                  attempts[-1]['event_id'] = event_id
+                  attempts[-1]['event_market_status'] = status
+                  attempts[-1]['event_market_count'] = len(markets) if isinstance(markets, list) else None
+                  if status == 200 and isinstance(markets_body, dict) and markets_body.get('ok') is True and isinstance(markets, list) and 'h2h' in markets:
+                      selected = {'sport': sport, 'event_id': event_id, 'markets': markets}
+                      break
+              if selected:
+                  break
+
+          assert selected is not None, {'error':'NO_ACTIVE_EVENT_WITH_H2H_DISCOVERED','attempts':attempts}
+
+          scan_query = urllib.parse.urlencode({
+              'sport': selected['sport'],
+              'markets': 'h2h',
+              'bankroll': '1000',
+              'max_events': '2',
+              'jurisdiction': '*',
+          })
+          status, scan = get('/v1/arb/scan?' + scan_query, timeout=120)
+          assert status == 200 and isinstance(scan, dict), scan
+          assert scan.get('version') == 'INQSI-ARB-v3', scan
+          audit_event_id = str(scan.get('audit_event_id') or '')
+          assert audit_event_id, scan
+
+          status, history = get('/v1/arb/history?limit=10')
+          rows = history.get('history', []) if isinstance(history, dict) else []
+          assert status == 200 and history.get('ok') is True and history.get('kind') == 'SCAN', history
+          assert any(str(row.get('event_id') or '') == audit_event_id for row in rows if isinstance(row, dict)), {
+              'audit_event_id': audit_event_id, 'history': history,
+          }
+
+          evidence = {
+              'checked_at': datetime.now(timezone.utc).isoformat(),
+              'service': 'inqsi-arb',
+              'places_bets': False,
+              'sport': selected['sport'],
+              'event_id': selected['event_id'],
+              'event_market_count': len(selected['markets']),
+              'event_market_sample': selected['markets'][:25],
+              'scan_market': 'h2h',
+              'scan_max_events': 2,
+              'n_markets': scan.get('n_markets'),
+              'n_arbs': scan.get('n_arbs'),
+              'n_detected_unverified': scan.get('n_detected_unverified'),
+              'n_rejected': scan.get('n_rejected'),
+              'audit_event_id': audit_event_id,
+              'history_count': history.get('count'),
+              'selection_attempts': attempts,
+          }
+          with open('arb-observation-proof.json', 'w', encoding='utf-8') as handle:
+              json.dump(evidence, handle, indent=2, sort_keys=True)
+              handle.write('\n')
+          print(json.dumps(evidence, indent=2, sort_keys=True))
+          PY
+      - name: Upload observation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inqsi-arb-observation-proof-${{ github.run_id }}
+          path: arb-observation-proof.json
+          if-no-files-found: warn
+          retention-days: 30

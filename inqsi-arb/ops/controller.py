@@ -8,7 +8,7 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict, Tuple
 
-USER_AGENT = "inqsi-arb-controller/1.1"
+USER_AGENT = "inqsi-arb-controller/1.2"
 BBD_BASE = os.environ.get("BBD_BASE_URL", "https://api.bigballsdata.com").rstrip("/")
 
 
@@ -16,19 +16,27 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def http_json(url: str, *, headers: Dict[str, str] | None = None, timeout: int = 60) -> Tuple[int, Dict[str, str], Any]:
-    req = urllib.request.Request(url, headers={"user-agent": USER_AGENT, "accept": "application/json", **(headers or {})})
+def _request(url: str, *, headers: Dict[str, str] | None = None, timeout: int = 60) -> Tuple[int, Dict[str, str], bytes]:
+    req = urllib.request.Request(url, headers={"user-agent": USER_AGENT, "accept": "application/json,text/html", **(headers or {})})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as response:
-            raw = response.read()
-            return response.status, dict(response.headers.items()), json.loads(raw or b"{}")
+            return response.status, dict(response.headers.items()), response.read()
     except urllib.error.HTTPError as exc:
-        raw = exc.read()
-        try:
-            body = json.loads(raw or b"{}")
-        except Exception:
-            body = {"text": raw.decode("utf-8", "replace")[:1000]}
-        return exc.code, dict(exc.headers.items()), body
+        return exc.code, dict(exc.headers.items()), exc.read()
+
+
+def http_json(url: str, *, headers: Dict[str, str] | None = None, timeout: int = 60) -> Tuple[int, Dict[str, str], Any]:
+    status, response_headers, raw = _request(url, headers=headers, timeout=timeout)
+    try:
+        body = json.loads(raw or b"{}")
+    except Exception:
+        body = {"text": raw.decode("utf-8", "replace")[:1000]}
+    return status, response_headers, body
+
+
+def http_text(url: str, *, timeout: int = 60) -> Tuple[int, Dict[str, str], str]:
+    status, response_headers, raw = _request(url, timeout=timeout)
+    return status, response_headers, raw.decode("utf-8", "replace")
 
 
 def check_arb(api_url: str, sportsbook_url: str | None) -> Dict[str, Any]:
@@ -39,6 +47,7 @@ def check_arb(api_url: str, sportsbook_url: str | None) -> Dict[str, Any]:
         ("health", "/v1/arb/health"),
         ("catalog", "/v1/arb/catalog?all=true"),
         ("rules", "/v1/arb/rules"),
+        ("history", "/v1/arb/history?limit=5"),
     ):
         try:
             status, _, body = http_json(base + path)
@@ -48,6 +57,61 @@ def check_arb(api_url: str, sportsbook_url: str | None) -> Dict[str, Any]:
         except Exception as exc:
             checks[name] = {"status": None, "error": type(exc).__name__}
             failures.append(name)
+
+    health = checks.get("health", {}).get("body") or {}
+    expected_health = {
+        "places_bets": False,
+        "provider_key_present": True,
+        "audit_persistence": True,
+        "automatic_market_discovery": True,
+        "websocket_push_configured": True,
+        "websocket_public_url_present": True,
+        "balance_aware_optimizer": True,
+        "two_leg_completion_assistant": True,
+        "opportunity_history": True,
+    }
+    mismatches = {
+        key: {"expected": expected, "actual": health.get(key)}
+        for key, expected in expected_health.items()
+        if health.get(key) is not expected
+    }
+    checks["health_capabilities"] = {"ok": not mismatches, "mismatches": mismatches}
+    if mismatches:
+        failures.append("health_capabilities")
+
+    catalog = checks.get("catalog", {}).get("body") or {}
+    try:
+        catalog_count = int(catalog.get("n_sports") or 0)
+    except (TypeError, ValueError):
+        catalog_count = 0
+    if checks.get("catalog", {}).get("status") == 200 and catalog_count <= 0:
+        failures.append("catalog_empty")
+
+    rules = checks.get("rules", {}).get("body") or {}
+    try:
+        rule_count = int(rules.get("count") or 0)
+    except (TypeError, ValueError):
+        rule_count = 0
+    if checks.get("rules", {}).get("status") == 200 and rule_count <= 0:
+        failures.append("rules_empty")
+
+    history = checks.get("history", {}).get("body") or {}
+    history_rows = history.get("history") if isinstance(history, dict) else None
+    history_contract_ok = history.get("kind") == "SCAN" and isinstance(history_rows, list)
+    checks["history_contract"] = {"ok": history_contract_ok, "count": len(history_rows) if isinstance(history_rows, list) else None}
+    if checks.get("history", {}).get("status") == 200 and not history_contract_ok:
+        failures.append("history_contract")
+
+    try:
+        status, headers, text = http_text(base + "/v1/arb/ui")
+        content_type = next((v for k, v in headers.items() if k.lower() == "content-type"), "")
+        ui_ok = status == 200 and "text/html" in content_type.lower() and "Inqsi ARB Console" in text
+        checks["ui"] = {"status": status, "ok": ui_ok, "content_type": content_type}
+        if not ui_ok:
+            failures.append("ui")
+    except Exception as exc:
+        checks["ui"] = {"status": None, "ok": False, "error": type(exc).__name__}
+        failures.append("ui")
 
     if sportsbook_url:
         try:
@@ -62,14 +126,18 @@ def check_arb(api_url: str, sportsbook_url: str | None) -> Dict[str, Any]:
         checks["sportsbooks"] = {"status": None, "reason": "SPORTSBOOK_URL_NOT_CONFIGURED"}
         failures.append("sportsbooks")
 
-    health = checks.get("health", {}).get("body") or {}
-    catalog = checks.get("catalog", {}).get("body") or {}
     sportsbooks = checks.get("sportsbooks", {}).get("body") or {}
     summary = {
         "version": health.get("version"),
         "provider_key_present": health.get("provider_key_present"),
         "rules_registry_entries": health.get("rules_registry_entries"),
-        "active_sports": catalog.get("n_sports"),
+        "active_sports": catalog_count,
+        "history_count": len(history_rows) if isinstance(history_rows, list) else None,
+        "ui_ok": checks.get("ui", {}).get("ok"),
+        "websocket_push_configured": health.get("websocket_push_configured"),
+        "websocket_public_url_present": health.get("websocket_public_url_present"),
+        "balance_aware_optimizer": health.get("balance_aware_optimizer"),
+        "two_leg_completion_assistant": health.get("two_leg_completion_assistant"),
         "sportsbook_count": sportsbooks.get("sportsbook_count"),
         "sportsbook_audit_complete": sportsbooks.get("complete"),
         "sports_failed": sportsbooks.get("sports_failed"),
@@ -121,7 +189,7 @@ def build_report(api_url: str, sportsbook_url: str | None) -> Dict[str, Any]:
     elif not bbd.get("ok"):
         severity = "degraded_external_dependency" if bbd.get("blocked") else "degraded_provider"
     return {
-        "controller": "INQSI-ARB-CONTROLLER-v1.1",
+        "controller": "INQSI-ARB-CONTROLLER-v1.2",
         "checked_at": utcnow(),
         "severity": severity,
         "arb": arb,
