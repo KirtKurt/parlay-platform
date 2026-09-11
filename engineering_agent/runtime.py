@@ -7,6 +7,7 @@ from typing import Any
 
 import boto3
 
+from engineering_agent.evidence_freshness import filter_superseded_fundamentals_evidence
 from engineering_agent.planner import (
     DEFAULT_MISSION,
     POLICY,
@@ -169,7 +170,8 @@ def _filter_superseded_evidence(text: str) -> str:
         ):
             continue
         kept.append(line)
-    return "\n".join(kept) + ("\n" if kept else "")
+    filtered = "\n".join(kept) + ("\n" if kept else "")
+    return filter_superseded_fundamentals_evidence(filtered)
 
 
 def _task_text(value: dict[str, Any]) -> str:
