@@ -62,6 +62,7 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
       if (request.method === 'POST' && action === 'cancel') { queue.cancel(id); return send(202, { job: publicJob(store.owned(id, actor.id)) }); }
       if (request.method === 'POST' && action === 'continue') {
         if (!['completed','failed','blocked','awaiting_approval'].includes(job.status)) return send(409, { error: 'job_not_continuable' });
+        if (job.publicationState && job.publicationState !== 'no_changes') return send(409, { error: 'published_job_requires_new_task' });
         if (!validJobScopes(job, config.allowedScopes)) return send(409, { error: 'authorized_scope_no_longer_allowed' });
         if (!String(body.instruction || '').trim()) return send(400, { error: 'instruction_required' });
         job.instruction = String(body.instruction); job.status = 'queued'; job.cancelRequested = false; job.error = null; store.save(job); queue.enqueue(id); return send(202, { job: publicJob(job) });
