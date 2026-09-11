@@ -7,7 +7,10 @@ export const sports = [
   { slug: 'mlb', label: 'MLB', title: 'MLB Market Board', description: 'Baseball moneyline, run line, total, and movement board.' },
   { slug: 'wnba', label: 'WNBA', title: 'WNBA Market Board', description: 'WNBA odds, spread, total, and movement board.' },
   { slug: 'soccer', label: 'Soccer', title: 'Soccer Market Board', description: 'Soccer market data and live board.' },
-  { slug: 'tennis', label: 'Tennis', title: 'Tennis Match Board', description: 'Tennis match odds and market board.' }
+  { slug: 'tennis', label: 'Tennis', title: 'Tennis Match Board', description: 'Tennis match odds and market board.' },
+  { slug: 'darts', label: 'Darts', title: 'Darts Match Board', description: 'Darts match odds and market board.' },
+  { slug: 'lacrosse', label: 'Lacrosse', title: 'Lacrosse Market Board', description: 'Lacrosse odds and market board.' },
+  { slug: 'table-tennis', label: 'Table Tennis', title: 'Table Tennis Match Board', description: 'Table tennis match odds and market board.' }
 ] as const;
 
 export type SportSlug = typeof sports[number]['slug'];
@@ -24,7 +27,11 @@ const leagueToSportSlug: Record<string, SportSlug> = {
   nhl: 'nhl',
   mlb: 'mlb',
   tennis: 'tennis',
-  soccer: 'soccer'
+  soccer: 'soccer',
+  darts: 'darts',
+  lacrosse: 'lacrosse',
+  'table tennis': 'table-tennis',
+  'table-tennis': 'table-tennis'
 };
 
 export function getSportBySlug(slug: string) {
