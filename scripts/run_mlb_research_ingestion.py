@@ -14,6 +14,23 @@ from mlb_research_dataset_v1 import publish_dataset
 import mlb_research_sources_v1 as source
 
 
+def discovery_summary(store):
+    pointer=store.get('feature-discovery.json')
+    if not pointer or not pointer.get('artifact'):
+        return {'status':'NOT_OBSERVED','candidateCount':0,'productionAuthorityChanged':False}
+    try:
+        value=store.load(pointer['artifact'])
+    except Exception as exc:
+        return {'status':'EVIDENCE_READ_FAILED','error':type(exc).__name__,'candidateCount':0,
+                'productionAuthorityChanged':False}
+    return {'status':value.get('status'),'candidateCount':len(value.get('candidates',[])),
+            'candidateFeatures':[r.get('feature') for r in value.get('candidates',[])[:10]],
+            'evaluatedFeatures':value.get('evaluatedFeatures'),'developmentRows':value.get('developmentRows'),
+            'holdoutRows':value.get('holdoutRows'),'holdoutLabelsInspectedByScreen':value.get('holdoutLabelsInspectedByScreen'),
+            'datasetRowsHash':value.get('datasetRowsHash'),'implementationSha256':value.get('implementationSha256'),
+            'productionAuthorityChanged':False}
+
+
 def ingest(store,seconds=2400):
     started=now();deadline=time.monotonic()+seconds
     owner=store.acquire('ingestion',seconds+120)
@@ -64,7 +81,6 @@ def ingest(store,seconds=2400):
         store.latest('statcast.json',{'artifact':store.artifact('statcast',sc),'updatedAtUtc':sc['updatedAtUtc']})
         index=store.get('original-index.json') or {'slates':{}}
         available=sorted({key.split('/')[1] for key in store.keys('snapshots/') if key.endswith('/T10.json')})
-        source_map={str(g['officialGamePk']):g for g in sources}
         # Visit all days independently. Missing historical evidence cannot stop
         # collection or settlement of a later complete original slate.
         from mlb_research_runtime_v1 import validate_snapshot
@@ -90,7 +106,8 @@ def ingest(store,seconds=2400):
         report={'ok':True,'status':'PARTIAL' if errors else 'COMPLETE','updatedAtUtc':now().isoformat(),
                 'startedAtUtc':started.isoformat(),'priorGames':len(sources),'expectedPriorGames':len(completed),
                 'statcastDays':complete_days,'expectedStatcastDays':30,'statcastPitches':len(statcasts),
-                'datasetRows':len(data['rows']),'originalRows':data['originalRows'],'errors':errors,
+                'datasetRows':len(data['rows']),'originalRows':data['originalRows'],
+                'featureDiscovery':discovery_summary(store),'errors':errors,
                 'productionAuthorityChanged':False}
         store.latest('ingestion.json',report)
         return report
