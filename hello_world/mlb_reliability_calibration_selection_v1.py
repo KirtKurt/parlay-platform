@@ -55,34 +55,41 @@ def select_no_harm_calibrator(
 
     Eligibility is deliberately strict: calibration error must improve and both
     proper scores must be no worse than identity on the nested holdout.  If no
-    candidate satisfies all three checks, identity is returned.
+    candidate satisfies all three checks, or the nested fit contains only one
+    settled outcome class, identity is returned fail-closed.
     """
     rows = [dict(row) for row in earlier_validation_rows]
     inner_fit, inner_check, chronology = calibration.split_validation_slates(rows)
     raw_metrics = _metrics(inner_check, "reliabilityProbability")
+    inner_fit_classes = {
+        calibration._outcome(row.get("pickCorrect"))
+        for row in inner_fit
+    }
+    single_class_inner_fit = len(inner_fit_classes) < 2
     candidates: List[Dict[str, Any]] = []
     eligible: List[Dict[str, Any]] = []
-    for l2 in candidate_l2:
-        fitted = calibration.fit_regularized_logit(inner_fit, l2=float(l2))
-        candidate_rows = _calibrated_rows(inner_check, fitted)
-        candidate_metrics = _metrics(candidate_rows, "candidateCalibrationProbability")
-        no_harm = bool(
-            candidate_metrics["calibrationError"] < raw_metrics["calibrationError"]
-            and candidate_metrics["brierScore"] <= raw_metrics["brierScore"] + 1e-12
-            and candidate_metrics["logLoss"] <= raw_metrics["logLoss"] + 1e-12
-        )
-        result = {
-            "l2": float(l2),
-            "calibrator": fitted.to_dict(),
-            "holdoutMetrics": candidate_metrics,
-            "improvesCalibration": candidate_metrics["calibrationError"] < raw_metrics["calibrationError"],
-            "brierNoWorse": candidate_metrics["brierScore"] <= raw_metrics["brierScore"] + 1e-12,
-            "logLossNoWorse": candidate_metrics["logLoss"] <= raw_metrics["logLoss"] + 1e-12,
-            "eligible": no_harm,
-        }
-        candidates.append(result)
-        if no_harm:
-            eligible.append(result)
+    if not single_class_inner_fit:
+        for l2 in candidate_l2:
+            fitted = calibration.fit_regularized_logit(inner_fit, l2=float(l2))
+            candidate_rows = _calibrated_rows(inner_check, fitted)
+            candidate_metrics = _metrics(candidate_rows, "candidateCalibrationProbability")
+            no_harm = bool(
+                candidate_metrics["calibrationError"] < raw_metrics["calibrationError"]
+                and candidate_metrics["brierScore"] <= raw_metrics["brierScore"] + 1e-12
+                and candidate_metrics["logLoss"] <= raw_metrics["logLoss"] + 1e-12
+            )
+            result = {
+                "l2": float(l2),
+                "calibrator": fitted.to_dict(),
+                "holdoutMetrics": candidate_metrics,
+                "improvesCalibration": candidate_metrics["calibrationError"] < raw_metrics["calibrationError"],
+                "brierNoWorse": candidate_metrics["brierScore"] <= raw_metrics["brierScore"] + 1e-12,
+                "logLossNoWorse": candidate_metrics["logLoss"] <= raw_metrics["logLoss"] + 1e-12,
+                "eligible": no_harm,
+            }
+            candidates.append(result)
+            if no_harm:
+                eligible.append(result)
 
     if eligible:
         chosen = min(
@@ -111,6 +118,7 @@ def select_no_harm_calibrator(
         "candidates": candidates,
         "selectedStrategy": strategy,
         "selectedL2": selected_l2,
+        "fallbackReason": "single_class_nested_fit" if single_class_inner_fit else None,
         "innerChronologyProof": chronology,
         "fitRowCountAfterSelection": len(rows),
         "laterValidationUsedForCalibrationSelection": False,
