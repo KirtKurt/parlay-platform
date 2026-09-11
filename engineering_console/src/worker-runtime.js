@@ -1,20 +1,8 @@
 import { Codex } from '@openai/codex-sdk';
 import { createWorkspace, collectChanges, git } from './git.js';
 import { sanitize } from './sanitize.js';
+import { withinAuthorizedScope, writePublicationRequest } from './publication.js';
 import path from 'node:path';
-
-function normalizeRepoPath(value) {
-  return String(value || '').replaceAll('\\', '/').replace(/^\.\//, '').replace(/\/$/, '');
-}
-
-function isWithinScope(file, scopes) {
-  const normalized = normalizeRepoPath(file);
-  if (!normalized || normalized === '.' || normalized.startsWith('/') || normalized.split('/').some((part) => part === '..' || part === '.git')) return false;
-  return scopes.some((scope) => {
-    const allowed = normalizeRepoPath(scope);
-    return normalized === allowed || normalized.startsWith(`${allowed}/`);
-  });
-}
 
 export function createRunner(config, store, CodexClass = Codex) {
   return async (job, signal) => {
@@ -34,6 +22,7 @@ export function createRunner(config, store, CodexClass = Codex) {
         skipGitRepoCheck: false,
         sandboxMode: 'workspace-write',
         networkAccessEnabled: false,
+        webSearchMode: 'disabled',
         approvalPolicy: 'never'
       };
       const thread = job.threadId ? codex.resumeThread(job.threadId, threadOptions) : codex.startThread(threadOptions);
@@ -81,12 +70,20 @@ export function createRunner(config, store, CodexClass = Codex) {
       job.changedFiles = result.changedFiles;
       job.diff = result.diff;
 
-      const outside = result.changedFiles.filter((file) => !isWithinScope(file, job.authorizedScope));
+      const outside = result.changedFiles.filter((file) => !withinAuthorizedScope(file, job.authorizedScope));
       if (outside.length) throw new Error(`scope_violation:${outside.join(',')}`);
 
       const head = await git(workspace, ['rev-parse', 'HEAD']);
       if (head !== job.startingRevision) job.commit = head;
-      job.status = 'completed';
+
+      if (!result.changedFiles.length) {
+        job.status = 'completed';
+        job.publicationState = 'no_changes';
+      } else {
+        writePublicationRequest(config, job, result.diff);
+        job.status = 'awaiting_publication';
+        job.publicationState = 'queued';
+      }
       store.save(job);
     } catch (error) {
       job.status = signal.aborted || job.cancelRequested ? 'cancelled' : 'failed';
