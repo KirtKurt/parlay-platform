@@ -24,6 +24,11 @@ export class JobStore {
     return target;
   }
 
+  rememberInstruction(id, instruction) {
+    if (!JOB_ID.test(String(id || '')) || typeof instruction !== 'string') throw new Error('invalid_runtime_instruction');
+    this.runtimeInstructions.set(id, instruction);
+  }
+
   create(input, owner, revision) {
     const now = new Date().toISOString();
     const job = {
@@ -46,7 +51,7 @@ export class JobStore {
       pullRequest: null,
       error: null
     };
-    this.runtimeInstructions.set(job.id, job.instruction);
+    this.rememberInstruction(job.id, job.instruction);
     this.save(job);
     return job;
   }
@@ -57,7 +62,6 @@ export class JobStore {
     if (jobBytes > MAX_JOB_RECORD_BYTES) {
       throw Object.assign(new Error('job_store_record_too_large'), { code: 'EFBIG' });
     }
-    if (typeof job.instruction === 'string') this.runtimeInstructions.set(job.id, job.instruction);
     return {
       target: this.file(job.id),
       payload: JSON.stringify({ base: this.snapshots.get(job) ?? null, job: persistedJob })
