@@ -19,7 +19,8 @@ export function loadConfig(env = process.env) {
     'INQSI_ENGINEERING_DATA_DIR',
     'INQSI_ENGINEERING_WORKSPACE_ROOT',
     'INQSI_ENGINEERING_ORIGIN',
-    'INQSI_ENGINEERING_ALLOWED_SCOPES'
+    'INQSI_ENGINEERING_ALLOWED_SCOPES',
+    'INQSI_ENGINEERING_REQUIRED_CHECKS'
   ];
   const missing = required.filter((name) => !String(env[name] || '').trim());
   if (missing.length) throw new Error(`Engineering console disabled: missing ${missing.join(', ')}`);
@@ -58,7 +59,7 @@ export function loadConfig(env = process.env) {
     workspaceRoot: path.resolve(env.INQSI_ENGINEERING_WORKSPACE_ROOT),
     allowedOrigin,
     allowedScopes,
-    requiredChecks: [...new Set(String(env.INQSI_ENGINEERING_REQUIRED_CHECKS || 'build').split(',').map((item) => item.trim()).filter(Boolean))],
+    requiredChecks: [...new Set(String(env.INQSI_ENGINEERING_REQUIRED_CHECKS).split(',').map((item) => item.trim()).filter(Boolean))],
     maxConcurrentJobs,
     port: Number(env.PORT || 8787),
     maxInstructionBytes: Number(env.INQSI_ENGINEERING_MAX_INSTRUCTION_BYTES || 20000)
