@@ -230,6 +230,9 @@ def predict(folder, output):
     classifier = lgb.Booster(model_str=model_bytes.decode())
     poisson = json.loads(poisson_bytes)
     needed = set(classifier.feature_name()) | set(poisson['home']['features']) | set(poisson['away']['features'])
+    individual_learned = any(name.startswith(side+'_starter_'+metric)
+                             for name in classifier.feature_name() for side in ('home', 'away')
+                             for metric in ('k_bb_pct_', 'whip_', 'bf_', 'appearances_'))
     model_version = 'KS1-LGB-'+refs['lightgbm']['sha256'][:12]+'-DP-'+refs['poisson']['sha256'][:12]
     official = inputs['official']['payload']
     schedule = [g for d in official['dates'] for g in d['games']]
@@ -296,7 +299,11 @@ def predict(folder, output):
             if gaps:
                 row['history_status'] = 'partial_known_missing_boxes'
         row.update(market_for(game, inputs['odds']['payload'], crosswalk, as_of))
-        features['market_home_prob'] = row['market_home_prob']
+        features.update({key: row[key] for key in ('market_home_prob', 'market_total', 'market_spread')})
+        if individual_learned:
+            row['starter_feature_source'] = 'individual_and_team_starter_history'
+            if any(not features.get(side+'_starter_bf_30d') for side in ('home', 'away')):
+                row['starter_feature_source'] = 'individual_history_partial_with_team_prior'
         if needed - set(features):
             raise ValueError('inference feature contract missing: '+','.join(sorted(needed-set(features))))
         row['input_fingerprint'] = fingerprint(row, features, needed)
@@ -345,6 +352,8 @@ def predict(folder, output):
     (output/'crosswalk.json').write_bytes(encode({'teams': crosswalk.rows, 'fuzzy_matches': 0,
                                                'game_time_adjustments': crosswalk.game_time_adjustments}))
     report = {'system': 'KS1', 'phase': 5, 'date': target_date, 'as_of': as_of, 'model_version': model_version,
+              'learned_feature_names': classifier.feature_name(),
+              'individual_starter_features_learned': individual_learned,
               'rows': len(frame), 'newly_scored': len(rows), 'preserved_pregame_rows': len(frozen_ids),
               'unchanged_rows': len(unchanged), 'unchanged_game_ids': unchanged, 'changes': changes,
               'migrated_frozen_game_ids': migrated_frozen,
@@ -361,7 +370,7 @@ def predict(folder, output):
               'edge_home_units': 'probability difference', 'edge_total_units': 'runs', 'published': False,
               'limitations': ['Fixed research models; no model retraining or R8 authority change.',
                   'Probable pitchers come from the verified pregame MLB feed, falling back to the existing official schedule.',
-                  'Missing starters use the accepted team-starter features; individual-starter fields were not learned in 2025.',
+                  'Individual pitcher features influence predictions only when present in the accepted model; missing history retains explicit counts and team priors.',
                   'Confirmed batting orders are recorded; the accepted models still use shrunk team offense priors.',
                   'An identity-only scratch rebuilds the game but can leave the accepted model probabilities unchanged.',
                   'Unchanged rows retain their original as_of; this report records the latest poll. T-10 remains the cutoff.',
