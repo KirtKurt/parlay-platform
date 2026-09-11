@@ -7,9 +7,9 @@ from decimal import Decimal
 from typing import Any, Dict
 
 from arb_engine import ArbValidationError, scan_all
-from audit_store import enabled as audit_enabled, record as audit_record
-from constraints import apply_book_constraints
-from lifecycle import outcome_pnl, record_leg
+from audit_store import enabled as audit_enabled, recent as audit_recent, record as audit_record
+from constraints import apply_book_constraints, optimize_equal_payout
+from lifecycle import outcome_pnl, recommend_two_leg_completion, record_leg
 from market_catalog import MARKET_FAMILY_KEYS, expand_market_families
 from market_discovery import discover_event_market_keys, discover_events, fetch_all_discovered_markets
 from position_store import get as get_position, list_for_user, put as put_position
@@ -80,6 +80,7 @@ def _finalize_scan(result: Dict[str, Any], *, sport: str) -> Dict[str, Any]:
                 "sport": sport,
                 "n_markets": result.get("n_markets"),
                 "n_arbs": result.get("n_arbs"),
+                "n_detected_unverified": result.get("n_detected_unverified"),
                 "n_rejected": result.get("n_rejected"),
                 "hits": result.get("hits", [])[:50],
             })
@@ -101,7 +102,8 @@ def lambda_handler(event, context):
         return response(200, {"ok": True})
 
     if method == "GET" and path == "/v1/arb/ui":
-        return response(200, HTML, content_type="text/html; charset=utf-8")
+        ws_url = os.environ.get("ARB_WEBSOCKET_PUBLIC_URL", "").strip()
+        return response(200, HTML.replace("__INQSI_WS_URL__", ws_url), content_type="text/html; charset=utf-8")
 
     if method == "GET" and path == "/v1/arb/health":
         return response(200, {
@@ -114,6 +116,27 @@ def lambda_handler(event, context):
             "rules_registry_entries": registry_size(),
             "automatic_market_discovery": True,
             "websocket_push_configured": bool(os.environ.get("ARB_WEBSOCKET_MANAGEMENT_ENDPOINT")),
+            "websocket_public_url_present": bool(os.environ.get("ARB_WEBSOCKET_PUBLIC_URL")),
+            "balance_aware_optimizer": True,
+            "two_leg_completion_assistant": True,
+            "opportunity_history": audit_enabled(),
+        })
+
+    if method == "GET" and path == "/v1/arb/history":
+        if not audit_enabled():
+            return response(503, {"ok": False, "error": "AUDIT_PERSISTENCE_UNAVAILABLE", "version": VERSION})
+        try:
+            limit = max(1, min(int(query.get("limit", "20")), 50))
+        except ValueError:
+            return response(400, {"ok": False, "error": "INVALID_LIMIT"})
+        rows = audit_recent("SCAN", limit=limit)
+        return response(200, {
+            "ok": True,
+            "version": VERSION,
+            "kind": "SCAN",
+            "count": len(rows),
+            "history": rows,
+            "policy": "Read-only scan/opportunity history; user-specific position audit events are not exposed by this endpoint.",
         })
 
     if method == "GET" and path == "/v1/arb/rules":
@@ -153,8 +176,12 @@ def lambda_handler(event, context):
         event_id = query.get("event_id", "").strip()
         if not sport:
             return response(400, {"ok": False, "error": "SPORT_REQUIRED"})
+        regions = query.get("regions") or os.environ.get("ARB_REGIONS", "us,us2,uk,eu,au")
         if event_id:
-            keys, meta = discover_event_market_keys(sport, event_id)
+            keys, meta = discover_event_market_keys(
+                sport, event_id, regions=regions, bookmakers=query.get("bookmakers"),
+                max_markets=int(os.environ.get("ARB_MAX_MARKETS_PER_EVENT", "120")),
+            )
             return response(200 if meta.get("ok") else 503, {"ok": bool(meta.get("ok")), "sport": sport, "event_id": event_id, "markets": keys, "provider": meta})
         events, meta = discover_events(sport)
         return response(200 if meta.get("ok") else 503, {"ok": bool(meta.get("ok")), "sport": sport, "events": events, "provider": meta})
@@ -176,7 +203,7 @@ def lambda_handler(event, context):
                 regions=query.get("regions") or os.environ.get("ARB_REGIONS", "us,us2,uk,eu,au"),
                 bookmakers=query.get("bookmakers"),
                 max_events=max_events,
-                max_markets_per_event=int(os.environ.get("ARB_MAX_MARKETS_PER_EVENT", "80")),
+                max_markets_per_event=int(os.environ.get("ARB_MAX_MARKETS_PER_EVENT", "120")),
             )
             rows = validate_events(rows, jurisdiction=jurisdiction)
             result = scan_all({"bankroll": bankroll, "events": rows})
@@ -234,6 +261,17 @@ def lambda_handler(event, context):
         result = apply_book_constraints(payload.get("legs") or [], payload.get("profiles") or {})
         return response(200, {"ok": True, "version": VERSION, **result})
 
+    if method == "POST" and path == "/v1/arb/optimize":
+        payload = _body(event)
+        try:
+            result = optimize_equal_payout(
+                payload.get("legs") or [], payload.get("profiles") or {},
+                bankroll=float(payload.get("bankroll") or 0),
+            )
+        except (TypeError, ValueError) as exc:
+            return response(400, {"ok": False, "error": "INVALID_OPTIMIZATION_PAYLOAD", "detail": str(exc)[:200]})
+        return response(200, {"ok": True, "version": VERSION, "places_bets": False, **result})
+
     if path.startswith("/v1/arb/positions"):
         user_id = _user(event)
         if user_id == "anonymous":
@@ -256,11 +294,27 @@ def lambda_handler(event, context):
                     "required_outcomes": list(payload.get("required_outcomes") or []),
                     "accepted_legs": [],
                 }
+                if len(set(str(x) for x in position["required_outcomes"] if str(x))) < 2:
+                    return response(400, {"ok": False, "error": "AT_LEAST_TWO_REQUIRED_OUTCOMES"})
                 put_position(user_id, position_id, position)
-                audit_record("POSITION_CREATED", {"user_id": user_id, "position_id": position_id})
+                audit_record("POSITION_CREATED", {"user_id": user_id, "position_id": position_id, "market_id": position["market_id"]})
                 return response(201, {"ok": True, "position": position})
+            if method == "POST" and position_id and path.endswith("/complete"):
+                pos = get_position(user_id, position_id)
+                if not pos:
+                    return response(404, {"ok": False, "error": "POSITION_NOT_FOUND"})
+                payload = _body(event)
+                recommendation = recommend_two_leg_completion(
+                    pos, payload.get("candidate_quotes") or [], payload.get("profiles") or {},
+                )
+                audit_record("POSITION_COMPLETION_RECOMMENDED", {
+                    "user_id": user_id,
+                    "position_id": position_id,
+                    "n_recommendations": recommendation.get("n_recommendations"),
+                    "n_feasible": recommendation.get("n_feasible"),
+                })
+                return response(200, {"version": VERSION, **recommendation})
             if method == "POST" and position_id and path.endswith("/legs"):
-                position_id = parts[3]
                 pos = get_position(user_id, position_id)
                 if not pos:
                     return response(404, {"ok": False, "error": "POSITION_NOT_FOUND"})

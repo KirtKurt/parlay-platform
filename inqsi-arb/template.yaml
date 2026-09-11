@@ -11,19 +11,20 @@ Parameters:
 Globals:
   Function:
     Runtime: python3.11
-    Timeout: 60
+    Timeout: 120
     MemorySize: 512
     Environment:
       Variables:
         ODDS_API_KEY: !Ref OddsApiKey
         ARB_REGIONS: !Ref ArbRegions
         ARB_MAX_EVENT_MARKET_EVENTS: '40'
-        ARB_MAX_MARKETS_PER_EVENT: '80'
+        ARB_MAX_MARKETS_PER_EVENT: '120'
         ARB_MAX_SPORTS_PER_ALL_SCAN: '100'
         ARB_AUDIT_TABLE: !Ref ArbAuditTable
         ARB_STATE_TABLE: !Ref ArbStateTable
         ARB_CONNECTIONS_TABLE: !Ref ArbConnectionsTable
         ARB_WEBSOCKET_MANAGEMENT_ENDPOINT: !Sub 'https://${ArbWebSocketApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod'
+        ARB_WEBSOCKET_PUBLIC_URL: !Sub 'wss://${ArbWebSocketApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod'
 Resources:
   ArbAuditTable:
     Type: AWS::DynamoDB::Table
@@ -109,6 +110,9 @@ Resources:
         Rules:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/rules, Method: GET}
+        History:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/history, Method: GET}
         UI:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/ui, Method: GET}
@@ -118,6 +122,9 @@ Resources:
         Constraints:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/constraints, Method: POST}
+        Optimize:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/optimize, Method: POST}
         PositionsRoot:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/positions, Method: ANY}
