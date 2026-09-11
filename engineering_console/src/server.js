@@ -11,6 +11,8 @@ import { normalizeRepoPath } from './publication.js';
 import { isPublishableScope } from './publication-policy.js';
 import { assertMainAncestor } from './publication-git-guard.js';
 import { cancelPublication } from './publication-decision.js';
+import { stopExecution } from './ecs-job.js';
+import { createBrowserAuth } from './browser-auth.js';
 
 function validScope(scope, allowedScopes) {
   const value = normalizeRepoPath(scope);
@@ -25,15 +27,16 @@ function validJobScopes(job, allowedScopes) {
 export function createServer({ config = loadConfig(), authorizer, store, queue } = {}) {
   store ||= new JobStore(config.dataDir);
   authorizer ||= createAuthorizer(config);
+  const browserAuth = config.browserAuthEnabled ? createBrowserAuth(config, authorizer) : null;
   queue ||= new DurableQueue(store, createRunner(config, store), { maxConcurrent: config.maxConcurrentJobs });
 
   for (const name of fs.readdirSync(config.dataDir).filter((x) => x.endsWith('.json'))) {
     const recovered = store.get(name.slice(0, -5));
     if (!recovered) continue;
-    if (recovered.cancelRequested && ['queued', 'running'].includes(recovered.status)) {
+    if (recovered.cancelRequested && !recovered.execution && ['queued', 'running'].includes(recovered.status)) {
       recovered.status = 'cancelled';
       store.save(recovered);
-    } else if (['queued', 'running'].includes(recovered.status)) {
+    } else if (['queued', 'running'].includes(recovered.status) || (recovered.cancelRequested && recovered.execution && !recovered.execution.stoppedAt)) {
       if (!validJobScopes(recovered, config.allowedScopes)) {
         recovered.status = 'blocked';
         recovered.error = 'authorized_scope_no_longer_allowed';
@@ -49,7 +52,19 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
   return http.createServer(async (request, response) => {
     const send = (status, value) => { response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); response.end(JSON.stringify(value)); };
     try {
-      if (request.url === '/healthz' && request.method === 'GET') return send(200, { ok: true });
+      if (request.method === 'GET' && request.url === '/healthz') return send(200, { status: 'ok', revision: process.env.INQSI_ENGINEERING_SOURCE_SHA || null, execution: 'isolated-ecs' });
+      if (browserAuth && await browserAuth(request, response)) return;
+      if (request.method === 'GET' && request.url === '/' && browserAuth) {
+        try { await authorizer(request); }
+        catch { response.writeHead(302, { location: '/auth/login', 'cache-control': 'no-store' }); response.end(); return; }
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" });
+        return response.end(fs.readFileSync(new URL('../public/index.html', import.meta.url)));
+      }
+      if (request.method === 'GET' && ['/console.js', '/console.css'].includes(request.url) && browserAuth) {
+        await authorizer(request);
+        response.writeHead(200, { 'content-type': request.url.endsWith('.js') ? 'text/javascript' : 'text/css', 'x-content-type-options': 'nosniff' });
+        return response.end(fs.readFileSync(new URL(`../public${request.url}`, import.meta.url)));
+      }
       if (!request.url.startsWith('/v1/engineering')) return send(404, { error: 'not_found' });
       const actor = await authorizer(request);
       const url = new URL(request.url, 'http://localhost'); const parts = url.pathname.split('/').filter(Boolean); const id = parts[2]; const action = parts[3];
@@ -80,7 +95,7 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
         queue.cancel(id);
         if (publicationVisible) {
           const cancelled = store.owned(id, actor.id);
-          cancelled.status = 'cancelled'; cancelled.publicationState = 'cancelled'; cancelled.error = null; cancelled.cancelRequested = true; store.save(cancelled);
+          cancelled.status = 'awaiting_publication'; cancelled.publicationState = 'cancellation_pending'; cancelled.error = null; cancelled.cancelRequested = true; store.save(cancelled);
         }
         return send(202, { job: publicJob(store.owned(id, actor.id)) });
       }
@@ -89,6 +104,11 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
         if (job.publicationState && job.publicationState !== 'no_changes') return send(409, { error: 'published_job_requires_new_task' });
         if (!validJobScopes(job, config.allowedScopes)) return send(409, { error: 'authorized_scope_no_longer_allowed' });
         if (!String(body.instruction || '').trim()) return send(400, { error: 'instruction_required' });
+        if (job.execution && !job.execution.stoppedAt) {
+          try { await stopExecution(config, job, store); }
+          catch { return send(409, { error: 'previous_execution_stop_unconfirmed' }); }
+        }
+        job.previousExecution = job.execution || job.previousExecution; job.execution = null;
         job.instruction = String(body.instruction); job.status = 'queued'; job.cancelRequested = false; job.error = null; store.save(job); queue.enqueue(id); return send(202, { job: publicJob(job) });
       }
       return send(404, { error: 'not_found' });

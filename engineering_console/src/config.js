@@ -22,7 +22,8 @@ export function loadConfig(env = process.env) {
     'INQSI_ENGINEERING_ORIGIN',
     'INQSI_ENGINEERING_ALLOWED_SCOPES',
     'INQSI_ENGINEERING_REQUIRED_CHECKS',
-    'INQSI_ENGINEERING_PUBLICATION_POLICY'
+    'INQSI_ENGINEERING_PUBLICATION_POLICY',
+    'INQSI_ENGINEERING_BIND_ADDRESS'
   ];
   const missing = required.filter((name) => !String(env[name] || '').trim());
   if (missing.length) throw new Error(`Engineering console disabled: missing ${missing.join(', ')}`);
@@ -34,6 +35,8 @@ export function loadConfig(env = process.env) {
   let jwksUri;
   let allowedOrigin;
   try {
+    const issuer = new URL(env.INQSI_ENGINEERING_OIDC_ISSUER);
+    if (issuer.protocol !== 'https:' || issuer.username || issuer.password || issuer.hash || issuer.search) throw new Error();
     jwksUri = new URL(env.INQSI_ENGINEERING_JWKS_URI).toString();
     allowedOrigin = new URL(env.INQSI_ENGINEERING_ORIGIN).origin;
   } catch {
@@ -43,7 +46,7 @@ export function loadConfig(env = process.env) {
     throw new Error('Engineering console disabled: JWKS URI and origin must use https');
   }
 
-  const bindAddress = String(env.INQSI_ENGINEERING_BIND_ADDRESS || '127.0.0.1').trim();
+  const bindAddress = String(env.INQSI_ENGINEERING_BIND_ADDRESS).trim();
   if (!['127.0.0.1', '0.0.0.0'].includes(bindAddress)) throw new Error('Engineering console disabled: invalid bind address');
 
   const allowedScopes = [...new Set(env.INQSI_ENGINEERING_ALLOWED_SCOPES.split(',').map(normalizeScope))];
@@ -72,6 +75,18 @@ export function loadConfig(env = process.env) {
     bindAddress,
     maxConcurrentJobs,
     port: Number(env.PORT || 8787),
-    maxInstructionBytes: Number(env.INQSI_ENGINEERING_MAX_INSTRUCTION_BYTES || 20000)
+    maxInstructionBytes: Number(env.INQSI_ENGINEERING_MAX_INSTRUCTION_BYTES || 20000),
+    cluster: env.INQSI_ENGINEERING_ECS_CLUSTER,
+    jobTaskDefinition: env.INQSI_ENGINEERING_JOB_TASK_DEFINITION,
+    jobImage: env.INQSI_ENGINEERING_JOB_IMAGE,
+    jobSecurityGroup: env.INQSI_ENGINEERING_JOB_SECURITY_GROUP,
+    jobSubnets: String(env.INQSI_ENGINEERING_JOB_SUBNETS || '').split(',').filter(Boolean),
+    brokerUrl: env.INQSI_ENGINEERING_BROKER_URL,
+    transportDir: env.INQSI_ENGINEERING_TRANSPORT_DIR,
+    model: env.INQSI_ENGINEERING_MODEL,
+    browserAuthEnabled: env.INQSI_ENGINEERING_BROWSER_AUTH === 'true',
+    oidcClientId: env.INQSI_ENGINEERING_OIDC_CLIENT_ID,
+    oidcClientSecret: env.INQSI_ENGINEERING_OIDC_CLIENT_SECRET,
+    sessionKey: env.INQSI_ENGINEERING_SESSION_KEY
   };
 }

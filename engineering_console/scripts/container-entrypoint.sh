@@ -11,48 +11,12 @@ require_absolute_dir() {
   mkdir -p "$value"
 }
 
-prepare_worker_repository() {
-  require_absolute_dir INQSI_ENGINEERING_DATA_DIR
-  require_absolute_dir INQSI_ENGINEERING_WORKSPACE_ROOT
-
-  repo="${INQSI_ENGINEERING_REPOSITORY:-}"
-  case "$repo" in
-    /*) ;;
-    *) echo "Engineering Console disabled: INQSI_ENGINEERING_REPOSITORY must be an absolute path" >&2; exit 64 ;;
-  esac
-
-  parent=$(dirname "$repo")
-  mkdir -p "$parent"
-  if [ ! -d "$repo/.git" ]; then
-    if [ -e "$repo" ]; then
-      echo "Engineering Console disabled: repository path exists but is not a git checkout" >&2
-      exit 64
-    fi
-    tmp="${repo}.init.$$"
-    rm -rf "$tmp"
-    git clone --branch main --single-branch https://github.com/KirtKurt/parlay-platform.git "$tmp"
-    mv "$tmp" "$repo"
-  fi
-
-  origin=$(git -C "$repo" remote get-url origin)
-  case "$origin" in
-    https://github.com/KirtKurt/parlay-platform|https://github.com/KirtKurt/parlay-platform.git) ;;
-    *) echo "Engineering Console disabled: unexpected repository origin" >&2; exit 64 ;;
-  esac
-
-  branch=$(git -C "$repo" branch --show-current)
-  if [ "$branch" != "main" ]; then
-    echo "Engineering Console disabled: durable repository is not on main" >&2
-    exit 64
-  fi
-  git -C "$repo" fetch --prune origin main
-  git -C "$repo" merge --ff-only origin/main
-}
-
 case "${INQSI_ENGINEERING_ROLE:-}" in
   worker)
-    prepare_worker_repository
     exec npm start
+    ;;
+  broker)
+    exec node /app/scripts/start-broker.mjs
     ;;
   publisher)
     require_absolute_dir INQSI_ENGINEERING_DATA_DIR
@@ -74,7 +38,7 @@ case "${INQSI_ENGINEERING_ROLE:-}" in
     done
     ;;
   *)
-    echo "Engineering Console disabled: INQSI_ENGINEERING_ROLE must be worker or publisher" >&2
+    echo "Engineering Console disabled: INQSI_ENGINEERING_ROLE must be worker, broker or publisher" >&2
     exit 64
     ;;
 esac

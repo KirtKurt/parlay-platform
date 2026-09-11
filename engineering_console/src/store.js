@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { sanitizeValue } from './sanitize.js';
 
 const JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -8,6 +10,7 @@ const JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
 export class JobStore {
   constructor(directory) {
     this.directory = path.resolve(directory);
+    this.snapshots = new WeakMap();
     fs.mkdirSync(this.directory, { recursive: true, mode: 0o700 });
   }
 
@@ -45,20 +48,38 @@ export class JobStore {
   }
 
   save(job) {
-    job.updatedAt = new Date().toISOString();
     const target = this.file(job.id);
-    const temp = `${target}.${process.pid}.tmp`;
-    const persisted = sanitizeValue(job);
-    fs.writeFileSync(temp, `${JSON.stringify(persisted, null, 2)}\n`, { mode: 0o600 });
-    fs.renameSync(temp, target);
+    // Hold one shared kernel lock across read/compare/write. Never unlink it:
+    // replacing the inode would let concurrent containers hold different locks.
+    const fd = fs.openSync(`${target}.lock`, fs.constants.O_CREAT | fs.constants.O_RDWR | fs.constants.O_NOFOLLOW, 0o600);
+    let result;
+    try {
+      const stat = fs.fstatSync(fd);
+      if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid() || (stat.mode & 0o022)) throw new Error('job_store_lock_not_trusted');
+      result = spawnSync('flock', ['--exclusive', '--timeout', '5', '--conflict-exit-code', '75', '--no-fork', '/proc/self/fd/3', process.execPath, fileURLToPath(new URL('../scripts/store-write.mjs', import.meta.url)), target], {
+        input: JSON.stringify({ base: this.snapshots.get(job) ?? null, job: sanitizeValue(job) }),
+        encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe', fd], maxBuffer: 32 * 1024 * 1024
+      });
+    } finally { fs.closeSync(fd); }
+    if (result.error || result.status !== 0) {
+      const conflict = result.status === 73;
+      throw Object.assign(new Error(conflict ? 'job_store_write_conflict' : 'job_store_write_failed'), { code: conflict ? 'ESTALE' : 'EIO' });
+    }
+    const persisted = JSON.parse(result.stdout);
+    for (const key of Object.keys(job)) if (!(key in persisted)) delete job[key];
     Object.assign(job, persisted);
+    this.snapshots.set(job, structuredClone(persisted));
   }
 
   get(id) {
     let target;
     try { target = this.file(id); }
     catch (error) { if (error.code === 'EINVAL') return null; throw error; }
-    try { return JSON.parse(fs.readFileSync(target, 'utf8')); }
+    try {
+      const job = JSON.parse(fs.readFileSync(target, 'utf8'));
+      this.snapshots.set(job, structuredClone(job));
+      return job;
+    }
     catch (error) { if (error.code === 'ENOENT') return null; throw error; }
   }
 

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { JOB_ID, publicationDirectories } from './publication.js';
 
 function decisionPath(dataDir, jobId) {
@@ -22,13 +23,23 @@ function readDecision(target) {
 
 function decide(dataDir, jobId, value) {
   const target = decisionPath(dataDir, jobId);
+  const temporary = `${target}.${crypto.randomUUID()}.tmp`;
   try {
-    fs.writeFileSync(target, `${value}\n`, { mode: 0o600, flag: 'wx' });
+    const fd = fs.openSync(temporary, 'wx', 0o600);
+    try { fs.writeFileSync(fd, `${value}\n`); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    // Publish an already complete inode. A crash cannot leave an empty winning
+    // decision, and hard-link creation atomically arbitrates competing writers.
+    try { fs.linkSync(temporary, target); }
+    catch (error) { if (error.code !== 'EEXIST') throw error; return readDecision(target); }
+    const directory = fs.openSync(path.dirname(target), 'r');
+    try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
     return value;
-  } catch (error) {
-    if (error.code !== 'EEXIST') throw error;
-    return readDecision(target);
-  }
+  } finally { fs.rmSync(temporary, { force: true }); }
+}
+
+export function arbitrateVerifiedMerge(dataDir, jobId, cancelRequested = false) {
+  if (cancelRequested) decide(dataDir, jobId, 'cancelled');
+  return decide(dataDir, jobId, 'merge') === 'cancelled' ? 'merge_conflict' : 'merged';
 }
 
 /** First durable decision wins. A cancellation accepted before merge commitment

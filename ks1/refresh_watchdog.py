@@ -17,6 +17,8 @@ EVENTS = {'push', 'schedule', 'workflow_dispatch'}
 INTERVAL = timedelta(hours=1)
 OWNER_SECONDS = 55 * 60
 POLL_SECONDS = 60
+REQUEST_TIMEOUT = 10
+READ_BACKOFF = (2, 5)
 
 
 def timestamp(value):
@@ -51,12 +53,21 @@ class GitHub:
                    '/repos/'+REPOSITORY+'/actions/'+path]
         if payload is not None:
             command += ['--input', '-']
-        result = subprocess.run(command, input=json.dumps(payload) if payload else None,
-                                capture_output=True, text=True, timeout=40)
-        if result.returncode:
-            # Do not echo stderr/response bodies or auth details into artifacts.
-            raise RuntimeError('GitHub KS1 '+method+' request failed')
-        return json.loads(result.stdout) if result.stdout.strip() else None
+        # Reads are safe to retry. A POST timeout may already have queued a run:
+        # it must remain one attempt and use the owner's dispatch cooldown.
+        attempts = len(READ_BACKOFF)+1 if method == 'GET' else 1
+        for attempt in range(attempts):
+            try:
+                result = subprocess.run(command, input=json.dumps(payload) if payload else None,
+                                        capture_output=True, text=True, timeout=REQUEST_TIMEOUT)
+                if not result.returncode:
+                    return json.loads(result.stdout) if result.stdout.strip() else None
+            except (subprocess.TimeoutExpired, OSError, json.JSONDecodeError):
+                pass
+            if attempt+1 < attempts:
+                time.sleep(READ_BACKOFF[attempt])
+        # Never propagate subprocess output, response bodies or auth details.
+        raise RuntimeError('GitHub KS1 '+method+' request failed') from None
 
     def active(self):
         return all(self.request('workflows/'+name)['state'] == 'active'
@@ -90,12 +101,28 @@ def run_owner(api, *, clock=lambda: datetime.now(timezone.utc),
     deadline = monotonic()+OWNER_SECONDS
     last_dispatch = None
     failures = 0
+    read_failures = 0
+    consecutive_read_failures = 0
     while monotonic() < deadline:
-        if not api.active():
-            print(json.dumps({'status': 'disabled_workflow_no_handoff'}), flush=True)
-            return
+        try:
+            if not api.active():
+                print(json.dumps({'status': 'disabled_workflow_no_handoff'}), flush=True)
+                return
+            runs = api.runs()
+        except RuntimeError:
+            # An unknown run list is not an empty run list. Keep the owner
+            # alive, but never dispatch using a failed or stale observation.
+            read_failures += 1
+            consecutive_read_failures += 1
+            print(json.dumps({'status': 'read_failed_no_dispatch',
+                              'read_failures': read_failures}), flush=True)
+            sleep(min(POLL_SECONDS, max(0, deadline-monotonic())))
+            continue
+        consecutive_read_failures = 0
+        if monotonic() >= deadline:
+            break
         now = clock()
-        decision = decide(api.runs(), now)
+        decision = decide(runs, now)
         # Cover GitHub's short post-dispatch indexing delay within this owner.
         if last_dispatch and now-last_dispatch < INTERVAL:
             decision = {'dispatch': False, 'reason': 'local_dispatch_cooldown'}
@@ -112,9 +139,12 @@ def run_owner(api, *, clock=lambda: datetime.now(timezone.utc),
         sleep(min(POLL_SECONDS, max(0, deadline-monotonic())))
     if api.active():
         api.dispatch(OWNER)
-        print(json.dumps({'status': 'next_bounded_owner_requested'}), flush=True)
+        print(json.dumps({'status': 'next_bounded_owner_requested',
+                          'read_failures': read_failures}), flush=True)
     if failures:
         raise RuntimeError('KS1 dispatch was unconfirmed; inspect the production runs')
+    if consecutive_read_failures:
+        raise RuntimeError('KS1 reads remained unavailable; inspect the successor and production runs')
 
 
 if __name__ == '__main__':

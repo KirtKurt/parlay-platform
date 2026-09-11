@@ -154,7 +154,7 @@ export function readPublicationReceipt(dataDir, jobId) {
 export function writePublicationReceipt(dataDir, receipt) {
   if (!JOB_ID.test(receipt?.jobId || '')) throw new Error('invalid_job_id');
   const previous = readPublicationReceipt(dataDir, receipt.jobId);
-  if (previous?.state === 'merged') return previous;
+  if (previous?.state === 'merged' || previous?.state === 'merge_conflict') return previous;
   const { receipts } = publicationDirectories(dataDir);
   fs.mkdirSync(receipts, { recursive: true, mode: 0o700 });
   const target = path.join(receipts, `${receipt.jobId}.json`);

@@ -43,7 +43,8 @@ export function requirePublisherLockDirectory(env = process.env) {
   return directory;
 }
 
-export function validatePullRequestIdentity(pr, manifest, head) {
+export function validatePullRequestIdentity(pr, manifest, head, { allowClosed = false } = {}) {
   if (!Number.isSafeInteger(pr?.number) || pr.number < 1 || pr.draft || pr.head?.repo?.full_name !== REPOSITORY || pr.base?.repo?.full_name !== REPOSITORY || pr.head?.ref !== manifest.branch || pr.base?.ref !== 'main' || pr.head?.sha !== head) throw new Error('publication_pr_identity_mismatch');
-  if (!pr.merged_at && pr.state !== 'open') throw new Error('publication_pr_closed_without_merge');
+  if (!['open', 'closed'].includes(pr.state)) throw new Error('publication_pr_state_invalid');
+  if (!pr.merged_at && pr.state !== 'open' && !allowClosed) throw new Error('publication_pr_closed_without_merge');
 }

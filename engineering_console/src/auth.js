@@ -1,4 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { ACCESS_COOKIE, cookieValue } from './browser-auth.js';
 
 export function createAuthorizer(config, verify = null) {
   const jwks = createRemoteJWKSet(new URL(config.jwksUri));
@@ -8,7 +9,9 @@ export function createAuthorizer(config, verify = null) {
   }));
 
   return async function authorize(request) {
-    const value = request.headers.authorization || '';
+    const browserToken = cookieValue(request.headers.cookie, ACCESS_COOKIE);
+    const value = request.headers.authorization || (browserToken ? `Bearer ${browserToken}` : '');
+    if (!request.headers.authorization && browserToken && !['GET', 'HEAD'].includes(request.method) && request.headers.origin !== config.allowedOrigin) throw Object.assign(new Error('origin_not_allowed'), { status: 403 });
     if (!value.startsWith('Bearer ')) throw Object.assign(new Error('authentication_required'), { status: 401 });
 
     let payload;

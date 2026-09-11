@@ -1,9 +1,9 @@
-import { Codex } from '@openai/codex-sdk';
+import { EcsCodex, stopExecution } from './ecs-job.js';
 import { createWorkspace, collectChanges, git } from './git.js';
 import { sanitize } from './sanitize.js';
 import { withinAuthorizedScope, writePublicationRequest } from './publication.js';
 
-export function createRunner(config, store, CodexClass = Codex) {
+export function createRunner(config, store, CodexClass = null) {
   return async (job, signal) => {
     let workspace;
     try {
@@ -11,10 +11,15 @@ export function createRunner(config, store, CodexClass = Codex) {
       job.error = null;
       store.save(job);
 
+      if (!CodexClass && job.cancelRequested && job.execution?.taskArn) {
+        await stopExecution(config, job, store);
+        job.status = 'cancelled'; store.save(job); return;
+      }
+
       ({ workspace, branch: job.branch } = await createWorkspace(config, job));
       store.save(job);
 
-      const codex = new CodexClass();
+      const codex = CodexClass ? new CodexClass() : new EcsCodex({ config, job, workspace, store });
       const threadOptions = {
         workingDirectory: workspace,
         skipGitRepoCheck: false,
@@ -91,7 +96,10 @@ export function createRunner(config, store, CodexClass = Codex) {
       }
       store.save(job);
     } catch (error) {
-      job.status = signal.aborted || job.cancelRequested ? 'cancelled' : 'failed';
+      // Another trusted process committed a conflicting transition. Preserve
+      // that durable state; never replace a publisher receipt with our stale job.
+      if (error?.code === 'ESTALE') return;
+      job.status = job.execution && !job.execution.stoppedAt ? 'blocked' : signal.aborted || job.cancelRequested ? 'cancelled' : 'failed';
       job.error = sanitize(error?.message || error);
       store.save(job);
     }

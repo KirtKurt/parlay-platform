@@ -10,8 +10,9 @@ import { loadConfig } from '../src/config.js';
 
 test('fails closed without identity configuration', () => assert.throws(() => loadConfig({}), /console disabled/));
 
-function completeConfig(root, overrides = {}) {
-  return {
+test('accepts complete explicit security configuration', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'inqsi-config-'));
+  const config = loadConfig({
     INQSI_ENGINEERING_OIDC_ISSUER: 'https://issuer.example',
     INQSI_ENGINEERING_OIDC_AUDIENCE: 'inqsi',
     INQSI_ENGINEERING_JWKS_URI: 'https://issuer.example/jwks.json',
@@ -23,26 +24,31 @@ function completeConfig(root, overrides = {}) {
     INQSI_ENGINEERING_ALLOWED_SCOPES: 'engineering_console_publication_proof,engineering_console_publication_proof/probes',
     INQSI_ENGINEERING_PUBLICATION_POLICY: 'proof-v1',
     INQSI_ENGINEERING_REQUIRED_CHECKS: 'engineering-console-publication-proof',
-    INQSI_ENGINEERING_BIND_ADDRESS: '127.0.0.1',
-    INQSI_ENGINEERING_MAX_CONCURRENT_JOBS: '2',
-    ...overrides
-  };
-}
-
-test('accepts complete explicit security configuration', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'inqsi-config-'));
-  const config = loadConfig(completeConfig(root));
+    INQSI_ENGINEERING_BIND_ADDRESS: '0.0.0.0',
+    INQSI_ENGINEERING_MAX_CONCURRENT_JOBS: '2'
+  });
   assert.equal(config.allowedScopes.length, 2);
   assert.equal(config.maxConcurrentJobs, 2);
-  assert.equal(config.bindAddress, '127.0.0.1');
+  assert.equal(config.bindAddress, '0.0.0.0');
 });
 
-test('defaults bind to loopback and rejects unsafe values', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'inqsi-config-'));
-  const loopback = completeConfig(root);
-  delete loopback.INQSI_ENGINEERING_BIND_ADDRESS;
-  assert.equal(loadConfig(loopback).bindAddress, '127.0.0.1');
-  assert.throws(() => loadConfig(completeConfig(root, { INQSI_ENGINEERING_BIND_ADDRESS: '::' })), /invalid bind address/);
+test('rejects an implicit or invalid bind address', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'inqsi-bind-'));
+  const base = {
+    INQSI_ENGINEERING_OIDC_ISSUER: 'https://issuer.example',
+    INQSI_ENGINEERING_OIDC_AUDIENCE: 'inqsi',
+    INQSI_ENGINEERING_JWKS_URI: 'https://issuer.example/jwks.json',
+    INQSI_ENGINEERING_ADMIN_CLAIM: 'admin',
+    INQSI_ENGINEERING_REPOSITORY: path.join(root, 'repo'),
+    INQSI_ENGINEERING_DATA_DIR: path.join(root, 'data'),
+    INQSI_ENGINEERING_WORKSPACE_ROOT: path.join(root, 'workspaces'),
+    INQSI_ENGINEERING_ORIGIN: 'https://engineering.example',
+    INQSI_ENGINEERING_ALLOWED_SCOPES: 'engineering_console_publication_proof',
+    INQSI_ENGINEERING_PUBLICATION_POLICY: 'proof-v1',
+    INQSI_ENGINEERING_REQUIRED_CHECKS: 'engineering-console-publication-proof'
+  };
+  assert.throws(() => loadConfig(base), /BIND_ADDRESS/);
+  assert.throws(() => loadConfig({ ...base, INQSI_ENGINEERING_BIND_ADDRESS: '::' }), /invalid bind address/);
 });
 
 test('durably stores jobs and scopes history to its owner', () => {
