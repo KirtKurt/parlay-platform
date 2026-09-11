@@ -5,6 +5,7 @@ from engineering_agent.evidence import (
     fundamentals_capture_gap,
     fundamentals_feature_pipeline_gap,
 )
+from engineering_agent.runtime import prioritized_focus_domains
 
 
 def test_feature_gap_requires_positive_all_game_inactivity_and_zero_shadow_evaluation() -> None:
@@ -148,6 +149,8 @@ def test_capture_gap_requires_contract_safe_read_only_immutable_proof() -> None:
     original = copy.deepcopy(report)
     gap = fundamentals_capture_gap(report)
     assert gap is not None
+    assert gap["signal"] == "coverage_mismatch"
+    assert prioritized_focus_domains(str(gap))[0] == "data_capture"
     assert gap["gameCount"] == 2
     assert gap["incompleteGameCount"] == 2
     assert gap["contractSafeGameCount"] == 2
