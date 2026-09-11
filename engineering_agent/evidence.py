@@ -66,9 +66,10 @@ def fundamentals_capture_gap(report: dict[str, Any]) -> dict[str, Any] | None:
     """Return a fail-closed live fundamentals capture gap from immutable proof rows.
 
     Chronology/persistence safety is a prerequisite. If any game is contract-blocked,
-    if the report is authority-bearing or mutable, or if counts are malformed, this
-    helper refuses to turn source completeness into task authority. Missing groups are
-    recorded as absent from the diagnostic proof rather than guessed from postgame data.
+    if its write-once persistence proof is invalid, if the report is authority-bearing
+    or mutable, or if counts are malformed, this helper refuses to turn source
+    completeness into task authority. Missing groups are recorded as absent from the
+    diagnostic proof rather than guessed from postgame data.
     """
 
     if not isinstance(report, dict):
@@ -107,7 +108,11 @@ def fundamentals_capture_gap(report: dict[str, Any]) -> dict[str, Any] | None:
     group_status_counts = {group: Counter() for group in FUNDAMENTALS_EXPECTED_GROUPS}
     incomplete_games = 0
     for game in games:
-        if not isinstance(game, dict) or game.get("contractSafe") is not True:
+        if (
+            not isinstance(game, dict)
+            or game.get("contractSafe") is not True
+            or game.get("persistenceProofValid") is not True
+        ):
             return None
         groups = game.get("groups")
         if not isinstance(groups, list):
