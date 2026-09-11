@@ -45,29 +45,26 @@ FOCUS_DOMAINS = (
 
 _FOCUS_SIGNAL_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
-        "clean_cohort",
+        "reliability",
         (
-            "insufficient_clean_rows",
-            "insufficient_clean_official_evidence",
-            "clean cohort",
-            "cleancohort",
-            "data_admission",
-            "data admission",
-            "invalid immutable fundamentals snapshot",
-            "quarantinedrowcount",
-            "admittedrows",
+            "functionerror",
+            "function error",
+            "scheduled failure",
+            "runtime error",
+            "health failed",
+            "execution failure",
+            '\"timeout\": true',
         ),
     ),
     (
-        "challenger_model",
+        "data_capture",
         (
-            "insufficient_observed_starter",
-            "insufficient_observed_team_context",
-            "insufficient_whole_slate_development_rows",
-            "whole_slate_development",
-            "successor",
-            "challenger",
-            "development train",
+            "missing_t10_snapshots",
+            "missedt10",
+            "coverage_mismatch",
+            "source_failure",
+            "capture failure",
+            "ingestion failure",
         ),
     ),
     (
@@ -77,33 +74,25 @@ _FOCUS_SIGNAL_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "selected_reliability_calibration_too_high",
             "no_positive_brier_skill",
             "log_loss_not_lower",
-            "brier",
-            "calibrationerror",
-            "\"ece\"",
+            "accuracy_lift_too_low",
         ),
     ),
     (
-        "data_capture",
+        "challenger_model",
         (
-            "missing_t10",
-            "coverage_mismatch",
-            "statcast",
-            "ingestion",
-            "snapshotwrites",
-            "source coverage",
-            "pregame",
+            "insufficient_observed_starter",
+            "insufficient_observed_team_context",
+            "insufficient_whole_slate_development_rows",
+            "accumulating_team_context_development_data",
+            "accumulating_starter_rate_development_data",
         ),
     ),
     (
-        "reliability",
+        "clean_cohort",
         (
-            "functionerror",
-            "function error",
-            "timeout",
-            "scheduled failure",
-            "runtime error",
-            "health failed",
-            "execution failure",
+            "insufficient_clean_rows",
+            "insufficient_clean_official_evidence",
+            "clean_cohort_blocked",
         ),
     ),
 )
@@ -246,9 +235,6 @@ def next_focus_domain(
     for domain in ranked:
         if domain not in rejected_domains:
             return domain
-    # If each evidenced domain has already produced a rejected task, retry the
-    # highest-priority unresolved domain rather than drifting into a completed
-    # or non-evidenced area.
     return ranked[0]
 
 
@@ -321,14 +307,10 @@ def _invoke(function_name: str, prompt: str) -> dict[str, Any]:
     response = client.invoke(
         FunctionName=function_name,
         InvocationType="RequestResponse",
-        Payload=json.dumps(
-            {"mode": "engineering_plan", "prompt": prompt}
-        ).encode("utf-8"),
+        Payload=json.dumps({"mode": "engineering_plan", "prompt": prompt}).encode("utf-8"),
     )
     if response.get("FunctionError"):
-        raise RuntimeError(
-            "planner Lambda FunctionError: " + str(response.get("FunctionError"))
-        )
+        raise RuntimeError("planner Lambda FunctionError: " + str(response.get("FunctionError")))
     value = json.loads(response["Payload"].read())
     if not isinstance(value, dict):
         raise ValueError("planner Lambda response must be an object")
@@ -347,10 +329,7 @@ def _function_name(stack_name: str, logical_id: str) -> str:
     return value
 
 
-def _reject_cycle_repeat(
-    title: str,
-    rejected: list[dict[str, Any]],
-) -> None:
+def _reject_cycle_repeat(title: str, rejected: list[dict[str, Any]]) -> None:
     normalized = normalize_task_title(title)
     if not normalized:
         return
@@ -359,10 +338,7 @@ def _reject_cycle_repeat(
         if prior_title.startswith("<"):
             continue
         similarity = title_similarity(normalized, prior_title)
-        if (
-            normalized == normalize_task_title(prior_title)
-            or similarity >= 0.60
-        ):
+        if normalized == normalize_task_title(prior_title) or similarity >= 0.60:
             raise ValueError(
                 "task repeats a proposal already rejected this cycle: "
                 f"{prior_title} (similarity={similarity:.2f})"
@@ -370,8 +346,7 @@ def _reject_cycle_repeat(
 
 
 def _validate_focus_domain(
-    task: dict[str, Any],
-    required_focus_domain: str | None,
+    task: dict[str, Any], required_focus_domain: str | None
 ) -> str:
     domain = classify_task_domain(task)
     if required_focus_domain and domain != required_focus_domain:
@@ -400,9 +375,7 @@ def run(
     attempts: list[dict[str, Any]] = []
 
     for attempt in range(1, max(1, max_attempts) + 1):
-        required_focus_domain = (
-            None if attempt == 1 else next_focus_domain(evidence, rejected)
-        )
+        required_focus_domain = None if attempt == 1 else next_focus_domain(evidence, rejected)
         prompt = _planner_payload(
             evidence,
             history,
@@ -411,9 +384,7 @@ def run(
         )
         prompt_bytes = len(prompt.encode("utf-8"))
         if prompt_bytes > 50000:
-            raise ValueError(
-                f"planner request exceeded 50KB contract: {prompt_bytes}"
-            )
+            raise ValueError(f"planner request exceeded 50KB contract: {prompt_bytes}")
         response = _invoke(function_name, prompt)
         summary: dict[str, Any] = {
             "attempt": attempt,
@@ -427,18 +398,10 @@ def run(
             "endpointFamily": response.get("endpointFamily"),
         }
         if response.get("ok") is not True or response.get("mode") != "engineering_plan":
-            reason = "planner Lambda failed: " + json.dumps(
-                response, default=str
-            )
+            reason = "planner Lambda failed: " + json.dumps(response, default=str)
             summary["rejected"] = reason
             attempts.append(summary)
-            rejected.append(
-                {
-                    "title": "<lambda-failure>",
-                    "domain": "other",
-                    "reason": reason[:1000],
-                }
-            )
+            rejected.append({"title": "<lambda-failure>", "domain": "other", "reason": reason[:1000]})
             continue
 
         text = str(response.get("text") or "").strip()
@@ -446,9 +409,7 @@ def run(
             reason = "planner Lambda returned empty task text"
             summary["rejected"] = reason
             attempts.append(summary)
-            rejected.append(
-                {"title": "<empty>", "domain": "other", "reason": reason}
-            )
+            rejected.append({"title": "<empty>", "domain": "other", "reason": reason})
             continue
 
         proposed_title = "<unparsed>"
@@ -463,26 +424,12 @@ def run(
             task = validate(parsed, decision_history=history)
         except Exception as exc:
             reason = f"{type(exc).__name__}: {exc}"
-            summary.update(
-                {
-                    "title": proposed_title,
-                    "domain": proposal_domain,
-                    "rejected": reason,
-                }
-            )
+            summary.update({"title": proposed_title, "domain": proposal_domain, "rejected": reason})
             attempts.append(summary)
-            rejected.append(
-                {
-                    "title": proposed_title,
-                    "domain": proposal_domain,
-                    "reason": reason[:1000],
-                }
-            )
+            rejected.append({"title": proposed_title, "domain": proposal_domain, "reason": reason[:1000]})
             continue
 
-        task["focusDomain"] = _validate_focus_domain(
-            task, required_focus_domain
-        )
+        task["focusDomain"] = _validate_focus_domain(task, required_focus_domain)
         task["plannerRoute"] = {
             key: response.get(key)
             for key in ("routeId", "region", "modelId", "endpointFamily")
@@ -492,34 +439,22 @@ def run(
         task["plannerAttempt"] = attempt
         task["rejectedProposalsThisCycle"] = rejected
         output_path.write_text(
-            json.dumps(task, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
+            json.dumps(task, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
         response_path.write_text(
-            json.dumps(response, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
+            json.dumps(response, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
-        summary.update(
-            {
-                "title": task["title"],
-                "domain": task["focusDomain"],
-                "accepted": True,
-            }
-        )
+        summary.update({"title": task["title"], "domain": task["focusDomain"], "accepted": True})
         attempts.append(summary)
         attempts_path.write_text(
-            json.dumps(attempts, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
+            json.dumps(attempts, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
         return task
 
     attempts_path.write_text(
-        json.dumps(attempts, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+        json.dumps(attempts, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    raise RuntimeError(
-        f"no acceptable planner task after {max_attempts} bounded attempts"
-    )
+    raise RuntimeError(f"no acceptable planner task after {max_attempts} bounded attempts")
 
 
 def main() -> int:
@@ -541,16 +476,7 @@ def main() -> int:
         logical_id=args.logical_function,
         max_attempts=args.max_attempts,
     )
-    print(
-        json.dumps(
-            {
-                "ok": True,
-                "title": task["title"],
-                "attempt": task["plannerAttempt"],
-                "focusDomain": task["focusDomain"],
-            }
-        )
-    )
+    print(json.dumps({"ok": True, "title": task["title"], "attempt": task["plannerAttempt"], "focusDomain": task["focusDomain"]}))
     return 0
 
 
