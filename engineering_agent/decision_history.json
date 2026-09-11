@@ -27,6 +27,13 @@
       "plannerRun": 34596497953,
       "reason": "The proposal would adjust model outputs, apply Platt/isotonic calibration, and retrain while the same evidence states only 36 prospective selected recommendations exist versus the required 100. That prospective set is an incomplete holdout and cannot be used to choose or fit calibration behavior without leaking evaluation evidence.",
       "reconsiderOnlyIf": "The prospective selected-recommendation minimum is reached chronologically with immutable pregame predictions and settled labels, or the work is strictly read-only calibration diagnostics that do not tune, fit, select, or retrain a model."
+    },
+    {
+      "status": "REJECTED_AS_UNSAFE_OR_INAPPLICABLE",
+      "title": "Resolve Insufficient Clean Rows for Three-Way Chronological Split",
+      "plannerRun": 34597012681,
+      "reason": "The proposal was driven by a nested retired-shadow audit section reporting only 5 rows, while the current R8 historical/live experiment already has 630 accepted rows with 308 train, 109 validation, and 102 prospective-test rows, exceeding the chronological split minima. Backfilling or augmenting data merely to satisfy the stale retired diagnostic would create false task authority and could compromise source honesty.",
+      "reconsiderOnlyIf": "A current authoritative R8/successor training status again falls below the unchanged chronological row minima, with the deficit traced to a real source-honest admission or capture defect rather than a retired shadow diagnostic."
     }
   ]
 }

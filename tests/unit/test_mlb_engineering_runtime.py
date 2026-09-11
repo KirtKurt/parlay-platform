@@ -69,7 +69,21 @@ def test_next_focus_skips_domain_already_rejected_this_cycle() -> None:
     assert next_focus_domain(evidence, rejected) == "challenger_model"
 
 
-def test_attempt_budget_expands_to_cover_evidenced_domains_after_initial_proposal() -> None:
+def test_next_focus_returns_unconstrained_fallback_after_all_ranked_domains_rejected() -> None:
+    evidence = (
+        "insufficient_clean_rows "
+        "INSUFFICIENT_OBSERVED_TEAM_CONTEXT_TRAIN "
+        "CALIBRATION_ERROR_TOO_HIGH"
+    )
+    rejected = [
+        {"title": "Calibration task", "domain": "calibration", "reason": "blocked"},
+        {"title": "Challenger task", "domain": "challenger_model", "reason": "blocked"},
+        {"title": "Clean task", "domain": "clean_cohort", "reason": "blocked"},
+    ]
+    assert next_focus_domain(evidence, rejected) is None
+
+
+def test_attempt_budget_keeps_one_safe_fallback_after_evidenced_domains() -> None:
     evidence = (
         "CALIBRATION_ERROR_TOO_HIGH "
         "INSUFFICIENT_OBSERVED_TEAM_CONTEXT_TRAIN "
@@ -80,10 +94,10 @@ def test_attempt_budget_expands_to_cover_evidenced_domains_after_initial_proposa
         "calibration",
         "challenger_model",
     ]
-    assert planner_attempt_budget(3, evidence) == 4
+    assert planner_attempt_budget(3, evidence) == 5
 
 
-def test_attempt_budget_remains_bounded_by_focus_domain_contract() -> None:
+def test_attempt_budget_remains_bounded_to_initial_plus_focus_domains() -> None:
     evidence = " ".join(
         [
             "health failed",
@@ -94,8 +108,8 @@ def test_attempt_budget_remains_bounded_by_focus_domain_contract() -> None:
         ]
     )
     assert len(prioritized_focus_domains(evidence)) == 5
-    assert planner_attempt_budget(3, evidence) == 5
-    assert planner_attempt_budget(99, evidence) == 5
+    assert planner_attempt_budget(3, evidence) == 6
+    assert planner_attempt_budget(99, evidence) == 6
 
 
 def test_focus_validation_rejects_cross_domain_retry() -> None:
@@ -116,7 +130,7 @@ def test_focus_validation_accepts_matching_clean_cohort_task() -> None:
     assert _validate_focus_domain(clean_task, "clean_cohort") == "clean_cohort"
 
 
-def test_retry_prompt_carries_deterministic_focus_and_safety_receipts() -> None:
+def test_retry_prompt_carries_deterministic_focus_and_excludes_rejected_domains() -> None:
     payload = json.loads(
         _planner_payload(
             "insufficient_clean_rows",
@@ -126,13 +140,20 @@ def test_retry_prompt_carries_deterministic_focus_and_safety_receipts() -> None:
                     "title": "Bind successor health to MLB-specific deployment identity",
                     "domain": "deployment_identity",
                     "reason": "completed",
-                }
+                },
+                {
+                    "title": "Old clean task",
+                    "domain": "clean_cohort",
+                    "reason": "stale evidence",
+                },
             ],
-            required_focus_domain="clean_cohort",
+            required_focus_domain=None,
         )
     )
-    assert payload["requiredFocusDomain"] == "clean_cohort"
+    assert payload["requiredFocusDomain"] is None
     assert "deployment_identity" in payload["excludedFocusDomains"]
+    assert "clean_cohort" in payload["excludedFocusDomains"]
+    assert "Do not return work from excludedFocusDomains" in payload["instruction"]
     assert set(payload["requiredSafetyReceipts"]) == {
         "no_direct_production_deploy",
         "no_main_branch_write",
