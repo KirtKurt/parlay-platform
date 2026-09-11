@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import mlb_ml_aws_training_v1_compat as compat
@@ -146,10 +146,13 @@ def _service():
     trainer = compat.canonical
     service = object.__new__(trainer.TrainingService)
     service.config = SimpleNamespace(
+        artifacts_bucket="safe-bucket",
         experiment_id="continuity-wait-test",
+        release_contract_id="continuity-wait-test",
         release_cutoff_utc="2026-07-22T00:00:00+00:00",
-        deployment_git_sha="test-sha",
-        deployment_template_sha256="test-template-sha",
+        feature_vector_version="feature-v1",
+        deployment_git_sha="a" * 40,
+        deployment_template_sha256="b" * 64,
         automatic_promotion_enabled=False,
     )
     service.store = _Store()
@@ -165,6 +168,38 @@ def _service():
     return service
 
 
+def _healthy_status(service, mode="training"):
+    service._execution_lease_acquired_for_run = True
+    service._save_run_status(
+        {
+            "ok": True,
+            "status": "ACCUMULATING_TRAIN",
+            "executionMode": mode,
+            "modelTrained": False,
+        }
+    )
+    return copy.deepcopy(service.store.saved[-1][1])
+
+
+def _health(service, status, mode="training"):
+    maximum = (
+        compat.canonical.TRAINING_STATUS_MAX_AGE
+        if mode == "training"
+        else compat.canonical.SELECTION_CAPTURE_STATUS_MAX_AGE
+    )
+    return service._latest_status_health(
+        status,
+        execution_mode=mode,
+        maximum_age=maximum,
+        manifest=service.store.load_manifest(service.config.experiment_id),
+    )
+
+
+def _refingerprint(status):
+    status["statusFingerprint"] = compat.canonical._status_fingerprint(status)
+    return status
+
+
 def test_normalization_occurs_before_immutable_persistence():
     service = _service()
     result = service.run_scheduled()
@@ -176,6 +211,72 @@ def test_normalization_occurs_before_immutable_persistence():
     assert saved["status"] == "WAITING_FOR_CANONICAL_SLATE_CONTINUITY"
     assert saved["statusFingerprint"]
     assert saved["productionAuthorityChanged"] is False
+    identity = saved["deploymentIdentity"]["mlbIdentity"]
+    assert len(identity["implementationSha256"]) == 64
+    assert len(identity["runtimeContractSha256"]) == 64
+
+
+def test_unrelated_global_git_and_template_change_do_not_break_same_mlb_identity():
+    service = _service()
+    status = _healthy_status(service)
+    service.config.deployment_git_sha = "c" * 40
+    service.config.deployment_template_sha256 = "d" * 64
+    health = _health(service, status)
+    assert health["ok"] is True
+    assert health["globalDeploymentIdentityMatches"] is False
+    assert health["mlbDeploymentIdentityMatches"] is True
+    assert "latest_status_deployment_identity_mismatch" not in health["errors"]
+
+
+def test_mlb_runtime_contract_change_remains_fail_closed():
+    service = _service()
+    status = _healthy_status(service)
+    service.config.feature_vector_version = "feature-v2"
+    health = _health(service, status)
+    assert health["ok"] is False
+    assert health["mlbDeploymentIdentityMatches"] is False
+    assert "latest_status_mlb_identity_mismatch" in health["errors"]
+
+
+def test_mlb_infrastructure_binding_change_remains_fail_closed():
+    service = _service()
+    status = _healthy_status(service)
+    service.config.artifacts_bucket = "different-bucket"
+    health = _health(service, status)
+    assert health["ok"] is False
+    assert "latest_status_mlb_identity_mismatch" in health["errors"]
+
+
+def test_missing_mlb_identity_is_never_accepted_even_if_global_identity_matches():
+    service = _service()
+    status = _healthy_status(service)
+    status["deploymentIdentity"].pop("mlbIdentity")
+    _refingerprint(status)
+    health = _health(service, status)
+    assert health["ok"] is False
+    assert health["mlbDeploymentIdentityMatches"] is False
+    assert "latest_status_mlb_identity_missing" in health["errors"]
+
+
+def test_stale_heartbeat_still_fails_with_matching_mlb_identity():
+    service = _service()
+    status = _healthy_status(service)
+    service.now = lambda: datetime(2026, 8, 2, 6, 0, tzinfo=timezone.utc)
+    health = _health(service, status)
+    assert health["ok"] is False
+    assert health["mlbDeploymentIdentityMatches"] is True
+    assert "latest_status_stale" in health["errors"]
+
+
+def test_latest_run_not_ok_still_fails_with_matching_mlb_identity():
+    service = _service()
+    status = _healthy_status(service)
+    status["ok"] = False
+    _refingerprint(status)
+    health = _health(service, status)
+    assert health["ok"] is False
+    assert health["mlbDeploymentIdentityMatches"] is True
+    assert "latest_status_not_ok" in health["errors"]
 
 
 def test_unique_lambda_handler_returns_wait_without_function_error(monkeypatch):

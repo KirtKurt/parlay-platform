@@ -1,30 +1,22 @@
 """Fail-closed compatibility handler for the canonical MLB AWS trainer.
 
 The canonical implementation remains in ``mlb_ml_aws_training_v1.py``. This
-uniquely named Lambda entrypoint installs four narrow normalizations:
+uniquely named Lambda entrypoint installs narrow, production-safe
+normalizations without changing model math, labels, locks, promotion gates, or
+serving authority.
 
-* unresolved canonical-slate continuity is represented as a healthy,
-  non-authoritative wait at both persistence and return boundaries;
-* after a scheduled run is persisted, the Lambda returns the exact immutable
-  run record read back from the status store when available;
-* existing immutable locks and labels are corrected in memory only when their
-  sole exclusion is a pre-lock state made false by a verified exact T-45 lock;
-  and
-* the production R7 trainer may admit a structurally valid, provenance-safe,
-  exact immutable V2 snapshot whose unavailable pregame sources are represented
-  by the model's prespecified frozen missingness masks.
-
-The persisted read-back prevents harmless DynamoDB numeric round-trip changes
-from making deployment verification compare a pre-persistence object with a
-post-persistence object. Both prospective repairs are read-only. They never
-rewrite an immutable lock or label, never make an incomplete row a full-data
-production pick, and preserve every chronology, source, vector, final-label,
-holdout, calibration, accuracy, promotion, champion, inference-authority, and
-production-authority gate.
+In addition to the existing continuity/read repairs, status heartbeats carry a
+deterministic MLB-specific implementation/runtime identity. Health therefore
+survives unrelated repository deployments only when the MLB executable and its
+runtime contract are byte-for-byte/field-for-field equivalent. Missing or
+mismatched MLB identity remains fail-closed.
 """
 from __future__ import annotations
 
+import copy
+import hashlib
 import importlib.util
+import json
 import sys
 from collections.abc import Mapping
 from functools import wraps
@@ -37,10 +29,22 @@ import mlb_r7_historical_walkforward_bridge as r7_historical_walkforward_bridge
 
 
 COMPAT_VERSION = (
-    "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v7-historical-live-r7-admission"
+    "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v8-mlb-specific-deployment-identity"
 )
+MLB_IDENTITY_VERSION = "MLB-TRAINER-IMPLEMENTATION-IDENTITY-v1"
 _BASE_MODULE_NAME = "_inqsi_mlb_ml_aws_training_v1_canonical"
 _BASE_PATH = Path(__file__).resolve().with_name("mlb_ml_aws_training_v1.py")
+_IDENTITY_SOURCE_FILES = (
+    "mlb_ml_aws_training_v1.py",
+    "mlb_ml_aws_training_v1_compat.py",
+    "mlb_ml_dual_model_v2.py",
+    "mlb_ml_experiment_v2.py",
+    "mlb_ml_promotion_policy_v2.py",
+    "mlb_prospective_trainer_read_repair.py",
+    "mlb_r7_source_honest_training_repair.py",
+    "mlb_r7_historical_walkforward_bridge.py",
+    "mlb_successor_runtime_v1.py",
+)
 
 
 def _load_canonical_module():
@@ -58,6 +62,61 @@ def _load_canonical_module():
         sys.modules.pop(_BASE_MODULE_NAME, None)
         raise
     return module
+
+
+def _stable_sha256(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+
+
+def _source_manifest() -> Dict[str, str]:
+    root = Path(__file__).resolve().parent
+    result: Dict[str, str] = {}
+    for name in _IDENTITY_SOURCE_FILES:
+        path = root / name
+        if not path.is_file() or path.is_symlink():
+            raise RuntimeError("mlb_identity_source_missing:" + name)
+        body = path.read_bytes()
+        if not body:
+            raise RuntimeError("mlb_identity_source_empty:" + name)
+        result[name] = hashlib.sha256(body).hexdigest()
+    return result
+
+
+def mlb_deployment_identity(config: Any) -> Dict[str, Any]:
+    """Return deterministic MLB-only executable + runtime-contract identity.
+
+    Global Git/template hashes remain stored for audit, but are not sufficient
+    proof of MLB incompatibility because unrelated sports share the repository
+    and SAM template. Any missing source or required runtime field fails closed.
+    """
+    sources = _source_manifest()
+    implementation = {
+        "identityVersion": MLB_IDENTITY_VERSION,
+        "sourceSha256": sources,
+    }
+    runtime_contract = {
+        "trainerVersion": canonical.VERSION,
+        "compatVersion": COMPAT_VERSION,
+        "experimentId": str(config.experiment_id),
+        "releaseContractId": str(config.release_contract_id),
+        "releaseCutoffUtc": str(config.release_cutoff_utc),
+        "featureVectorVersion": str(config.feature_vector_version),
+        "artifactsBucket": str(config.artifacts_bucket),
+        "automaticPromotionEnabled": bool(config.automatic_promotion_enabled),
+        "executionLeaseVersion": canonical.EXECUTION_LEASE_VERSION,
+        "executionLeaseSeconds": int(canonical.EXECUTION_LEASE_SECONDS),
+        "statusFingerprintVersion": canonical.STATUS_FINGERPRINT_VERSION,
+        "trainingStatusMaxAgeSeconds": int(canonical.TRAINING_STATUS_MAX_AGE.total_seconds()),
+        "selectionCaptureStatusMaxAgeSeconds": int(canonical.SELECTION_CAPTURE_STATUS_MAX_AGE.total_seconds()),
+        "handler": "mlb_ml_aws_training_v1_compat.lambda_handler",
+    }
+    return {
+        **implementation,
+        "implementationSha256": _stable_sha256(implementation),
+        "runtimeContractSha256": _stable_sha256(runtime_contract),
+    }
 
 
 def normalize_canonical_continuity_wait(payload: Mapping[str, Any]) -> Dict[str, Any]:
@@ -100,12 +159,7 @@ def normalize_canonical_continuity_wait(payload: Mapping[str, Any]) -> Dict[str,
 
 
 def persisted_run_response(service: Any, payload: Mapping[str, Any]) -> Dict[str, Any]:
-    """Return the immutable stored run when it can be proven to be the same run.
-
-    The invocation payload is retained as the fail-closed fallback. A persisted
-    record is used only when the service exposes the canonical status store and
-    the read-back record carries the identical non-empty run ID.
-    """
+    """Return the immutable stored run when it can be proven to be the same run."""
     normalized = normalize_canonical_continuity_wait(payload)
     run_id = str(normalized.get("runId") or "").strip()
     config = getattr(service, "config", None)
@@ -137,20 +191,128 @@ r7_historical_walkforward_bridge.install(
     experiment=canonical.experiment,
 )
 
-_original_save_run_status = canonical.TrainingService._save_run_status
-if not getattr(_original_save_run_status, "_mlb_unique_continuity_wait_patch", False):
 
-    @wraps(_original_save_run_status)
-    def _save_run_status_with_continuity_wait(self, payload):
-        return _original_save_run_status(
-            self, normalize_canonical_continuity_wait(payload)
+# Persist the MLB-specific identity before the canonical status fingerprint is
+# computed. This deliberately mirrors the canonical writer and changes only the
+# deploymentIdentity payload plus the already-established continuity wait.
+def _save_run_status_with_mlb_identity(self, payload):
+    payload = normalize_canonical_continuity_wait(payload)
+    manifest = self.store.load_manifest(self.config.experiment_id)
+    result = {
+        **payload,
+        "version": canonical.VERSION,
+        "experimentId": self.config.experiment_id,
+        "releaseCutoffUtc": self._normalized_release_cutoff(),
+        "createdAtUtc": self.now().isoformat(),
+        "manifestDigest": (manifest or {}).get("manifestDigest"),
+        "deploymentIdentity": {
+            "gitSha": self.config.deployment_git_sha,
+            "templateSha256": self.config.deployment_template_sha256,
+            "mlbIdentity": mlb_deployment_identity(self.config),
+        },
+    }
+    invocation_run = getattr(self, "_invocation_run", None)
+    if invocation_run:
+        result.setdefault("requestRun", invocation_run)
+    if (
+        str(result.get("executionMode") or "").strip().lower() == "training"
+        and self._selection_capture_before_training is not None
+    ):
+        result.setdefault(
+            "selectionCaptureBeforeTraining",
+            copy.deepcopy(self._selection_capture_before_training),
         )
-
-    _save_run_status_with_continuity_wait._mlb_unique_continuity_wait_patch = True
-    _save_run_status_with_continuity_wait._mlb_unique_continuity_wait_version = (
-        COMPAT_VERSION
+    result.setdefault("automaticPromotionEnabled", self.config.automatic_promotion_enabled)
+    result.setdefault(
+        "executionConcurrencyControl",
+        canonical.execution_concurrency_control(
+            acquired_for_run=self._execution_lease_acquired_for_run
+        ),
     )
-    canonical.TrainingService._save_run_status = _save_run_status_with_continuity_wait
+    result.setdefault("championChanged", False)
+    result.setdefault("liveInferenceAuthority", False)
+    result.setdefault("productionAuthorityChanged", False)
+    result.setdefault("immutablePredictionRewriteAllowed", False)
+    result.setdefault("postStartPredictionCreationAllowed", False)
+    result.setdefault("otherSportChanged", False)
+    result.setdefault(
+        "runId",
+        canonical._sha256(
+            {
+                "experimentId": self.config.experiment_id,
+                "createdAtUtc": result["createdAtUtc"],
+                "status": result.get("status"),
+            }
+        )[:24],
+    )
+    result["statusFingerprintVersion"] = canonical.STATUS_FINGERPRINT_VERSION
+    result["statusFingerprint"] = canonical._status_fingerprint(result)
+    self.store.save_status(self.config.experiment_id, result)
+    return result
+
+
+_original_latest_status_health = canonical.TrainingService._latest_status_health
+
+
+def _latest_status_health_with_mlb_identity(
+    self, latest, *, execution_mode, maximum_age, manifest
+):
+    result = _original_latest_status_health(
+        self,
+        latest,
+        execution_mode=execution_mode,
+        maximum_age=maximum_age,
+        manifest=manifest,
+    )
+    global_match = bool(result.get("deploymentIdentityMatches"))
+    result["globalDeploymentIdentityMatches"] = global_match
+    if not latest:
+        result["mlbDeploymentIdentityMatches"] = False
+        return result
+    deployment = latest.get("deploymentIdentity") or {}
+    observed = deployment.get("mlbIdentity")
+    if not isinstance(observed, Mapping):
+        errors = list(result.get("errors") or [])
+        if "latest_status_mlb_identity_missing" not in errors:
+            errors.append("latest_status_mlb_identity_missing")
+        result.update(
+            ok=False,
+            deploymentIdentityMatches=False,
+            mlbDeploymentIdentityMatches=False,
+            errors=errors,
+        )
+        return result
+    try:
+        expected = mlb_deployment_identity(self.config)
+    except Exception:
+        errors = list(result.get("errors") or [])
+        if "latest_status_mlb_identity_unavailable" not in errors:
+            errors.append("latest_status_mlb_identity_unavailable")
+        result.update(
+            ok=False,
+            deploymentIdentityMatches=False,
+            mlbDeploymentIdentityMatches=False,
+            errors=errors,
+        )
+        return result
+    mlb_match = dict(observed) == expected
+    errors = list(result.get("errors") or [])
+    if mlb_match:
+        errors = [e for e in errors if e != "latest_status_deployment_identity_mismatch"]
+    else:
+        if "latest_status_mlb_identity_mismatch" not in errors:
+            errors.append("latest_status_mlb_identity_mismatch")
+    result.update(
+        ok=not errors,
+        deploymentIdentityMatches=mlb_match,
+        mlbDeploymentIdentityMatches=mlb_match,
+        errors=errors,
+    )
+    return result
+
+
+canonical.TrainingService._save_run_status = _save_run_status_with_mlb_identity
+canonical.TrainingService._latest_status_health = _latest_status_health_with_mlb_identity
 
 _original_run_scheduled = canonical.TrainingService.run_scheduled
 if not getattr(_original_run_scheduled, "_mlb_unique_continuity_return_patch", False):
