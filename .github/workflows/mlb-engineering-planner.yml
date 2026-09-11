@@ -150,7 +150,9 @@ jobs:
           from pathlib import Path
 
           policy = json.loads(Path('engineering_agent/policy.json').read_text())
-          evidence = Path('runtime_reports/engineering_planner/evidence.jsonl').read_text(encoding='utf-8', errors='replace')[-32000:]
+          history_path = Path('engineering_agent/decision_history.json')
+          decision_history = json.loads(history_path.read_text()) if history_path.exists() else {'decisions': []}
+          evidence = Path('runtime_reports/engineering_planner/evidence.jsonl').read_text(encoding='utf-8', errors='replace')[-30000:]
           prompt = json.dumps({
               'mission': (
                   'Continuously improve the MLB research and successor-learning platform. '
@@ -159,13 +161,17 @@ jobs:
                   'chronological validation, fail-closed production authority, and sport isolation.'
               ),
               'latestOperationalEvidence': evidence,
+              'decisionHistory': decision_history,
               'policy': policy,
               'instruction': (
                   'Choose exactly one highest-value unresolved engineering task actionable from current evidence '
                   'and suitable for a small reviewed PR. Recent main-history evidence is authoritative for whether '
-                  'a repair has already been merged; do not re-propose a task already represented by a newer main '
-                  'commit merely because an older runtime report still contains its pre-repair symptom. Do not '
-                  'weaken thresholds merely to pass. Return strict JSON only with: title (string), objective '
+                  'a repair has already been merged. Honor decisionHistory: do not re-propose COMPLETED work, and '
+                  'do not re-propose REJECTED_AS_UNSAFE_OR_INAPPLICABLE work unless current evidence directly '
+                  'satisfies its reconsiderOnlyIf condition. Historical-training-only rows with intentionally '
+                  'unavailable label-observation times are diagnostic evidence, not a reason to fabricate timestamps '
+                  'or weaken chronology. Prefer active current blockers over expected fail-closed diagnostic errors. '
+                  'Do not weaken thresholds merely to pass. Return strict JSON only with: title (string), objective '
                   '(string), implementation (array of concrete steps), likelyFiles (array), acceptanceTests '
                   '(array), safetyReceipts (array), evidenceBasis (array).'
               ),
@@ -176,7 +182,7 @@ jobs:
           Path('/tmp/mlb-planner-event.json').write_text(
               json.dumps({'mode': 'engineering_plan', 'prompt': prompt}), encoding='utf-8'
           )
-          print(json.dumps({'promptBytes': size, 'evidenceChars': len(evidence)}))
+          print(json.dumps({'promptBytes': size, 'evidenceChars': len(evidence), 'decisionCount': len(decision_history.get('decisions') or [])}))
           PY
 
       - name: Invoke planner through Bedrock-capable AWS runtime role
