@@ -136,11 +136,7 @@ async function processClaim(claimDir) {
     });
 
     let pr = await findExistingPullRequest(manifest.branch);
-    if (pr?.merged_at) {
-      record({ jobId: manifest.jobId, state: 'merged', branch: manifest.branch, commit: publishedCommit, pullRequest: pr.html_url, pullRequestNumber: pr.number, mergeCommit: pr.merge_commit_sha, patchSha256: manifest.patchSha256 });
-      return true;
-    }
-    if (pr && pr.state !== 'open') throw new Error('publication_pr_closed_without_merge');
+    if (pr && !pr.merged_at && pr.state !== 'open') throw new Error('publication_pr_closed_without_merge');
     if (!pr) {
       pr = await github('/pulls', {
         method: 'POST',
@@ -163,6 +159,11 @@ async function processClaim(claimDir) {
     if (evaluation.state === 'failed') {
       record({ jobId: manifest.jobId, state: 'checks_failed', reason: evaluation.reason, branch: manifest.branch, commit: publishedCommit, pullRequest: pr.html_url, pullRequestNumber: pr.number, patchSha256: manifest.patchSha256 });
       return false;
+    }
+
+    if (pr.merged_at) {
+      record({ jobId: manifest.jobId, state: 'merged', branch: manifest.branch, commit: publishedCommit, pullRequest: pr.html_url, pullRequestNumber: pr.number, mergeCommit: pr.merge_commit_sha, patchSha256: manifest.patchSha256 });
+      return true;
     }
 
     const merge = await github(`/pulls/${pr.number}/merge`, {
