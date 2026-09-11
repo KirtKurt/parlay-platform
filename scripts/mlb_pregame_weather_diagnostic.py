@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence
 from zoneinfo import ZoneInfo
 
-VERSION = "MLB-PREGAME-WEATHER-DIAGNOSTIC-v1-receipt-time"
+VERSION = "MLB-PREGAME-WEATHER-DIAGNOSTIC-v2-stage-receipt-time"
 REPORT_TYPE = "MLB_PREGAME_WEATHER_READ_ONLY_DIAGNOSTIC"
 ET = ZoneInfo("America/New_York")
 SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
@@ -143,6 +143,7 @@ def diagnose_game(
         "scheduleStatus": status,
         "venueId": venue_id,
         "venueName": schedule_venue_name,
+        "venueObservedAtUtc": None,
         "weatherObservedAtUtc": None,
         "preT45": False,
         "sourceValid": False,
@@ -153,15 +154,22 @@ def diagnose_game(
         "canCompleteWeatherRoofGroup": False,
         "canChangeProductionScoring": False,
     }
+    cutoff = start - timedelta(minutes=45) if start else None
     if not game_pk or start is None or status != "Preview" or not venue_id:
         base["errors"] = ["official_game_or_venue_identity_incomplete"]
         return base
-    if clock().astimezone(timezone.utc) >= start - timedelta(minutes=45):
+    if clock().astimezone(timezone.utc) >= cutoff:
         base["errors"] = ["game_not_pre_t45_at_probe_start"]
         return base
     venue_url = VENUE_URL.format(venue_id=venue_id) + "?" + urllib.parse.urlencode({"hydrate": "location,fieldInfo"})
     try:
         venue_payload = fetch_json(venue_url, 8)
+        venue_received = clock().astimezone(timezone.utc)
+        base["venueObservedAtUtc"] = venue_received.isoformat().replace("+00:00", "Z")
+        # Do not start another external request after the chronology boundary.
+        if venue_received >= cutoff:
+            base["errors"] = ["venue_response_received_at_or_after_t45"]
+            return base
         lat, lon, official_name = _venue_coordinates(venue_payload, venue_id)
         if schedule_venue_name and official_name and schedule_venue_name != official_name:
             raise ValueError("venue_name_mismatch")
@@ -179,7 +187,7 @@ def diagnose_game(
         weather_payload = fetch_json(weather_url, 8)
         received = clock().astimezone(timezone.utc)
         base["weatherObservedAtUtc"] = received.isoformat().replace("+00:00", "Z")
-        base["preT45"] = received < start - timedelta(minutes=45)
+        base["preT45"] = received < cutoff
         if not base["preT45"]:
             base["errors"] = ["weather_response_received_at_or_after_t45"]
             return base
@@ -216,7 +224,6 @@ def build_report(*, clock: Callable[[], datetime] | None = None, fetch_json=_htt
              for game in day.get("games") or [] if isinstance(game, Mapping)
              and str((game.get("status") or {}).get("abstractGameState") or "") == "Preview"]
     rows = [diagnose_game(game, clock=clock, fetch_json=fetch_json) for game in games]
-    eligible = [row for row in rows if row.get("errors") != ["game_not_pre_t45_at_probe_start"]]
     return {
         "ok": True,
         "version": VERSION,
