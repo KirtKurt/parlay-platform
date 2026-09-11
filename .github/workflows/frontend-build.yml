@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - 'frontend/**'
+      - 'engineering_console/**'
       - '.github/workflows/frontend-build.yml'
   pull_request:
     branches: [main]
     paths:
       - 'frontend/**'
+      - 'engineering_console/**'
       - '.github/workflows/frontend-build.yml'
   workflow_dispatch:
 
@@ -27,6 +29,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Install Engineering Console dependencies
+        working-directory: engineering_console
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Check Engineering Console syntax
+        working-directory: engineering_console
+        run: |
+          for file in src/*.js test/*.js; do node --check "$file"; done
+
+      - name: Test Engineering Console
+        working-directory: engineering_console
+        run: npm test
 
       - name: Install dependencies
         run: npm install
