@@ -217,6 +217,35 @@ def preserve_frozen(current, previous, target_date, as_of):
     return pd.concat([current.loc[~current.game_id.isin(frozen.game_id)], frozen], ignore_index=True)
 
 
+def validate_preservation(previous, current, as_of, withdrawals=()):
+    """Reject silent loss of published picks and any rewrite past stored T-10.
+
+    Before T-10 only an explicit postponement/cancellation permits removal.
+    A premature live state, missing fixture or revised start must fail closed;
+    it must not destroy the previous publication or create a replacement lock.
+    """
+    keyed = {(r['date'], r['game_id']): r for r in current}
+    if len(keyed) != len(current):
+        raise ValueError('duplicate publication game IDs')
+    allowed = {(r['date'], r['game_id']) for r in withdrawals
+               if r['reason'] in ('Postponed', 'Cancelled')}
+    legacy_defaults = {'status', 'lineup_status', 'lineup_source_status', 'starter_feature_source',
+                       'home_lineup_status', 'away_lineup_status', 'home_lineup_ids', 'away_lineup_ids',
+                       'home_offense_source', 'away_offense_source'}
+    for old in previous:
+        key = old['date'], old['game_id']
+        new = keyed.get(key)
+        if utc(old['as_of']) > utc(as_of):
+            raise ValueError('refuse stale prediction publication')
+        frozen = utc(old['commence_time'])-timedelta(minutes=10) < utc(as_of)
+        if frozen:
+            fields = set(old) - (legacy_defaults if not old.get('status') else set())
+            if new is None or any(new.get(k) != old[k] for k in fields):
+                raise ValueError('refuse changed or missing frozen prediction: '+old['game_id'])
+        elif new is None and key not in allowed:
+            raise ValueError('refuse unexpected published prediction removal: '+old['game_id'])
+
+
 def predict(folder, output):
     manifest, inputs = load_inputs(folder)
     target_date, as_of = manifest['date'], manifest['as_of']
@@ -247,7 +276,7 @@ def predict(folder, output):
     frozen = preserve_frozen(previous.iloc[:0], previous, target_date, as_of) if previous is not None else pd.DataFrame()
     frozen_ids = set(frozen.game_id) if len(frozen) else set()
     prior_rows = {r['game_id']: r for r in pq.ParquetFile(folder/'previous.parquet').read().to_pylist()} if previous is not None else {}
-    retained, changes, unchanged = [], [], []
+    retained, changes, unchanged, withdrawals = [], [], [], []
     # Frozen Phase 4 rows acquire only conservative status defaults; their
     # predictions and original cutoff are retained, never rescored postgame.
     migrated_frozen = []
@@ -272,6 +301,9 @@ def predict(folder, output):
                 or game['status'].get('detailedState') in ('Postponed', 'Cancelled')
                 or utc(as_of) > start-timedelta(minutes=10)):
             exclusions.append({'game_id': pk, 'reason': 'not_scheduled_before_T10'})
+            if game['status'].get('detailedState') in ('Postponed', 'Cancelled'):
+                withdrawals.append({'date': target_date, 'game_id': pk,
+                                    'reason': game['status']['detailedState']})
             continue
         if pk not in assignments:
             raise ValueError('scheduled official game missing from BBS: '+pk)
@@ -329,6 +361,7 @@ def predict(folder, output):
     current = pa.Table.from_pylist(rows+retained, schema=SCHEMA).to_pandas()
     frame = current.sort_values(['commence_time', 'game_id']).reset_index(drop=True)
     table = pa.Table.from_pandas(frame, schema=SCHEMA, preserve_index=False)
+    validate_preservation(list(prior_rows.values()), table.to_pylist(), as_of, withdrawals)
     if frame.game_id.duplicated().any() or (len(frame) and set(frame.date) != {target_date}):
         raise ValueError('duplicate or wrong-date predictions')
     if len(frame):
@@ -358,9 +391,13 @@ def predict(folder, output):
               'unchanged_rows': len(unchanged), 'unchanged_game_ids': unchanged, 'changes': changes,
               'migrated_frozen_game_ids': migrated_frozen,
               'removed_game_ids': sorted(set(prior_rows)-set(frame.game_id)),
+              'withdrawn_games': withdrawals,
               'confirmed_lineups': int((frame.lineup_status == 'confirmed').sum()),
               'projected_lineups': int((frame.lineup_status == 'projected').sum()),
               'official_games': len(schedule), 'bbs_matched_games': len(assignments), 'exclusions': exclusions,
+              'schedule_observations': [
+                  {'game_id': str(g['gamePk']), 'commence_time': g['gameDate'], 'status': g['status']}
+                  for g in schedule],
               'bbs_time_adjustments': crosswalk.game_time_adjustments,
               'with_both_starters': int((frame.home_starter_id.notna() & frame.away_starter_id.notna()).sum()),
               'with_market_home_prob': int(frame.market_home_prob.notna().sum()), 'with_market_total': int(frame.market_total.notna().sum()),
@@ -412,6 +449,23 @@ def publish(s3, bucket, table, report, output, *, calibration='temperature', pla
         (output/'predictions.parquet').write_bytes(prediction_body)
         table.to_pandas().to_csv(output/'predictions.csv', index=False)
         report['parquet_sha256'] = hashlib.sha256(prediction_body).hexdigest()
+    # Preflight the actual stored rows before touching odds, lineups or models.
+    # ETag checks in the write loop still protect against a concurrent writer.
+    try:
+        existing = s3.get_object(Bucket=bucket, Key=prefix+'predictions.parquet')
+    except Exception as exc:
+        if getattr(exc, 'response', {}).get('Error', {}).get('Code') not in ('NoSuchKey', '404'):
+            raise
+        existing = None
+    if existing:
+        prior_bytes = existing['Body'].read()
+        if (prior_bytes != prediction_body
+                and report['source_capture'].get('previous_etag') != existing['ETag']):
+            raise ValueError('date predictions changed since input capture')
+        prior_rows = pq.ParquetFile(io.BytesIO(prior_bytes)).read().to_pylist()
+        validate_preservation(prior_rows, table.to_pylist(), report['as_of'], report.get('withdrawn_games', []))
+    elif report['source_capture'].get('previous_etag'):
+        raise ValueError('previous prediction publication disappeared since input capture')
     report['calibration'] = {'method': calibration, 'changed_game_ids': changed,
                              'n': models[calibration]['n'], 'fitted_at': models[calibration]['fitted_at']}
     for method, model in models.items():

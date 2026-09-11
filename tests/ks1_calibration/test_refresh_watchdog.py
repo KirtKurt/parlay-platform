@@ -163,6 +163,77 @@ def test_client_reads_the_exact_workflow_and_redacts_api_errors(monkeypatch):
     assert Error.stderr not in str(failure.value)
 
 
+@pytest.mark.parametrize('failure', ['exit', 'timeout', 'invalid_json'])
+def test_get_retries_are_bounded_and_recover(monkeypatch, failure):
+    calls, sleeps = [], []
+    def command(*args, **kwargs):
+        calls.append(kwargs['timeout'])
+        if len(calls) < 3:
+            if failure == 'timeout':
+                raise watch.subprocess.TimeoutExpired('gh', 10, output='private')
+            return type('Result', (), {'returncode': int(failure == 'exit'), 'stdout': 'private'})()
+        return type('Result', (), {'returncode': 0, 'stdout': '{"workflow_runs": []}'})()
+    monkeypatch.setattr(watch.subprocess, 'run', command)
+    monkeypatch.setattr(watch.time, 'sleep', sleeps.append)
+    assert watch.GitHub().runs() == []
+    assert calls == [watch.REQUEST_TIMEOUT]*3
+    assert sleeps == list(watch.READ_BACKOFF)
+
+
+def test_get_exhaustion_and_post_timeout_are_redacted_and_bounded(monkeypatch):
+    calls, sleeps = [], []
+    def command(*args, **kwargs):
+        calls.append(args)
+        raise watch.subprocess.TimeoutExpired('gh', 10, output='private-token')
+    monkeypatch.setattr(watch.subprocess, 'run', command)
+    monkeypatch.setattr(watch.time, 'sleep', sleeps.append)
+    for method, expected in [('GET', 3), ('POST', 1)]:
+        calls.clear(); sleeps.clear()
+        with pytest.raises(RuntimeError) as error:
+            watch.GitHub().request('workflows/'+watch.TARGET, method)
+        assert len(calls) == expected and len(sleeps) == expected-1
+        assert 'private-token' not in str(error.value) and error.value.__suppress_context__
+
+
+@pytest.mark.parametrize('where', ['active', 'runs'])
+def test_owner_survives_read_failure_and_rechecks_before_dispatch(owner, where):
+    api = API()
+    original = getattr(api, where)
+    observed = []
+    def intermittent():
+        observed.append(len(api.calls))
+        if len(observed) <= 2:
+            raise RuntimeError('read unavailable')
+        return original()
+    setattr(api, where, intermittent)
+    clock = exercise(api)
+    assert observed[:3] == [0, 0, 0]
+    assert api.calls == [watch.TARGET, watch.OWNER]
+    assert clock.elapsed == watch.OWNER_SECONDS
+
+
+def test_persistent_run_read_failure_never_dispatches_ingestion(owner):
+    api = API()
+    def unavailable():
+        raise RuntimeError('read unavailable')
+    api.runs = unavailable
+    with pytest.raises(RuntimeError, match='reads remained unavailable'):
+        exercise(api)
+    # Handoff is allowed only because the independent workflow-enabled read
+    # succeeded. The successor must obtain its own fresh production run list.
+    assert api.calls == [watch.OWNER]
+
+
+def test_persistent_enabled_read_failure_never_dispatches_or_hands_off(owner):
+    api = API()
+    def unavailable():
+        raise RuntimeError('read unavailable')
+    api.active = unavailable
+    with pytest.raises(RuntimeError, match='read unavailable'):
+        exercise(api)
+    assert api.calls == []
+
+
 def test_watchdog_is_singleton_main_only_and_has_no_aws_credentials():
     root = Path(__file__).resolve().parents[2]
     path = root/'.github/workflows'/watch.OWNER
