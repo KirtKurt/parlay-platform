@@ -33,7 +33,7 @@ env:
 
 jobs:
   inspect-decide-act:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -50,8 +50,29 @@ jobs:
       - name: Install controller and Codex runtime
         run: |
           python -m pip install --quiet "pytest>=8,<9" boto3
-          npm install --global @openai/codex
+          npm install --global @openai/codex@0.154.0
           codex --version
+      - name: Prepare and prove the Linux sandbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Use the distribution helper and its scoped user-namespace profile.
+          # Do not disable AppArmor globally or run Codex without a sandbox.
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap apparmor-profiles apparmor-utils
+          PROFILE=/etc/apparmor.d/bwrap-userns-restrict
+          EXTRA=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          if [ -f "$EXTRA" ]; then
+            sudo install -m 0644 "$EXTRA" "$PROFILE"
+          fi
+          if [ -f "$PROFILE" ]; then
+            sudo apparmor_parser -r "$PROFILE"
+          fi
+          command -v bwrap
+          bwrap --version
+          # Reproduce the namespace/loopback setup before spending model tokens.
+          bwrap --unshare-user --unshare-net --ro-bind / / --proc /proc --dev /dev --die-with-parent -- /bin/true
+          echo 'ARB sandbox namespace preflight passed'
       - name: Configure ephemeral Codex home
         run: |
           set -euo pipefail
@@ -65,7 +86,8 @@ jobs:
           set -euo pipefail
           test -n "${OPENAI_API_KEY:-}"
           printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key
-          codex login status
+          codex login status >/dev/null 2>&1
+          echo 'Codex API-key authentication configured'
       - name: Prove controller guardrails before acting
         run: python -m pytest -q inqsi-arb/tests/test_engineering_controller.py
       - uses: aws-actions/configure-aws-credentials@v4
@@ -95,6 +117,13 @@ jobs:
             --api-url '${{ steps.endpoints.outputs.api_url }}' \
             --sportsbook-url '${{ steps.endpoints.outputs.sportsbook_url }}' \
             --output arb-engineering-controller-report.json
+      - name: Remove ephemeral Codex credentials
+        if: always()
+        run: |
+          if [ -n "${CODEX_HOME:-}" ]; then
+            codex logout >/dev/null 2>&1 || true
+            rm -f -- "$CODEX_HOME/auth.json"
+          fi
       - name: Upload immutable controller evidence
         if: always()
         uses: actions/upload-artifact@v4
