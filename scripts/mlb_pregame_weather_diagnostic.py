@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence
 from zoneinfo import ZoneInfo
 
-VERSION = "MLB-PREGAME-WEATHER-DIAGNOSTIC-v2-stage-receipt-time"
+VERSION = "MLB-PREGAME-WEATHER-DIAGNOSTIC-v3-stage-bound-chronology"
 REPORT_TYPE = "MLB_PREGAME_WEATHER_READ_ONLY_DIAGNOSTIC"
 ET = ZoneInfo("America/New_York")
 SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
@@ -144,7 +144,9 @@ def diagnose_game(
         "venueId": venue_id,
         "venueName": schedule_venue_name,
         "venueObservedAtUtc": None,
+        "weatherRequestAtUtc": None,
         "weatherObservedAtUtc": None,
+        "failureStage": None,
         "preT45": False,
         "sourceValid": False,
         "errors": [],
@@ -157,61 +159,88 @@ def diagnose_game(
     cutoff = start - timedelta(minutes=45) if start else None
     if not game_pk or start is None or status != "Preview" or not venue_id:
         base["errors"] = ["official_game_or_venue_identity_incomplete"]
+        base["failureStage"] = "schedule_identity"
         return base
     if clock().astimezone(timezone.utc) >= cutoff:
         base["errors"] = ["game_not_pre_t45_at_probe_start"]
+        base["failureStage"] = "probe_start"
         return base
     venue_url = VENUE_URL.format(venue_id=venue_id) + "?" + urllib.parse.urlencode({"hydrate": "location,fieldInfo"})
     try:
         venue_payload = fetch_json(venue_url, 8)
-        venue_received = clock().astimezone(timezone.utc)
-        base["venueObservedAtUtc"] = venue_received.isoformat().replace("+00:00", "Z")
-        # Do not start another external request after the chronology boundary.
-        if venue_received >= cutoff:
-            base["errors"] = ["venue_response_received_at_or_after_t45"]
-            return base
+    except Exception as exc:
+        base["errors"] = [f"venue_source_failed:{type(exc).__name__}:{exc}"]
+        base["failureStage"] = "venue_fetch"
+        return base
+    venue_received = clock().astimezone(timezone.utc)
+    base["venueObservedAtUtc"] = venue_received.isoformat().replace("+00:00", "Z")
+    if venue_received >= cutoff:
+        base["errors"] = ["venue_response_received_at_or_after_t45"]
+        base["failureStage"] = "venue_chronology"
+        return base
+    try:
         lat, lon, official_name = _venue_coordinates(venue_payload, venue_id)
         if schedule_venue_name and official_name and schedule_venue_name != official_name:
             raise ValueError("venue_name_mismatch")
-        params = {
-            "latitude": round(lat, 6),
-            "longitude": round(lon, 6),
-            "hourly": ",".join(HOURLY_VARIABLES),
-            "temperature_unit": "fahrenheit",
-            "wind_speed_unit": "mph",
-            "timezone": "UTC",
-            "start_date": start.date().isoformat(),
-            "end_date": start.date().isoformat(),
-        }
-        weather_url = OPEN_METEO_URL + "?" + urllib.parse.urlencode(params)
-        weather_payload = fetch_json(weather_url, 8)
-        received = clock().astimezone(timezone.utc)
-        base["weatherObservedAtUtc"] = received.isoformat().replace("+00:00", "Z")
-        base["preT45"] = received < cutoff
-        if not base["preT45"]:
-            base["errors"] = ["weather_response_received_at_or_after_t45"]
-            return base
-        weather = _weather_row(weather_payload, start)
-        base.update({
-            "sourceValid": True,
-            "errors": [],
-            "venueName": official_name or schedule_venue_name,
-            "weather": weather,
-            "sourceProvenance": {
-                "provider": "Open-Meteo forecast + MLB Stats API venue identity",
-                "retrievedAtUtc": base["weatherObservedAtUtc"],
-                "sourceEffectiveAtUtc": weather["forecastTimeUtc"],
-                "venueEndpoint": venue_url,
-                "weatherEndpoint": weather_url,
-                "venuePayloadFingerprint": _payload_fingerprint(venue_payload),
-                "weatherPayloadFingerprint": _payload_fingerprint(weather_payload),
-            },
-        })
-        return base
     except Exception as exc:
-        base["weatherObservedAtUtc"] = clock().astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-        base["errors"] = [f"weather_source_failed:{type(exc).__name__}:{exc}"]
+        base["errors"] = [f"venue_validation_failed:{type(exc).__name__}:{exc}"]
+        base["failureStage"] = "venue_validation"
         return base
+    params = {
+        "latitude": round(lat, 6),
+        "longitude": round(lon, 6),
+        "hourly": ",".join(HOURLY_VARIABLES),
+        "temperature_unit": "fahrenheit",
+        "wind_speed_unit": "mph",
+        "timezone": "UTC",
+        "start_date": start.date().isoformat(),
+        "end_date": start.date().isoformat(),
+    }
+    weather_url = OPEN_METEO_URL + "?" + urllib.parse.urlencode(params)
+    # Venue validation and request construction also consume time. Sample the
+    # chronology boundary again immediately before opening the weather request.
+    weather_request_at = clock().astimezone(timezone.utc)
+    base["weatherRequestAtUtc"] = weather_request_at.isoformat().replace("+00:00", "Z")
+    if weather_request_at >= cutoff:
+        base["errors"] = ["weather_request_would_start_at_or_after_t45"]
+        base["failureStage"] = "weather_request_chronology"
+        return base
+    try:
+        weather_payload = fetch_json(weather_url, 8)
+    except Exception as exc:
+        base["errors"] = [f"weather_source_failed:{type(exc).__name__}:{exc}"]
+        base["failureStage"] = "weather_fetch"
+        return base
+    received = clock().astimezone(timezone.utc)
+    base["weatherObservedAtUtc"] = received.isoformat().replace("+00:00", "Z")
+    base["preT45"] = received < cutoff
+    if not base["preT45"]:
+        base["errors"] = ["weather_response_received_at_or_after_t45"]
+        base["failureStage"] = "weather_chronology"
+        return base
+    try:
+        weather = _weather_row(weather_payload, start)
+    except Exception as exc:
+        base["errors"] = [f"weather_validation_failed:{type(exc).__name__}:{exc}"]
+        base["failureStage"] = "weather_validation"
+        return base
+    base.update({
+        "sourceValid": True,
+        "errors": [],
+        "failureStage": None,
+        "venueName": official_name or schedule_venue_name,
+        "weather": weather,
+        "sourceProvenance": {
+            "provider": "Open-Meteo forecast + MLB Stats API venue identity",
+            "retrievedAtUtc": base["weatherObservedAtUtc"],
+            "sourceEffectiveAtUtc": weather["forecastTimeUtc"],
+            "venueEndpoint": venue_url,
+            "weatherEndpoint": weather_url,
+            "venuePayloadFingerprint": _payload_fingerprint(venue_payload),
+            "weatherPayloadFingerprint": _payload_fingerprint(weather_payload),
+        },
+    })
+    return base
 
 
 def build_report(*, clock: Callable[[], datetime] | None = None, fetch_json=_http_json) -> dict[str, Any]:
