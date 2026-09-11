@@ -84,6 +84,7 @@ jobs:
           )
           fundamentals_operational_paths = (
               'hello_world/mlb_fundamentals_scoring_bridge_v1.py',
+              'hello_world/mlb_fundamentals_lock_authority_v1.py',
               'hello_world/mlb_fundamentals_snapshot_v2.py',
               'hello_world/mlb_statsapi_team_context.py',
               'scripts/mlb_scoring_guard_status.py',
@@ -169,11 +170,11 @@ jobs:
               try:
                   # Use the first-parent landing commit and committer timestamp so
                   # the cutoff represents when reviewed source actually reached main,
-                  # not the topic-branch author time. Keep receipt text neutral so
-                  # blocker scanners cannot derive task authority from commit subjects.
+                  # not the topic-branch author time. Keep receipt text neutral and
+                  # suppress patches so blocker scanners see metadata only.
                   row = subprocess.check_output(
                       [
-                          'git', 'log', '--first-parent', '--diff-merges=first-parent', '-1',
+                          'git', 'log', '--first-parent', '--diff-merges=first-parent', '--no-patch', '-1',
                           '--date=iso-strict', '--pretty=format:%H %cI operational-source-change',
                           '--', source_path,
                       ],
