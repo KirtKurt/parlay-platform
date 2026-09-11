@@ -148,3 +148,95 @@ def test_partial_history_cannot_claim_zero_usage():
     game,history,feed,teams,get=fixtures();history['payload']['totalGames']=2
     _,bullpen=source.observe('2026-09-09',game,history,get,now=lambda:NOW)
     assert bullpen['source_status']=='NOT_CONNECTED_SOURCE_REQUIRED'
+
+
+# Optional individual batting observations must not alter any existing
+# predictor, required feature group, completeness gate, or source boundary.
+from mlb_batter_observations_v1 import season_observation, VERSION as BATTING_VERSION
+
+
+def test_individual_batters_are_bound_to_verified_order_and_existing_feed_receipt():
+    game,history,feed,teams,get=fixtures(); original=deepcopy(feed); calls=[]
+    teams['home']['players']['ID101']['seasonStats']['batting'].update(obp='.350',slg='.450')
+    original=deepcopy(feed)
+    def fetch(url,timeout): calls.append(url);return get(url,timeout)
+    lineup,_=source.observe('2026-09-09',game,history,fetch,now=lambda:NOW)
+    assert lineup['lineupSeasonBattingVersion']==BATTING_VERSION
+    for side,base in (('home',100),('away',200)):
+        rows=lineup[side+'_lineup_season_batting']
+        assert len(rows)==9
+        assert [r['playerId'] for r in rows]==list(range(base+1,base+10))
+        assert [r['battingSlot'] for r in rows]==list(range(1,10))
+        assert all(r['plateAppearances']==100 and r['ops']==.8 for r in rows)
+    first=lineup['home_lineup_season_batting'][0]
+    assert first['obp']==.35 and first['slg']==.45
+    assert lineup['away_lineup_season_batting'][0]['obp'] is None
+    assert lineup['sourceProvenance']['retrievedAtUtc']==NOW.isoformat()
+    assert len(calls)==2 and feed==original
+    assert lineup['home_lineup_mean_ops']==pytest.approx(.8)
+
+
+@pytest.mark.parametrize('pa',[None,True,False,'',-1,-.5,2.5,float('inf'),float('nan'),[],{}])
+def test_passive_batter_unknown_sample_cannot_authorize_rates(pa):
+    row=season_observation(101,1,{'plateAppearances':pa,'ops':.8,'obp':.3,'slg':.5})
+    assert row['plateAppearances'] is None and row['sampleStatus']=='SAMPLE_UNAVAILABLE'
+    assert row['rateObservationCount']==0
+    assert all(row[name] is None for name in ('ops','obp','slg'))
+
+
+@pytest.mark.parametrize('pa',[0,0.0,'0'])
+def test_passive_batter_zero_sample_is_not_zero_batting_quality(pa):
+    row=season_observation(101,1,{'plateAppearances':pa,'ops':0,'obp':0,'slg':0})
+    assert row['plateAppearances']==0 and row['sampleStatus']=='NO_PLATE_APPEARANCES'
+    assert row['ops'] is row['obp'] is row['slg'] is None
+
+
+def test_passive_batter_missing_ops_is_not_synthesized_from_other_rates():
+    row=season_observation(101,1,{'plateAppearances':50,'obp':.3,'slg':.5})
+    assert row['ops'] is None and row['obp']==.3 and row['slg']==.5
+    assert row['rateObservationCount']==2
+
+
+def test_passive_batter_real_zero_rate_with_sample_remains_observed():
+    row=season_observation(101,1,{'plateAppearances':5,'ops':0,'obp':0,'slg':0})
+    assert row['ops']==row['obp']==row['slg']==0
+    assert row['rateObservationCount']==3
+
+
+@pytest.mark.parametrize('name,invalid',[('ops',5.1),('obp',1.1),('slg',4.1),('ops',-.1),('obp',True),('slg',float('nan'))])
+def test_passive_batter_invalid_rate_does_not_poison_other_fields(name,invalid):
+    stats={'plateAppearances':100,'ops':.8,'obp':.3,'slg':.5};stats[name]=invalid
+    row=season_observation(101,1,stats)
+    assert row[name] is None and row['rateObservationCount']==2
+
+
+@pytest.mark.parametrize('identity,slot',[(True,1),(0,1),(-1,1),('1',1),(1,True),(1,0),(1,10),(1,'1')])
+def test_passive_batter_identity_and_slot_require_explicit_valid_values(identity,slot):
+    with pytest.raises(ValueError):season_observation(identity,slot,{})
+
+
+def test_passive_batting_context_does_not_change_frozen_v2_scoring_inputs():
+    import mlb_fundamentals_snapshot_v2 as snapshots
+    import mlb_ml_dual_model_v2 as r8
+    game,history,feed,teams,get=fixtures()
+    lineup,bullpen=source.observe('2026-09-09',game,history,get,now=lambda:NOW)
+    row={'gameId':'mlb_statsapi:123','officialGamePk':123,'slateDateEt':'2026-09-09',
+         'predictionSourcePullAt':NOW.isoformat(),'advanced_context':{'confirmed_lineups':lineup,'bullpen_fatigue':bullpen}}
+    old_row=deepcopy(row)
+    for key in ('lineupSeasonBattingVersion','home_lineup_season_batting','away_lineup_season_batting'):
+        old_row['advanced_context']['confirmed_lineups'].pop(key)
+    current=snapshots.build(row,captured_at_utc=NOW.isoformat())
+    prior=snapshots.build(old_row,captured_at_utc=NOW.isoformat())
+    assert not snapshots.validate(current) and not snapshots.validate(prior)
+    assert current==prior
+    assert r8._strict_features({'fundamentalsSnapshotV2':current},{})==r8._strict_features({'fundamentalsSnapshotV2':prior},{})
+
+
+def test_passive_batting_capture_is_discarded_when_provider_crosses_cutoff():
+    game,history,feed,teams,get=fixtures();times=[NOW]
+    def fetch(url,timeout):
+        result=get(url,timeout);times[0]=NOW+timedelta(hours=6);return result
+    lineup,_=source.observe('2026-09-09',game,history,fetch,now=lambda:times[0])
+    assert 'home_lineup_season_batting' not in lineup
+    assert 'away_lineup_season_batting' not in lineup
+    assert lineup['source_status']=='NOT_CONNECTED_SOURCE_REQUIRED'
