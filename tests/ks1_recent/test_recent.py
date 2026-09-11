@@ -55,3 +55,11 @@ def test_august_game_completed_after_holdout_start_cannot_train():
     train, test = split_recent(pd.DataFrame(rows))
     assert len(train) == 500 and len(test) == 100
     assert '500' not in set(train.game_id)
+
+
+def test_training_rejects_features_unavailable_at_serving():
+    frame = pd.DataFrame({'home_offense_ops_7d': [0.5, 0.6], 'temp': [65., 75.],
+                          'home_starter_id': [None, None], 'away_starter_id': [None, None],
+                          'home_starter_bf_30d': [0., 0.], 'away_starter_bf_30d': [0., 0.]})
+    with pytest.raises(ValueError, match='missing from daily inference: temp'):
+        choose_features(frame)
