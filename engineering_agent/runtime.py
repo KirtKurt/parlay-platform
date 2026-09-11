@@ -368,13 +368,16 @@ def run(
 ) -> dict[str, Any]:
     history = load_decision_history()
     raw_evidence = evidence_path.read_text(encoding="utf-8", errors="replace")
-    evidence = _filter_superseded_evidence(raw_evidence)[-28000:]
+    focus_evidence = _filter_superseded_evidence(raw_evidence)
+    evidence = focus_evidence[-28000:]
     function_name = _function_name(stack_name, logical_id)
     rejected: list[dict[str, Any]] = []
     attempts: list[dict[str, Any]] = []
 
     for attempt in range(1, max(1, max_attempts) + 1):
-        required_focus_domain = None if attempt == 1 else next_focus_domain(evidence, rejected)
+        required_focus_domain = (
+            None if attempt == 1 else next_focus_domain(focus_evidence, rejected)
+        )
         prompt = _planner_payload(
             evidence,
             history,
