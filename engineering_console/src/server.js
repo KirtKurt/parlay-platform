@@ -7,11 +7,11 @@ import { resolveRevision } from './git.js';
 import { DurableQueue } from './queue.js';
 import { createRunner } from './worker-runtime.js';
 import { publicJob } from './sanitize.js';
+import { normalizeRepoPath } from './publication.js';
 
 function validScope(scope, allowedScopes) {
-  if (typeof scope !== 'string') return false;
-  const value = scope.trim().replaceAll('\\', '/').replace(/^\.\//, '').replace(/\/$/, '');
-  if (!value || value === '.' || value.startsWith('/') || value.split('/').some((part) => !part || part === '..' || part === '.git')) return false;
+  const value = normalizeRepoPath(scope);
+  if (!value) return false;
   return allowedScopes.some((root) => value === root || value.startsWith(`${root}/`));
 }
 
