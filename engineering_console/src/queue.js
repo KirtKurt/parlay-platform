@@ -31,7 +31,10 @@ export class DurableQueue extends EventEmitter {
         this.active.set(id, controller);
         Promise.resolve(this.run(job, controller.signal))
           .catch((error) => {
-            if (error?.code === 'ESTALE') return;
+            if (['ESTALE', 'EWRITEUNKNOWN', 'EBUSY'].includes(error?.code)) {
+              this.emit('persistence_error', { id, code: error.code });
+              return;
+            }
             const latest = this.store.get(id);
             if (latest && !['merged', 'merge_conflict'].includes(latest.publicationState) && !['completed', 'failed', 'cancelled'].includes(latest.status)) {
               latest.status = 'failed';
