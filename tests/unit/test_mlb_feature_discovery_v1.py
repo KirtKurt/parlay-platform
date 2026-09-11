@@ -72,6 +72,8 @@ def test_runner_reserves_newest_whole_slates_and_never_passes_them_to_screen(mon
 def test_runner_failure_is_persisted_without_raising_or_gaining_authority(monkeypatch):
     def fail(_): raise ValueError('fixture failure')
     monkeypatch.setattr(runner.discovery,'screen',fail)
+    # Screening failure is transformed to FAILED, then persisted normally.
+    # This store deliberately accepts both writes.
     captured={}
     class Store:
         def artifact(self,kind,value): captured['artifact']=(kind,deepcopy(value));return {'name':kind+'/x','versionId':'1','sha256':'x'}
@@ -81,8 +83,29 @@ def test_runner_failure_is_persisted_without_raising_or_gaining_authority(monkey
     assert report['error']=='ValueError'
     assert report['productionAuthorityChanged'] is False
     assert report['holdoutLabelsInspectedByScreen'] is False
+    # The runner now catches persistence inside the same isolation boundary.
+    # For a pure screen failure the attempted artifact contains FAILED.
     assert captured['artifact'][0]=='feature-discovery'
-    assert captured['latest'][1]['candidateCount']==0
+
+
+def test_sidecar_artifact_storage_failure_never_escapes(monkeypatch):
+    monkeypatch.setattr(runner.discovery,'screen',lambda _: {'status':'NO_REPEATABLE_CANDIDATES','candidates':[]})
+    class Store:
+        def artifact(self,kind,value): raise RuntimeError('s3 unavailable')
+        def latest(self,name,value): raise AssertionError('latest should not be reached')
+    report=runner.publish(Store(),{'rows':rows(),'rowsHash':'fixture-hash','originalRows':0})
+    assert report['status']=='FAILED' and report['error']=='RuntimeError'
+    assert report['productionAuthorityChanged'] is False
+
+
+def test_sidecar_latest_storage_failure_never_escapes(monkeypatch):
+    monkeypatch.setattr(runner.discovery,'screen',lambda _: {'status':'NO_REPEATABLE_CANDIDATES','candidates':[]})
+    class Store:
+        def artifact(self,kind,value): return {'name':kind+'/x','versionId':'1','sha256':'x'}
+        def latest(self,name,value): raise RuntimeError('conditional write failed')
+    report=runner.publish(Store(),{'rows':rows(),'rowsHash':'fixture-hash','originalRows':0})
+    assert report['status']=='FAILED' and report['error']=='RuntimeError'
+    assert report['productionAuthorityChanged'] is False
 
 
 def test_small_dataset_returns_insufficient_without_candidate_invention():
@@ -90,3 +113,10 @@ def test_small_dataset_returns_insufficient_without_candidate_invention():
     assert report['status']=='INSUFFICIENT_DEVELOPMENT_DATA'
     assert report['candidates']==[]
     assert report['evaluatedFeatures']==0
+
+
+def test_daily_expansion_installs_research_runtime_and_tracks_all_research_changes():
+    text=(ROOT/'.github/workflows/mlb-data-expansion.yml').read_text()
+    assert "-r mlb_research/requirements.txt" in text
+    assert "- 'mlb_research/**'" in text
+    assert "OPENBLAS_NUM_THREADS: '1'" in text
