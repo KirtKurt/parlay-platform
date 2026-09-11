@@ -100,7 +100,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 8787
           ToPort: 8787
-          DestinationSecurityGroupId: !Ref WorkerSecurityGroup
+          CidrIp: 0.0.0.0/0
 
   EfsSecurityGroup:
     Type: AWS::EC2::SecurityGroup
