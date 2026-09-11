@@ -1,0 +1,66 @@
+name: Deploy Inqsi Arb
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'inqsi-arb/**'
+      - '.github/workflows/inqsi-arb-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: inqsi-arb-production
+  cancel-in-progress: false
+jobs:
+  test-deploy-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test runtime
+        run: python -m pip install --quiet "pytest>=8,<9"
+      - name: Test deterministic engine
+        run: python -m pytest -q inqsi-arb/tests
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - uses: aws-actions/setup-sam@v2
+      - name: Validate and build
+        run: |
+          sam validate --template-file inqsi-arb/template.yaml
+          sam build --no-cached --template-file inqsi-arb/template.yaml
+      - name: Deploy isolated arb stack
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          test -n "${ODDS_API_KEY_VALUE:-}"
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name inqsi-arb-prod \
+            --region "${{ secrets.AWS_REGION }}" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}"
+      - name: Verify live health and provider catalog
+        run: |
+          set -euo pipefail
+          API_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ArbApiUrl'].OutputValue" --output text)
+          test -n "$API_URL" && test "$API_URL" != "None"
+          python - "$API_URL" <<'PY'
+          import json, sys, urllib.request
+          base=sys.argv[1].rstrip('/')
+          with urllib.request.urlopen(base+'/v1/arb/health', timeout=20) as r:
+              h=json.load(r)
+          assert h['ok'] is True and h['places_bets'] is False and h['provider_key_present'] is True, h
+          with urllib.request.urlopen(base+'/v1/arb/catalog', timeout=30) as r:
+              c=json.load(r)
+          assert c['ok'] is True and c['n_sports'] > 0, c
+          assert 'player_props' in c['market_families'] and 'futures' in c['market_families'], c
+          print(json.dumps({'api_url': base, 'health': h, 'active_sports': c['n_sports']}, indent=2))
+          PY
