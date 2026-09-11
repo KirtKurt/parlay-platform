@@ -32,15 +32,15 @@ env:
   ARB_AEC_ALLOW_DISPATCH: 'true'
   ARB_AEC_ALLOW_ISSUE: 'true'
   ARB_AEC_PAUSED: ${{ vars.ARB_AEC_PAUSED || 'false' }}
-  ARB_AEC_AUTO_PROMOTE: ${{ vars.ARB_AEC_AUTO_PROMOTE || 'true' }}
-  ARB_AEC_AUTO_DEPLOY: ${{ vars.ARB_AEC_AUTO_DEPLOY || 'true' }}
+  ARB_AEC_AUTO_PROMOTE: ${{ vars.ARB_AEC_AUTO_PROMOTE || 'false' }}
+  ARB_AEC_AUTO_DEPLOY: ${{ vars.ARB_AEC_AUTO_DEPLOY || 'false' }}
   ARB_CODE_AGENT_MODEL: 'codex-cli-default'
   ARB_CODE_AGENT_COMMAND: 'bash inqsi-arb/ops/codex_cli_runner.sh'
 
 jobs:
   inspect-decide-act:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v4
         with:

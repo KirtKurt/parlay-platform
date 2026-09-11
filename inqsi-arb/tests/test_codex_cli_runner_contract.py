@@ -57,7 +57,7 @@ def test_runner_restores_host_path_normalizes_commits_and_defers_high_risk_auto_
     assert 'HOST_PATH="$PATH"' in text
     assert 'PATH="$HOST_PATH"' in text
     assert 'export PATH="$HOST_PATH"' in text
-    assert 'git diff --name-only "$BASE_SHA"...HEAD' in text
+    assert 'git diff --no-renames --name-only "$BASE_SHA"...HEAD' in text
     assert 'git reset --mixed "$BASE_SHA"' in text
     assert "git ls-files --others --exclude-standard" in text
     assert "python -m arb_supervisor.validate_candidate" in text

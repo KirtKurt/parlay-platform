@@ -1,5 +1,5 @@
 name: Deploy Inqsi Arb
-run-name: Deploy Inqsi Arb ${{ inputs.arb_merge_sha || github.sha }}
+run-name: Deploy Inqsi Arb ${{ inputs.arb_merge_sha || github.sha }} ${{ inputs.dispatch_nonce }}
 on:
   pull_request:
     paths:
@@ -12,9 +12,13 @@ on:
       - '.github/workflows/inqsi-arb-deploy.yml'
   workflow_dispatch:
     inputs:
-      arb_merge_sha:
-        description: Exact autonomous ARB merge commit that must be present in main
+      dispatch_nonce:
+        description: Unique supervisor dispatch receipt (optional for operator dispatch)
         required: false
+        type: string
+      arb_merge_sha:
+        description: Exact reviewed ARB merge commit that must be present in main
+        required: true
         type: string
 permissions:
   contents: read
@@ -24,12 +28,14 @@ concurrency:
 jobs:
   test-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Bind supervisor dispatch to the requested ARB merge
-        if: github.event_name == 'workflow_dispatch' && inputs.arb_merge_sha != ''
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         env:
           ARB_MERGE_SHA: ${{ inputs.arb_merge_sha }}
@@ -38,7 +44,7 @@ jobs:
           [[ "$ARB_MERGE_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$GITHUB_REF" = 'refs/heads/main'
           git merge-base --is-ancestor "$ARB_MERGE_SHA" HEAD
-          RELEVANT=$(git diff --name-only "$ARB_MERGE_SHA" HEAD -- inqsi-arb '.github/workflows/inqsi-arb-*' arb_supervisor .github/workflows/arb-supervisor-validate.yml)
+          RELEVANT=$(git diff --no-renames --name-only "$ARB_MERGE_SHA" HEAD -- inqsi-arb '.github/workflows/inqsi-arb-*' arb_supervisor .github/workflows/arb-supervisor-validate.yml)
           test -z "$RELEVANT"
           echo "supervisor dispatch contains exact ARB merge $ARB_MERGE_SHA with no later ARB/supervisor drift"
       - uses: actions/setup-python@v5
@@ -60,12 +66,14 @@ jobs:
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: test-build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Re-bind supervisor dispatch immediately before privileged deployment
-        if: github.event_name == 'workflow_dispatch' && inputs.arb_merge_sha != ''
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         env:
           ARB_MERGE_SHA: ${{ inputs.arb_merge_sha }}
@@ -74,19 +82,19 @@ jobs:
           [[ "$ARB_MERGE_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$GITHUB_REF" = 'refs/heads/main'
           git merge-base --is-ancestor "$ARB_MERGE_SHA" HEAD
-          RELEVANT=$(git diff --name-only "$ARB_MERGE_SHA" HEAD -- inqsi-arb '.github/workflows/inqsi-arb-*' arb_supervisor .github/workflows/arb-supervisor-validate.yml)
+          RELEVANT=$(git diff --no-renames --name-only "$ARB_MERGE_SHA" HEAD -- inqsi-arb '.github/workflows/inqsi-arb-*' arb_supervisor .github/workflows/arb-supervisor-validate.yml)
           test -z "$RELEVANT"
           echo "privileged deploy remains bound to exact ARB merge $ARB_MERGE_SHA"
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
       - uses: aws-actions/setup-sam@v2
       - name: Stamp clean Python release identity
         run: python inqsi-arb/ops/release_proof.py stamp
       - name: Build
         run: sam build --no-cached --template-file inqsi-arb/template.yaml
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
       - name: Deploy isolated arb stack
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}

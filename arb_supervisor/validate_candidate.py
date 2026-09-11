@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Trusted policy checks for autonomously promoted Inqsi ARB candidates.
+"""Trusted, non-executable bootstrap policy for autonomous ARB promotion.
 
-This module intentionally lives outside the Codex worker write allowlist. It is
-used by the supervisor validation workflow before an Actions-created ARB PR may
-be merged automatically.
+Executable source/tests/dependencies require ordinary review until worker,
+validation and production credential isolation have been qualified. A textual
+source denylist cannot establish that boundary.
 """
 from __future__ import annotations
 
@@ -15,49 +15,11 @@ from typing import Iterable
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 BRANCH_RE = re.compile(r"^agent/inqsi-arb-aec-[0-9]+$")
-MAX_FILES = 12
+MAX_FILES = 2
 MAX_CHANGED_LINES = 600
-
-_ALLOWED_EXACT = {
-    "inqsi-arb/ARB_BACKLOG.md",
-    "inqsi-arb/ARB_STATUS.md",
-}
-_ALLOWED_PREFIXES = (
-    "inqsi-arb/src/",
-    "inqsi-arb/tests/",
-)
-
-# These are writable by the coding worker for draft proposals but are never
-# eligible for unattended promotion because they define authority, deployment,
-# infrastructure, release attestation, controller guardrails, or the supervisor.
-_NEVER_AUTO_PREFIXES = (
-    "inqsi-arb/ops/",
-    ".github/",
-    "arb_supervisor/",
-)
-_NEVER_AUTO_EXACT = {
-    "inqsi-arb/template.yaml",
-    "inqsi-arb/sportsbook-template.yaml",
-    "inqsi-arb/samconfig.toml",
-    "inqsi-arb/src/release_identity.py",
-    "inqsi-arb/tests/test_release_identity.py",
-    "inqsi-arb/tests/test_codex_cli_runner_contract.py",
-    "inqsi-arb/tests/test_engineering_controller.py",
-}
-
-_DANGEROUS_ADDED_SOURCE_PATTERNS = tuple(
-    re.compile(pattern, re.IGNORECASE)
-    for pattern in (
-        r"\bplace[_ -]?bet\b",
-        r"\bsubmit[_ -]?wager\b",
-        r"\bexecute[_ -]?wager\b",
-        r"\bsportsbook[_ -]?(?:login|credential)\b",
-        r"\bsam\s+deploy\b",
-        r"\baws\s+cloudformation\b",
-        r"\bos\.system\s*\(",
-        r"\bsubprocess\.(?:run|Popen|call|check_call|check_output)\s*\(",
-    )
-)
+MAX_FILE_BYTES = 64 * 1024
+MAX_TOTAL_BYTES = 128 * 1024
+_ALLOWED_EXACT = {"inqsi-arb/ARB_BACKLOG.md", "inqsi-arb/ARB_STATUS.md"}
 
 
 def _git(*args: str, cwd: Path) -> str:
@@ -74,22 +36,11 @@ def validate_identity(branch: str, candidate_sha: str, base_sha: str) -> None:
 
 
 def changed_files(repo: Path, base_sha: str, candidate_sha: str) -> list[str]:
-    output = _git("diff", "--name-only", base_sha, candidate_sha, cwd=repo)
-    return [line for line in output.splitlines() if line]
-
-
-def _changed_line_count(repo: Path, base_sha: str, candidate_sha: str) -> int:
-    output = _git("diff", "--numstat", base_sha, candidate_sha, cwd=repo)
-    total = 0
-    for line in output.splitlines():
-        if not line:
-            continue
-        added, deleted, _ = line.split("\t", 2)
-        # Binary changes are not eligible for autonomous promotion.
-        if added == "-" or deleted == "-":
-            raise ValueError("BINARY_CHANGE_NOT_ELIGIBLE")
-        total += int(added) + int(deleted)
-    return total
+    # NUL delimiting preserves unusual filenames; --no-renames exposes deletions
+    # at the old path as well as additions at the new path.
+    raw = subprocess.check_output(
+        ["git", "diff", "--no-renames", "--name-only", "-z", base_sha, candidate_sha], cwd=repo)
+    return [p.decode("utf-8") for p in raw.split(b"\0") if p]
 
 
 def validate_paths(paths: Iterable[str]) -> list[str]:
@@ -99,39 +50,53 @@ def validate_paths(paths: Iterable[str]) -> list[str]:
     if len(items) > MAX_FILES:
         raise ValueError("TOO_MANY_CHANGED_FILES")
     for path in items:
-        if path in _NEVER_AUTO_EXACT or path.startswith(_NEVER_AUTO_PREFIXES):
-            raise ValueError(f"HIGH_RISK_PATH:{path}")
-        if path in _ALLOWED_EXACT or path.startswith(_ALLOWED_PREFIXES):
-            continue
-        raise ValueError(f"PATH_NOT_AUTO_PROMOTABLE:{path}")
+        if path not in _ALLOWED_EXACT:
+            raise ValueError(f"PATH_REQUIRES_REVIEW:{path}")
     return items
 
 
-def validate_added_source(repo: Path, base_sha: str, candidate_sha: str) -> None:
-    """Reject a small set of authority-expanding primitives in added source lines.
-
-    This is an additional defense, not a general-purpose security scanner.
-    """
-    diff = _git("diff", "--unified=0", base_sha, candidate_sha, "--", "inqsi-arb/src", cwd=repo)
-    for line in diff.splitlines():
-        if not line.startswith("+") or line.startswith("+++"):
-            continue
-        code = line[1:]
-        for pattern in _DANGEROUS_ADDED_SOURCE_PATTERNS:
-            if pattern.search(code):
-                raise ValueError(f"DANGEROUS_ADDED_SOURCE:{pattern.pattern}")
+def validate_blob_limits(repo: Path, candidate_sha: str, paths: list[str]) -> None:
+    total = 0
+    for path in paths:
+        entry = _git("ls-tree", candidate_sha, "--", path, cwd=repo)
+        if not entry:
+            raise ValueError("DOCUMENT_DELETION_REQUIRES_REVIEW")
+        metadata, actual_path = entry.split("\t", 1)
+        mode, kind, sha = metadata.split()
+        if mode != "100644" or kind != "blob" or actual_path != path:
+            raise ValueError("NON_REGULAR_DOCUMENT")
+        size = int(_git("cat-file", "-s", sha, cwd=repo))
+        if size > MAX_FILE_BYTES:
+            raise ValueError("FILE_TOO_LARGE")
+        total += size
+        if total > MAX_TOTAL_BYTES:
+            raise ValueError("CANDIDATE_BYTES_TOO_LARGE")
+        blob = subprocess.check_output(["git", "cat-file", "blob", sha], cwd=repo)
+        if b"\0" in blob:
+            raise ValueError("BINARY_CHANGE_NOT_ELIGIBLE")
+        try:
+            blob.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("NON_UTF8_DOCUMENT") from exc
 
 
 def validate_candidate(repo: Path, branch: str, candidate_sha: str, base_sha: str) -> list[str]:
     validate_identity(branch, candidate_sha, base_sha)
-    # The candidate must be a direct descendant of the controller-selected base.
-    parent = _git("rev-parse", f"{candidate_sha}^", cwd=repo)
-    if parent != base_sha:
+    parents = _git("rev-list", "--parents", "-n", "1", candidate_sha, cwd=repo).split()[1:]
+    if parents != [base_sha]:
         raise ValueError("CANDIDATE_PARENT_MISMATCH")
     paths = validate_paths(changed_files(repo, base_sha, candidate_sha))
-    if _changed_line_count(repo, base_sha, candidate_sha) > MAX_CHANGED_LINES:
+    # Bound blob sizes before reading content or producing a diff.
+    validate_blob_limits(repo, candidate_sha, paths)
+    stats = _git("diff", "--no-renames", "--numstat", base_sha, candidate_sha, cwd=repo)
+    total = 0
+    for line in stats.splitlines():
+        added, deleted, _ = line.split("\t", 2)
+        if added == "-" or deleted == "-":
+            raise ValueError("BINARY_CHANGE_NOT_ELIGIBLE")
+        total += int(added) + int(deleted)
+    if total > MAX_CHANGED_LINES:
         raise ValueError("CANDIDATE_TOO_LARGE")
-    validate_added_source(repo, base_sha, candidate_sha)
     subprocess.run(["git", "diff", "--check", base_sha, candidate_sha], cwd=repo, check=True)
     return paths
 
@@ -144,9 +109,7 @@ def main() -> int:
     parser.add_argument("--base-sha", required=True)
     args = parser.parse_args()
     paths = validate_candidate(args.repo.resolve(), args.branch, args.candidate_sha, args.base_sha)
-    print(f"ARB supervisor policy passed: {len(paths)} changed files")
-    for path in paths:
-        print(path)
+    print(f"ARB non-executable bootstrap policy passed: {len(paths)} changed files")
     return 0
 
 

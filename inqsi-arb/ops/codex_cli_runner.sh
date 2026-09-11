@@ -65,9 +65,9 @@ env \
 # repository differences from the controller-selected base as candidate output.
 mapfile -t CHANGED < <(
   {
-    git diff --name-only "$BASE_SHA"...HEAD
-    git diff --name-only
-    git diff --name-only --cached
+    git diff --no-renames --name-only "$BASE_SHA"...HEAD
+    git diff --no-renames --name-only
+    git diff --no-renames --name-only --cached
     git ls-files --others --exclude-standard
   } | sed '/^$/d' | sort -u
 )
@@ -111,8 +111,8 @@ fi
 
 mapfile -t FINAL_CHANGED < <(
   {
-    git diff --name-only
-    git diff --name-only --cached
+    git diff --no-renames --name-only
+    git diff --no-renames --name-only --cached
     git ls-files --others --exclude-standard
   } | sed '/^$/d' | sort -u
 )

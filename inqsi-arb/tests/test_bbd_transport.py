@@ -3,7 +3,7 @@ import io
 import sys
 from email.message import Message
 from pathlib import Path
-from urllib.request import HTTPSHandler, build_opener
+from urllib.request import HTTPSHandler, ProxyHandler, build_opener
 from urllib.response import addinfourl
 
 import pytest
@@ -34,7 +34,9 @@ def transport(monkeypatch):
 
         monkeypatch.setattr(
             bbd_provider, "build_opener",
-            lambda *handlers: build_opener(*handlers, OfflineHTTPS()),
+            # The fake transport must not inherit the runner proxy or mutate
+            # Request.host before OfflineHTTPS records it. No network is used.
+            lambda *handlers: build_opener(ProxyHandler({}), *handlers, OfflineHTTPS()),
         )
 
     return install, calls, responses
