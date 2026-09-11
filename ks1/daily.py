@@ -299,7 +299,7 @@ def predict(folder, output):
             if gaps:
                 row['history_status'] = 'partial_known_missing_boxes'
         row.update(market_for(game, inputs['odds']['payload'], crosswalk, as_of))
-        features['market_home_prob'] = row['market_home_prob']
+        features.update({key: row[key] for key in ('market_home_prob', 'market_total', 'market_spread')})
         if individual_learned:
             row['starter_feature_source'] = 'individual_and_team_starter_history'
             if any(not features.get(side+'_starter_bf_30d') for side in ('home', 'away')):
