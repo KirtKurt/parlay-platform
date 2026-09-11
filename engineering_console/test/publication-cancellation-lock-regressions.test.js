@@ -25,6 +25,6 @@ test('Console UI exposes cancellation throughout publication and retry states', 
   const source = fs.readFileSync(new URL('../../frontend/components/EngineeringConsole.tsx', import.meta.url), 'utf8');
   assert.match(source, /publicationState\?: string/);
   assert.match(source, /awaiting_publication', 'published'/);
-  assert.match(source, /selected\.status === 'failed' && publicationVisible/);
+  assert.match(source, /selectedStatus === 'failed' && publicationVisible/);
   assert.match(source, /Cancel publication/);
 });
