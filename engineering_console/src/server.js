@@ -43,6 +43,16 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
         store.save(recovered);
         continue;
       }
+      // Instructions that required durable redaction are intentionally not
+      // persisted verbatim. After a process restart the ephemeral original is
+      // gone, so never execute the altered/redacted prompt as if it were exact.
+      // The owner can submit a fresh continuation instruction instead.
+      if (recovered.instructionRecoverable === false && !recovered.execution && !store.hasRuntimeInstruction(recovered.id)) {
+        recovered.status = 'blocked';
+        recovered.error = 'runtime_instruction_unavailable_after_restart';
+        store.save(recovered);
+        continue;
+      }
       recovered.status = 'queued';
       store.save(recovered);
       queue.enqueue(recovered.id);
@@ -71,7 +81,7 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
       let body = {}; if (['POST','PUT'].includes(request.method)) { let raw=''; for await (const chunk of request) { raw += chunk; if (raw.length > config.maxInstructionBytes + 10000) throw Object.assign(new Error('request_too_large'), { status: 413 }); } try { body = raw ? JSON.parse(raw) : {}; } catch { throw Object.assign(new Error('invalid_json'), { status: 400 }); } }
       if (request.method === 'GET' && !id) return send(200, { jobs: store.list(actor.id).map(publicJob) });
       if (request.method === 'POST' && !id) {
-        if (!String(body.instruction || '').trim()) return send(400, { error: 'instruction_required' });
+        if (typeof body.instruction !== 'string' || !body.instruction.trim()) return send(400, { error: 'instruction_required' });
         if (!Array.isArray(body.authorizedScope) || !body.authorizedScope.length || body.authorizedScope.some((scope) => !validScope(scope, config.allowedScopes))) return send(400, { error: 'valid_authorized_scope_required' });
         if (body.startingRevision && body.startingRevision !== 'HEAD' && !/^[0-9a-f]{40}$/i.test(body.startingRevision)) return send(400, { error: 'valid_starting_revision_required' });
         let mainRevision;
@@ -94,8 +104,16 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
         if (publicationVisible && !cancelPublication(config.dataDir, id)) return send(409, { error: 'publication_merge_already_committed' });
         queue.cancel(id);
         if (publicationVisible) {
-          const cancelled = store.owned(id, actor.id);
-          cancelled.status = 'awaiting_publication'; cancelled.publicationState = 'cancellation_pending'; cancelled.error = null; cancelled.cancelRequested = true; store.save(cancelled);
+          const pending = store.owned(id, actor.id);
+          // Accepting the durable cancellation decision is not proof that an
+          // already-visible GitHub PR was closed rather than concurrently merged.
+          // Keep the UI/state pending until the trusted publisher confirms the
+          // remote outcome and emits a terminal cancelled or merge_conflict receipt.
+          pending.status = pending.pullRequest ? 'published' : 'awaiting_publication';
+          pending.publicationState = 'cancellation_pending';
+          pending.error = 'publication_cancellation_pending_confirmation';
+          pending.cancelRequested = true;
+          store.save(pending);
         }
         return send(202, { job: publicJob(store.owned(id, actor.id)) });
       }
@@ -103,17 +121,17 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
         if (!['completed','failed','blocked','awaiting_approval'].includes(job.status)) return send(409, { error: 'job_not_continuable' });
         if (job.publicationState && job.publicationState !== 'no_changes') return send(409, { error: 'published_job_requires_new_task' });
         if (!validJobScopes(job, config.allowedScopes)) return send(409, { error: 'authorized_scope_no_longer_allowed' });
-        if (!String(body.instruction || '').trim()) return send(400, { error: 'instruction_required' });
+        if (typeof body.instruction !== 'string' || !body.instruction.trim()) return send(400, { error: 'instruction_required' });
         if (job.execution && !job.execution.stoppedAt) {
           try { await stopExecution(config, job, store); }
           catch { return send(409, { error: 'previous_execution_stop_unconfirmed' }); }
         }
         job.previousExecution = job.execution || job.previousExecution; job.execution = null;
-        job.instruction = String(body.instruction); job.status = 'queued'; job.cancelRequested = false; job.error = null; store.save(job); queue.enqueue(id); return send(202, { job: publicJob(job) });
+        job.instruction = String(body.instruction); store.rememberInstruction(id, job.instruction); job.status = 'queued'; job.cancelRequested = false; job.error = null; store.save(job); queue.enqueue(id); return send(202, { job: publicJob(job) });
       }
       return send(404, { error: 'not_found' });
     } catch (error) { send(error.status || 500, { error: error.status ? error.message : 'internal_error' }); }
-  });
+  }).on('close', () => queue.close?.());
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) { const config = loadConfig(); createServer({ config }).listen(config.port, config.bindAddress, () => console.log(`InQsi engineering service listening on ${config.bindAddress}:${config.port}`)); }

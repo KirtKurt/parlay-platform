@@ -40,6 +40,7 @@ test('browser login verifies PKCE, state, signed ID token, nonce and administrat
   const cookie = login.headers['set-cookie'][0].split(';')[0];
   ({ payload: flow } = await jwtVerify(cookie.slice(cookie.indexOf('=') + 1), new TextEncoder().encode(config.sessionKey)));
   const target = new URL(login.headers.location);
+  assert.equal(target.searchParams.get('audience'), config.audience);
   assert.equal(target.searchParams.get('code_challenge'), crypto.createHash('sha256').update(flow.verifier).digest('base64url'));
   assert.match(login.headers['set-cookie'][0], /HttpOnly; Secure; SameSite=Lax/);
   const invalid = response(); await auth({ method: 'GET', url: '/auth/callback?state=wrong&code=code', headers: { cookie } }, invalid);
@@ -98,20 +99,35 @@ test('remote task recovery uses the durable task identity and applies an approve
   atomicTransportWrite(path.join(transport.directory, 'result.json'), JSON.stringify(output), { immutable: true });
   const image = `111111111111.dkr.ecr.us-east-1.amazonaws.com/eng-console-runtime@sha256:${'a'.repeat(64)}`;
   const definition = { family: 'eng-console-job', networkMode: 'awsvpc', requiresCompatibilities: ['FARGATE'], containerDefinitions: [{ name: 'job', image, readonlyRootFilesystem: true, user: '10001:10001', command: ['node', '/app/scripts/isolated-job.mjs'], entryPoint: ['/usr/bin/tini', '--'] }] };
-  const job = { id: crypto.randomUUID(), startingRevision, authorizedScope: ['engineering_console_publication_proof'], execution: { id: transport.id, taskArn: 'task/durable', requestedAt: new Date().toISOString() } };
+  const job = { id: crypto.randomUUID(), startingRevision, authorizedScope: ['engineering_console_publication_proof'], execution: { id: transport.id, taskArn: null, requestedAt: new Date().toISOString() } };
   const cfg = { cluster: 'eng-console-runtime', jobTaskDefinition: 'definition', jobImage: image, jobSecurityGroup: 'sg-test', brokerUrl: 'https://console.example', transportDir, model: 'test-model', jobSubnets: ['a', 'b'], allowedScopes: job.authorizedScope, requiredChecks: ['engineering-console-publication-proof'] };
+  let launches = 0;
   const callAws = async (_, operation, input) => {
     if (operation === 'describe-task-definition') return definition;
+    if (operation === 'run-task') {
+      assert.equal(input.clientToken, transport.id); assert.equal(input.startedBy, transport.id);
+      if (++launches === 1) throw new Error('response lost after AWS accepted the task');
+      return { tasks: [{ taskArn: 'task/durable' }] };
+    }
     assert.equal(operation, 'describe-tasks'); assert.deepEqual(input.tasks, ['task/durable']);
     return { tasks: [{ taskArn: 'task/durable', lastStatus: 'STOPPED', containers: [{ exitCode: 0 }] }] };
   };
-  const run = new EcsCodex({ config: cfg, job, workspace, store: { save() {} }, callAws });
+  const run = new EcsCodex({ config: cfg, job, workspace, store: { save() {} }, callAws, pollMs: 1 });
   for (let attempt = 0; attempt < 2; attempt++) {
     const events = []; for await (const event of run.run('proof', null, {}, new AbortController().signal)) events.push(event);
     assert.equal(events.at(-1).type, 'turn.completed');
     assert.equal(fs.readFileSync(path.join(workspace, file), 'utf8'), 'proof\n');
     assert.equal(git('diff', '--binary', '--full-index', '--no-ext-diff', '--no-textconv', startingRevision, '--'), patch.trim());
   }
+  assert.equal(launches, 2);
+  const uncertain = createTaskTransport(transportDir, {});
+  job.execution = { id: uncertain.id, taskArn: null, requestedAt: new Date().toISOString() };
+  run.callAws = async (_, operation) => {
+    if (operation === 'describe-task-definition') return definition;
+    throw new Error('AWS unavailable');
+  };
+  await assert.rejects(async () => { for await (const event of run.run('proof', null, {}, new AbortController().signal)) assert.fail(event.type); }, /launch_unconfirmed/);
+  assert.throws(() => authenticateTask(transportDir, `Bearer ${uncertain.token}`));
   assert.throws(() => validateReturnedPatch(patch.replaceAll(file, 'engineering_console/evil.md'), [file]), /path_forbidden/);
   assert.throws(() => validateReturnedPatch(patch.replace('100644', '120000'), [file]), /mode_forbidden/);
 });

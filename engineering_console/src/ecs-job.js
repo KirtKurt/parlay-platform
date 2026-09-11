@@ -8,6 +8,7 @@ import { git } from './git.js';
 import { validatePublisherRequest, loadPublicationPolicy, isProofFile } from './publication-policy.js';
 import crypto from 'node:crypto';
 const exec = promisify(execFile);
+async function persistJob(store, job) { return store.saveAsync ? store.saveAsync(job) : store.save(job); }
 
 export function validateReturnedPatch(patch, changedFiles) {
   // The manifest is untrusted. Verify the actual Git headers before any write
@@ -30,13 +31,17 @@ export async function stopExecution(config, job, store, callAws = aws, { pollMs 
   const authFile = path.join(transportDirectory(config.transportDir, job.execution.id), 'auth.json');
   const auth = JSON.parse(fs.readFileSync(authFile, 'utf8'));
   atomicTransportWrite(authFile, JSON.stringify({ ...auth, expires: 0 }));
-  if (!job.execution.taskArn) throw new Error('isolated_job_stop_unconfirmed');
   try {
+    if (!job.execution.taskArn) {
+      const found = await callAws('ecs', 'list-tasks', { cluster: config.cluster, startedBy: job.execution.id });
+      if (found.taskArns?.length !== 1) throw new Error('isolated_job_stop_unconfirmed');
+      job.execution.taskArn = found.taskArns[0]; await persistJob(store, job);
+    }
     await callAws('ecs', 'stop-task', { cluster: config.cluster, task: job.execution.taskArn, reason: 'Engineering Console execution ended' });
     for (let attempt = 0; attempt < attempts; attempt++) {
       const result = await callAws('ecs', 'describe-tasks', { cluster: config.cluster, tasks: [job.execution.taskArn] });
       if (!result.failures?.length && result.tasks?.[0]?.taskArn === job.execution.taskArn && result.tasks[0].lastStatus === 'STOPPED') {
-        job.execution.stoppedAt = new Date().toISOString(); store.save(job); return;
+        job.execution.stoppedAt = new Date().toISOString(); await persistJob(store, job); return;
       }
       await new Promise(resolve => setTimeout(resolve, pollMs));
     }
@@ -81,7 +86,7 @@ export class EcsCodex {
       }
       const transport = createTaskTransport(config.transportDir, { prompt, instruction: job.instruction, jobId: job.id, startingRevision: job.startingRevision, authorizedScope: job.authorizedScope, archive: archive.stdout.toString('base64'), model: config.model, threadId, options }, checkpoint);
       job.execution = { id: transport.id, requestedAt: new Date().toISOString(), taskArn: null };
-      store.save(job);
+      await persistJob(store, job);
     }
     const directory = transportDirectory(config.transportDir, job.execution.id);
     const token = JSON.parse(fs.readFileSync(path.join(directory, 'auth.json'), 'utf8')).token;
@@ -89,13 +94,34 @@ export class EcsCodex {
     if (!job.execution.taskArn) {
       if (Date.now() >= Date.parse(job.execution.requestedAt) + 30 * 60 * 1000) throw new Error('isolated_job_launch_recovery_expired');
       // Stable clientToken makes recovery of a lost RunTask response idempotent.
-      const result = await callAws('ecs', 'run-task', { cluster: config.cluster, taskDefinition: config.jobTaskDefinition, launchType: 'FARGATE', platformVersion: '1.4.0', clientToken: job.execution.id, count: 1, startedBy: 'eng-console', enableExecuteCommand: false,
+      const launch = { cluster: config.cluster, taskDefinition: config.jobTaskDefinition, launchType: 'FARGATE', platformVersion: '1.4.0', clientToken: job.execution.id, count: 1, startedBy: job.execution.id, enableExecuteCommand: false,
         networkConfiguration: { awsvpcConfiguration: { subnets: config.jobSubnets, securityGroups: [config.jobSecurityGroup], assignPublicIp: 'DISABLED' } },
         overrides: { containerOverrides: [{ name: 'job', environment: [{ name: 'ENG_CONSOLE_BROKER_URL', value: config.brokerUrl }, { name: 'ENG_CONSOLE_JOB_TOKEN', value: token }, { name: 'ENG_CONSOLE_EXECUTION_ID', value: job.execution.id }] }] }
-      });
+      };
+      let result;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try { result = await callAws('ecs', 'run-task', launch); break; }
+        catch {
+          if (attempt === 2) {
+            // Discover an accepted launch whose response remained unavailable.
+            // If discovery is also unavailable, revoke capability and leave the
+            // execution blocked for explicit stop/reconciliation, never rerun it.
+            try {
+              const found = await callAws('ecs', 'list-tasks', { cluster: config.cluster, startedBy: job.execution.id });
+              if (found.taskArns?.length !== 1) throw new Error();
+              result = { tasks: [{ taskArn: found.taskArns[0] }] };
+            } catch {
+              const authFile = path.join(directory, 'auth.json');
+              const auth = JSON.parse(fs.readFileSync(authFile, 'utf8'));
+              atomicTransportWrite(authFile, JSON.stringify({ ...auth, expires: 0 }));
+              throw new Error('isolated_job_launch_unconfirmed');
+            }
+          } else await new Promise(resolve => setTimeout(resolve, this.pollMs));
+        }
+      }
       if (result.failures?.length || result.tasks?.length !== 1 || !result.tasks[0].taskArn) throw new Error('isolated_job_launch_failed');
       job.execution.taskArn = result.tasks[0].taskArn;
-      store.save(job);
+      await persistJob(store, job);
     }
     let stopped = false;
     const pendingEvents = function*(output) {
@@ -119,7 +145,7 @@ export class EcsCodex {
         if (result.failures?.length || !task || task.taskArn !== job.execution.taskArn) throw new Error('isolated_job_state_unverified');
         if (task.lastStatus === 'STOPPED') {
           stopped = true;
-          job.execution.stoppedAt = new Date().toISOString(); store.save(job);
+          job.execution.stoppedAt = new Date().toISOString(); await persistJob(store, job);
           const output = readResult();
           if (task.containers?.length !== 1 || task.containers[0].exitCode !== 0 || !output || output.completed !== true || !Array.isArray(output.events) || !output.events.some(e => e.type === 'turn.completed') || output.events.some(e => e.type === 'turn.failed')) throw new Error('isolated_job_failed_or_checkpoint_only');
           const patch = String(output.diff || '');

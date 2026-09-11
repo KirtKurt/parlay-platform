@@ -18,7 +18,7 @@ import { JobStore } from '../src/store.js';
 import { sanitize } from '../src/sanitize.js';
 import { loadPublicationPolicy, validatePublisherRequest, validatePullRequestIdentity, PROOF_WORKFLOW } from '../src/publication-policy.js';
 import { assertMainAncestor, validatePublicationHistory, validateMergedPublication } from '../src/publication-git-guard.js';
-import { beginPublicationMerge, publicationDecision, arbitrateVerifiedMerge } from '../src/publication-decision.js';
+import { beginPublicationMerge, publicationDecision, cancelPublication } from '../src/publication-decision.js';
 
 const exec = promisify(execFile);
 
@@ -235,30 +235,49 @@ async function processClaim(claimDir) {
       return true;
     };
 
-    const finishMerged = async (observedPr, expectedMerge = null, recoveredResponse = false) => {
+    const finishMerged = async (observedPr, expectedMerge = null) => {
       validatePullRequestIdentity(observedPr, manifest, publishedCommit);
       if (observedPr.state !== 'closed' || !observedPr.merged_at || !/^[0-9a-f]{40}$/.test(observedPr.merge_commit_sha || '')) throw new Error('publication_merge_commit_missing');
       if (expectedMerge && observedPr.merge_commit_sha !== expectedMerge) throw new Error('publication_merge_response_mismatch');
       await git(checkout, ['fetch', 'origin', observedPr.merge_commit_sha]);
       mainRevision = await refreshMain();
       await validateMergedPublication(checkout, manifest, publishedCommit, observedPr.merge_commit_sha, mainRevision, policy);
+
+      // After the landed commit is cryptographically/history validated, make one
+      // durable first-writer choice between accepted cancellation and merge.
+      // This closes the gap where cancellation could win after a read but before
+      // a terminal receipt. A verified landed merge that conflicts with an
+      // already accepted cancellation is a terminal reconciliation condition and
+      // must not be hidden by pending/failed required checks.
       const priorDecision = publicationDecision(dataDir, manifest.jobId);
-      const conflict = arbitrateVerifiedMerge(dataDir, manifest.jobId, cancelled()) === 'merge_conflict';
-      // An external actor can merge despite our accepted cancellation. Preserve
-      // both facts and block automatic completion rather than erasing either.
-      const completion = receipt(observedPr, publishedCommit, {
-        state: conflict ? 'merge_conflict' : 'merged',
+      if (cancelled()) cancelPublication(dataDir, manifest.jobId);
+      try {
+        beginPublicationMerge(dataDir, manifest.jobId);
+      } catch (error) {
+        if (error?.message !== 'publication_cancelled') throw error;
+        record(receipt(observedPr, publishedCommit, {
+          state: 'merge_conflict',
+          mergeCommit: observedPr.merge_commit_sha,
+          observedGitHubState: 'merged',
+          verificationMain: mainRevision,
+          completionMode: 'manual_reconciliation_required',
+          reason: 'verified_merge_with_accepted_cancellation',
+          cancelRequested: true
+        }));
+        return true;
+      }
+
+      if (!await verifyChecks(observedPr)) return false;
+      record(receipt(observedPr, publishedCommit, {
+        state: 'merged',
         mergeCommit: observedPr.merge_commit_sha,
         observedGitHubState: 'merged',
         verificationMain: mainRevision,
-        completionMode: conflict ? 'manual_reconciliation_required' : expectedMerge ? 'autonomous_verified' : recoveredResponse ? 'autonomous_recovered' : priorDecision === 'merge' ? 'merge_commitment_reconciled' : 'external_verified',
-        ...(conflict ? { reason: 'verified_external_merge_with_accepted_cancellation', cancelRequested: true } : {})
-      });
-      // A validated landed merge and accepted cancellation are durable facts
-      // even if CI is missing or failed. Preserve the conflict before awaiting CI.
-      if (conflict) { record(completion); return true; }
-      if (!await verifyChecks(observedPr)) return false;
-      record(completion);
+        // A pre-existing durable merge commitment is enough to distinguish a
+        // lost-response recovery from a first observation of an external merge,
+        // without claiming which GitHub actor actually completed the merge.
+        completionMode: expectedMerge ? 'autonomous_verified' : priorDecision === 'merge' ? 'publisher_commitment_recovered' : 'external_verified'
+      }));
       return true;
     };
 
@@ -312,7 +331,7 @@ async function processClaim(claimDir) {
       });
     } catch (error) {
       const latest = await github(`/pulls/${pr.number}`);
-      if (latest.merged_at) return await finishMerged(latest, null, true);
+      if (latest.merged_at) return await finishMerged(latest);
       throw error;
     }
     if (merge.merged !== true || !/^[0-9a-f]{40}$/.test(merge.sha || '')) throw new Error('publication_merge_rejected');

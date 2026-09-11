@@ -13,6 +13,8 @@ const home = path.join(root, 'home');
 const broker = process.env.ENG_CONSOLE_BROKER_URL;
 const token = process.env.ENG_CONSOLE_JOB_TOKEN;
 const id = process.env.ENG_CONSOLE_EXECUTION_ID;
+// The task also bounds its own lifetime if its controller is unavailable.
+setTimeout(() => process.exit(124), 30 * 60 * 1000).unref();
 if (!/^https:\/\//.test(broker || '') || !/^ecj_[0-9a-f-]{36}_[0-9a-f]{64}$/.test(token || '') || !/^[0-9a-f-]{36}$/.test(id || '')) throw new Error('isolated_job_configuration_invalid');
 if (['OPENAI_API_KEY', 'GH_TOKEN', 'GITHUB_TOKEN', 'AWS_ACCESS_KEY_ID', 'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI', 'AWS_CONTAINER_CREDENTIALS_FULL_URI'].some(k => process.env[k])) throw new Error('isolated_job_reusable_credentials_forbidden');
 const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };

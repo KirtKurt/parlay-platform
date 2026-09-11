@@ -34,7 +34,7 @@ export function createBrowserAuth(config, authorize, request = fetch, identityVe
         const verifier = crypto.randomBytes(48).toString('base64url');
         const flow = await new SignJWT({ state, nonce, verifier }).setProtectedHeader({ alg: 'HS256' }).setIssuedAt().setExpirationTime('5m').sign(key);
         const target = new URL(data.authorization_endpoint);
-        target.search = new URLSearchParams({ response_type: 'code', client_id: config.oidcClientId, redirect_uri: `${config.allowedOrigin}/auth/callback`, scope: 'openid profile', state, nonce, code_challenge_method: 'S256', code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url') }).toString();
+        target.search = new URLSearchParams({ response_type: 'code', client_id: config.oidcClientId, audience: config.audience, redirect_uri: `${config.allowedOrigin}/auth/callback`, scope: 'openid profile', state, nonce, code_challenge_method: 'S256', code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url') }).toString();
         return redirect(target.toString(), [cookie(FLOW_COOKIE, flow, 300, 'Lax')]);
       }
       if (req.method === 'GET' && url.pathname === '/auth/callback') {
