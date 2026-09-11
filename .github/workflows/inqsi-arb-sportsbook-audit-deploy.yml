@@ -1,0 +1,105 @@
+name: Deploy Inqsi ARB Sportsbook Catalog
+on:
+  pull_request:
+    paths:
+      - 'inqsi-arb/src/sportsbook_catalog.py'
+      - 'inqsi-arb/src/sportsbook_api.py'
+      - 'inqsi-arb/tests/test_sportsbook_catalog.py'
+      - 'inqsi-arb/sportsbook-catalog-template.yaml'
+      - '.github/workflows/inqsi-arb-sportsbook-audit-deploy.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'inqsi-arb/src/sportsbook_catalog.py'
+      - 'inqsi-arb/src/sportsbook_api.py'
+      - 'inqsi-arb/tests/test_sportsbook_catalog.py'
+      - 'inqsi-arb/sportsbook-catalog-template.yaml'
+      - '.github/workflows/inqsi-arb-sportsbook-audit-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: inqsi-arb-sportsbook-catalog-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test runtime
+        run: python -m pip install --quiet "pytest>=8,<9" boto3
+      - name: Run ARB sportsbook catalog tests
+        run: python -m pytest -q inqsi-arb/tests/test_sportsbook_catalog.py
+      - uses: aws-actions/setup-sam@v2
+      - name: Validate and build
+        run: |
+          sam validate --lint --template-file inqsi-arb/sportsbook-catalog-template.yaml
+          sam build --no-cached --template-file inqsi-arb/sportsbook-catalog-template.yaml
+
+  deploy-verify:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - uses: aws-actions/setup-sam@v2
+      - name: Build
+        run: sam build --no-cached --template-file inqsi-arb/sportsbook-catalog-template.yaml
+      - name: Deploy catalog stack
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          test -n "${ODDS_API_KEY_VALUE:-}"
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name inqsi-arb-sportsbook-catalog-prod \
+            --region "${{ secrets.AWS_REGION }}" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}"
+      - name: Verify exact live sportsbook inventory
+        run: |
+          set -euo pipefail
+          URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-sportsbook-catalog-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='SportsbooksUrl'].OutputValue" --output text)
+          test -n "$URL" && test "$URL" != "None"
+          python - "$URL" <<'PY'
+          import json, sys, time, urllib.request, urllib.error
+          url=sys.argv[1]
+          last=None
+          for i in range(1,13):
+              try:
+                  with urllib.request.urlopen(url, timeout=300) as r:
+                      body=json.loads(r.read())
+                  assert body['complete'] is True, body
+                  assert body['sports_failed'] == 0, body
+                  assert body['sportsbook_count'] == len(body['sportsbooks']), body
+                  assert body['sport_count'] == body['sports_scanned'], body
+                  assert body['sportsbook_count'] > 0, body
+                  keys=[x['key'] for x in body['sportsbooks']]
+                  assert len(keys) == len(set(keys)), body
+                  print(json.dumps({
+                      'sportsbooks_url':url,
+                      'sportsbook_count':body['sportsbook_count'],
+                      'sport_count':body['sport_count'],
+                      'regions':body['regions'],
+                      'sportsbooks':[x['title'] for x in body['sportsbooks']],
+                      'audited_at':body['audited_at']
+                  }, indent=2))
+                  break
+              except Exception as exc:
+                  last=f'{type(exc).__name__}: {exc}'
+                  if i == 12:
+                      raise
+                  print(f'waiting for sportsbook catalog attempt={i}/12 last={last}', flush=True)
+                  time.sleep(min(i*5,20))
+          PY
