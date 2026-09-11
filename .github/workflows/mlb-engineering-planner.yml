@@ -41,7 +41,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Install planner validation runtime
+      - name: Install planner runtime
         run: python -m pip install 'boto3>=1.34,<2'
 
       - name: Build current-system MLB evidence packet
@@ -63,8 +63,8 @@ jobs:
               'ks1_*latest*.json',
               'mlb_bedrock_*latest*.json',
           )
-          retired_tokens = ('mlb_v7_', 'mlb_v8_', 'mlb_v9_', 'mlb_v10_', 'mlb_v15_')
-          timestamp_keys = (
+          retired = ('mlb_v7_', 'mlb_v8_', 'mlb_v9_', 'mlb_v10_', 'mlb_v15_')
+          time_keys = (
               'updatedAtUtc', 'createdAtUtc', 'observedAtUtc', 'generatedAtUtc',
               'capturedAtUtc', 'asOfUtc', 'runAtUtc', 'timestamp', 'as_of', 'updated_at',
           )
@@ -72,9 +72,8 @@ jobs:
           def parse_time(value):
               if not isinstance(value, str):
                   return None
-              text = value.strip().replace('Z', '+00:00')
               try:
-                  dt = datetime.fromisoformat(text)
+                  dt = datetime.fromisoformat(value.strip().replace('Z', '+00:00'))
               except ValueError:
                   return None
               if dt.tzinfo is None:
@@ -83,7 +82,7 @@ jobs:
 
           def evidence_time(value):
               if isinstance(value, dict):
-                  direct = [parse_time(value.get(k)) for k in timestamp_keys]
+                  direct = [parse_time(value.get(k)) for k in time_keys]
                   direct = [x for x in direct if x is not None]
                   if direct:
                       return max(direct)
@@ -99,10 +98,9 @@ jobs:
           candidates = {}
           for pattern in patterns:
               for path in root.glob(pattern):
-                  name = path.name.lower()
                   if not path.is_file() or path.stat().st_size > 2_000_000:
                       continue
-                  if any(token in name for token in retired_tokens):
+                  if any(token in path.name.lower() for token in retired):
                       continue
                   try:
                       text = path.read_text(encoding='utf-8', errors='replace')
@@ -112,7 +110,6 @@ jobs:
                   candidates[path] = (evidence_time(parsed) or 0.0, text)
 
           selected = sorted(candidates, key=lambda p: (candidates[p][0], str(p)))[-20:]
-          chunks = []
           try:
               git_log = subprocess.check_output(
                   ['git', 'log', '--date=iso-strict', '--pretty=format:%H %ad %s', '-20'],
@@ -120,11 +117,11 @@ jobs:
               )
           except Exception:
               git_log = ''
-          chunks.append(json.dumps({
+          chunks = [json.dumps({
               'kind': 'recent_main_history',
               'currentCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
               'content': git_log,
-          }, ensure_ascii=False))
+          }, ensure_ascii=False)]
           for path in selected:
               observed, text = candidates[path]
               chunks.append(json.dumps({
@@ -139,120 +136,34 @@ jobs:
           print(json.dumps({
               'selectedFiles': [str(p) for p in selected],
               'count': len(selected),
-              'excludedRetiredGenerations': list(retired_tokens),
+              'excludedRetiredGenerations': list(retired),
           }))
           PY
 
-      - name: Build bounded planner request
+      - name: Select next task with bounded re-planning
+        run: |
+          python -m engineering_agent.runtime \
+            --evidence runtime_reports/engineering_planner/evidence.jsonl \
+            --output runtime_reports/engineering_planner/next-task.json \
+            --response runtime_reports/engineering_planner/lambda-response.json \
+            --attempts runtime_reports/engineering_planner/attempts.json \
+            --stack "$MLB_PLANNER_STACK" \
+            --logical-function "$MLB_PLANNER_LOGICAL_FUNCTION" \
+            --max-attempts 3
+
+      - name: Verify accepted task authority receipts
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-
-          policy = json.loads(Path('engineering_agent/policy.json').read_text())
-          history_path = Path('engineering_agent/decision_history.json')
-          decision_history = json.loads(history_path.read_text()) if history_path.exists() else {'decisions': []}
-          evidence = Path('runtime_reports/engineering_planner/evidence.jsonl').read_text(encoding='utf-8', errors='replace')[-30000:]
-          prompt = json.dumps({
-              'mission': (
-                  'Continuously improve the MLB research and successor-learning platform. '
-                  'Prioritize source-honest point-in-time data capture, autonomous research, diagnostics, '
-                  'feature/model evaluation, calibration, and reliability. Preserve immutable evidence, '
-                  'chronological validation, fail-closed production authority, and sport isolation.'
-              ),
-              'latestOperationalEvidence': evidence,
-              'decisionHistory': decision_history,
-              'policy': policy,
-              'instruction': (
-                  'Choose exactly one highest-value unresolved engineering task actionable from current evidence '
-                  'and suitable for a small reviewed PR. Recent main-history evidence is authoritative for whether '
-                  'a repair has already been merged. Honor decisionHistory: do not re-propose COMPLETED work, and '
-                  'do not re-propose REJECTED_AS_UNSAFE_OR_INAPPLICABLE work unless current evidence directly '
-                  'satisfies its reconsiderOnlyIf condition. Historical-training-only rows with intentionally '
-                  'unavailable label-observation times are diagnostic evidence, not a reason to fabricate timestamps '
-                  'or weaken chronology. Prefer active current blockers over expected fail-closed diagnostic errors. '
-                  'Do not weaken thresholds merely to pass. Return strict JSON only with: title (string), objective '
-                  '(string), implementation (array of concrete steps), likelyFiles (array), acceptanceTests '
-                  '(array), safetyReceipts (array), evidenceBasis (array).'
-              ),
-          }, separators=(',', ':'))
-          size = len(prompt.encode('utf-8'))
-          if size > 50000:
-              raise SystemExit(f'planner request exceeded 50KB contract: {size}')
-          Path('/tmp/mlb-planner-event.json').write_text(
-              json.dumps({'mode': 'engineering_plan', 'prompt': prompt}), encoding='utf-8'
-          )
-          print(json.dumps({'promptBytes': size, 'evidenceChars': len(evidence), 'decisionCount': len(decision_history.get('decisions') or [])}))
-          PY
-
-      - name: Invoke planner through Bedrock-capable AWS runtime role
-        shell: bash
-        run: |
-          set -euo pipefail
-          function_name="$(aws cloudformation describe-stack-resource \
-            --stack-name "$MLB_PLANNER_STACK" \
-            --logical-resource-id "$MLB_PLANNER_LOGICAL_FUNCTION" \
-            --query 'StackResourceDetail.PhysicalResourceId' \
-            --output text)"
-          test -n "$function_name"
-          test "$function_name" != "None"
-          aws lambda invoke \
-            --function-name "$function_name" \
-            --cli-binary-format raw-in-base64-out \
-            --payload fileb:///tmp/mlb-planner-event.json \
-            runtime_reports/engineering_planner/lambda-response.json \
-            > runtime_reports/engineering_planner/invoke-metadata.json
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          metadata = json.loads(Path('runtime_reports/engineering_planner/invoke-metadata.json').read_text())
-          if metadata.get('FunctionError'):
-              raise SystemExit('planner Lambda FunctionError: ' + str(metadata.get('FunctionError')))
-          PY
-
-      - name: Validate planner response and safety policy
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          from engineering_agent.planner import parse_json, validate
-
-          response = json.loads(Path('runtime_reports/engineering_planner/lambda-response.json').read_text())
-          if response.get('ok') is not True or response.get('mode') != 'engineering_plan':
-              raise SystemExit('planner Lambda failed: ' + json.dumps(response, default=str))
-          text = str(response.get('text') or '').strip()
-          if not text:
-              raise SystemExit('planner Lambda returned empty task text')
-          task = validate(parse_json(text))
-          task['plannerRoute'] = {
-              key: response.get(key)
-              for key in ('routeId', 'region', 'modelId', 'endpointFamily')
-          }
-          task['runtimeDecisionAuthority'] = response.get('decisionAuthority')
-          task['bedrockAvailable'] = response.get('bedrockAvailable')
-          Path('runtime_reports/engineering_planner/next-task.json').write_text(
-              json.dumps(task, indent=2, sort_keys=True) + '\n', encoding='utf-8'
-          )
-          print(json.dumps({'ok': True, 'title': task['title'], 'plannerRoute': task['plannerRoute']}))
-          PY
-
-      - name: Verify negative authority receipts
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          value = json.loads(Path('runtime_reports/engineering_planner/next-task.json').read_text())
-          required = [
-              'noDirectProductionDeploy',
-              'noMainBranchWrite',
-              'noModelPromotion',
-              'noSecretMutation',
-              'noOtherSportChange',
-          ]
-          bad = [k for k in required if value.get(k) is not True]
-          if bad:
-              raise SystemExit('planner authority receipt failure: ' + ','.join(bad))
-          print(json.dumps({'ok': True, 'title': value.get('title'), 'receipts': required}))
+          from engineering_agent.planner import POLICY, validate
+          task = json.loads(Path('runtime_reports/engineering_planner/next-task.json').read_text())
+          validate(task)
+          required = set(POLICY['required_negative_authority_receipts'])
+          supplied = set(task['safetyReceipts'])
+          if not required.issubset(supplied):
+              raise SystemExit('accepted task missing safety receipts')
+          print(json.dumps({'ok': True, 'title': task['title'], 'plannerAttempt': task['plannerAttempt']}))
           PY
 
       - name: Upload planner evidence
@@ -262,7 +173,7 @@ jobs:
           name: mlb-engineering-planner-${{ github.run_id }}
           path: |
             runtime_reports/engineering_planner/evidence.jsonl
-            runtime_reports/engineering_planner/invoke-metadata.json
+            runtime_reports/engineering_planner/attempts.json
             runtime_reports/engineering_planner/lambda-response.json
             runtime_reports/engineering_planner/next-task.json
           if-no-files-found: warn
