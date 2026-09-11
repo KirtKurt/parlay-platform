@@ -12,10 +12,10 @@ test('publication request is durable and idempotent for the same patch', () => {
     id: '11111111-1111-4111-8111-111111111111',
     repository: 'KirtKurt/parlay-platform',
     startingRevision: 'a'.repeat(40),
-    authorizedScope: ['engineering_console'],
-    changedFiles: ['engineering_console/README.md']
+    authorizedScope: ['frontend/app'],
+    changedFiles: ['frontend/app/page.tsx']
   };
-  const patch = 'diff --git a/engineering_console/README.md b/engineering_console/README.md\n';
+  const patch = 'diff --git a/frontend/app/page.tsx b/frontend/app/page.tsx\n';
   const first = writePublicationRequest(config, job, patch);
   const second = writePublicationRequest(config, job, patch);
   assert.equal(first.patchSha256, second.patchSha256);
