@@ -234,22 +234,22 @@ def next_focus_domain(
     for domain in ranked:
         if domain not in rejected_domains:
             return domain
-    return ranked[0]
+    return None
 
 
 def planner_attempt_budget(requested: int, evidence: str) -> int:
-    """Bound retries while allowing one pass across every evidenced focus domain.
+    """Keep retries bounded while leaving one safe fallback after domain exhaustion.
 
-    The workflow historically requested three attempts even when the evidence packet
-    contained three or four independent focus domains. An initial unconstrained
-    proposal can consume one slot, so a three-attempt budget can terminate before a
-    still-actionable domain is reached. Expand only to the number needed to cover the
-    evidenced domains plus that initial proposal, capped at the five-domain controller
-    contract. This does not weaken any task validator or authority gate.
+    An initial unconstrained proposal can consume one slot, each evidenced focus domain
+    may consume another, and a final unconstrained fallback is useful when every
+    evidence-ranked domain is rejected by history or safety validation. The fallback
+    is still subject to every normal validator and is explicitly told not to revisit
+    rejected domains. The total remains capped at one initial attempt plus the five
+    focus domains; no production or model authority is granted here.
     """
     requested_budget = max(1, int(requested))
-    evidenced_budget = len(prioritized_focus_domains(evidence)) + 1
-    return min(len(FOCUS_DOMAINS), max(requested_budget, evidenced_budget))
+    evidenced_budget = len(prioritized_focus_domains(evidence)) + 2
+    return min(len(FOCUS_DOMAINS) + 1, max(requested_budget, evidenced_budget))
 
 
 def _planner_payload(
@@ -268,7 +268,7 @@ def _planner_payload(
             *(
                 str(item.get("domain"))
                 for item in rejected
-                if str(item.get("domain") or "") == "deployment_identity"
+                if str(item.get("domain") or "") in FOCUS_DOMAINS
             ),
         }
     )
@@ -301,14 +301,15 @@ def _planner_payload(
             "instruction": (
                 "Choose exactly one highest-value unresolved MLB engineering task actionable from current evidence "
                 "and suitable for a small reviewed PR. Never return a title in blockedTaskTitles or a semantic/cosmetic "
-                "rewording of one. Never repeat any rejectedProposalsThisCycle title. Recent main-history evidence is "
-                "authoritative for whether work is already merged. Historical-training-only rows with intentionally "
-                "unavailable label-observation times are not a reason to fabricate timestamps or weaken chronology. "
-                "Prefer active current blockers over expected fail-closed diagnostic errors. Do not weaken thresholds, "
-                "chronology, immutable evidence, qualification, calibration, promotion, or production authority merely "
-                "to pass. Return ONE strict JSON object matching requiredOutputSchema. implementation, likelyFiles, "
-                "acceptanceTests, safetyReceipts, and evidenceBasis MUST be JSON arrays of strings. safetyReceipts MUST "
-                "contain every string in requiredSafetyReceipts exactly. Do not return prose outside the JSON object."
+                "rewording of one. Never repeat any rejectedProposalsThisCycle title. Do not return work from "
+                "excludedFocusDomains. Recent main-history evidence is authoritative for whether work is already merged. "
+                "Historical-training-only rows with intentionally unavailable label-observation times are not a reason "
+                "to fabricate timestamps or weaken chronology. Prefer active current blockers over expected fail-closed "
+                "diagnostic errors. Do not weaken thresholds, chronology, immutable evidence, qualification, calibration, "
+                "promotion, or production authority merely to pass. Return ONE strict JSON object matching "
+                "requiredOutputSchema. implementation, likelyFiles, acceptanceTests, safetyReceipts, and evidenceBasis "
+                "MUST be JSON arrays of strings. safetyReceipts MUST contain every string in requiredSafetyReceipts "
+                "exactly. Do not return prose outside the JSON object."
                 + focus_instruction
             ),
         },
