@@ -1,7 +1,8 @@
-"""Grade retained KS1 locks, commit the ledger, then fit calibration at 01:00 ET.
+"""Grade retained KS1 locks nightly and catch up late finals on hourly runs.
 
 Runs inside the existing hourly GitHub job. No prediction, lock, other sport's
-audit, model engine, or AWS infrastructure is modified.
+audit, model engine, or AWS infrastructure is modified. Same-day catch-ups append
+immutable ledger revisions; calibration fitting remains on the 01:00 ET gate.
 """
 import argparse
 from copy import deepcopy
@@ -10,7 +11,7 @@ import json
 import os
 from pathlib import Path
 
-from ks1.calibration_store import PREFIX, commit_json, latest_checkpoint, read_json
+from ks1.calibration_store import PREFIX, checkpoint_prefix, commit_json, latest_checkpoint, read_json
 from ks1.features import ET, utc
 from ks1.inventory import Reader, RESEARCH, encode
 from ks1.platt import compare, identity, metrics, ordered, raw_model_version, refit, temperature_identity
@@ -104,9 +105,13 @@ def execute(source, output, *, s3=None, bucket=None, checkpoint=None, clock=None
         require_main_workflow()
         if source.get('verification_only') or source.get('errors'):
             raise ValueError('verification/error captures cannot write the nightly ledger')
-    date = due_date(source['as_of'], checkpoint)
+    date = due_date(source['as_of'])
     if date is None:
         return {'status': 'not_due_or_already_completed', 'published': False}
+    if checkpoint and checkpoint['state']['night_date'] > date:
+        raise ValueError('future KS1 checkpoint')
+    if checkpoint and checkpoint['state']['night_date'] == date:
+        return _execute_catchup(source, output, s3=s3, bucket=bucket, checkpoint=checkpoint, clock=clock)
     output.mkdir(parents=True, exist_ok=True)
     prefix = PREFIX+'date='+date+'/'
     prior_ledger = checkpoint['ledger'] if checkpoint else None
@@ -159,6 +164,63 @@ def execute(source, output, *, s3=None, bucket=None, checkpoint=None, clock=None
     return report
 
 
+def _execute_catchup(source, output, *, s3, bucket, checkpoint, clock=None):
+    """Append late final grades without reopening a completed calibration night.
+
+    The next revision number is based on the latest committed state, so a retry
+    resumes an orphan ledger at the same key instead of overwriting it. Finals
+    arriving during that retry are picked up in the following revision.
+    """
+    publish = s3 is not None
+    previous = checkpoint['state']
+    date = previous['night_date']
+    revision = previous.get('catchup_revision', 0)+1
+    prefix = checkpoint_prefix(date, revision)
+    output.mkdir(parents=True, exist_ok=True)
+    saved, proof = read_json(s3, bucket, prefix+'graded_ledger.json') if publish else (None, None)
+    proposed = build_ledger(source, saved if saved is not None else checkpoint['ledger'])
+    ledger = saved if saved is not None else proposed
+    rows = ledger_rows(ledger, source['as_of'])
+    if ledger['night_date'] != date or utc(ledger['as_of']) > utc(source['as_of']):
+        raise ValueError('catch-up ledger date/as_of mismatch')
+    prior_rows = {r['game_id']: r for r in ledger_rows(checkpoint['ledger'], source['as_of'])}
+    current_rows = {r['game_id']: r for r in rows}
+    if any(current_rows.get(pk) != row for pk, row in prior_rows.items()):
+        raise ValueError('catch-up ledger must preserve every committed official grade')
+    new_grades = len(rows)-len(prior_rows)
+    if ledger['new_grades'] != new_grades:
+        raise ValueError('catch-up ledger new-grade count mismatch')
+    report = {'status': 'no_new_final_grades', 'published': False, 'as_of': source['as_of'],
+              'night_date': date, 'ledger_rows': len(rows), 'new_grades': new_grades,
+              'official_metrics': ledger['official_metrics'], 'admission': proposed['admission'],
+              'calibration_status': 'deferred_to_next_nightly', 'calibration_fitted': False,
+              'prediction_writes': 0, 'provider_calls': 0, 'trained_LightGBM': False, 'write_keys': []}
+    if not new_grades:
+        (output/'report.json').write_bytes(encode(report))
+        return report
+    if publish:
+        ledger, proof = commit_json(s3, bucket, prefix+'graded_ledger.json', ledger)
+    (output/'graded_ledger.json').write_bytes(encode(ledger))
+    completed_at = (clock() if clock else datetime.now(timezone.utc)).isoformat()
+    if utc(completed_at) < utc(source['as_of']):
+        raise ValueError('catch-up clock precedes source capture')
+    # Never fit or alter parameters here, even when late grades cross 30 rows.
+    state = dict(deepcopy(previous), completed_at=completed_at, ledger=proof,
+                 catchup_revision=revision, calibration_status='deferred_to_next_nightly')
+    if publish:
+        commit_json(s3, bucket, prefix+'calibration_state.json', state)
+    (output/'calibration_state.json').write_bytes(encode(state))
+    models = output/'data/models'
+    models.mkdir(parents=True, exist_ok=True)
+    for kind in ('temperature', 'platt'):
+        (models/(kind+'.json')).write_bytes(encode(state[kind+'_model']))
+    report.update(status='completed_catchup', published=publish, catchup_revision=revision,
+                  ledger_readback_verified=publish,
+                  write_keys=[prefix+'graded_ledger.json', prefix+'calibration_state.json'] if publish else [])
+    (output/'report.json').write_bytes(encode(report))
+    return report
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--inputs', type=Path, help='Retained capture for a local-only verification')
@@ -174,7 +236,10 @@ def main():
         _, s3, bucket = aws_clients('us-east-1', 'parlay-platform-dev')
         as_of = datetime.now(timezone.utc).isoformat()
         checkpoint = latest_checkpoint(s3, bucket, as_of)
-        if due_date(as_of, checkpoint) is None:
+        # A completed nightly fit does not imply every locked game has a final.
+        # Inspect refreshed evidence on every eligible tick; execute decides
+        # between the nightly fit, a grading-only catch-up, and a no-write noop.
+        if due_date(as_of) is None:
             args.output.mkdir(parents=True, exist_ok=True)
             report = {'status': 'not_due_or_already_completed', 'published': False, 'as_of': as_of}
             (args.output/'report.json').write_bytes(encode(report))

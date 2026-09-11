@@ -7,7 +7,7 @@ import pytest
 import yaml
 
 from ks1 import nightly, platt, platt_inputs
-from ks1.calibration_store import PREFIX, latest_checkpoint
+from ks1.calibration_store import PREFIX, checkpoint_prefix, latest_checkpoint
 from ks1.features import utc
 from ks1.inventory import encode
 from tests.ks1_calibration.test_calibration import rows
@@ -133,7 +133,7 @@ def test_state_write_failure_retries_committed_ledger_without_double_shrink(main
     assert committed['state']['temperature_model']['T'] == first_t > 1
     assert len(store.writes) == 2 and report['new_grades'] == 35
     before = deepcopy(store.objects)
-    assert run(source(), tmp_path, store, committed)['status'] == 'not_due_or_already_completed'
+    assert run(source(), tmp_path, store, committed)['status'] == 'no_new_final_grades'
     assert store.objects == before
 
 
@@ -276,3 +276,227 @@ def test_due_nightly_cli_fails_before_capture_or_writes_on_stale_finals(main_job
 def test_publish_requires_source_refresh_start():
     with pytest.raises(ValueError, match='requires the source refresh start'):
         nightly.require_fresh_finals(fresh_prior(), None, '2026-09-11T05:01:00Z')
+
+
+def test_late_finals_append_once_preserve_originals_and_never_refit(main_job, tmp_path, monkeypatch):
+    store = Store()
+    # Reproduce the incident: four retained locks, but only two finals when the
+    # first nightly checkpoint completes. The other two labels arrive later.
+    partial = source(4)
+    del partial['finals']['2'], partial['finals']['3']
+    run(partial, tmp_path, store)
+    old = checkpoint(store)
+    assert len(old['ledger']['rows']) == 2
+    originals = deepcopy(store.objects)
+    monkeypatch.setattr(nightly, 'fit_from_ledger', lambda *a, **k: pytest.fail('catch-up fitted temperature'))
+    monkeypatch.setattr(nightly, 'refit', lambda *a, **k: pytest.fail('catch-up fitted Platt'))
+    pending = run(dict(partial, as_of='2026-09-11T05:30:00Z'), tmp_path, store, old)
+    assert pending['status'] == 'no_new_final_grades'
+    assert len(pending['admission']['excluded']) == 2 and store.objects == originals
+    at = '2026-09-11T06:00:00Z'
+    report = run(source(4, at), tmp_path, store, old)
+    new = checkpoint(store, at)
+    assert report['status'] == 'completed_catchup' and report['new_grades'] == 2
+    assert report['ledger_rows'] == 4 and report['ledger_readback_verified'] is True
+    assert report['prediction_writes'] == 0 and report['calibration_fitted'] is False
+    assert new['ledger']['rows'][:2] == old['ledger']['rows']
+    for kind in ('temperature_model', 'platt_model'):
+        assert new['state'][kind] == old['state'][kind]
+    assert all(store.objects[k] == value for k, value in originals.items())
+    prefix = checkpoint_prefix('2026-09-11', 1)
+    assert report['write_keys'] == [prefix+'graded_ledger.json', prefix+'calibration_state.json']
+    assert report['official_metrics'] == platt.metrics(
+        [r['home_win'] for r in new['ledger']['rows']], [r['p_home'] for r in new['ledger']['rows']])
+    before = deepcopy(store.objects)
+    writes = list(store.writes)
+    repeat = run(source(4, '2026-09-11T07:00:00Z'), tmp_path, store, new)
+    assert repeat['status'] == 'no_new_final_grades' and repeat['published'] is False
+    assert repeat['new_grades'] == 0 and repeat['write_keys'] == []
+    assert store.objects == before and store.writes == writes
+
+
+def test_crossing_30_in_catchup_waits_until_next_night_to_fit(main_job, tmp_path):
+    store = Store()
+    run(source(29), tmp_path, store)
+    old = checkpoint(store)
+    run(source(35, '2026-09-11T06:00:00Z'), tmp_path, store, old)
+    caught_up = checkpoint(store, '2026-09-11T06:00:00Z')
+    assert caught_up['state']['temperature_model'] == old['state']['temperature_model']
+    assert caught_up['state']['temperature_model']['n'] == 0
+    tomorrow = '2026-09-12T05:00:00Z'
+    run(source(0, tomorrow), tmp_path, store, caught_up)
+    fitted = checkpoint(store, tomorrow)
+    assert fitted['state']['temperature_model']['n'] == 35
+    assert fitted['state']['temperature_model']['T'] > 1
+    assert fitted['ledger']['rows'] == caught_up['ledger']['rows']
+    assert fitted['state'].get('catchup_revision', 0) == 0
+
+
+def test_interrupted_catchup_resumes_immutable_ledger_then_catches_later_finals(main_job, tmp_path):
+    class FailOnce(Store):
+        fail = True
+        def put_object(self, **kwargs):
+            if 'catchup=' in kwargs['Key'] and kwargs['Key'].endswith('calibration_state.json') and self.fail:
+                self.fail = False
+                raise RuntimeError('catchup-state-write-failed')
+            return super().put_object(**kwargs)
+    store = FailOnce()
+    run(source(2), tmp_path, store)
+    old = checkpoint(store)
+    with pytest.raises(RuntimeError, match='catchup-state-write-failed'):
+        run(source(4, '2026-09-11T06:00:00Z'), tmp_path, store, old)
+    assert checkpoint(store, '2026-09-11T06:00:00Z') == old
+    saved_key = checkpoint_prefix('2026-09-11', 1)+'graded_ledger.json'
+    saved_bytes = store.objects[saved_key]
+    # Six finals now exist, but finish the original four-row transaction first.
+    report = run(source(6, '2026-09-11T07:00:00Z'), tmp_path, store, old)
+    assert report['ledger_rows'] == 4 and report['new_grades'] == 2
+    assert store.objects[saved_key] == saved_bytes
+    first = checkpoint(store, '2026-09-11T07:00:00Z')
+    report = run(source(6, '2026-09-11T08:00:00Z'), tmp_path, store, first)
+    assert report['ledger_rows'] == 6 and report['catchup_revision'] == 2
+    latest = checkpoint(store, '2026-09-11T08:00:00Z')
+    assert latest['ledger']['rows'][:4] == first['ledger']['rows']
+    assert latest['state']['temperature_model'] == old['state']['temperature_model']
+    assert len(store.writes) == 6
+
+
+@pytest.mark.parametrize('change', ['p_home', 'outcome', 'missing_lock', 'future_final'])
+def test_catchup_rejects_corrections_and_excludes_unverified_new_grades(main_job, tmp_path, change):
+    store = Store()
+    run(source(2), tmp_path, store)
+    old = checkpoint(store)
+    inputs = source(3, '2026-09-11T06:00:00Z')
+    before = deepcopy(store.objects)
+    if change == 'p_home':
+        inputs['locked'][0]['row']['p_home'] = .2
+    elif change == 'outcome':
+        inputs['finals']['0']['home_score'] = 9
+    elif change == 'missing_lock':
+        inputs['locked'][2]['evidence']['version_id'] = None
+    else:
+        inputs['finals']['2']['observed_at'] = '2026-09-11T07:00:00Z'
+    if change == 'future_final':
+        report = run(inputs, tmp_path, store, old)
+        assert report['status'] == 'no_new_final_grades'
+    else:
+        with pytest.raises(ValueError, match='rewrite|observation changed|lock evidence'):
+            run(inputs, tmp_path, store, old)
+    assert store.objects == before
+
+
+def test_catchup_readback_failure_never_exposes_new_checkpoint(main_job, tmp_path):
+    class Broken(Store):
+        def put_object(self, **kwargs):
+            result = super().put_object(**kwargs)
+            if 'catchup=' in kwargs['Key']:
+                self.objects[kwargs['Key']] = b'{}'
+            return result
+    store = Broken()
+    run(source(2), tmp_path, store)
+    old = checkpoint(store)
+    with pytest.raises(ValueError, match='readback mismatch'):
+        run(source(4, '2026-09-11T06:00:00Z'), tmp_path, store, old)
+    assert checkpoint(store, '2026-09-11T06:00:00Z') == old
+    assert not any('catchup=' in k and k.endswith('calibration_state.json') for k in store.objects)
+
+
+@pytest.mark.parametrize('damage', ['ledger', 'escaped_pointer', 'revision', 'future'])
+def test_latest_catchup_checkpoint_fails_closed(main_job, tmp_path, damage):
+    store = Store()
+    run(source(2), tmp_path, store)
+    run(source(4, '2026-09-11T06:00:00Z'), tmp_path, store, checkpoint(store))
+    prefix = checkpoint_prefix('2026-09-11', 1)
+    key = prefix+'calibration_state.json'
+    state = json.loads(store.objects[key])
+    if damage == 'ledger':
+        store.objects[prefix+'graded_ledger.json'] = b'{}'
+    elif damage == 'escaped_pointer':
+        state['ledger']['key'] = PREFIX+'date=2026-09-11/graded_ledger.json'
+    elif damage == 'revision':
+        state['catchup_revision'] = 2
+    else:
+        state['completed_at'] = '2026-09-11T08:00:00Z'
+    store.objects[key] = encode(state)
+    with pytest.raises(ValueError, match='missing or changed|escaped|invalid or future'):
+        checkpoint(store, '2026-09-11T06:00:00Z')
+
+
+def test_daily_capture_reads_catchup_ledger_but_keeps_nightly_models(main_job, tmp_path, monkeypatch):
+    store = Store()
+    run(source(2), tmp_path, store)
+    old = checkpoint(store)
+    run(source(4, '2026-09-11T06:00:00Z'), tmp_path, store, old)
+    monkeypatch.setattr(platt_inputs, 'read_locked_predictions', lambda *a: ([], {}))
+    captured = platt_inputs.capture(store, 'test', '2026-09-11T07:00:00Z', {'games': []}, [])
+    assert len(captured['committed_ledger']['rows']) == 4
+    assert captured['temperature_model'] == old['state']['temperature_model']
+    assert captured['platt_model'] == old['state']['platt_model']
+
+
+@pytest.mark.parametrize('stale', [False, True])
+def test_completed_nightly_cli_still_checks_fresh_finals(main_job, tmp_path, monkeypatch, stale):
+    import sys
+    from ks1 import sources
+    store = Store()
+    run(source(2), tmp_path, store)
+    old = checkpoint(store)
+    at = '2026-09-11T06:01:00+00:00'
+    class Clock:
+        @staticmethod
+        def now(tz):
+            return utc(at)
+    prior = {'coverageComplete': True, 'games': [],
+             'receipt': {'retrievedAtUtc': '2026-09-11T05:00:10Z' if stale else '2026-09-11T06:00:10Z'},
+             'updatedAtUtc': '2026-09-11T06:00:30Z'}
+    class ReadOnly:
+        def __init__(self, *args): self.receipts = []
+        def read(self, key): return {'artifact': {}}
+        def pointer(self, pointer): return prior
+    calls = []
+    def captured(*args):
+        calls.append('captured')
+        return source(4, at)
+    monkeypatch.setattr(nightly, 'datetime', Clock)
+    monkeypatch.setattr(nightly, 'Reader', ReadOnly)
+    monkeypatch.setattr(sources, 'aws_clients', lambda *a: (None, store, 'test'))
+    monkeypatch.setattr(nightly, 'capture', captured)
+    monkeypatch.setattr(sys, 'argv', ['nightly', '--publish', '--sources-not-before', '2026-09-11T06:00:00Z',
+                                    '--output', str(tmp_path)])
+    if stale:
+        with pytest.raises(ValueError, match='stale'):
+            nightly.main()
+        assert not calls and checkpoint(store, at) == old
+    else:
+        nightly.main()
+        assert calls == ['captured']
+        assert len(checkpoint(store, at)['ledger']['rows']) == 4
+        assert json.loads((tmp_path/'report.json').read_text())['status'] == 'completed_catchup'
+
+
+def test_catchup_keeps_main_only_guard_and_pre_0100_gate(main_job, tmp_path, monkeypatch):
+    store = Store()
+    run(source(2), tmp_path, store)
+    old = checkpoint(store)
+    original = deepcopy(store.objects)
+    monkeypatch.setenv('GITHUB_REF', 'refs/pull/999/merge')
+    with pytest.raises(ValueError, match='existing main'):
+        run(source(4, '2026-09-11T06:00:00Z'), tmp_path, store, old)
+    monkeypatch.setenv('GITHUB_REF', 'refs/heads/main')
+    with pytest.raises(ValueError, match='verification'):
+        run(dict(source(4, '2026-09-11T06:00:00Z'), verification_only=True), tmp_path, store, old)
+    result = run(source(4, '2026-09-12T04:59:00Z'), tmp_path, store, old)
+    assert result['published'] is False and store.objects == original
+
+
+def test_local_catchup_is_preview_only(main_job, tmp_path):
+    store = Store()
+    run(source(2), tmp_path, store)
+    old = checkpoint(store)
+    original = deepcopy(store.objects)
+    inputs = source(4, '2026-09-11T06:00:00Z')
+    report = nightly.execute(inputs, tmp_path/'preview', checkpoint=old,
+                             clock=lambda: utc(inputs['as_of'])+timedelta(seconds=30))
+    assert report['status'] == 'completed_catchup' and report['published'] is False
+    assert report['ledger_readback_verified'] is False and report['write_keys'] == []
+    assert store.objects == original

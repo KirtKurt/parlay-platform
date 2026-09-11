@@ -57,7 +57,8 @@ requires a `--sources-not-before` timestamp from this run's ingestion step
 and complete, freshly observed retained finals. See `refresh-recovery.md` for
 the KS1-only dispatch watchdog proposal. GitHub may delay runs; the next hourly
 tick catches up if the nightly checkpoint is incomplete. A completed date never
-fits twice, including the repeated 01:00 hour in autumn.
+fits temperature twice, including the repeated 01:00 hour in autumn. A completed
+night does not stop subsequent hourly checks for late-arriving official finals.
 
 The runner reads only existing versioned KS1 predictions and the retained
 `prior-games.json` final-score source. It admits the original prospective lock
@@ -66,7 +67,7 @@ using the unchanged T-10 rule, preserves `p_raw`, and grades the **stored offici
 Conflicting outcomes or changed probabilities stop the run; no other pipeline's
 ledger, audit, or predictions are modified.
 
-Two new checkpoint files live under the existing bucket and KS1 date prefix:
+The nightly checkpoint files live under the existing bucket and KS1 date prefix:
 
 - `mlb/ks1/predictions-v1/date=YYYY-MM-DD/graded_ledger.json`: cumulative verified
   official grades, raw and locked probabilities, scores, and source evidence.
@@ -74,12 +75,51 @@ Two new checkpoint files live under the existing bucket and KS1 date prefix:
   ledger receipt, temperature and Platt parameters, decisions, and completed date.
 
 The date is the Eastern nightly processing date. Writes are conditional and
-restricted to that date's two checkpoint files. **Ledger write and byte readback
+restricted to KS1 checkpoint files. **Ledger write and byte readback
 must succeed before `fit_from_ledger(...)` runs.** A failed ledger write or
 readback cannot fit either mapping. A failure saving the final state leaves the
 previous accepted parameters authoritative; retry resumes the committed ledger
 and does not apply shrinkage twice. This replaces the former caller-supplied
 `--fit-temperature-after-ledger` receipt flag with an actual committed write.
+
+### Late-final catch-up after a completed night
+
+Previously, the completed-date gate skipped reading finals until the next
+night. September 11 retained two official grades while two additional September
+10 locks remained ungraded. The hourly runner now checks refreshed retained
+finals after the existing 01:00 Eastern gate, even after that day's calibration
+checkpoint completes. It still requires this ingestion attempt's fresh,
+complete source receipts and original unchanged pre-cutoff prediction versions.
+
+New grades are appended in immutable revisions:
+
+- `date=YYYY-MM-DD/catchup=000001/graded_ledger.json`
+- `date=YYYY-MM-DD/catchup=000001/calibration_state.json`
+
+These are under the existing `mlb/ks1/predictions-v1/` prefix. Subsequent revisions
+increment the six-digit number. The legacy nightly files and all earlier
+revisions remain byte-for-byte unchanged. No new grades means no AWS writes.
+Readers select the newest completed revision, validate its exact date/revision
+ledger pointer and checksum, and use its cumulative official grades.
+
+A catch-up state carries both nightly parameter objects unchanged and does not
+call either fitter. It reports `calibration_status=deferred_to_next_nightly`.
+Crossing 30 eligible rows during catch-up does not fit official temperature;
+the next nightly checkpoint consumes the cumulative ledger under the existing
+sample, shrinkage and rejection rules. The separate hourly Platt comparison's
+existing seven-new-pick diagnostic behavior is unchanged; Platt does not become
+the official publication transform.
+
+The ledger is written and read back before the revision state is committed.
+If state commit fails, readers continue using the previous completed revision;
+the next tick resumes the same immutable ledger. Any additional finals arriving
+during that retry wait for the following revision. Existing grades, `p_home`,
+`p_raw`, label observation times and source evidence are preserved. Changed
+outcomes or official probabilities fail closed. No prediction objects, T-10
+rules, engine authority, LightGBM weights, AWS infrastructure or other engines
+are changed. Local tests are not evidence that the production backlog cleared;
+verify `completed_catchup`, ledger readback and retained official rows in the
+first post-merge main workflow artifact.
 
 The module saves `data/models/temperature.json` under the runner's output
 directory. Accepted parameters also persist in the date checkpoint. Subsequent
