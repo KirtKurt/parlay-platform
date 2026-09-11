@@ -38,6 +38,13 @@ def sport_family(sport_key: str) -> str:
 
 
 def market_family(market_key: str) -> str:
+    """Broad discovery/UI family.
+
+    Period markets intentionally remain grouped here for catalog/discovery use.
+    Settlement qualification uses ``settlement_market_family`` below so a
+    reviewed two-way inning winner rule can never silently qualify a three-way
+    winner, run line, total, or team total from the same period.
+    """
     key = str(market_key or "").lower()
     if any(x in key for x in ("_h1", "_h2", "_q1", "_q2", "_q3", "_q4", "_p1", "_p2", "_p3", "innings", "_s1", "_s2", "set_")):
         return "periods"
@@ -48,6 +55,32 @@ def market_family(market_key: str) -> str:
     if "spread" in key or "handicap" in key: return "spreads"
     if "total" in key: return "totals"
     return "game_props"
+
+
+def settlement_market_family(market_key: str) -> str:
+    """Return the narrow family used by the settlement-rule trust boundary.
+
+    The provider exposes many period keys under a common discovery category, but
+    their settlement semantics are materially different. In particular, a
+    two-way inning/grouped winner can void a tie while a three-way market settles
+    the tie as a winner. Spreads, totals, and team totals also require their own
+    reviewed rows. Unknown variants remain fail-closed.
+    """
+    key = str(market_key or "").lower()
+    broad = market_family(key)
+    if broad != "periods":
+        return broad
+    if "h2h_3_way" in key:
+        return "period_winner_3way"
+    if key.startswith("h2h") or key.endswith("_winner"):
+        return "period_winner_2way"
+    if "team_total" in key:
+        return "period_team_totals"
+    if "spread" in key or "handicap" in key:
+        return "period_spreads"
+    if "total" in key:
+        return "period_totals"
+    return "period_game_props"
 
 
 def _annotate(row: Dict[str, Any], result: Dict[str, Any], s: str, m: str, unknown_books: List[str], freshness_evidence: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -73,7 +106,7 @@ def validate_event(event: Dict[str, Any], *, jurisdiction: str = "*") -> List[Di
     row = dict(event)
     raw_quotes = list(row.get("quotes") or [])
     s = sport_family(row.get("sport"))
-    m = market_family(row.get("market"))
+    m = settlement_market_family(row.get("market"))
 
     fresh_quotes: List[Dict[str, Any]] = []
     freshness_evidence: List[Dict[str, Any]] = []
