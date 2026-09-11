@@ -288,7 +288,9 @@ jobs:
           PY
 
       - name: Select next task with bounded re-planning
+        shell: bash
         run: |
+          set +e
           python -m engineering_agent.runtime \
             --evidence runtime_reports/engineering_planner/evidence.jsonl \
             --output runtime_reports/engineering_planner/next-task.json \
@@ -296,21 +298,73 @@ jobs:
             --attempts runtime_reports/engineering_planner/attempts.json \
             --stack "$MLB_PLANNER_STACK" \
             --logical-function "$MLB_PLANNER_LOGICAL_FUNCTION" \
-            --max-attempts 3
+            --max-attempts 3 \
+            2>&1 | tee runtime_reports/engineering_planner/runtime.log
+          planner_status=${PIPESTATUS[0]}
+          set -e
+          if [[ "$planner_status" -eq 0 ]]; then
+            exit 0
+          fi
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from engineering_agent.outcome import build_no_action_receipt
 
-      - name: Verify accepted task authority receipts
+          root = Path('runtime_reports/engineering_planner')
+          attempts_path = root / 'attempts.json'
+          if not attempts_path.exists():
+              raise SystemExit('planner failure missing attempts ledger')
+          attempts = json.loads(attempts_path.read_text(encoding='utf-8'))
+          try:
+              receipt = build_no_action_receipt(
+                  runtime_log=(root / 'runtime.log').read_text(encoding='utf-8', errors='replace'),
+                  attempts=attempts,
+                  task_published=(root / 'next-task.json').exists(),
+                  response_published=(root / 'lambda-response.json').exists(),
+              )
+          except ValueError as exc:
+              raise SystemExit(str(exc)) from exc
+          (root / 'no-action.json').write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(receipt, sort_keys=True))
+          PY
+
+      - name: Verify planner outcome authority boundary
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
+          from engineering_agent.outcome import validate_no_action_receipt
           from engineering_agent.planner import POLICY, validate
-          task = json.loads(Path('runtime_reports/engineering_planner/next-task.json').read_text())
-          validate(task)
-          required = set(POLICY['required_negative_authority_receipts'])
-          supplied = set(task['safetyReceipts'])
-          if not required.issubset(supplied):
-              raise SystemExit('accepted task missing safety receipts')
-          print(json.dumps({'ok': True, 'title': task['title'], 'plannerAttempt': task['plannerAttempt']}))
+
+          root = Path('runtime_reports/engineering_planner')
+          task_path = root / 'next-task.json'
+          response_path = root / 'lambda-response.json'
+          no_action_path = root / 'no-action.json'
+          attempts_path = root / 'attempts.json'
+          if task_path.exists():
+              if no_action_path.exists() or not response_path.exists():
+                  raise SystemExit('accepted planner task has conflicting or missing outcome evidence')
+              task = json.loads(task_path.read_text(encoding='utf-8'))
+              validate(task)
+              required = set(POLICY['required_negative_authority_receipts'])
+              supplied = set(task['safetyReceipts'])
+              if not required.issubset(supplied):
+                  raise SystemExit('accepted task missing safety receipts')
+              print(json.dumps({'ok': True, 'status': 'TASK_ACCEPTED', 'title': task['title'], 'plannerAttempt': task['plannerAttempt']}))
+          elif no_action_path.exists():
+              if response_path.exists() or not attempts_path.exists():
+                  raise SystemExit('NO_ACTION outcome contains task publication artifacts')
+              receipt = json.loads(no_action_path.read_text(encoding='utf-8'))
+              attempts = json.loads(attempts_path.read_text(encoding='utf-8'))
+              try:
+                  validate_no_action_receipt(receipt, attempts)
+              except ValueError as exc:
+                  raise SystemExit(str(exc)) from exc
+              print(json.dumps({'ok': True, 'status': 'NO_ACTION', 'attemptCount': len(attempts)}))
+          else:
+              raise SystemExit('planner produced neither an accepted task nor a fail-closed NO_ACTION receipt')
           PY
 
       - name: Upload planner evidence
@@ -323,5 +377,7 @@ jobs:
             runtime_reports/engineering_planner/attempts.json
             runtime_reports/engineering_planner/lambda-response.json
             runtime_reports/engineering_planner/next-task.json
+            runtime_reports/engineering_planner/no-action.json
+            runtime_reports/engineering_planner/runtime.log
           if-no-files-found: warn
           retention-days: 30
