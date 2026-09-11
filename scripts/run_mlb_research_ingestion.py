@@ -31,6 +31,19 @@ def discovery_summary(store):
             'productionAuthorityChanged':False}
 
 
+def _snapshot_problem(value,game):
+    """Return bounded non-secret evidence explaining a rejected immutable T10 row."""
+    from mlb_research_runtime_v1 import validate_snapshot
+    try:
+        validate_snapshot(value,game)
+        return None
+    except Exception as exc:
+        return {'gamePk':str(game['gamePk']),'error':type(exc).__name__,'code':str(exc)[:120],
+                'snapshotCommenceTime':value.get('commenceTime'),'currentOfficialStart':game.get('gameDate'),
+                'snapshotCutoff':value.get('featureCutoffUtc'),'capturedAtUtc':value.get('capturedAtUtc'),
+                'snapshotFingerprint':digest(value)}
+
+
 def ingest(store,seconds=2400):
     started=now();deadline=time.monotonic()+seconds
     owner=store.acquire('ingestion',seconds+120)
@@ -70,10 +83,14 @@ def ingest(store,seconds=2400):
                 cached=store.get(key)
                 if not cached:
                     if time.monotonic()>deadline: raise TimeoutError('ingestion time budget reached')
-                    expected={g['gamePk'] for g in completed if utc(g['gameDate']).astimezone(source.ET).date().isoformat()==date}
+                    expected={source.count(g['gamePk']) for g in completed if utc(g['gameDate']).astimezone(source.ET).date().isoformat()==date}
                     value=source.statcast(date) if expected else {'date':date,'rows':[],'receipt':receipt,'noGamesConfirmedByOfficialSchedule':True}
                     actual={source.count(r['game_pk']) for r in value['rows']}
-                    if actual!=expected: raise ValueError('incomplete Statcast game coverage')
+                    if actual!=expected:
+                        errors.append({'date':date,'source':'statcast','error':'COVERAGE_MISMATCH',
+                                       'expectedGameCount':len(expected),'observedGameCount':len(actual),
+                                       'missingGameIds':sorted(expected-actual),'extraGameIds':sorted(actual-expected)})
+                        continue
                     cached=store.once(key,value)
                 statcasts.extend(cached['rows']);complete_days+=1
             except Exception as exc: errors.append({'date':date,'source':'statcast','error':type(exc).__name__})
@@ -81,20 +98,29 @@ def ingest(store,seconds=2400):
         store.latest('statcast.json',{'artifact':store.artifact('statcast',sc),'updatedAtUtc':sc['updatedAtUtc']})
         index=store.get('original-index.json') or {'slates':{}}
         available=sorted({key.split('/')[1] for key in store.keys('snapshots/') if key.endswith('/T10.json')})
-        # Visit all days independently. Missing historical evidence cannot stop
-        # collection or settlement of a later complete original slate.
-        from mlb_research_runtime_v1 import validate_snapshot
+        # Whole-slate settlement remains fail closed. Diagnostic evidence identifies
+        # missing/invalid rows but never admits a partial slate into development.
         for date in available:
             if date>=day.isoformat() or date in index['slates']: continue
             try:
                 slate,_=source.schedule(date)
                 slate=[g for g in slate if source.playable(g)]
                 if not slate or not all(source.final(g) for g in slate): continue
+                snapshots={str(g['gamePk']):store.get(f"snapshots/{date}/{g['gamePk']}/T10.json") for g in slate}
+                missing=sorted(pk for pk,value in snapshots.items() if not value)
+                if missing:
+                    errors.append({'date':date,'source':'original_settlement','error':'MISSING_T10_SNAPSHOTS',
+                                   'scheduledGameCount':len(slate),'missingGameIds':missing})
+                    continue
+                invalid=[problem for game in slate
+                         if (problem:=_snapshot_problem(snapshots[str(game['gamePk'])],game))]
+                if invalid:
+                    errors.append({'date':date,'source':'original_settlement','error':'INVALID_T10_SNAPSHOTS',
+                                   'scheduledGameCount':len(slate),'invalidSnapshots':invalid})
+                    continue
                 rows=[]
                 for game in slate:
-                    value=store.get(f"snapshots/{date}/{game['gamePk']}/T10.json")
-                    if not value: raise ValueError('incomplete original slate')
-                    validate_snapshot(value,game)
+                    value=snapshots[str(game['gamePk'])]
                     rows.append({'officialGamePk':value['officialGamePk'],'slateDateEt':date,'features':value['features'],
                         'featureFingerprint':value['featureFingerprint'],'homeWon':int(game['teams']['home']['isWinner']),
                         'homeRuns':source.count(game['teams']['home']['score']),'awayRuns':source.count(game['teams']['away']['score']),
