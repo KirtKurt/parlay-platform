@@ -20,6 +20,13 @@ export function sanitizeValue(value) {
   return value;
 }
 
+function sanitizePublicValue(value) {
+  if (typeof value === 'string') return sanitize(value);
+  if (Array.isArray(value)) return value.map(sanitizePublicValue);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, sanitizePublicValue(child)]));
+  return value;
+}
+
 export function publicJob(job) {
-  return sanitizeValue({ ...job, logs: (job.logs || []).map(sanitize), testResults: job.testResults || [], diff: job.diff || '', error: job.error || null });
+  return sanitizePublicValue({ ...job, logs: job.logs || [], testResults: job.testResults || [], diff: job.diff || '', error: job.error || null });
 }
