@@ -93,11 +93,16 @@ def _items(payload: Any) -> List[Dict[str, Any]]:
         return payload
     if not isinstance(payload, dict):
         raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
+    # Provider error envelopes must not masquerade as successful empty data.
+    if payload.get("error") is not None:
+        raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
     for key in ("data", "sports", "matches", "events", "results"):
         value = payload.get(key)
         if isinstance(value, list):
             return _items(value)
         if isinstance(value, dict):
+            if value.get("error") is not None:
+                raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
             for nested in ("sports", "matches", "events", "results", "items"):
                 rows = value.get(nested)
                 if isinstance(rows, list):
@@ -122,11 +127,14 @@ def health() -> Dict[str, Any]:
             reason="BBD_API_KEY_NOT_CONFIGURED",
             base_url=base_url(),
         ).to_dict()
+    auth_status: Optional[int] = None
+    sports_status: Optional[int] = None
     try:
         auth_status, _, _ = _request("/v1/user/me", optional=True)
         sports_status, _, sports = _request("/v1/sports", optional=True)
-        rows = _items(sports) if sports_status == 200 else []
         ok = auth_status == 200 and sports_status == 200
+        # A known access failure takes precedence over collection diagnostics.
+        rows = _items(sports) if ok else []
         return BBDStatus(
             enabled=True,
             configured=True,
@@ -135,15 +143,21 @@ def health() -> Dict[str, Any]:
             base_url=base_url(),
             auth_status=auth_status,
             sports_status=sports_status,
-            sports_count=len(rows) if sports_status == 200 else None,
+            sports_count=len(rows) if ok else None,
         ).to_dict()
     except BBDError as exc:
         return BBDStatus(
             enabled=True,
             configured=True,
             ok=False,
-            reason=str(exc).split(":", 1)[0],
+            reason=(
+                "BBD_AUTH_OR_DISCOVERY_FAILED"
+                if auth_status is not None and auth_status != 200
+                else str(exc).split(":", 1)[0]
+            ),
             base_url=base_url(),
+            auth_status=auth_status,
+            sports_status=sports_status,
         ).to_dict()
 
 
