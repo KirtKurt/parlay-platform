@@ -4,10 +4,7 @@ import argparse
 import json
 import os
 import pathlib
-import re
 import subprocess
-import sys
-import time
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -75,7 +72,9 @@ def _service_json(url: str, timeout: int = 30) -> Tuple[int, Any]:
 
 
 def path_allowed(path: str) -> bool:
-    normalized = path.strip().lstrip("./")
+    normalized = path.strip()
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
     if not normalized or ".." in pathlib.PurePosixPath(normalized).parts:
         return False
     lowered = normalized.lower()
@@ -128,7 +127,8 @@ class GitHubClient:
     def post(self, path: str, payload: Any) -> Any:
         status, body = _request_json(self.api + path, token=self.token, method="POST", payload=payload)
         if status not in (200, 201, 202, 204):
-            raise RuntimeError(f"github POST {path} failed with HTTP {status}: {body.get('message') if isinstance(body, dict) else status}")
+            message = body.get("message") if isinstance(body, dict) else status
+            raise RuntimeError(f"github POST {path} failed with HTTP {status}: {message}")
         return body
 
     def main_sha(self) -> str:
@@ -146,10 +146,7 @@ class GitHubClient:
 
     def open_arb_prs(self) -> List[Dict[str, Any]]:
         body = self.get("/pulls?state=open&per_page=50")
-        return [
-            row for row in body
-            if str(row.get("head", {}).get("ref", "")).startswith("agent/inqsi-arb-")
-        ]
+        return [row for row in body if str(row.get("head", {}).get("ref", "")).startswith("agent/inqsi-arb-")]
 
     def create_issue(self, title: str, body: str, labels: Optional[List[str]] = None) -> Dict[str, Any]:
         return self.post("/issues", {"title": title, "body": body, "labels": labels or []})
@@ -166,8 +163,7 @@ class EngineeringController:
         self.allow_issue = os.getenv("ARB_AEC_ALLOW_ISSUE", "true").lower() == "true"
         self.paused = os.getenv("ARB_AEC_PAUSED", "false").lower() == "true"
         self.code_agent_configured = bool(
-            os.getenv("OPENAI_API_KEY", "").strip()
-            and os.getenv("ARB_CODE_AGENT_MODEL", "").strip()
+            os.getenv("OPENAI_API_KEY", "").strip() and os.getenv("ARB_CODE_AGENT_MODEL", "").strip()
         )
 
     def _production(self) -> Tuple[bool, List[str], Optional[int], Optional[int]]:
@@ -313,8 +309,6 @@ class EngineeringController:
         return results
 
     def _run_code_agent(self, action: Action, snapshot: Snapshot) -> Dict[str, Any]:
-        # The controller intentionally does not embed an unrestricted shell-to-LLM loop.
-        # A separately authenticated coding runner must implement the contract below.
         command = os.getenv("ARB_CODE_AGENT_COMMAND", "").strip()
         if not self.code_agent_configured or not command:
             return {"action": asdict(action), "status": "blocked", "reason": "authorized_code_agent_runner_not_configured"}
