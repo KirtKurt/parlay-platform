@@ -5,6 +5,7 @@ import json
 import pytest
 
 from engineering_agent.runtime import (
+    _filter_superseded_evidence,
     _planner_payload,
     _validate_focus_domain,
     classify_task_domain,
@@ -109,3 +110,29 @@ def test_retry_prompt_carries_deterministic_focus_and_safety_receipts() -> None:
         "no_secret_mutation",
         "no_other_sport_change",
     }
+
+
+def test_retired_diagnostic_optimizer_reports_cannot_drive_planner_focus() -> None:
+    evidence = "\n".join(
+        [
+            json.dumps(
+                {
+                    "kind": "current_runtime_report",
+                    "path": "runtime_reports/mlb_ml_outcome_challenger_latest.json",
+                    "observedEpoch": 9999999999,
+                    "content": '{"ok":false,"reason":"insufficient_clean_rows"}',
+                }
+            ),
+            json.dumps(
+                {
+                    "kind": "current_runtime_report",
+                    "path": "runtime_reports/mlb_successor_runtime_health_latest.json",
+                    "observedEpoch": 9999999999,
+                    "content": '{"status":"ACCUMULATING_TEAM_CONTEXT_DEVELOPMENT_DATA"}',
+                }
+            ),
+        ]
+    )
+    filtered = _filter_superseded_evidence(evidence)
+    assert "mlb_ml_outcome_challenger_latest.json" not in filtered
+    assert "mlb_successor_runtime_health_latest.json" in filtered
