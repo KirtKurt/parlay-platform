@@ -86,20 +86,23 @@ def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int
 
 
 def _items(payload: Any) -> List[Dict[str, Any]]:
+    """Accept recognized collection envelopes without silently discarding bad rows."""
     if isinstance(payload, list):
-        return [x for x in payload if isinstance(x, dict)]
+        if not all(isinstance(row, dict) for row in payload):
+            raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
+        return payload
     if not isinstance(payload, dict):
-        return []
+        raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
     for key in ("data", "sports", "matches", "events", "results"):
         value = payload.get(key)
         if isinstance(value, list):
-            return [x for x in value if isinstance(x, dict)]
+            return _items(value)
         if isinstance(value, dict):
             for nested in ("sports", "matches", "events", "results", "items"):
                 rows = value.get(nested)
                 if isinstance(rows, list):
-                    return [x for x in rows if isinstance(x, dict)]
-    return []
+                    return _items(rows)
+    raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
 
 
 def health() -> Dict[str, Any]:
@@ -122,7 +125,7 @@ def health() -> Dict[str, Any]:
     try:
         auth_status, _, _ = _request("/v1/user/me", optional=True)
         sports_status, _, sports = _request("/v1/sports", optional=True)
-        rows = _items(sports)
+        rows = _items(sports) if sports_status == 200 else []
         ok = auth_status == 200 and sports_status == 200
         return BBDStatus(
             enabled=True,

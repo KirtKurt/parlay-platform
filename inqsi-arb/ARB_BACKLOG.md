@@ -6,6 +6,8 @@ Priority order is dependency-driven. Do not lower correctness gates to make an i
    - Runtime-wire optional BBD identity/status context behind `ARB_BBD_ENABLED`.
    - Prove BBD authentication, schema, pagination, entitlement, IDs, status and timestamp behavior.
    - Keep The Odds API as sportsbook-price authority.
+   - 2026-09-11 increment: BBD collection parsing now rejects unknown envelopes and non-object rows with `BBD_COLLECTION_SCHEMA_INVALID`; recognized empty collections remain valid. Offline regression coverage exercises health, sports and events, plus access-failure reasons.
+   - Blocker: authenticated live fixtures and entitlement proof are not available for this increment. Runtime wiring remains pending; local schema tests do not prove live authentication, pagination, event identity, status or timestamps.
 
 2. **Persistent coverage registry**
    - Record provider support, subscription access, current offering, ingestion health, parser support, settlement verification, freshness, first/last observation, last successful fetch, failure reason, and evidence.

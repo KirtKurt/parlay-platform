@@ -1,10 +1,63 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import bbd_provider
+
+
+@pytest.fixture(autouse=True)
+def isolate_bbd_credentials(monkeypatch):
+    for name in ("BBD_API_KEY", "BIG_BALLS_DATA_API_KEY", "BIGBALLS_DATA_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+@pytest.mark.parametrize("payload", [
+    None, "invalid", {}, {"error": "access denied"}, {"data": None},
+    {"data": {"items": "invalid"}}, [None],
+    {"data": [{"id": "valid"}, "invalid"]},
+])
+def test_malformed_collections_fail_closed(monkeypatch, operation, payload):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (200, {}, payload))
+
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_COLLECTION_SCHEMA_INVALID"
+    if operation == "health":
+        assert result["sports_count"] is None
+    else:
+        assert result[operation] == []
+
+
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+@pytest.mark.parametrize("payload", [[], {"data": []}, {"data": {"items": []}}])
+def test_recognized_empty_collections_remain_valid(monkeypatch, operation, payload):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (200, {}, payload))
+
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is True
+    assert result["sports_count" if operation == "health" else "count"] == 0
+
+
+@pytest.mark.parametrize("status", [401, 403, 404])
+def test_health_preserves_access_failure_reason(monkeypatch, status):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (status, {}, {}))
+    result = bbd_provider.health()
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_AUTH_OR_DISCOVERY_FAILED"
+    assert result["sports_status"] == status
 
 
 def test_bbd_disabled_is_safe(monkeypatch):
