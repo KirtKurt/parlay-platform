@@ -1,5 +1,6 @@
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,6 +13,14 @@ from market_catalog import candidate_markets_for_sport, expand_market_families
 from rules import registry_rows, registry_size
 from validation import market_family, validate_event, validate_events
 from app import lambda_handler
+
+
+def fresh_ts():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def stale_ts():
+    return (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
 
 
 def test_documented_market_catalog_is_broad():
@@ -41,9 +50,10 @@ def test_reviewed_registry_is_versioned_and_sourced():
 
 
 def test_unknown_settlement_rules_fail_closed():
+    ts = fresh_ts()
     event = {
         "sport": "baseball_mlb", "market": "h2h",
-        "quotes": [{"book": "unknownbook", "outcome": "A", "decimal": 2.2}, {"book": "other", "outcome": "B", "decimal": 2.2}],
+        "quotes": [{"book": "unknownbook", "outcome": "A", "decimal": 2.2, "last_update": ts}, {"book": "other", "outcome": "B", "decimal": 2.2, "last_update": ts}],
         "expected_outcomes": ["A", "B"], "id": "x", "event": "A @ B",
     }
     validated = validate_event(event)
@@ -54,13 +64,14 @@ def test_unknown_settlement_rules_fail_closed():
 
 
 def test_unreviewed_book_does_not_poison_reviewed_pair():
+    ts = fresh_ts()
     event = {
         "sport": "baseball_mlb", "market": "h2h", "id": "g1", "event": "A @ B",
         "expected_outcomes": ["A", "B"],
         "quotes": [
-            {"book": "draftkings", "outcome": "A", "decimal": 2.2},
-            {"book": "fanduel", "outcome": "B", "decimal": 2.2},
-            {"book": "unknownbook", "outcome": "A", "decimal": 9.9},
+            {"book": "draftkings", "outcome": "A", "decimal": 2.2, "last_update": ts},
+            {"book": "fanduel", "outcome": "B", "decimal": 2.2, "last_update": ts},
+            {"book": "unknownbook", "outcome": "A", "decimal": 9.9, "last_update": ts},
         ],
     }
     rows = validate_events([event])
@@ -70,6 +81,40 @@ def test_unreviewed_book_does_not_poison_reviewed_pair():
     assert compatible[0]["context"]["excluded_unreviewed_books"] == ["unknownbook"]
     result = scan_all({"bankroll": 100, "events": rows})
     assert result["n_arbs"] == 1
+
+
+def test_stale_quotes_are_excluded_from_verified_arb():
+    ts = stale_ts()
+    event = {
+        "sport": "baseball_mlb", "market": "h2h", "id": "stale", "event": "A @ B",
+        "expected_outcomes": ["A", "B"],
+        "quotes": [
+            {"book": "draftkings", "outcome": "A", "decimal": 2.2, "last_update": ts},
+            {"book": "fanduel", "outcome": "B", "decimal": 2.2, "last_update": ts},
+        ],
+    }
+    rows = validate_events([event])
+    assert len(rows) == 1
+    assert rows[0]["rules_status"] == "unknown"
+    assert rows[0]["quotes"] == []
+    assert rows[0]["context"]["settlement_validation"]["reason"] == "QUOTE_FRESHNESS_NOT_ESTABLISHED"
+    assert rows[0]["context"]["quote_freshness"]["excluded_quotes"] == 2
+    result = scan_all({"bankroll": 100, "events": rows})
+    assert result["n_arbs"] == 0
+
+
+def test_missing_quote_timestamp_is_not_fresh():
+    event = {
+        "sport": "baseball_mlb", "market": "h2h", "id": "missing-ts", "event": "A @ B",
+        "expected_outcomes": ["A", "B"],
+        "quotes": [
+            {"book": "draftkings", "outcome": "A", "decimal": 2.2},
+            {"book": "fanduel", "outcome": "B", "decimal": 2.2},
+        ],
+    }
+    rows = validate_events([event])
+    assert rows[0]["rules_status"] == "unknown"
+    assert rows[0]["context"]["quote_freshness"]["eligible_quotes"] == 0
 
 
 def test_period_classification_precedes_total_and_spread():

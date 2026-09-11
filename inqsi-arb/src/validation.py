@@ -1,8 +1,9 @@
-"""Canonical settlement validation for normalized provider markets.
+"""Canonical settlement and freshness validation for normalized markets.
 
 A valid reviewed book pair must not be poisoned by unrelated unreviewed books.
 Quotes are partitioned by reviewed settlement profile and each compatible group
-is evaluated independently. Unknown books remain visible in validation evidence.
+is evaluated independently. Stale or untimestamped quotes are never eligible
+for verified arbitrage qualification.
 """
 from __future__ import annotations
 
@@ -10,7 +11,8 @@ from collections import defaultdict
 from dataclasses import asdict
 from typing import Any, Dict, Iterable, List
 
-from rules import compatibility, lookup
+from freshness import assess_quote
+from rules import UNKNOWN, compatibility, lookup
 
 
 def sport_family(sport_key: str) -> str:
@@ -47,7 +49,7 @@ def market_family(market_key: str) -> str:
     return "game_props"
 
 
-def _annotate(row: Dict[str, Any], result: Dict[str, Any], s: str, m: str, unknown_books: List[str]) -> Dict[str, Any]:
+def _annotate(row: Dict[str, Any], result: Dict[str, Any], s: str, m: str, unknown_books: List[str], freshness_evidence: List[Dict[str, Any]]) -> Dict[str, Any]:
     out = dict(row)
     status_map = {"COMPATIBLE": "compatible", "INCOMPATIBLE": "incompatible", "UNKNOWN": "unknown"}
     out["rules_status"] = status_map.get(result.get("status"), "unknown")
@@ -56,20 +58,41 @@ def _annotate(row: Dict[str, Any], result: Dict[str, Any], s: str, m: str, unkno
     context["sport_family"] = s
     context["market_family"] = m
     context["excluded_unreviewed_books"] = sorted(set(unknown_books))
+    excluded = [e for e in freshness_evidence if not e.get("fresh")]
+    context["quote_freshness"] = {
+        "eligible_quotes": len(freshness_evidence) - len(excluded),
+        "excluded_quotes": len(excluded),
+        "excluded": excluded[:50],
+    }
     out["context"] = context
     return out
 
 
 def validate_event(event: Dict[str, Any], *, jurisdiction: str = "*") -> List[Dict[str, Any]]:
     row = dict(event)
-    quotes = list(row.get("quotes") or [])
+    raw_quotes = list(row.get("quotes") or [])
     s = sport_family(row.get("sport"))
     m = market_family(row.get("market"))
+
+    fresh_quotes: List[Dict[str, Any]] = []
+    freshness_evidence: List[Dict[str, Any]] = []
+    for quote in raw_quotes:
+        q = dict(quote)
+        assessment = assess_quote(q)
+        evidence = {
+            "book": str(q.get("book") or "").strip().lower(),
+            "outcome": q.get("outcome"),
+            "last_update": q.get("last_update"),
+            **assessment,
+        }
+        freshness_evidence.append(evidence)
+        if assessment["fresh"]:
+            fresh_quotes.append(q)
 
     groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     unknown_books: List[str] = []
     rule_by_book: Dict[str, Any] = {}
-    for quote in quotes:
+    for quote in fresh_quotes:
         book = str(quote.get("book") or "").strip().lower()
         if not book:
             continue
@@ -90,15 +113,25 @@ def validate_event(event: Dict[str, Any], *, jurisdiction: str = "*") -> List[Di
         grouped = dict(row)
         grouped["id"] = f"{row.get('id') or row.get('market_id') or ''}|rules:{profile}"
         grouped["quotes"] = group_quotes
-        validated.append(_annotate(grouped, result, s, m, unknown_books))
+        validated.append(_annotate(grouped, result, s, m, unknown_books, freshness_evidence))
 
     if validated:
         return validated
 
-    books = sorted({str(q.get("book") or "").lower() for q in quotes if q.get("book")})
-    result = compatibility(books, s, m, jurisdiction)
+    fresh_books = sorted({str(q.get("book") or "").lower() for q in fresh_quotes if q.get("book")})
+    if not fresh_quotes:
+        result = {
+            "status": UNKNOWN,
+            "reason": "QUOTE_FRESHNESS_NOT_ESTABLISHED",
+            "missing_books": sorted({str(q.get("book") or "").lower() for q in raw_quotes if q.get("book")}),
+            "rules": [],
+        }
+    else:
+        result = compatibility(fresh_books, s, m, jurisdiction)
     result["rules_considered"] = [asdict(r) for r in rule_by_book.values() if r is not None]
-    return [_annotate(row, result, s, m, unknown_books or books)]
+    filtered = dict(row)
+    filtered["quotes"] = fresh_quotes
+    return [_annotate(filtered, result, s, m, unknown_books or fresh_books, freshness_evidence)]
 
 
 def validate_events(events: Iterable[Dict[str, Any]], *, jurisdiction: str = "*") -> List[Dict[str, Any]]:
