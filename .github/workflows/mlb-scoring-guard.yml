@@ -12,11 +12,13 @@ on:
       - 'hello_world/mlb_probability_actionability_guard.py'
       - 'scripts/verify_mlb_schedule_invariants.py'
       - 'scripts/mlb_scoring_guard_status.py'
+      - 'scripts/mlb_scoring_guard_post_persistence.py'
       - 'tests/unit/test_mlb_fundamentals_scoring_bridge_v1.py'
       - 'tests/unit/test_mlb_fundamentals_snapshot_determinism_bridge_v1.py'
       - 'tests/unit/test_mlb_ml_runtime_install_explicit.py'
       - 'tests/unit/test_mlb_probability_actionability_guard.py'
       - 'tests/unit/test_mlb_scoring_guard_status.py'
+      - 'tests/unit/test_mlb_scoring_guard_post_persistence.py'
       - 'tests/unit/test_mlb_scoring_runtime_capacity.py'
       - '.github/workflows/mlb-scoring-guard.yml'
   push:
@@ -29,11 +31,13 @@ on:
       - 'hello_world/mlb_probability_actionability_guard.py'
       - 'scripts/verify_mlb_schedule_invariants.py'
       - 'scripts/mlb_scoring_guard_status.py'
+      - 'scripts/mlb_scoring_guard_post_persistence.py'
       - 'tests/unit/test_mlb_fundamentals_scoring_bridge_v1.py'
       - 'tests/unit/test_mlb_fundamentals_snapshot_determinism_bridge_v1.py'
       - 'tests/unit/test_mlb_ml_runtime_install_explicit.py'
       - 'tests/unit/test_mlb_probability_actionability_guard.py'
       - 'tests/unit/test_mlb_scoring_guard_status.py'
+      - 'tests/unit/test_mlb_scoring_guard_post_persistence.py'
       - 'tests/unit/test_mlb_scoring_runtime_capacity.py'
       - '.github/workflows/mlb-scoring-guard.yml'
   workflow_dispatch:
@@ -68,6 +72,7 @@ jobs:
             tests/unit/test_mlb_ml_runtime_install_explicit.py \
             tests/unit/test_mlb_probability_actionability_guard.py \
             tests/unit/test_mlb_scoring_guard_status.py \
+            tests/unit/test_mlb_scoring_guard_post_persistence.py \
             tests/unit/test_mlb_scoring_runtime_capacity.py
           python scripts/verify_mlb_schedule_invariants.py
           python -m py_compile hello_world/mlb_fundamentals_scoring_bridge_v1.py
@@ -75,6 +80,7 @@ jobs:
           python -m py_compile hello_world/mlb_ml_runtime_install_v3.py
           python -m py_compile hello_world/mlb_probability_actionability_guard.py
           python -m py_compile scripts/mlb_scoring_guard_status.py
+          python -m py_compile scripts/mlb_scoring_guard_post_persistence.py
 
   live-scoring-proof:
     if: github.event_name != 'pull_request'
@@ -107,7 +113,7 @@ jobs:
         run: |
           set -euo pipefail
           SLATE_DATE=$(TZ=America/New_York date +%F)
-          python scripts/mlb_scoring_guard_status.py \
+          python scripts/mlb_scoring_guard_post_persistence.py \
             --slate-date "$SLATE_DATE" \
             --output runtime_reports/mlb_scoring_guard_status_latest.json
 
