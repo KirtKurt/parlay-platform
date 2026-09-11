@@ -1,7 +1,15 @@
 name: Inqsi ARB Supervisor Validation
-run-name: ARB supervisor validate ${{ inputs.candidate_sha }}
+run-name: ARB supervisor ${{ inputs.candidate_sha || github.sha }}
 
 on:
+  pull_request:
+    paths:
+      - 'arb_supervisor/**'
+      - '.github/workflows/arb-supervisor-validate.yml'
+      - '.github/workflows/inqsi-arb-engineering-controller.yml'
+      - '.github/workflows/inqsi-arb-deploy.yml'
+      - 'inqsi-arb/ops/codex_cli_runner.sh'
+      - 'inqsi-arb/tests/test_codex_cli_runner_contract.py'
   workflow_dispatch:
     inputs:
       candidate_sha:
@@ -21,11 +29,41 @@ permissions:
   contents: read
 
 concurrency:
-  group: arb-supervisor-validate-${{ inputs.candidate_sha }}
+  group: arb-supervisor-validate-${{ inputs.candidate_sha || github.sha }}
   cancel-in-progress: false
 
 jobs:
+  supervisor-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install contract runtime
+        run: python -m pip install --quiet "pytest>=8,<9"
+      - name: Test trusted supervisor and Codex publication boundary
+        run: |
+          python -m pytest -q arb_supervisor/test_validate_candidate.py arb_supervisor/test_promote.py
+          python -m pytest -q inqsi-arb/tests/test_codex_cli_runner_contract.py inqsi-arb/tests/test_engineering_controller.py
+      - name: Verify supervisor remains outside Codex write scope
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          runner=Path('inqsi-arb/ops/codex_cli_runner.sh').read_text()
+          scope=runner.split('STRICT WRITE SCOPE:',1)[1].split('Do not modify',1)[0]
+          assert 'arb_supervisor/' not in scope
+          assert '.github/workflows/arb-supervisor-validate.yml' not in scope
+          print('trusted supervisor is outside Codex write scope')
+          PY
+
   validate-exact-candidate:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -55,7 +93,7 @@ jobs:
       - name: Install trusted validation runtime
         run: python -m pip install --quiet "pytest>=8,<9" boto3
       - name: Run supervisor policy tests
-        run: python -m pytest -q arb_supervisor/test_validate_candidate.py
+        run: python -m pytest -q arb_supervisor/test_validate_candidate.py arb_supervisor/test_promote.py
       - name: Enforce immutable supervisor candidate policy
         run: |
           python -m arb_supervisor.validate_candidate \
