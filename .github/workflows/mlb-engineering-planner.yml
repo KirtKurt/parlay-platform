@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-          fetch-depth: 30
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -81,6 +81,18 @@ jobs:
               'mlb_trainer_health_diagnostic',
               'mlb_trainer_runtime_error',
               'mlb_trainer_function_error',
+          )
+          # These exact code paths define the fundamentals/scoring/provenance
+          # semantics represented by the scoring reports below. Full Git history
+          # lets the runtime determine whether a committed operational snapshot
+          # predates the latest relevant source change even after noisy automated
+          # commits push the original repair out of recent-main history.
+          fundamentals_operational_paths = (
+              'hello_world/mlb_fundamentals_scoring_bridge_v1.py',
+              'hello_world/mlb_fundamentals_snapshot_v2.py',
+              'hello_world/mlb_statsapi_team_context.py',
+              'scripts/mlb_scoring_guard_post_persistence.py',
+              'scripts/mlb_fundamentals_provenance_diagnostic.py',
           )
           # Echo source-honest accumulation/capture blockers and only the measured
           # (non-null) reliability-calibration miss into the full-packet summary.
@@ -162,11 +174,36 @@ jobs:
               git_log = git_log.replace('FunctionError', 'Function-Error').replace('functionerror', 'function-error')
           except Exception:
               git_log = ''
+
+          source_history = []
+          for source_path in fundamentals_operational_paths:
+              try:
+                  row = subprocess.check_output(
+                      [
+                          'git', 'log', '-1', '--date=iso-strict',
+                          '--pretty=format:%H %ad %s', '--', source_path,
+                      ],
+                      text=True,
+                  ).strip()
+              except Exception:
+                  row = ''
+              if row:
+                  source_history.append(row)
+
           chunks = [json.dumps({
               'kind': 'recent_main_history',
               'currentCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
               'content': git_log,
           }, ensure_ascii=False)]
+          if source_history:
+              chunks.append(json.dumps({
+                  'kind': 'operational_source_history',
+                  'topic': 'mlb_fundamentals_runtime',
+                  'readOnly': True,
+                  'productionAuthorityChanged': False,
+                  'paths': list(fundamentals_operational_paths),
+                  'content': '\n'.join(source_history),
+              }, ensure_ascii=False))
           for path in selected:
               observed, text = candidates[path]
               chunks.append(json.dumps({
@@ -255,6 +292,7 @@ jobs:
               'count': len(selected),
               'focusEvidenceHitCount': len(focus_hits),
               'featurePipelineEvidenceHitCount': len(feature_pipeline_hits),
+              'operationalSourceHistoryCount': len(source_history),
               'excludedRetiredGenerations': list(retired),
           }))
           PY
