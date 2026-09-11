@@ -142,6 +142,10 @@ def fundamentals_capture_gap(report: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
     return {
+        # ``coverage_mismatch`` is an existing controller-recognized data-capture
+        # signal. It keeps bounded retries focused on data_capture without
+        # overstating a provider outage or inventing a new focus taxonomy.
+        "signal": "coverage_mismatch",
         "gameCount": game_count,
         "incompleteGameCount": incomplete_games,
         "contractSafeGameCount": safe_count,
