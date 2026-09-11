@@ -36,3 +36,22 @@ def test_ready_pr_can_be_rechecked_without_draft_requirement():
     pr = good_pr()
     pr["draft"] = False
     promote.verify_pr(pr, branch="agent/inqsi-arb-aec-123", head_sha="a" * 40, require_draft=False)
+
+
+def test_dispatch_validation_waits_for_actual_workflow_run_title(monkeypatch):
+    sha = "a" * 40
+    calls = {}
+    monkeypatch.setattr(promote, "command", lambda args, **kwargs: "")
+
+    def fake_wait_for_run(*, workflow, expected_title, event="workflow_dispatch"):
+        calls.update(workflow=workflow, expected_title=expected_title, event=event)
+        return {"databaseId": 123, "jobs": [{"name": "validate-exact-candidate", "conclusion": "success"}]}
+
+    monkeypatch.setattr(promote, "wait_for_run", fake_wait_for_run)
+    result = promote.dispatch_validation("agent/inqsi-arb-aec-123", sha, "b" * 40)
+    assert result["databaseId"] == 123
+    assert calls == {
+        "workflow": "arb-supervisor-validate.yml",
+        "expected_title": f"ARB supervisor {sha}",
+        "event": "workflow_dispatch",
+    }
