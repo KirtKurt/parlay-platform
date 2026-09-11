@@ -73,33 +73,54 @@ jobs:
           URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-sportsbook-catalog-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='SportsbooksUrl'].OutputValue" --output text)
           test -n "$URL" && test "$URL" != "None"
           python - "$URL" <<'PY'
-          import json, sys, time, urllib.request, urllib.error
-          url=sys.argv[1]
+          import json, sys, time, urllib.parse, urllib.request, urllib.error
+          base=sys.argv[1]
+          query=urllib.parse.urlencode({'markets':'h2h,spreads,totals,outrights'})
+          url=base + ('&' if '?' in base else '?') + query
           last=None
           for i in range(1,13):
               try:
-                  with urllib.request.urlopen(url, timeout=300) as r:
+                  req=urllib.request.Request(url, headers={'accept':'application/json'})
+                  with urllib.request.urlopen(req, timeout=300) as r:
                       body=json.loads(r.read())
-                  assert body['complete'] is True, body
-                  assert body['sports_failed'] == 0, body
-                  assert body['sportsbook_count'] == len(body['sportsbooks']), body
-                  assert body['sport_count'] == body['sports_scanned'], body
-                  assert body['sportsbook_count'] > 0, body
-                  keys=[x['key'] for x in body['sportsbooks']]
-                  assert len(keys) == len(set(keys)), body
-                  print(json.dumps({
-                      'sportsbooks_url':url,
-                      'sportsbook_count':body['sportsbook_count'],
-                      'sport_count':body['sport_count'],
-                      'regions':body['regions'],
-                      'sportsbooks':[x['title'] for x in body['sportsbooks']],
-                      'audited_at':body['audited_at']
-                  }, indent=2))
-                  break
+              except urllib.error.HTTPError as exc:
+                  raw=exc.read().decode('utf-8','replace')
+                  try:
+                      body=json.loads(raw)
+                  except Exception:
+                      body={'http_status':exc.code,'raw':raw[:2000]}
+                  last=f'HTTP {exc.code}: {json.dumps(body, sort_keys=True)[:4000]}'
+                  if i == 12:
+                      raise RuntimeError(last)
+                  print(f'waiting for sportsbook catalog attempt={i}/12 last={last}', flush=True)
+                  time.sleep(min(i*5,20))
+                  continue
               except Exception as exc:
                   last=f'{type(exc).__name__}: {exc}'
                   if i == 12:
                       raise
                   print(f'waiting for sportsbook catalog attempt={i}/12 last={last}', flush=True)
                   time.sleep(min(i*5,20))
+                  continue
+
+              assert body['complete'] is True, body
+              assert body['sports_failed'] == 0, body
+              assert body['sportsbook_count'] == len(body['sportsbooks']), body
+              assert body['sport_count'] == body['sports_scanned'], body
+              assert body['sportsbook_count'] > 0, body
+              assert body['markets'] == 'h2h,spreads,totals,outrights', body
+              keys=[x['key'] for x in body['sportsbooks']]
+              assert len(keys) == len(set(keys)), body
+              print(json.dumps({
+                  'sportsbooks_url':base,
+                  'sportsbook_count':body['sportsbook_count'],
+                  'sport_count':body['sport_count'],
+                  'regions':body['regions'],
+                  'markets':body['markets'],
+                  'successful_market_probes':body.get('successful_market_probes'),
+                  'rejected_market_probes':body.get('rejected_market_probes'),
+                  'sportsbooks':[x['title'] for x in body['sportsbooks']],
+                  'audited_at':body['audited_at']
+              }, indent=2))
+              break
           PY
