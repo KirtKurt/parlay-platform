@@ -38,11 +38,11 @@ jobs:
           API_URL: ${{ steps.endpoint.outputs.api_url }}
         run: |
           python - <<'PY'
-          import json, os, urllib.error, urllib.parse, urllib.request
+          import json, os, time, urllib.error, urllib.parse, urllib.request
           from datetime import datetime, timezone
 
           base = os.environ['API_URL'].rstrip('/')
-          agent = 'inqsi-arb-observation-proof/1.0'
+          agent = 'inqsi-arb-observation-proof/1.1'
 
           def get(path, timeout=60):
               req = urllib.request.Request(base + path, headers={'accept':'application/json','user-agent':agent})
@@ -117,12 +117,21 @@ jobs:
           audit_event_id = str(scan.get('audit_event_id') or '')
           assert audit_event_id, scan
 
-          status, history = get('/v1/arb/history?limit=10')
-          rows = history.get('history', []) if isinstance(history, dict) else []
-          assert status == 200 and history.get('ok') is True and history.get('kind') == 'SCAN', history
-          assert any(str(row.get('event_id') or '') == audit_event_id for row in rows if isinstance(row, dict)), {
-              'audit_event_id': audit_event_id, 'history': history,
-          }
+          history = None
+          rows = []
+          history_attempts = 0
+          found = False
+          for history_attempts in range(1, 11):
+              status, history = get('/v1/arb/history?limit=10')
+              rows = history.get('history', []) if isinstance(history, dict) else []
+              contract_ok = status == 200 and isinstance(history, dict) and history.get('ok') is True and history.get('kind') == 'SCAN' and isinstance(rows, list)
+              found = contract_ok and any(str(row.get('event_id') or '') == audit_event_id for row in rows if isinstance(row, dict))
+              if found:
+                  break
+              if history_attempts < 10:
+                  time.sleep(min(history_attempts, 3))
+          assert isinstance(history, dict) and history.get('ok') is True and history.get('kind') == 'SCAN', history
+          assert found, {'audit_event_id': audit_event_id, 'history': history, 'history_attempts': history_attempts}
 
           evidence = {
               'checked_at': datetime.now(timezone.utc).isoformat(),
@@ -140,6 +149,7 @@ jobs:
               'n_rejected': scan.get('n_rejected'),
               'audit_event_id': audit_event_id,
               'history_count': history.get('count'),
+              'history_visibility_attempts': history_attempts,
               'selection_attempts': attempts,
           }
           with open('arb-observation-proof.json', 'w', encoding='utf-8') as handle:
