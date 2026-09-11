@@ -20,6 +20,7 @@ def test_split_has_no_overlap_and_requires_labels_and_counts():
              'home_win': i % 2, 'home_score': 3, 'away_score': 2,
              'label_completed_at': '2026-08-31T23:00:00Z' if i < 500 else '2026-09-02T02:00:00Z'} for i in range(600)]
     frame = pd.DataFrame(rows)
+    frame.loc[0, 'label_completed_at'] = '2026-08-31T23:00:00.123456+00:00'
     train, test = split_recent(frame)
     assert len(train) == 500 and len(test) == 100
     assert train.date.max() < test.date.min()
