@@ -69,3 +69,21 @@ test('concurrent processes cannot both commit conflicting transitions', async (t
   await Promise.all(children.map(child => child.exitCode === null ? new Promise(resolve => child.once('exit', resolve)) : Promise.resolve()));
   assert.ok(['running', 'cancelled'].includes(store.get(job.id).status));
 });
+
+test('oversized durable record is rejected before replacing the current record', (t) => {
+  const { store, job } = fixture(t);
+  const before = fs.readFileSync(store.file(job.id), 'utf8');
+  job.diff = 'x'.repeat(17 * 1024 * 1024);
+  assert.throws(() => store.save(job), { code: 'EFBIG' });
+  assert.equal(fs.readFileSync(store.file(job.id), 'utf8'), before);
+});
+
+test('async save yields to the event loop while preserving durable state', async (t) => {
+  const { store, job } = fixture(t);
+  job.logs.push('x'.repeat(2 * 1024 * 1024));
+  let timerRan = false;
+  setTimeout(() => { timerRan = true; }, 0);
+  await store.saveAsync(job);
+  assert.equal(timerRan, true);
+  assert.equal(store.get(job.id).logs[0].length, 2 * 1024 * 1024);
+});
