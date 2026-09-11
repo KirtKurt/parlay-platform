@@ -10,6 +10,7 @@ import hashlib
 import json
 
 from mlb_statsapi_starter_context import _time, _number
+from mlb_batter_observations_v1 import VERSION as BATTING_OBSERVATION_VERSION, season_observation
 
 VERSION = "MLB-STATSAPI-TEAM-CONTEXT-v1-prelock-observations"
 ET = ZoneInfo("America/New_York")
@@ -56,6 +57,7 @@ def _lineup(team):
     if not isinstance(order, list) or len(order) != 9 or not all(_id(x) for x in order) or len(set(order)) != 9:
         return None
     ops = []
+    season_batting = []
     for slot, identity in enumerate(order, 1):
         player = (team.get("players") or {}).get("ID" + str(identity)) or {}
         if (player.get("person", {}).get("id") != identity
@@ -66,7 +68,9 @@ def _lineup(team):
         value, appearances = _number(stat.get("ops")), _number(stat.get("plateAppearances"))
         if value is not None and 0 <= value <= 5 and appearances is not None and appearances > 0:
             ops.append(value)
-    return {"order": order, "meanOps": sum(ops)/9 if len(ops) == 9 else None}
+        season_batting.append(season_observation(identity, slot, stat))
+    return {"order": order, "meanOps": sum(ops)/9 if len(ops) == 9 else None,
+            "seasonBatting": season_batting}
 
 
 def _relief(team):
@@ -117,6 +121,7 @@ def observe(game_date, game, history, http_get, *, now=None):
                 and _time(data.get("datetime", {}).get("dateTime")) == start
                 and all(teams.get(side, {}).get("team", {}).get("id") == ids[side] for side in ids)):
             lineup = {**common, "sourceProvenance": _metadata([receipt]),
+                      "lineupSeasonBattingVersion": BATTING_OBSERVATION_VERSION,
                       "note": "Official pregame batting orders and mean season OPS; no wRC+ or injury clearance inferred."}
             complete_lineups = True
             for side in ids:
@@ -126,6 +131,7 @@ def observe(game_date, game, history, http_get, *, now=None):
                 lineup[side+"_lineup_confirmed"] = True if observed else None
                 lineup[side+"_batting_order"] = observed["order"] if observed else None
                 lineup[side+"_lineup_mean_ops"] = observed["meanOps"] if observed else None
+                lineup[side+"_lineup_season_batting"] = observed["seasonBatting"] if observed else None
             # CONNECTED means the exact official Preview feed proved both
             # nine-player batting orders before T-45. Optional OPS may remain
             # unavailable without inventing strength or injury information.
