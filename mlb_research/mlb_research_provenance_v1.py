@@ -12,6 +12,8 @@ from pathlib import Path
 
 VERSION = 'MLB-RESEARCH-IMPLEMENTATION-v1'
 SOURCE_FILES = (
+    'mlb_feature_discovery_runner_v1.py',
+    'mlb_feature_discovery_v1.py',
     'mlb_player_windows_v1.py',
     'mlb_research_dataset_v1.py',
     'mlb_research_models_v1.py',
