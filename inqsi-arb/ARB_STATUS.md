@@ -48,6 +48,8 @@ The controller retains its scheduled cadence and also has a post-deploy liveness
 
 BBD authentication/discovery is checked when credentials are available. Missing BBD credentials or entitlement degrades supplemental context only and must not break independent Odds API arbitrage scanning.
 
+The 2026-09-11 bounded provider/context increment makes the optional BBD adapter reject malformed collection envelopes and mixed invalid rows instead of treating them as successful empty or partial results. Recognized empty collections remain valid, and access failures retain their existing reason. Validation: `python -m pytest -q inqsi-arb/tests` (129 passed) and `sam build --no-cached --template-file template.yaml` from `inqsi-arb` (succeeded; SAM global metadata writes were blocked by the read-only home filesystem). No live authenticated fixtures or entitlement proof were available for this increment. Runtime wiring, pagination and live identity/status/timestamp proof remain pending; this change does not qualify BBD context for settlement or price authority.
+
 ## Highest-priority remaining work
 
 1. Wire the optional BBD context adapter into runtime endpoints only after credential and entitlement proof.
