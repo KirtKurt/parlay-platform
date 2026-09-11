@@ -42,7 +42,9 @@ def test_named_lineup_and_workload_values_are_preserved_and_cached():
     game,history,feed,teams,get = fixtures(); calls=[]
     def fetch(url,timeout): calls.append(url); return get(url,timeout)
     lineup,bullpen=source.observe('2026-09-09',game,history,fetch,now=lambda:NOW)
+    assert lineup['source_status']=='CONNECTED'
     assert lineup['home_lineup_confirmed'] is True
+    assert lineup['away_lineup_confirmed'] is True
     assert lineup['home_lineup_mean_ops'] == pytest.approx(.8)
     assert bullpen['home_reliever_usage_1d_3d_5d']['3d'] == {'pitches':18,'outs':3}
     assert bullpen['source_status']=='PARTIAL'
@@ -71,8 +73,27 @@ def test_lineup_integrity_and_unknown_strength(mode):
     if mode=='wrong_slot':p['battingOrder']='200'
     if mode=='missing_ops':p['seasonStats']['batting']['ops']=None
     a,_=source.observe('2026-09-09',game,history,get,now=lambda:NOW)
-    if mode=='missing_ops':assert a['home_lineup_confirmed'] is True and a['home_lineup_mean_ops'] is None
-    else:assert a['home_lineup_confirmed'] is None
+    if mode=='missing_ops':
+        assert a['source_status']=='CONNECTED'
+        assert a['home_lineup_confirmed'] is True and a['home_lineup_mean_ops'] is None
+    else:
+        assert a['source_status']=='PARTIAL'
+        assert a['home_lineup_confirmed'] is None
+
+
+def test_snapshot_marks_only_verified_batting_order_group_complete():
+    import mlb_fundamentals_snapshot_v2 as snapshots
+    game,history,feed,teams,get=fixtures()
+    lineup,bullpen=source.observe('2026-09-09',game,history,get,now=lambda:NOW)
+    row={'gameId':'mlb_statsapi:123','officialGamePk':123,'slateDateEt':'2026-09-09',
+         'predictionSourcePullAt':NOW.isoformat(),'advanced_context':{'confirmed_lineups':lineup,'bullpen_fatigue':bullpen}}
+    snap=snapshots.build(row,captured_at_utc=NOW.isoformat())
+    group=snap['groups']['confirmed_lineups']
+    assert group['status']=='CONNECTED'
+    assert group['complete'] is True
+    assert group['missingValueKeys']==[]
+    assert 'confirmed_lineups' in snap['connectedGroups']
+    assert 'bullpen_availability' in snap['missingGroups']
 
 
 @pytest.mark.parametrize('mode',['wrong_game','wrong_team','in_progress','new_start'])

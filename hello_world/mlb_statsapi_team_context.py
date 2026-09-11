@@ -118,11 +118,19 @@ def observe(game_date, game, history, http_get, *, now=None):
                 and all(teams.get(side, {}).get("team", {}).get("id") == ids[side] for side in ids)):
             lineup = {**common, "sourceProvenance": _metadata([receipt]),
                       "note": "Official pregame batting orders and mean season OPS; no wRC+ or injury clearance inferred."}
+            complete_lineups = True
             for side in ids:
                 observed = _lineup(teams[side])
+                if observed is None:
+                    complete_lineups = False
                 lineup[side+"_lineup_confirmed"] = True if observed else None
                 lineup[side+"_batting_order"] = observed["order"] if observed else None
                 lineup[side+"_lineup_mean_ops"] = observed["meanOps"] if observed else None
+            # CONNECTED means the exact official Preview feed proved both
+            # nine-player batting orders before T-45. Optional OPS may remain
+            # unavailable without inventing strength or injury information.
+            if complete_lineups:
+                lineup["source_status"] = "CONNECTED"
     # Prior ET calendar days only. Same-day doubleheaders and suspended games
     # remain excluded; incomplete history never becomes zero workload.
     history = history() if callable(history) else history
