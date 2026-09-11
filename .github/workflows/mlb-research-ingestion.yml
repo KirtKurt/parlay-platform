@@ -5,7 +5,7 @@ on:
     paths: ['ks1/**', 'src/temperature_calibrator.py', 'tests/ks1_phase4/**', 'tests/ks1_phase5/**', 'tests/ks1_calibration/**', 'data/models/platt.json', 'data/models/temperature.json', '.github/workflows/mlb-research-ingestion.yml', '.github/workflows/ks1-refresh-watchdog.yml']
   schedule:
     # Run once per hour away from GitHub's congested top-of-hour queue.
-    # The nightly command still enforces its 01:00 America/New_York due gate.
+    # Calibration fits after 01:00 America/New_York; later ticks catch up grades.
     - cron: '17 * * * *'
   push:
     branches: [main]
@@ -50,7 +50,7 @@ jobs:
         run: |
           echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)" >> "$GITHUB_OUTPUT"
           python scripts/run_mlb_research_ingestion.py --seconds 2400
-      - name: Grade KS1 at 01:00 Eastern, then fit calibration after verified ledger write
+      - name: Grade KS1 nightly and catch up late finals hourly without refitting
         id: nightly
         env:
           SOURCES_NOT_BEFORE: ${{ steps.research.outputs.started_at }}
