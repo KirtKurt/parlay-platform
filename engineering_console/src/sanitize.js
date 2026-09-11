@@ -1,12 +1,14 @@
 const SECRET = /(api[_-]?key|authorization|token|secret|password|client[_-]?secret|access[_-]?key)\s*[:=]\s*[^\s,;]+/gi;
 const BEARER = /(bearer\s+)[A-Za-z0-9._~+\/-]{10,}/gi;
 const OPENAI_KEY = /sk-[A-Za-z0-9_-]{12,}/g;
+const GITHUB_KEY = /\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g;
 
 export function redact(value) {
   return String(value ?? '')
     .replace(SECRET, '$1=[REDACTED]')
     .replace(BEARER, '$1[REDACTED]')
-    .replace(OPENAI_KEY, '[REDACTED_OPENAI_KEY]');
+    .replace(OPENAI_KEY, '[REDACTED_OPENAI_KEY]')
+    .replace(GITHUB_KEY, '[REDACTED_GITHUB_KEY]');
 }
 
 export function sanitize(value) {
