@@ -49,6 +49,7 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
   return http.createServer(async (request, response) => {
     const send = (status, value) => { response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); response.end(JSON.stringify(value)); };
     try {
+      if (request.method === 'GET' && request.url === '/healthz') return send(200, { status: 'ok' });
       if (!request.url.startsWith('/v1/engineering')) return send(404, { error: 'not_found' });
       const actor = await authorizer(request);
       const url = new URL(request.url, 'http://localhost'); const parts = url.pathname.split('/').filter(Boolean); const id = parts[2]; const action = parts[3];
