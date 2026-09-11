@@ -16,6 +16,7 @@ type Job = {
   testResults: unknown[];
   commit?: string;
   pullRequest?: string;
+  publicationState?: string;
   error?: string;
   updatedAt: string;
 };
@@ -109,6 +110,9 @@ export function EngineeringConsole() {
         ? 'Admin · access denied'
         : 'Engineering service unavailable';
 
+  const publicationVisible = Boolean(selected?.publicationState && selected.publicationState !== 'no_changes') || ['awaiting_publication', 'published'].includes(selected?.status || '');
+  const canCancel = Boolean(selected) && (['queued', 'running', 'awaiting_publication', 'published'].includes(selected.status) || (selected.status === 'failed' && publicationVisible));
+
   return <main className="shell engineering-console">
     <header className="topbar">
       <div className="brand-block">
@@ -160,7 +164,7 @@ export function EngineeringConsole() {
             <span>Branch: {selected.branch || 'pending'}</span>
           </div>
           <div className="job-actions">
-            <button onClick={() => action('cancel')} disabled={!['queued', 'running'].includes(selected.status)}>Cancel worker</button>
+            <button onClick={() => action('cancel')} disabled={!canCancel}>{publicationVisible ? 'Cancel publication' : 'Cancel worker'}</button>
             <button onClick={() => action('continue')} disabled={!['completed', 'failed', 'blocked', 'awaiting_approval'].includes(selected.status) || !instruction}>Continue</button>
           </div>
           {selected.error && <p className="error">{selected.error}</p>}
