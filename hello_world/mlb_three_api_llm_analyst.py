@@ -28,6 +28,14 @@ DEFAULT_MODELS: Tuple[str, ...] = (
 CACHE_SECONDS = max(30, int(os.environ.get("MLB_THREE_API_LLM_CACHE_SECONDS", "300")))
 MAX_PROMPT_BYTES = max(8_000, min(100_000, int(os.environ.get("MLB_THREE_API_LLM_MAX_PROMPT_BYTES", "48000"))))
 _CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+_PASSIVE_BULLPEN_OBSERVATION_KEYS = frozenset(
+    {
+        "bullpenRosterObservationStatus",
+        "bullpenRosterSourceProvenance",
+        "home_bullpen_roster_player_ids",
+        "away_bullpen_roster_player_ids",
+    }
+)
 
 
 def _now_iso() -> str:
@@ -96,6 +104,17 @@ def _compact(value: Any, *, depth: int = 0) -> Any:
     return str(value)[:1000]
 
 
+def _authority_bullpen_evidence(value: Any) -> Any:
+    """Exclude passive roster observations from every authority-bearing LLM input."""
+    if not isinstance(value, dict):
+        return value
+    return {
+        key: item
+        for key, item in value.items()
+        if str(key) not in _PASSIVE_BULLPEN_OBSERVATION_KEYS
+    }
+
+
 def _market_evidence(game: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     bookmakers = game.get("bookmakers") or context.get("bookmakers") or []
     return {
@@ -140,7 +159,7 @@ def _bbd_evidence(context: Dict[str, Any]) -> Dict[str, Any]:
         "injuries": _compact(context.get("injuries_late_scratches_news") or {}),
         "pitching": _compact(context.get("fip_xfip") or {}),
         "offense": _compact(context.get("wrc_plus") or {}),
-        "bullpen": _compact(context.get("bullpen_fatigue") or {}),
+        "bullpen": _compact(_authority_bullpen_evidence(context.get("bullpen_fatigue") or {})),
     }
 
 

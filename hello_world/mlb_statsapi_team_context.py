@@ -1,7 +1,8 @@
 """Pregame batting orders and prior-day relief workload, observed before T-45.
 
-Workload is usage, not a claim that a reliever is available. Season OPS is
-observed only while the exact game is in Preview; history is never backfilled.
+Workload is usage, not a claim that a reliever is available. Season OPS and
+current bullpen roster identities are observed only while the exact game is in
+Preview; history is never backfilled.
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -73,6 +74,28 @@ def _lineup(team):
             "seasonBatting": season_batting}
 
 
+def _bullpen_roster(team):
+    """Return identity-bound roster observations without inferring availability."""
+    if not isinstance(team, dict):
+        return None
+    roster = team.get("bullpen")
+    players = team.get("players")
+    if (not isinstance(roster, list) or not roster or not all(_id(x) for x in roster)
+            or len(set(roster)) != len(roster) or not isinstance(players, dict)):
+        return None
+    for identity in roster:
+        player = players.get("ID" + str(identity))
+        if not isinstance(player, dict):
+            return None
+        person = player.get("person")
+        if not isinstance(person, dict):
+            return None
+        observed_id = person.get("id")
+        if not _id(observed_id) or observed_id != identity:
+            return None
+    return list(roster)
+
+
 def _relief(team):
     ids = team.get("pitchers")
     if not isinstance(ids, list) or not ids or len(set(ids)) != len(ids) or not all(_id(x) for x in ids):
@@ -111,21 +134,38 @@ def observe(game_date, game, history, http_get, *, now=None):
     common = {"source_status": "PARTIAL", "algorithmVersion": VERSION,
               "game_pk": game["gamePk"], **{side+"_team_id": identity for side, identity in ids.items()}}
     lineup, bullpen = missing.copy(), missing.copy()
+    roster_observation = None
     receipt = _fetch(f"https://statsapi.mlb.com/api/v1.1/game/{game['gamePk']}/feed/live", http_get, clock)
     if receipt["ok"]:
         payload = receipt["payload"]
-        data = payload.get("gameData", {})
-        teams = payload.get("liveData", {}).get("boxscore", {}).get("teams", {})
-        if (data.get("game", {}).get("pk") == game["gamePk"]
-                and data.get("status", {}).get("abstractGameState") == "Preview"
-                and _time(data.get("datetime", {}).get("dateTime")) == start
-                and all(teams.get(side, {}).get("team", {}).get("id") == ids[side] for side in ids)):
+        data = payload.get("gameData")
+        live = payload.get("liveData")
+        boxscore = live.get("boxscore") if isinstance(live, dict) else None
+        teams = boxscore.get("teams") if isinstance(boxscore, dict) else None
+        game_data = data.get("game") if isinstance(data, dict) else None
+        status_data = data.get("status") if isinstance(data, dict) else None
+        datetime_data = data.get("datetime") if isinstance(data, dict) else None
+        feed_teams = {
+            side: teams.get(side) if isinstance(teams, dict) and isinstance(teams.get(side), dict) else None
+            for side in ids
+        }
+        feed_team_ids = {
+            side: ((feed_teams[side].get("team") or {}).get("id") if feed_teams[side] else None)
+            for side in ids
+        }
+        feed_game_pk = game_data.get("pk") if isinstance(game_data, dict) else None
+        if (_id(feed_game_pk) and feed_game_pk == game["gamePk"]
+                and isinstance(status_data, dict)
+                and status_data.get("abstractGameState") == "Preview"
+                and isinstance(datetime_data, dict)
+                and _time(datetime_data.get("dateTime")) == start
+                and all(_id(feed_team_ids[side]) and feed_team_ids[side] == ids[side] for side in ids)):
             lineup = {**common, "sourceProvenance": _metadata([receipt]),
                       "lineupSeasonBattingVersion": BATTING_OBSERVATION_VERSION,
                       "note": "Official pregame batting orders and mean season OPS; no wRC+ or injury clearance inferred."}
             complete_lineups = True
             for side in ids:
-                observed = _lineup(teams[side])
+                observed = _lineup(feed_teams[side])
                 if observed is None:
                     complete_lineups = False
                 lineup[side+"_lineup_confirmed"] = True if observed else None
@@ -137,6 +177,19 @@ def observe(game_date, game, history, http_get, *, now=None):
             # unavailable without inventing strength or injury information.
             if complete_lineups:
                 lineup["source_status"] = "CONNECTED"
+            rosters = {side: _bullpen_roster(feed_teams[side]) for side in ids}
+            if all(rosters.values()):
+                # These four fields are intentionally the only additions when
+                # historical workload is unavailable. After analyst stripping,
+                # the authority-bearing bullpen evidence is byte-for-structure
+                # identical to the prior missing-source object.
+                roster_observation = {
+                    "bullpenRosterObservationStatus": "OBSERVED_ROSTER_ONLY",
+                    "bullpenRosterSourceProvenance": _metadata([receipt]),
+                    "home_bullpen_roster_player_ids": rosters["home"],
+                    "away_bullpen_roster_player_ids": rosters["away"],
+                }
+                bullpen.update(roster_observation)
     # Prior ET calendar days only. Same-day doubleheaders and suspended games
     # remain excluded; incomplete history never becomes zero workload.
     history = history() if callable(history) else history
@@ -185,6 +238,8 @@ def observe(game_date, game, history, http_get, *, now=None):
                         raise ValueError("history provenance missing")
                     bullpen = {**common, **result, "sourceProvenance": _metadata([history_receipt, *receipts]),
                                "note": "Relief pitches and outs over prior 1/3/5 ET calendar days; excludes same-day games. Availability and fatigue scores are not inferred."}
+                    if roster_observation:
+                        bullpen.update(roster_observation)
                 except (KeyError, TypeError, ValueError):
                     pass
     if clock().astimezone(timezone.utc) >= start - timedelta(minutes=45):
