@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-09-11",
+  "authoritative_odds_provider": "the_odds_api",
+  "supplemental_context_provider": "big_balls_data",
+  "observed": {
+    "sports_or_competition_keys": 86,
+    "unique_bookmaker_keys_initial_regions": 73,
+    "sportsbook_regions_audited": ["us", "us2", "uk", "eu", "au"]
+  },
+  "dimensions": [
+    "provider_support",
+    "subscription_access",
+    "current_offering",
+    "ingestion_health",
+    "parser_support",
+    "settlement_verification",
+    "freshness",
+    "first_observed_at",
+    "last_observed_at",
+    "last_successful_fetch_at",
+    "failure_reason",
+    "evidence"
+  ],
+  "current_verified": {
+    "the_odds_api_sports_discovery": true,
+    "sportsbook_inventory_complete_for_current_audit": true,
+    "strict_arb_requires_compatible_settlement_rules": true,
+    "stale_quotes_eligible_for_verified_arb": false,
+    "settlement_rules_expanded_but_incomplete": true,
+    "bbd_adapter_present": true,
+    "bbd_runtime_authenticated": null
+  },
+  "known_gaps": [
+    "persistent per-combination coverage rows not yet implemented",
+    "BBD runtime authentication and entitlement not yet proven",
+    "reviewed settlement rules do not yet cover every observed bookmaker/sport/market/jurisdiction combination",
+    "complex settlement families remain partially unverified",
+    "load-latency and 24-hour production evidence remain incomplete"
+  ]
+}

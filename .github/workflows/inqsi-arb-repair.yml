@@ -1,0 +1,62 @@
+name: Inqsi ARB Bounded Repair
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: inqsi-arb-bounded-repair
+  cancel-in-progress: false
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test runtime
+        run: python -m pip install --quiet "pytest>=8,<9" boto3
+      - name: Revalidate current main before repair
+        run: python -m pytest -q inqsi-arb/tests
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - uses: aws-actions/setup-sam@v2
+      - name: Build current main
+        run: sam build --no-cached --template-file inqsi-arb/template.yaml
+      - name: Redeploy current main once
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${ODDS_API_KEY_VALUE:-}"
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name inqsi-arb-prod \
+            --region "${{ secrets.AWS_REGION }}" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}"
+      - name: Verify repair
+        env:
+          BBD_API_KEY: ${{ secrets.BBD_API_KEY }}
+          BIG_BALLS_DATA_API_KEY: ${{ secrets.BIG_BALLS_DATA_API_KEY }}
+        run: |
+          set -euo pipefail
+          API_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ArbApiUrl'].OutputValue" --output text)
+          SPORTSBOOK_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-sportsbook-catalog-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='SportsbooksUrl'].OutputValue" --output text 2>/dev/null || true)
+          python inqsi-arb/ops/controller.py --api-url "$API_URL" --sportsbook-url "$SPORTSBOOK_URL" --output arb-repair-proof.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: inqsi-arb-repair-${{ github.run_id }}
+          path: arb-repair-proof.json
+          if-no-files-found: warn
+          retention-days: 30
