@@ -31,13 +31,51 @@ def _positive_int(value):
     return None
 
 
+def _nonnegative_int(value):
+    if isinstance(value,bool):return None
+    if isinstance(value,int):return value if value>=0 else None
+    if isinstance(value,Decimal):
+        if not value.is_finite() or value<0 or value!=value.to_integral_value():return None
+        return int(value)
+    return None
+
+
+def _finite_number(value):
+    if isinstance(value,bool):return None
+    if isinstance(value,int):return float(value)
+    if isinstance(value,Decimal):return float(value) if value.is_finite() else None
+    return None
+
+
 def _official_game_pk(row):
     return _positive_int(row.get('officialGamePk') if row.get('officialGamePk') is not None else row.get('official_game_pk'))
 
 
 def _exact_feed_endpoint(provenance, game_pk):
-    endpoint=str((provenance or {}).get('endpoint') or '')
-    return bool(game_pk and f'/game/{game_pk}/feed/live' in endpoint)
+    endpoint=(provenance or {}).get('endpoint')
+    return bool(game_pk and endpoint==f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live")
+
+
+def _validate_batter_sample(item, side, errors):
+    pa=_nonnegative_int(item.get('plateAppearances')) if item.get('plateAppearances') is not None else None
+    raw_rates={name:_finite_number(item.get(name)) if item.get(name) is not None else None
+               for name in ('ops','obp','slg')}
+    bounds={'ops':5.0,'obp':1.0,'slg':4.0}
+    if item.get('plateAppearances') is not None and pa is None:
+        errors.append(side+'_passive_batter_plate_appearances_invalid')
+    for name,value in raw_rates.items():
+        if item.get(name) is not None and (value is None or value<0 or value>bounds[name]):
+            errors.append(side+'_passive_batter_'+name+'_invalid')
+    count=_nonnegative_int(item.get('rateObservationCount'))
+    expected_count=sum(value is not None for value in raw_rates.values())
+    if count is None or count>3 or count!=expected_count:
+        errors.append(side+'_passive_batter_rate_observation_count_invalid')
+    expected_status=('OBSERVED' if pa is not None and pa>0 else
+                     'NO_PLATE_APPEARANCES' if pa==0 else 'SAMPLE_UNAVAILABLE')
+    if item.get('sampleStatus')!=expected_status:
+        errors.append(side+'_passive_batter_sample_status_invalid')
+    if pa in (None,0) and any(value is not None for value in raw_rates.values()):
+        errors.append(side+'_passive_batter_rate_without_sample')
 
 
 def passive_lineup_observation(row):
@@ -72,6 +110,7 @@ def passive_lineup_observation(row):
     if commence is not None and retrieved is not None:
         result['preT45']=retrieved < commence-timedelta(minutes=45)
         if not result['preT45']:errors.append('passive_batting_not_pre_t45')
+    side_ids={}
     for side in ('home','away'):
         order=lineup.get(side+'_batting_order')
         observations=lineup.get(side+'_lineup_season_batting')
@@ -80,6 +119,7 @@ def passive_lineup_observation(row):
         order_ids=[_positive_int(value) for value in order]
         if any(value is None for value in order_ids) or len(set(order_ids))!=9:
             errors.append(side+'_batting_order_identity_invalid');continue
+        side_ids[side]=set(order_ids)
         if not isinstance(observations,list) or len(observations)!=9:
             errors.append(side+'_passive_batter_count_invalid');continue
         observed_ids=[]
@@ -90,10 +130,13 @@ def passive_lineup_observation(row):
             slot=_positive_int(item.get('battingSlot'))
             if identity is None or slot!=expected_slot:
                 errors.append(side+'_passive_batter_identity_or_slot_invalid')
+            _validate_batter_sample(item,side,errors)
             observed_ids.append(identity)
         if observed_ids!=order_ids:
             errors.append(side+'_passive_batter_order_mismatch')
         result[side+'BatterCount']=len(observations)
+    if side_ids.get('home') and side_ids.get('away') and side_ids['home'] & side_ids['away']:
+        errors.append('passive_batting_cross_team_identity_overlap')
     result['errors']=sorted(set(errors));result['valid']=not result['errors']
     return result
 
@@ -131,16 +174,17 @@ def passive_bullpen_roster_observation(row):
     if commence is not None and retrieved is not None:
         result['preT45']=retrieved < commence-timedelta(minutes=45)
         if not result['preT45']:errors.append('bullpen_roster_not_pre_t45')
+    side_ids={}
     for side in ('home','away'):
         values=bullpen.get(side+'_bullpen_roster_player_ids')
         if not isinstance(values,list) or not values:
             errors.append(side+'_bullpen_roster_missing');continue
         identities=[_positive_int(value) for value in values]
         if any(value is None for value in identities) or len(set(identities))!=len(identities):
-            errors.append(side+'_bullpen_roster_identity_invalid')
-    # Passive roster membership cannot conclude either side of the availability
-    # question. Any non-null available/unavailable value, including [], is an
-    # authority-bearing claim and must fail the diagnostic.
+            errors.append(side+'_bullpen_roster_identity_invalid');continue
+        side_ids[side]=set(identities)
+    if side_ids.get('home') and side_ids.get('away') and side_ids['home'] & side_ids['away']:
+        errors.append('bullpen_roster_cross_team_identity_overlap')
     availability_fields=(
         'home_available_relievers','away_available_relievers',
         'home_unavailable_relievers','away_unavailable_relievers',
