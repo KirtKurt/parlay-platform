@@ -102,7 +102,11 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
         const publicationVisible = Boolean(job.publicationState && job.publicationState !== 'no_changes') || ['awaiting_publication','published'].includes(job.status);
         const cancellableStatus = ['queued','running','awaiting_publication','published'].includes(job.status) || (job.status === 'failed' && publicationVisible);
         if (!cancellableStatus) return send(409, { error: 'job_not_cancellable' });
-        if (publicationVisible && !cancelPublication(config.dataDir, id)) return send(409, { error: 'publication_merge_already_committed' });
+        // Arbitrate every accepted cancellation before acknowledging it. The
+        // publication outbox can become visible before the worker's later job
+        // state save; a durable cancellation decision closes that race even
+        // when this snapshot still looks like an ordinary running job.
+        if (!cancelPublication(config.dataDir, id)) return send(409, { error: 'publication_merge_already_committed' });
         queue.cancel(id);
         if (publicationVisible) markPublicationCancellationPending(store, id, actor.id);
         return send(202, { job: publicJob(store.owned(id, actor.id)) });
