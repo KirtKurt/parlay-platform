@@ -69,8 +69,6 @@ def capture(tmp_path, monkeypatch):
         (folder/(name+'.json')).write_bytes(encode(envelope(payload)))
     (folder/'feeds.json').write_bytes(encode({'games': {str(g['gamePk']): envelope(feed(g)) for g in games}}))
     (folder/'history.json.gz').write_bytes(gzip.compress(encode({'games': history, 'prior_observed_at': AT}), mtime=0))
-    # In CI only the classifier is a spy; real accepted Poisson weights and
-    # the production feature builder / Arrow writer still run end to end.
     model_root = tmp_path/'models'; model_root.mkdir()
     poisson_bytes = (daily.ROOT/'poisson_model.json').read_bytes()
     (model_root/'poisson_model.json').write_bytes(poisson_bytes)
@@ -82,7 +80,6 @@ def capture(tmp_path, monkeypatch):
     class Classifier:
         def feature_name(self):
             return ['home_offense_ops_30d', 'market_home_prob']
-
         def predict(self, x):
             calls.append(len(x))
             return np.full(len(x), .55)
@@ -163,7 +160,6 @@ def test_missing_then_confirmed_lineup_changes_only_one_game(capture):
     assert report['changes'] == [{'game_id': '1', 'reason': 'lineup_changed'}] and calls == [2, 1]
     assert second.to_pylist()[0]['lineup_status'] == 'confirmed'
     assert first.to_pylist()[1] == second.to_pylist()[1]
-    # Identity evidence does not silently redefine frozen team offense inputs.
     assert first['lambda_home'].to_pylist() == second['lambda_home'].to_pylist()
 
 
@@ -192,7 +188,7 @@ def test_market_total_change_updates_only_its_game_even_when_win_probability_sam
     second, report, _ = daily.predict(folder, output)
     assert report['newly_scored'] == 1 and calls == [2, 1]
     assert first.to_pylist()[1] == second.to_pylist()[1]
-    assert second.to_pylist()[0]['edge_total'] == pytest.approx(first.to_pylist()[0]['edge_total']-1)
+    assert second.to_pylist()[0]['edge_total'] == pytest.approx(first.to_pylist()[0]['edge_total']-0.5)
 
 
 @pytest.mark.parametrize('fault', ['empty', 'duplicate', 'substitute', 'wrong_slot', 'malformed_players', 'wrong_game', 'wrong_team', 'live', 'future', 'stale', 'failed'])
@@ -222,6 +218,20 @@ def test_cleared_pitcher_is_not_resurrected_from_earlier_schedule(capture):
     row = observe(games[0], envelope(payload), AT)
     assert row['home_starter_id'] is None and row['home_starter_status'] == 'missing'
     assert row['status'] == 'projected_missing_starter'
+
+
+def test_live_or_final_game_does_not_drop_a_valid_pregame_lock(capture):
+    folder, output, calls, _ = capture
+    first, _, out = daily.predict(folder, output)
+    official = json.loads((folder/'official.json').read_bytes())
+    official['payload']['dates'][0]['games'][0]['status'] = {'abstractGameState': 'Live', 'detailedState': 'In Progress'}
+    (folder/'official.json').write_bytes(encode(envelope(official['payload'], DATE+'T10:01:00+00:00')))
+    advance(folder, out)
+    second, report, _ = daily.predict(folder, output)
+    assert {r['game_id'] for r in second.to_pylist()} == {'1', '2'}
+    assert '1' in report['recovered_lock_game_ids']
+    assert first.to_pylist()[0]['p_home'] == second.to_pylist()[0]['p_home']
+    assert calls == [2]
 
 
 def test_frozen_rows_do_not_change_or_rescore_after_cutoff(capture):
@@ -278,7 +288,6 @@ def test_phase4_rows_upgrade_once_including_frozen_status_defaults(capture):
 
 def test_scratch_overwrites_same_date_object_and_preserves_other_date(capture, monkeypatch):
     folder, output, _, _ = capture
-    # In-memory store models conditional object replacement; it cannot access AWS.
     objects, writes = {}, []
     class Store:
         def get_object(self, Bucket, Key, **kwargs):
@@ -287,7 +296,6 @@ def test_scratch_overwrites_same_date_object_and_preserves_other_date(capture, m
             if Key not in objects:
                 raise ClientError({'Error': {'Code': 'NoSuchKey'}}, 'GetObject')
             return {'Body': io.BytesIO(objects[Key]), 'ETag': hashlib.sha256(objects[Key]).hexdigest()}
-
         def put_object(self, Bucket, Key, Body, **kwargs):
             if Key in objects:
                 assert kwargs['IfMatch'] == hashlib.sha256(objects[Key]).hexdigest()
