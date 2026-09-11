@@ -18,29 +18,62 @@ def test_percentile_nearest_rank():
 
 
 def test_probe_report_shape(monkeypatch):
-    samples = iter([
-        (True, 10.0, 200),  # warmup
-        (True, 20.0, 200),
-        (True, 30.0, 200),
-        (True, 40.0, 200),
-        (True, 50.0, 200),
-    ])
-    monkeypatch.setattr(latency_probe, "once", lambda url, timeout: next(samples))
+    def fake_worker(url, timeout, measured_requests):
+        assert measured_requests == 4
+        return {
+            "warmup": (True, 10.0, 200),
+            "rows": [
+                (True, 20.0, 200),
+                (True, 30.0, 200),
+                (True, 40.0, 200),
+                (True, 50.0, 200),
+            ],
+            "error": None,
+        }
+
+    monkeypatch.setattr(latency_probe, "_worker", fake_worker)
     result = latency_probe.run_probe("https://example.test/health", requests_count=4, concurrency=1, timeout=1)
     assert result["ok"] is True
     assert result["successes"] == 4
     assert result["latency_ms"]["p95"] == 50.0
     assert result["sample_size"] == 4
+    assert result["warmup_requests_excluded"] == 1
+    assert result["connection_model"] == "one persistent HTTPS connection per concurrent client"
 
 
 def test_probe_tracks_failure(monkeypatch):
-    samples = iter([
-        (True, 10.0, 200),
-        (True, 20.0, 200),
-        (False, 40.0, 503),
-    ])
-    monkeypatch.setattr(latency_probe, "once", lambda url, timeout: next(samples))
+    def fake_worker(url, timeout, measured_requests):
+        assert measured_requests == 2
+        return {
+            "warmup": (True, 10.0, 200),
+            "rows": [
+                (True, 20.0, 200),
+                (False, 40.0, 503),
+            ],
+            "error": None,
+        }
+
+    monkeypatch.setattr(latency_probe, "_worker", fake_worker)
     result = latency_probe.run_probe("https://example.test/health", requests_count=2, concurrency=1, timeout=1)
     assert result["ok"] is False
     assert result["failures"] == 1
     assert result["status_counts"]["503"] == 1
+
+
+def test_probe_distributes_requests_across_persistent_clients(monkeypatch):
+    calls = []
+
+    def fake_worker(url, timeout, measured_requests):
+        calls.append(measured_requests)
+        return {
+            "warmup": (True, 5.0, 200),
+            "rows": [(True, 10.0, 200)] * measured_requests,
+            "error": None,
+        }
+
+    monkeypatch.setattr(latency_probe, "_worker", fake_worker)
+    result = latency_probe.run_probe("https://example.test/health", requests_count=10, concurrency=3, timeout=1)
+    assert sorted(calls) == [3, 3, 4]
+    assert result["sample_size"] == 10
+    assert result["warmup_requests_excluded"] == 3
+    assert result["successes"] == 10
