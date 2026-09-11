@@ -14,7 +14,7 @@ on:
     inputs:
       arb_merge_sha:
         description: Exact autonomous ARB merge commit that must be present in main
-        required: true
+        required: false
         type: string
 permissions:
   contents: read
@@ -29,7 +29,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Bind supervisor dispatch to the requested ARB merge
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.arb_merge_sha != ''
         shell: bash
         env:
           ARB_MERGE_SHA: ${{ inputs.arb_merge_sha }}
@@ -62,6 +62,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Re-bind supervisor dispatch immediately before privileged deployment
+        if: github.event_name == 'workflow_dispatch' && inputs.arb_merge_sha != ''
+        shell: bash
+        env:
+          ARB_MERGE_SHA: ${{ inputs.arb_merge_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$ARB_MERGE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_REF" = 'refs/heads/main'
+          git merge-base --is-ancestor "$ARB_MERGE_SHA" HEAD
+          RELEVANT=$(git diff --name-only "$ARB_MERGE_SHA" HEAD -- inqsi-arb '.github/workflows/inqsi-arb-*' arb_supervisor .github/workflows/arb-supervisor-validate.yml)
+          test -z "$RELEVANT"
+          echo "privileged deploy remains bound to exact ARB merge $ARB_MERGE_SHA"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
