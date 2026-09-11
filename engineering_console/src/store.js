@@ -89,8 +89,11 @@ export class JobStore {
 
   #writeError(status, error) {
     if (status === 73) return Object.assign(new Error('job_store_write_conflict'), { code: 'ESTALE' });
-    if (error) return Object.assign(new Error('job_store_write_failed'), { code: 'EIO', cause: error });
-    return Object.assign(new Error('job_store_write_failed'), { code: status === 75 ? 'EBUSY' : 'EIO' });
+    if (status === 75) return Object.assign(new Error('job_store_lock_busy'), { code: 'EBUSY' });
+    if (status === 76) return Object.assign(new Error('job_store_record_too_large'), { code: 'EFBIG' });
+    // Rename may already have committed when flushing/IPC/readback fails.
+    // The caller must reconcile, never label this a definite failed write.
+    return Object.assign(new Error('job_store_commit_outcome_unknown'), { code: 'EWRITEUNKNOWN' });
   }
 
   save(job) {
@@ -106,7 +109,8 @@ export class JobStore {
       });
     } finally { fs.closeSync(fd); }
     if (result.error || result.status !== 0) throw this.#writeError(result.status, result.error);
-    this.#applyCommitted(job, target);
+    try { this.#applyCommitted(job, target); }
+    catch { throw this.#writeError(null); }
   }
 
   async saveAsync(job) {
@@ -122,13 +126,21 @@ export class JobStore {
       throw this.#writeError(null, error);
     }
     fs.closeSync(fd);
-    child.stdin.end(payload);
-    const status = await new Promise((resolve, reject) => {
+    // A lock timeout or failed helper can close stdin before a large payload
+    // drains. Handle that stream error BEFORE writing so EPIPE cannot crash
+    // the server. Preserve the helper's known lock/CAS result when available.
+    let inputError;
+    child.stdin.once('error', (error) => { inputError = error; });
+    const completion = new Promise((resolve, reject) => {
       child.once('error', reject);
       child.once('close', resolve);
-    }).catch((error) => { throw this.#writeError(null, error); });
+    });
+    child.stdin.end(payload);
+    const status = await completion.catch(() => { throw this.#writeError(null); });
+    if (status === 0 && inputError) throw this.#writeError(null);
     if (status !== 0) throw this.#writeError(status);
-    this.#applyCommitted(job, target);
+    try { this.#applyCommitted(job, target); }
+    catch { throw this.#writeError(null); }
   }
 
   get(id) {
