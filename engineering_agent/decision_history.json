@@ -1,0 +1,18 @@
+{
+  "version": "INQSI-MLB-ENGINEERING-DECISION-HISTORY-v1",
+  "decisions": [
+    {
+      "status": "COMPLETED",
+      "title": "Bind successor health to MLB-specific deployment identity",
+      "mainCommit": "946bca73ca232723acc82552412a9503730b1bca",
+      "reason": "The global repository Git/template identity produced false MLB health mismatches after unrelated deployments. MLB health now binds to deterministic MLB executable/runtime identity while preserving fail-closed checks."
+    },
+    {
+      "status": "REJECTED_AS_UNSAFE_OR_INAPPLICABLE",
+      "title": "Fix Clean Row Final Label Time Validation",
+      "plannerRun": 34586321335,
+      "reason": "The reported clean_row_final_label_time_invalid and clean_row_not_after_release_cutoff errors are expected on historical-training-only rows whose immutable bridge explicitly records labelObservationTimeUnavailable=true. Inventing or relaxing label times would weaken chronological evidence. Recent 2026-09-02, 2026-09-03, 2026-09-07, and 2026-09-09 slate proofs already achieve exact clean-slate equality with no such error.",
+      "reconsiderOnlyIf": "The same error occurs on a current non-historical row that is expected to carry a genuine write-once label observation timestamp, or new evidence proves the historical bridge possesses an immutable real observation timestamp that is currently discarded."
+    }
+  ]
+}
