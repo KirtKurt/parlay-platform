@@ -16,6 +16,9 @@ assert SPEC and SPEC.loader
 SUBJECT = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SUBJECT)
 
+GAME_PK = 824631
+FEED = f"https://statsapi.mlb.com/api/v1.1/game/{GAME_PK}/feed/live"
+
 
 class Table:
     def __init__(self, items):
@@ -31,11 +34,13 @@ class Table:
 def _row():
     lineup = {
         "source_status": "CONNECTED",
+        "game_pk": Decimal(GAME_PK),
         "lineupSeasonBattingVersion": SUBJECT.source.BATTING_OBSERVATION_VERSION,
         "sourceProvenance": {
             "provider": "MLB Stats API",
             "dataset": SUBJECT.source.VERSION,
             "retrievedAtUtc": "2026-09-11T18:00:00+00:00",
+            "endpoint": FEED,
         },
     }
     for side, base in (("home", 100), ("away", 200)):
@@ -54,11 +59,13 @@ def _row():
         ]
     bullpen = {
         "source_status": "PARTIAL",
+        "game_pk": Decimal(GAME_PK),
         "bullpenRosterObservationStatus": "OBSERVED_ROSTER_ONLY",
         "bullpenRosterSourceProvenance": {
             "provider": "MLB Stats API",
             "dataset": SUBJECT.source.VERSION,
             "retrievedAtUtc": "2026-09-11T18:00:00+00:00",
+            "endpoint": FEED,
         },
         "home_bullpen_roster_player_ids": [Decimal(301), Decimal(302)],
         "away_bullpen_roster_player_ids": [Decimal(401), Decimal(402)],
@@ -67,7 +74,7 @@ def _row():
         "PK": "GAME_WINNERS#mlb#2026-09-11",
         "SK": "GAME#fixture",
         "data": {
-            "officialGamePk": Decimal(824631),
+            "officialGamePk": Decimal(GAME_PK),
             "commenceTime": "2026-09-11T20:00:00+00:00",
             "advanced_context": {
                 "confirmed_lineups": lineup,
@@ -89,6 +96,7 @@ def test_persisted_passive_observations_accept_decimal_ddb_identities_without_au
     assert report["gamesWithValidPassiveBullpenRosters"] == 1
     assert report["passiveRosterAvailabilityClaimCount"] == 0
     assert report["rows"][0]["passiveLineupObservation"]["preT45"] is True
+    assert report["rows"][0]["passiveBullpenRosterObservation"]["preT45"] is True
 
 
 def test_passive_batter_order_mismatch_fails_closed():
@@ -105,9 +113,9 @@ def test_passive_batter_observation_at_or_after_t45_fails_closed():
         SUBJECT.persisted_observations(Table([row]), "2026-09-11")
 
 
-def test_passive_bullpen_roster_never_satisfies_available_relievers():
+def test_passive_bullpen_roster_never_satisfies_available_relievers_even_with_empty_list():
     row = _row()
-    row["data"]["advanced_context"]["bullpen_fatigue"]["home_available_relievers"] = [301]
+    row["data"]["advanced_context"]["bullpen_fatigue"]["home_available_relievers"] = []
     with pytest.raises(RuntimeError, match="passive_roster_must_not_claim_available_relievers"):
         SUBJECT.persisted_observations(Table([row]), "2026-09-11")
 
@@ -121,3 +129,64 @@ def test_absent_passive_observations_are_reported_as_absent_not_fabricated():
     assert report["gamesWithValidPassiveBatterObservations"] == 0
     assert report["gamesWithPassiveBullpenRosters"] == 0
     assert report["gamesWithValidPassiveBullpenRosters"] == 0
+
+
+def test_version_marker_with_unposted_lineups_is_normal_absence():
+    row = _row()
+    lineup = row["data"]["advanced_context"]["confirmed_lineups"]
+    lineup["home_lineup_season_batting"] = None
+    lineup["away_lineup_season_batting"] = None
+    lineup["home_batting_order"] = None
+    lineup["away_batting_order"] = None
+    state = SUBJECT.passive_lineup_observation(row["data"])
+    assert lineup["lineupSeasonBattingVersion"] == SUBJECT.source.BATTING_OBSERVATION_VERSION
+    assert state["present"] is False
+    assert state["valid"] is False
+    assert state["errors"] == []
+    report = SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+    assert report["gamesWithPassiveBatterObservations"] == 0
+
+
+@pytest.mark.parametrize("value", [None, "", "not-a-time"])
+def test_present_passive_batter_observation_requires_parseable_game_start(value):
+    row = _row()
+    row["data"]["commenceTime"] = value
+    with pytest.raises(RuntimeError, match="passive_batting_commence_time_invalid"):
+        SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+
+
+def test_passive_lineup_must_belong_to_same_exact_official_game_and_feed():
+    row = _row()
+    lineup = row["data"]["advanced_context"]["confirmed_lineups"]
+    lineup["game_pk"] = Decimal(GAME_PK + 1)
+    lineup["sourceProvenance"]["endpoint"] = f"https://statsapi.mlb.com/api/v1.1/game/{GAME_PK + 1}/feed/live"
+    with pytest.raises(RuntimeError, match="passive_batting_(game|endpoint)_identity_mismatch"):
+        SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+
+
+def test_passive_bullpen_roster_must_bind_to_same_exact_game_feed():
+    row = _row()
+    bullpen = row["data"]["advanced_context"]["bullpen_fatigue"]
+    bullpen.pop("game_pk")
+    bullpen["bullpenRosterSourceProvenance"]["endpoint"] = f"https://statsapi.mlb.com/api/v1.1/game/{GAME_PK + 1}/feed/live"
+    with pytest.raises(RuntimeError, match="bullpen_roster_endpoint_identity_mismatch"):
+        SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+
+
+@pytest.mark.parametrize("invalid", ["101", 101.0, Decimal("101.5"), Decimal("9007199254740992.5")])
+def test_persisted_player_ids_do_not_accept_string_float_or_fractional_decimal(invalid):
+    row = _row()
+    lineup = row["data"]["advanced_context"]["confirmed_lineups"]
+    lineup["home_batting_order"][0] = invalid
+    lineup["home_lineup_season_batting"][0]["playerId"] = invalid
+    with pytest.raises(RuntimeError, match="batting_order_identity_invalid|passive_batter_identity_or_slot_invalid"):
+        SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+
+
+@pytest.mark.parametrize("invalid", ["301", 301.0, Decimal("301.5")])
+def test_persisted_bullpen_ids_use_same_strict_identity_contract(invalid):
+    row = _row()
+    bullpen = row["data"]["advanced_context"]["bullpen_fatigue"]
+    bullpen["home_bullpen_roster_player_ids"][0] = invalid
+    with pytest.raises(RuntimeError, match="home_bullpen_roster_identity_invalid"):
+        SUBJECT.persisted_observations(Table([row]), "2026-09-11")
