@@ -27,6 +27,9 @@ try {
   }
   merged.updatedAt = new Date().toISOString();
   const content = `${JSON.stringify(merged, null, 2)}\n`;
+  // Recheck the FINAL merged/serialized record while the kernel lock is held.
+  // Two individually valid disjoint updates may otherwise exceed the bound.
+  if (Buffer.byteLength(content) > 16 * 1024 * 1024) process.exit(76);
   temporary = `${target}.${crypto.randomUUID()}.tmp`;
   const fd = fs.openSync(temporary, 'wx', 0o600);
   try { fs.writeFileSync(fd, content); fs.fsyncSync(fd); }
