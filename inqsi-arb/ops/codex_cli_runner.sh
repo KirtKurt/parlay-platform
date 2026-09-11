@@ -44,7 +44,9 @@ Before finishing, run the relevant ARB tests. Keep the repository building. If t
 EOF
 )
 
-codex exec --full-auto "$PROMPT"
+# Codex CLI >=0.147 removed exec --full-auto. Use the explicit workspace-write
+# sandbox plus automatic review for unattended CI execution.
+codex exec --sandbox workspace-write --approve-for-me "$PROMPT"
 
 mapfile -t CHANGED < <(git status --porcelain=v1 | sed -E 's/^.. //' | sed -E 's/.* -> //' | sed '/^$/d')
 if [[ ${#CHANGED[@]} -eq 0 ]]; then
