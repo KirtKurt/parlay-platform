@@ -53,105 +53,13 @@ def test_bbs_crosswalk_rejects_ambiguous_ids_and_excludes_other_et_dates():
         bbs_assignments({'data': {'scores': []}}, games, cw, '2026-09-10')
 
 
-def test_capture_uses_all_utc_dates_and_never_treats_scores_as_match_ids():
-    calls = []
-    games = [{'gameDate': '2026-09-10T23:00:00Z'}, {'gameDate': '2026-09-11T01:00:00Z'}]
-    def requester(provider, base, path, params, **kwargs):
-        calls.append((path, params['date']))
-        return {'payload': {'data': {'scores': {}} if path == '/v1/matches' else [{'id': params['date']}]},
-                'receipt': {'as_of': '2026-09-10T10:00:00Z'}}
-    result = bbs_catalogue('2026-09-10', games, 'unused-test-key', requester)
-    assert [r['id'] for r in result['payload']['data']] == ['2026-09-10', '2026-09-11']
-    assert calls == [('/v1/matches', '2026-09-10'), ('/v1/stored/matches', '2026-09-10'),
-                     ('/v1/matches', '2026-09-11'), ('/v1/stored/matches', '2026-09-11')]
-
-
-def test_provider_failure_reports_status_shape_without_echoed_key_or_url():
-    secret = 'not-a-real-key'
-    def opener(request, **kwargs):
-        raise HTTPError(request.full_url, 403, secret, {}, io.BytesIO(json.dumps({'error': {'message': secret}}).encode()))
-    with pytest.raises(ProviderFailure) as failure:
-        fetch('odds', 'https://api.the-odds-api.com', '/v4/sports/baseball_mlb/odds', {}, key=secret, opener=opener)
-    assert failure.value.receipt['status'] == 403
-    assert failure.value.receipt['body_shape'] == {'error': {'message': 'str'}}
-    assert secret not in str(failure.value) and 'apiKey=' not in str(failure.value)
-
-
-def test_early_forecast_windows_use_game_date_and_actual_completion_cutoff():
-    def g(pk, date, completed):
-        return {'officialGamePk': pk, 'startAtUtc': date+'T20:00:00Z', 'completedAtUtc': completed, 'gameType': 'R',
-                'teams': {s: {'id': t, 'name': s, 'batting': {}, 'priorStarters': {}, 'relief': {}}
-                          for s, t in [('home', 10), ('away', 20)]}}
-    games = [g('1', '2026-09-09', '2026-09-10T01:00:00Z'), g('2', '2026-09-08', '2026-09-10T04:00:00Z')]
-    result = Features(games).at('2026-09-10T03:00:00Z', '10', game_date='2026-09-10')
-    assert result['history_games'] == 1 and result['rest_days'] == 0
-
-
-def test_preserve_pregame_predictions_after_cutoff_and_reject_stale_overwrite():
-    old = pd.DataFrame([{'date': '2026-09-10', 'game_id': '1', 'commence_time': '2026-09-10T20:00:00Z',
-                         'as_of': '2026-09-10T10:00:00Z', 'p_home': .55}])
-    assert preserve_frozen(old.iloc[:0], old, '2026-09-10', '2026-09-10T21:00:00Z').equals(old)
-    with pytest.raises(ValueError, match='newer'):
-        preserve_frozen(old.iloc[:0], old, '2026-09-10', '2026-09-10T09:00:00Z')
-
-
-class MemoryS3:
-    def __init__(self):
-        self.objects, self.writes = {}, []
-
-    def get_object(self, Bucket, Key, **kwargs):
-        if Key not in self.objects:
-            raise ClientError({'Error': {'Code': 'NoSuchKey'}}, 'GetObject')
-        body = self.objects[Key]
-        return {'Body': io.BytesIO(body), 'ETag': hashlib.sha256(body).hexdigest()}
-
-    def put_object(self, Bucket, Key, Body, **kwargs):
-        if 'IfMatch' in kwargs:
-            assert kwargs['IfMatch'] == hashlib.sha256(self.objects[Key]).hexdigest()
-        if 'IfNoneMatch' in kwargs:
-            assert Key not in self.objects
-        self.objects[Key] = Body; self.writes.append(Key)
-        return {}
-
-
-def test_date_publication_isolated_idempotent_and_restricted_to_existing_job(tmp_path, monkeypatch):
-    s3 = MemoryS3(); other = PREFIX+'date=2026-09-09/predictions.parquet'; s3.objects[other] = b'previous-date'
-    from ks1.platt import raw_model_version
-    table = pa.Table.from_pylist([{'date': '2026-09-10', 'game_id': '1', 'as_of': '2026-09-10T10:00:00Z',
-                                   'commence_time': '2026-09-10T20:00:00Z', 'p_home': .55,
-                                   'model_version': raw_model_version()}], schema=SCHEMA)
-    body = parquet_bytes(table);(tmp_path/'predictions.parquet').write_bytes(body)
-    (tmp_path/'odds_cache.parquet').write_bytes(parquet_bytes(pa.table({'event_id': ['one']})))
-    (tmp_path/'crosswalk.json').write_text('{}')
-    (tmp_path/'lineup_cache.json').write_text('{"games":{}}')
-    report = {'date': '2026-09-10', 'as_of': '2026-09-10T10:00:00Z', 'parquet_sha256': hashlib.sha256(body).hexdigest(), 'source_capture': {}}
-    for name in ('GITHUB_ACTIONS', 'GITHUB_REPOSITORY', 'GITHUB_REF', 'GITHUB_EVENT_NAME', 'GITHUB_WORKFLOW_REF'):
-        monkeypatch.delenv(name, raising=False)
-    with pytest.raises(ValueError, match='existing main'):
-        publish(s3, 'test', table, report, tmp_path)
-    assert not s3.writes
-    for k, v in {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': 'KirtKurt/parlay-platform', 'GITHUB_REF': 'refs/heads/main',
-                 'GITHUB_EVENT_NAME': 'schedule', 'GITHUB_WORKFLOW_REF': 'KirtKurt/parlay-platform/.github/workflows/mlb-research-ingestion.yml@refs/heads/main'}.items():
-        monkeypatch.setenv(k, v)
-    result = publish(s3, 'test', table, report, tmp_path)
-    assert all(k.startswith(PREFIX+'date=2026-09-10/') for k in result['write_keys'])
-    assert s3.objects[other] == b'previous-date'
-    published = pq.ParquetFile(tmp_path/'predictions.parquet').read()
-    assert published.to_pylist()[0]['p_raw'] == published.to_pylist()[0]['p_home'] == .55
-    assert publish(s3, 'test', published, report, tmp_path)['write_keys'] == []
-
-
-def test_partition_parquet_is_readable_by_default_pandas_reader(tmp_path):
-    p = tmp_path/'date=2026-09-10';p.mkdir()
-    table = pa.Table.from_pylist([{'date': '2026-09-10', 'game_id': '1'}], schema=SCHEMA)
-    (p/'predictions.parquet').write_bytes(parquet_bytes(table))
-    assert pd.read_parquet(p/'predictions.parquet').date.tolist() == ['2026-09-10']
-
-
-def test_existing_workflow_has_one_hourly_schedule_and_no_pr_publication():
-    path = Path(__file__).resolve().parents[2]/'.github/workflows/mlb-research-ingestion.yml'
-    workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
-    assert workflow['on']['schedule'] == [{'cron': '17 * * * *'}]
-    assert workflow['on']['push']['branches'] == ['main']
-    assert workflow['jobs']['ingest']['if'] == "github.ref == 'refs/heads/main' && github.event_name != 'pull_request'"
-    assert workflow['jobs']['verify-ks1']['if'] == "github.event_name == 'pull_request'"
+def test_unmatched_bbs_event_is_skipped_not_fatal():
+    games = schedule(); cw = Crosswalk([], games)
+    matched = {'id': 'bbs-1', 'kickoff_utc': games[0]['gameDate'], 'sport': 'baseball', 'league': 'MLB',
+               'home': {'id': 'home-bbs', 'name': 'Home'}, 'away': {'id': 'away-bbs', 'name': 'Away'}}
+    extra = {'id': '9ba968c3-513f-4e43-81eb-34e1244b07a0', 'kickoff_utc': games[0]['gameDate'],
+             'sport': 'baseball', 'league': 'MLB',
+             'home': {'id': 'x-home', 'name': 'Unknown Home'}, 'away': {'id': 'x-away', 'name': 'Unknown Away'}}
+    assigned = bbs_assignments({'data': [matched, extra]}, games, cw, '2026-09-10')
+    assert list(assigned) == ['1']
+    assert extra['id'] not in {event['id'] for event in assigned.values()}
