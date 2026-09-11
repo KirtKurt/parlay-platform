@@ -29,7 +29,7 @@ _ALLOWED_PREFIXES = (
 
 # These are writable by the coding worker for draft proposals but are never
 # eligible for unattended promotion because they define authority, deployment,
-# infrastructure or the supervisor itself.
+# infrastructure, release attestation, controller guardrails, or the supervisor.
 _NEVER_AUTO_PREFIXES = (
     "inqsi-arb/ops/",
     ".github/",
@@ -39,6 +39,10 @@ _NEVER_AUTO_EXACT = {
     "inqsi-arb/template.yaml",
     "inqsi-arb/sportsbook-template.yaml",
     "inqsi-arb/samconfig.toml",
+    "inqsi-arb/src/release_identity.py",
+    "inqsi-arb/tests/test_release_identity.py",
+    "inqsi-arb/tests/test_codex_cli_runner_contract.py",
+    "inqsi-arb/tests/test_engineering_controller.py",
 }
 
 _DANGEROUS_ADDED_SOURCE_PATTERNS = tuple(
