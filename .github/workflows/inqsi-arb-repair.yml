@@ -27,6 +27,8 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
       - uses: aws-actions/setup-sam@v2
+      - name: Stamp clean Python release identity
+        run: python inqsi-arb/ops/release_proof.py stamp
       - name: Build current main
         run: sam build --no-cached --template-file inqsi-arb/template.yaml
       - name: Redeploy current main once
@@ -51,12 +53,15 @@ jobs:
         run: |
           set -euo pipefail
           API_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ArbApiUrl'].OutputValue" --output text)
+          python inqsi-arb/ops/release_proof.py verify --api-url "$API_URL" --output arb-release-proof.json
           SPORTSBOOK_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-sportsbook-catalog-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='SportsbooksUrl'].OutputValue" --output text 2>/dev/null || true)
           python inqsi-arb/ops/controller.py --api-url "$API_URL" --sportsbook-url "$SPORTSBOOK_URL" --output arb-repair-proof.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: inqsi-arb-repair-${{ github.run_id }}
-          path: arb-repair-proof.json
+          path: |
+            arb-repair-proof.json
+            arb-release-proof.json
           if-no-files-found: warn
           retention-days: 30
