@@ -22,6 +22,7 @@ class Rule:
     version: str = "1"
     reviewed: bool = False
     source: str = ""
+    settlement_profile: str = ""
     overtime: Optional[bool] = None
     listed_pitcher: Optional[bool] = None
     participation_required: Optional[bool] = None
@@ -44,8 +45,6 @@ def register(rule: Rule) -> None:
 
 def lookup(book: str, sport: str, market_family: str, jurisdiction: str = "*") -> Optional[Rule]:
     b, s, m, j = map(_norm, (book, sport, market_family, jurisdiction))
-    # Exact book always required. Sport/market wildcard is allowed only when the
-    # reviewed rule itself explicitly declares it.
     for key in ((b, s, m, j), (b, s, m, "*"), (b, "*", m, j), (b, "*", m, "*")):
         rule = _RULES.get(key)
         if rule is not None:
@@ -67,6 +66,9 @@ def compatibility(books: Iterable[str], sport: str, market_family: str, jurisdic
             found.append(asdict(rule))
     if missing:
         return {"status": UNKNOWN, "missing_books": missing, "rules": found, "reason": "UNREVIEWED_OR_MISSING_RULE"}
+    profiles = {r.get("settlement_profile") for r in found if r.get("settlement_profile")}
+    if len(profiles) > 1:
+        return {"status": INCOMPATIBLE, "field": "settlement_profile", "values": sorted(profiles), "rules": found, "reason": "SETTLEMENT_PROFILE_CONFLICT"}
     material = (
         "overtime", "listed_pitcher", "participation_required", "retirement_policy",
         "shortened_game_policy", "push_policy",
@@ -79,7 +81,7 @@ def compatibility(books: Iterable[str], sport: str, market_family: str, jurisdic
                 "values": sorted(str(v) for v in values), "rules": found,
                 "reason": "SETTLEMENT_RULE_CONFLICT",
             }
-    return {"status": COMPATIBLE, "rules": found, "missing_books": []}
+    return {"status": COMPATIBLE, "rules": found, "missing_books": [], "settlement_profile": next(iter(profiles), "")}
 
 
 def coverage(books: Iterable[str], sport: str, market_family: str, jurisdiction: str = "*") -> Dict[str, Any]:
@@ -96,3 +98,43 @@ def coverage(books: Iterable[str], sport: str, market_family: str, jurisdiction:
 
 def registry_size() -> int:
     return len(_RULES)
+
+
+def registry_rows() -> List[Dict[str, Any]]:
+    return [asdict(_RULES[k]) for k in sorted(_RULES)]
+
+
+# Narrow reviewed seeds from current official house rules. These do not imply
+# compatibility for listed-pitcher, 3-way, alternate, period, prop, or other
+# unreviewed variants; those continue to fail closed.
+_DK_BASEBALL = "https://sportsbook.draftkings.com/help/sport-rules/baseball"
+_FD_BASEBALL = "https://www.fanduel.com/fanduel-sportsbook-house-rules-in"
+
+for _book, _source in (("draftkings", _DK_BASEBALL), ("fanduel", _FD_BASEBALL)):
+    register(Rule(
+        book=_book, sport="baseball", market_family="winner", reviewed=True,
+        version="2026-09-11", source=_source,
+        settlement_profile="mlb_full_game_2way_action_v1",
+        overtime=True, listed_pitcher=False,
+        shortened_game_policy="official_after_5_or_4.5_home_leading",
+        push_policy="tie_push",
+        notes="Default full-game 2-way MLB moneyline only; explicitly listed-pitcher and 3-way variants require separate rules.",
+    ))
+    register(Rule(
+        book=_book, sport="baseball", market_family="spreads", reviewed=True,
+        version="2026-09-11", source=_source,
+        settlement_profile="mlb_full_game_9_or_8.5_v1",
+        overtime=True, listed_pitcher=False,
+        shortened_game_policy="9_or_8.5_home_leading_unless_unconditionally_determined",
+        push_policy="push",
+        notes="Default full-game MLB run-line family; alternates/periods are not implied by this rule.",
+    ))
+    register(Rule(
+        book=_book, sport="baseball", market_family="totals", reviewed=True,
+        version="2026-09-11", source=_source,
+        settlement_profile="mlb_full_game_9_or_8.5_v1",
+        overtime=True, listed_pitcher=False,
+        shortened_game_policy="9_or_8.5_home_leading_unless_unconditionally_determined",
+        push_policy="push",
+        notes="Default full-game MLB total family; alternates/periods are not implied by this rule.",
+    ))
