@@ -17,7 +17,8 @@ def test_seven_day_calendar_boundary_and_future_exclusion():
 
 def test_split_has_no_overlap_and_requires_labels_and_counts():
     rows = [{'game_id': str(i), 'date': '2026-08-31' if i < 500 else '2026-09-01',
-             'home_win': i % 2, 'home_score': 3, 'away_score': 2} for i in range(600)]
+             'home_win': i % 2, 'home_score': 3, 'away_score': 2,
+             'label_completed_at': '2026-08-31T23:00:00Z' if i < 500 else '2026-09-02T02:00:00Z'} for i in range(600)]
     frame = pd.DataFrame(rows)
     train, test = split_recent(frame)
     assert len(train) == 500 and len(test) == 100
@@ -45,3 +46,12 @@ def test_promotion_requires_both_probability_metrics_and_same_sufficient_cohort(
     assert not accepted({'games': 100, 'brier': .23, 'logloss': .69}, old)
     assert not accepted(old, old)
     assert not accepted({'games': 99, 'brier': .23, 'logloss': .67}, old)
+
+
+def test_august_game_completed_after_holdout_start_cannot_train():
+    rows = [{'game_id': str(i), 'date': '2026-08-31' if i < 501 else '2026-09-01',
+             'home_win': i % 2, 'home_score': 3, 'away_score': 2,
+             'label_completed_at': '2026-08-31T23:00:00Z' if i < 500 else '2026-09-02T02:00:00Z'} for i in range(601)]
+    train, test = split_recent(pd.DataFrame(rows))
+    assert len(train) == 500 and len(test) == 100
+    assert '500' not in set(train.game_id)
