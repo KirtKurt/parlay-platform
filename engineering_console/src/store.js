@@ -58,6 +58,18 @@ export class JobStore {
 
   #prepare(job) {
     const persistedJob = sanitizeValue(job);
+    const runtimeInstruction = this.runtimeInstructions.get(job.id);
+    if (runtimeInstruction !== undefined) {
+      // The durable instruction remains redacted, but remember whether the exact
+      // runtime prompt can be reconstructed from durable bytes after a restart.
+      // Never silently run a redacted/altered prompt when the ephemeral original
+      // has been lost.
+      persistedJob.instructionRecoverable = persistedJob.instruction === runtimeInstruction;
+    } else if (typeof persistedJob.instructionRecoverable !== 'boolean') {
+      // Legacy records predate this marker. Treat them as recoverable only when
+      // durable sanitization is demonstrably a no-op on the stored instruction.
+      persistedJob.instructionRecoverable = sanitizeValue(persistedJob.instruction) === persistedJob.instruction;
+    }
     const jobBytes = Buffer.byteLength(JSON.stringify(persistedJob));
     if (jobBytes > MAX_JOB_RECORD_BYTES) {
       throw Object.assign(new Error('job_store_record_too_large'), { code: 'EFBIG' });
@@ -159,6 +171,10 @@ export class JobStore {
     const job = this.get(id);
     if (job && this.runtimeInstructions.has(id)) job.instruction = this.runtimeInstructions.get(id);
     return job;
+  }
+
+  hasRuntimeInstruction(id) {
+    return this.runtimeInstructions.has(id);
   }
 
   list(owner) {
