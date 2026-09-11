@@ -44,6 +44,23 @@ def test_rejects_calibration_tuning_against_incomplete_prospective_holdout() -> 
         validate(task, decision_history={"decisions": []})
 
 
+def test_rejects_generic_platt_isotonic_retraining_wording_when_holdout_is_short() -> None:
+    task = _task(
+        implementation=[
+            "Analyze and adjust model outputs to improve calibration.",
+            "Implement calibration techniques such as Platt scaling or isotonic regression.",
+            "Retrain model with adjusted calibration parameters.",
+            "Validate calibration improvement through holdout tests.",
+        ],
+        evidence=[
+            "Selected reliability calibration error is currently 0.172208, exceeding the required threshold of <= 0.08.",
+            "Current model lacks sufficient prospective selected recommendations (36 vs required 100).",
+        ],
+    )
+    with pytest.raises(ValueError, match="prospective holdout is underpowered"):
+        validate(task, decision_history={"decisions": []})
+
+
 def test_rejects_mutation_or_backfill_of_prospective_evaluation_rows() -> None:
     task = _task(
         implementation=["Backfill prospective rows so the selected recommendation count reaches 100."],
