@@ -51,6 +51,8 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
+      - name: Remove tracked evidence before this run
+        run: rm -f runtime_reports/mlb_team_context_live_proof_latest.json
       - name: Read current official source and strongly consistent persisted rows
         run: PYTHONPATH=hello_world python scripts/verify_mlb_team_context.py --persisted
       - uses: actions/upload-artifact@v4
