@@ -90,7 +90,18 @@ export function createRunner(config, store, CodexClass = Codex) {
       }
       store.save(job);
     } catch (error) {
-      if (error?.code === 'ESTALE') return;
+      if (['ESTALE', 'EWRITEUNKNOWN', 'EBUSY'].includes(error?.code)) throw error;
+      if (error?.code === 'EFBIG') {
+        // Do not retry the same oversized in-memory record while recording its
+        // failure. Start with the last confirmed snapshot and retain its data.
+        const latest = store.get(job.id);
+        if (latest && !['merged', 'merge_conflict'].includes(latest.publicationState) &&
+            !['completed', 'cancelled'].includes(latest.status)) {
+          latest.status = 'blocked'; latest.error = 'job_store_record_too_large';
+          await store.saveAsync(latest);
+        }
+        return;
+      }
       job.status = signal.aborted || job.cancelRequested ? 'cancelled' : 'failed';
       job.error = sanitize(error?.message || error);
       store.save(job);
