@@ -110,8 +110,9 @@ export function EngineeringConsole() {
         ? 'Admin · access denied'
         : 'Engineering service unavailable';
 
-  const publicationVisible = Boolean(selected?.publicationState && selected.publicationState !== 'no_changes') || ['awaiting_publication', 'published'].includes(selected?.status || '');
-  const canCancel = Boolean(selected) && (['queued', 'running', 'awaiting_publication', 'published'].includes(selected.status) || (selected.status === 'failed' && publicationVisible));
+  const selectedStatus = selected?.status || '';
+  const publicationVisible = Boolean(selected?.publicationState && selected.publicationState !== 'no_changes') || ['awaiting_publication', 'published'].includes(selectedStatus);
+  const canCancel = ['queued', 'running', 'awaiting_publication', 'published'].includes(selectedStatus) || (selectedStatus === 'failed' && publicationVisible);
 
   return <main className="shell engineering-console">
     <header className="topbar">
