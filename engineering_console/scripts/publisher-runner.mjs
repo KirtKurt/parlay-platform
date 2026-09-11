@@ -17,7 +17,7 @@ import { JobStore } from '../src/store.js';
 import { sanitize } from '../src/sanitize.js';
 import { loadPublicationPolicy, validatePublisherRequest, validatePullRequestIdentity, PROOF_WORKFLOW } from '../src/publication-policy.js';
 import { assertMainAncestor, validatePublicationHistory, validateMergedPublication } from '../src/publication-git-guard.js';
-import { beginPublicationMerge } from '../src/publication-decision.js';
+import { beginPublicationMerge, publicationDecision } from '../src/publication-decision.js';
 
 const exec = promisify(execFile);
 
@@ -103,31 +103,56 @@ function claimDirectories() {
 
 async function findExistingPullRequest(branch) {
   const pulls = await github(`/pulls?state=all&head=${encodeURIComponent(`${owner}:${branch}`)}&base=main&per_page=20`);
-  return pulls.find((pr) => pr.head?.ref === branch && pr.base?.ref === 'main') || null;
+  if (!Array.isArray(pulls) || pulls.length >= 20) throw new Error('publication_pr_listing_incomplete');
+  const matches = pulls.filter((pr) => pr.head?.ref === branch && pr.base?.ref === 'main');
+  if (matches.length > 1) throw new Error('publication_pr_identity_ambiguous');
+  return matches[0] || null;
 }
 
 async function processClaim(claimDir) {
-  const manifestPath = path.join(claimDir, 'manifest.json');
-  const patchPath = path.join(claimDir, 'patch.diff');
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  const patch = fs.readFileSync(patchPath, 'utf8');
+  const manifest = JSON.parse(fs.readFileSync(path.join(claimDir, 'manifest.json'), 'utf8'));
+  const patch = fs.readFileSync(path.join(claimDir, 'patch.diff'), 'utf8');
   validatePublisherRequest(manifest, patch, policy);
   if (path.basename(claimDir) !== `.processing-${manifest.jobId}`) throw new Error('publication_claim_identity_mismatch');
   const previous = readPublicationReceipt(dataDir, manifest.jobId);
-  if (previous?.state === 'merged' || previous?.state === 'cancelled') { record(previous); return true; }
-  const assertNotCancelled = () => {
-    const job = new JobStore(dataDir).get(manifest.jobId);
-    if (!job || job.cancelRequested || job.status === 'cancelled') throw new Error('publication_cancelled');
-  };
-  assertNotCancelled();
+  if (previous?.state === 'merged' || previous?.state === 'merge_conflict') { record(previous); return true; }
   if (manifest.repository !== repository) throw new Error('publisher_repository_mismatch');
+
+  const store = new JobStore(dataDir);
+  const cancelled = () => {
+    const job = store.get(manifest.jobId);
+    if (!job) throw new Error('publication_job_missing');
+    return publicationDecision(dataDir, manifest.jobId) === 'cancelled' || job.cancelRequested || job.status === 'cancelled';
+  };
+  const assertNotCancelled = () => { if (cancelled()) throw new Error('publication_cancelled'); };
+  const receipt = (pr, publishedCommit, fields) => ({
+    jobId: manifest.jobId,
+    branch: manifest.branch,
+    commit: publishedCommit,
+    pullRequest: pr?.html_url,
+    pullRequestNumber: pr?.number,
+    patchSha256: manifest.patchSha256,
+    ...fields
+  });
 
   const checkout = fs.mkdtempSync(path.join(os.tmpdir(), 'inqsi-publication-'));
   try {
+    // Discover the immutable PR before considering branch recreation. GitHub's
+    // pull ref survives deletion of the source branch after a merge.
+    let pr = await findExistingPullRequest(manifest.branch);
+    if (pr) pr = await github(`/pulls/${pr.number}`);
+    if (!pr && cancelled()) {
+      record(receipt(null, null, { state: 'cancelled', reason: 'publication_cancelled', observedGitHubState: 'no_pull_request' }));
+      return true;
+    }
+
     await git(checkout, ['init']);
     await git(checkout, ['remote', 'add', 'origin', `https://github.com/${repository}.git`]);
-    await git(checkout, ['fetch', 'origin', 'refs/heads/main:refs/remotes/origin/main']);
-    let mainRevision = await git(checkout, ['rev-parse', 'refs/remotes/origin/main']);
+    const refreshMain = async () => {
+      await git(checkout, ['fetch', 'origin', 'refs/heads/main:refs/remotes/origin/main']);
+      return git(checkout, ['rev-parse', 'refs/remotes/origin/main']);
+    };
+    let mainRevision = await refreshMain();
     await assertMainAncestor(checkout, manifest.startingRevision, mainRevision);
     await git(checkout, ['checkout', '-b', manifest.branch, manifest.startingRevision]);
     fs.writeFileSync(path.join(checkout, '.inqsi.patch'), patch, { mode: 0o600 });
@@ -135,8 +160,7 @@ async function processClaim(claimDir) {
     fs.rmSync(path.join(checkout, '.inqsi.patch'), { force: true });
 
     const applied = await collectChanges(checkout, manifest.startingRevision);
-    const expected = [...manifest.changedFiles].sort();
-    if (JSON.stringify(applied.changedFiles) !== JSON.stringify(expected)) throw new Error('publication_file_set_mismatch');
+    if (JSON.stringify(applied.changedFiles) !== JSON.stringify([...manifest.changedFiles].sort())) throw new Error('publication_file_set_mismatch');
     if (applied.changedFiles.some((file) => !withinAuthorizedScope(file, manifest.authorizedScope))) throw new Error('publication_scope_violation');
 
     await git(checkout, ['config', 'user.name', 'InQsi Engineering Publisher']);
@@ -144,28 +168,36 @@ async function processClaim(claimDir) {
     await git(checkout, ['commit', '-m', `InQsi engineering job ${manifest.jobId}`]);
     const localCommit = await git(checkout, ['rev-parse', 'HEAD']);
     const localTree = await git(checkout, ['rev-parse', 'HEAD^{tree}']);
-    await validatePublicationHistory(checkout, manifest, localCommit, mainRevision, policy);
 
-    let publishedCommit = null;
-    await withAskPass(async (env) => {
-      const remote = await git(checkout, ['ls-remote', '--heads', 'origin', `refs/heads/${manifest.branch}`], env);
-      if (remote) {
-        await git(checkout, ['fetch', 'origin', `refs/heads/${manifest.branch}`], env);
-        const remoteTree = await git(checkout, ['rev-parse', 'FETCH_HEAD^{tree}'], env);
-        if (remoteTree !== localTree) throw new Error('publication_branch_collision');
-        publishedCommit = await git(checkout, ['rev-parse', 'FETCH_HEAD'], env);
-        const parents = await git(checkout, ['show', '-s', '--format=%P', publishedCommit], env);
-        if (parents !== manifest.startingRevision) throw new Error('publication_unexpected_parent');
-      } else {
-        assertNotCancelled();
-        await git(checkout, ['push', 'origin', `HEAD:refs/heads/${manifest.branch}`], env);
-        publishedCommit = localCommit;
-      }
-    });
+    const validatePublishedHead = async (head) => {
+      if (!/^[0-9a-f]{40}$/.test(head || '')) throw new Error('publication_head_missing');
+      if (await git(checkout, ['rev-parse', `${head}^{tree}`]) !== localTree) throw new Error('publication_branch_collision');
+      if (await git(checkout, ['show', '-s', '--format=%P', head]) !== manifest.startingRevision) throw new Error('publication_unexpected_parent');
+    };
 
-    let pr = await findExistingPullRequest(manifest.branch);
-    if (pr && !pr.merged_at && pr.state !== 'open') throw new Error('publication_pr_closed_without_merge');
-    if (!pr) {
+    let publishedCommit;
+    if (pr) {
+      // allowClosed only permits read/close reconciliation, never a merge.
+      validatePullRequestIdentity(pr, manifest, pr.head?.sha, { allowClosed: true });
+      await git(checkout, ['fetch', 'origin', `refs/pull/${pr.number}/head`]);
+      publishedCommit = await git(checkout, ['rev-parse', 'FETCH_HEAD']);
+      validatePullRequestIdentity(pr, manifest, publishedCommit, { allowClosed: true });
+      await validatePublishedHead(publishedCommit);
+    } else {
+      await validatePublicationHistory(checkout, manifest, localCommit, mainRevision, policy);
+      await withAskPass(async (env) => {
+        const remote = await git(checkout, ['ls-remote', '--heads', 'origin', `refs/heads/${manifest.branch}`], env);
+        if (remote) {
+          await git(checkout, ['fetch', 'origin', `refs/heads/${manifest.branch}`], env);
+          publishedCommit = await git(checkout, ['rev-parse', 'FETCH_HEAD'], env);
+          await validatePublishedHead(publishedCommit);
+        } else {
+          assertNotCancelled();
+          await git(checkout, ['push', 'origin', `HEAD:refs/heads/${manifest.branch}`], env);
+          publishedCommit = localCommit;
+        }
+      });
+      assertNotCancelled();
       pr = await github('/pulls', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -178,54 +210,105 @@ async function processClaim(claimDir) {
       });
     }
 
-    pr = await github(`/pulls/${pr.number}`);
-    validatePullRequestIdentity(pr, manifest, publishedCommit);
-    await git(checkout, ['fetch', 'origin', 'refs/heads/main:refs/remotes/origin/main']);
-    mainRevision = await git(checkout, ['rev-parse', 'refs/remotes/origin/main']);
-    if (pr.merged_at) {
-      if (!/^[0-9a-f]{40}$/i.test(pr.merge_commit_sha || '')) throw new Error('publication_merge_commit_missing');
-      await git(checkout, ['fetch', 'origin', pr.merge_commit_sha]);
-      await validateMergedPublication(checkout, manifest, publishedCommit, pr.merge_commit_sha, mainRevision, policy);
-    } else {
-      await validatePublicationHistory(checkout, manifest, publishedCommit, mainRevision, policy);
-    }
-
-    const checks = await github(`/commits/${publishedCommit}/check-runs?per_page=100`);
-    const trustedChecks = (checks.check_runs || []).filter((run) => run.head_sha === publishedCommit && run.app?.slug === 'github-actions');
-    const evaluation = evaluateRequiredChecks(trustedChecks, policy.requiredChecks);
-    if (evaluation.state === 'pending') {
-      record({ jobId: manifest.jobId, state: 'checks_pending', reason: evaluation.reason, branch: manifest.branch, commit: publishedCommit, pullRequest: pr.html_url, pullRequestNumber: pr.number, patchSha256: manifest.patchSha256 });
-      return false;
-    }
-    if (evaluation.state === 'failed') {
-      record({ jobId: manifest.jobId, state: 'checks_failed', reason: evaluation.reason, branch: manifest.branch, commit: publishedCommit, pullRequest: pr.html_url, pullRequestNumber: pr.number, patchSha256: manifest.patchSha256 });
-      return false;
-    }
-
-    for (const name of policy.requiredChecks) {
-      const check = trustedChecks.filter((item) => item.name === name).sort((a, b) => b.id - a.id)[0];
-      const match = String(check?.details_url || '').match(/^https:\/\/github\.com\/KirtKurt\/parlay-platform\/actions\/runs\/([0-9]+)(?:\/|$)/);
-      if (!match) throw new Error('publication_check_provenance_missing');
-      const run = await github(`/actions/runs/${match[1]}`);
-      if (run.path !== PROOF_WORKFLOW || run.event !== 'pull_request' || run.head_sha !== publishedCommit || run.head_repository?.full_name !== repository || run.status !== 'completed' || run.conclusion !== 'success' || !(run.pull_requests || []).some((item) => item.number === pr.number)) throw new Error('publication_check_provenance_mismatch');
-    }
-    if (pr.merged_at) {
-      record({ jobId: manifest.jobId, state: 'merged', branch: manifest.branch, commit: publishedCommit, pullRequest: pr.html_url, pullRequestNumber: pr.number, mergeCommit: pr.merge_commit_sha, patchSha256: manifest.patchSha256 });
+    const verifyChecks = async (observedPr) => {
+      const checks = await github(`/commits/${publishedCommit}/check-runs?per_page=100`);
+      const trustedChecks = (checks.check_runs || []).filter((run) => run.head_sha === publishedCommit && run.app?.slug === 'github-actions');
+      const evaluation = evaluateRequiredChecks(trustedChecks, policy.requiredChecks);
+      if (evaluation.state !== 'passed') {
+        record(receipt(observedPr, publishedCommit, {
+          state: evaluation.state === 'pending' ? 'checks_pending' : 'checks_failed',
+          reason: evaluation.reason,
+          observedGitHubState: observedPr.merged_at ? 'merged' : observedPr.state
+        }));
+        return false;
+      }
+      for (const name of policy.requiredChecks) {
+        const check = trustedChecks.filter((item) => item.name === name).sort((a, b) => b.id - a.id)[0];
+        const match = String(check?.details_url || '').match(/^https:\/\/github\.com\/KirtKurt\/parlay-platform\/actions\/runs\/([0-9]+)(?:\/|$)/);
+        if (!match) throw new Error('publication_check_provenance_missing');
+        const run = await github(`/actions/runs/${match[1]}`);
+        if (run.path !== PROOF_WORKFLOW || run.event !== 'pull_request' || run.head_sha !== publishedCommit || run.head_repository?.full_name !== repository || run.status !== 'completed' || run.conclusion !== 'success' || !(run.pull_requests || []).some((item) => item.number === observedPr.number)) throw new Error('publication_check_provenance_mismatch');
+      }
       return true;
-    }
+    };
+
+    const finishMerged = async (observedPr, expectedMerge = null) => {
+      validatePullRequestIdentity(observedPr, manifest, publishedCommit);
+      if (observedPr.state !== 'closed' || !observedPr.merged_at || !/^[0-9a-f]{40}$/.test(observedPr.merge_commit_sha || '')) throw new Error('publication_merge_commit_missing');
+      if (expectedMerge && observedPr.merge_commit_sha !== expectedMerge) throw new Error('publication_merge_response_mismatch');
+      await git(checkout, ['fetch', 'origin', observedPr.merge_commit_sha]);
+      mainRevision = await refreshMain();
+      await validateMergedPublication(checkout, manifest, publishedCommit, observedPr.merge_commit_sha, mainRevision, policy);
+      if (!await verifyChecks(observedPr)) return false;
+      const conflict = cancelled();
+      // An external actor can merge despite our accepted cancellation. Preserve
+      // both facts and block automatic completion rather than erasing either.
+      record(receipt(observedPr, publishedCommit, {
+        state: conflict ? 'merge_conflict' : 'merged',
+        mergeCommit: observedPr.merge_commit_sha,
+        observedGitHubState: 'merged',
+        verificationMain: mainRevision,
+        completionMode: conflict ? 'manual_reconciliation_required' : expectedMerge ? 'autonomous_verified' : 'external_verified',
+        ...(conflict ? { reason: 'verified_external_merge_with_accepted_cancellation', cancelRequested: true } : {})
+      }));
+      return true;
+    };
+
+    const finishCancellation = async () => {
+      let latest = await github(`/pulls/${pr.number}`);
+      validatePullRequestIdentity(latest, manifest, publishedCommit, { allowClosed: true });
+      if (latest.merged_at) return await finishMerged(latest);
+      if (latest.state === 'open') {
+        // A rejected/ambiguous close is not proof of cancellation. Preserve the
+        // claim and re-read the outcome, including a concurrent external merge.
+        let closeError;
+        try {
+          await github(`/pulls/${pr.number}`, {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ state: 'closed' })
+          });
+        } catch (error) { closeError = error; }
+        latest = await github(`/pulls/${pr.number}`);
+        validatePullRequestIdentity(latest, manifest, publishedCommit, { allowClosed: true });
+        if (latest.merged_at) return await finishMerged(latest);
+        if (latest.state !== 'closed') throw closeError || new Error('publication_cancellation_unconfirmed');
+      }
+      record(receipt(latest, publishedCommit, { state: 'cancelled', reason: 'publication_cancelled', observedGitHubState: 'closed' }));
+      return true;
+    };
 
     pr = await github(`/pulls/${pr.number}`);
+    validatePullRequestIdentity(pr, manifest, publishedCommit, { allowClosed: true });
+    if (pr.merged_at) return await finishMerged(pr);
+    if (cancelled()) return await finishCancellation();
+    validatePullRequestIdentity(pr, manifest, publishedCommit);
+    mainRevision = await refreshMain();
+    await validatePublicationHistory(checkout, manifest, publishedCommit, mainRevision, policy);
+    if (!await verifyChecks(pr)) return false;
+
+    pr = await github(`/pulls/${pr.number}`);
+    validatePullRequestIdentity(pr, manifest, publishedCommit, { allowClosed: true });
+    if (pr.merged_at) return await finishMerged(pr);
+    if (cancelled()) return await finishCancellation();
     validatePullRequestIdentity(pr, manifest, publishedCommit);
     assertNotCancelled();
     beginPublicationMerge(dataDir, manifest.jobId);
-    const merge = await github(`/pulls/${pr.number}/merge`, {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sha: publishedCommit, merge_method: 'merge', commit_title: `InQsi Engineering job ${manifest.jobId}` })
-    });
-    if (!merge.merged) throw new Error('publication_merge_rejected');
-    record({ jobId: manifest.jobId, state: 'merged', branch: manifest.branch, commit: publishedCommit, pullRequest: pr.html_url, pullRequestNumber: pr.number, mergeCommit: merge.sha, patchSha256: manifest.patchSha256 });
-    return true;
+
+    let merge;
+    try {
+      merge = await github(`/pulls/${pr.number}/merge`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sha: publishedCommit, merge_method: 'merge', commit_title: `InQsi Engineering job ${manifest.jobId}` })
+      });
+    } catch (error) {
+      const latest = await github(`/pulls/${pr.number}`);
+      if (latest.merged_at) return await finishMerged(latest);
+      throw error;
+    }
+    if (merge.merged !== true || !/^[0-9a-f]{40}$/.test(merge.sha || '')) throw new Error('publication_merge_rejected');
+    return await finishMerged(await github(`/pulls/${pr.number}`), merge.sha);
   } finally {
     fs.rmSync(checkout, { recursive: true, force: true });
   }
@@ -241,12 +324,9 @@ for (const claim of claimDirectories()) {
   } catch (error) {
     const reason = String(error?.message || error);
     if (reason === 'publication_cancelled') {
-      try {
-        const pr = await findExistingPullRequest(`inqsi/publish-${id}`);
-        if (pr?.state === 'open' && !pr.merged_at) await github(`/pulls/${pr.number}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ state: 'closed' }) });
-      } catch { /* cancellation remains authoritative even if PR cleanup is unavailable */ }
-      record({ jobId: id, state: 'cancelled', reason: 'publication_cancelled' });
-      archiveClaim(claim, id);
+      // Cancellation can win immediately before commitment. Keep the request
+      // retriable until the publisher verifies the actual GitHub outcome.
+      record({ jobId: id, state: 'cancellation_pending', reason });
       continue;
     }
     failed = true;
