@@ -95,4 +95,4 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
   });
 }
 
-if (process.argv[1] === new URL(import.meta.url).pathname) { const config = loadConfig(); createServer({ config }).listen(config.port, '127.0.0.1', () => console.log(`InQsi engineering service listening on ${config.port}`)); }
+if (process.argv[1] === new URL(import.meta.url).pathname) { const config = loadConfig(); createServer({ config }).listen(config.port, config.bindAddress, () => console.log(`InQsi engineering service listening on ${config.bindAddress}:${config.port}`)); }
