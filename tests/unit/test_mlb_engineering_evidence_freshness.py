@@ -23,6 +23,18 @@ def _history(*lines: str) -> str:
     )
 
 
+def _source_history(*lines: str) -> str:
+    return json.dumps(
+        {
+            "kind": "operational_source_history",
+            "topic": "mlb_fundamentals_runtime",
+            "readOnly": True,
+            "productionAuthorityChanged": False,
+            "content": "\n".join(lines),
+        }
+    )
+
+
 def _report(path: str, at: str, content: str) -> str:
     return json.dumps(
         {
@@ -66,6 +78,31 @@ def test_newer_reviewed_fundamentals_repair_supersedes_older_scoring_snapshot() 
     assert "FUNDAMENTALS_FEATURE_PIPELINE_INACTIVE" not in filtered
     assert "evidence_supersession_receipt" in filtered
     assert "removedRuntimeReportCount\": 1" in filtered
+
+
+def test_path_specific_source_history_is_durable_when_recent_log_has_only_noise() -> None:
+    evidence = "\n".join(
+        [
+            _history(
+                "noise1 2026-09-11T15:00:00+00:00 Publish complete tennis daily card [skip ci]",
+                "noise2 2026-09-11T14:58:00+00:00 Merge PR #787: disable unsafe manual MLB planner dispatch",
+            ),
+            _source_history(
+                "source1 2026-09-11T14:40:31+00:00 Merge PR #786: bind MLB provenance diagnostics to durable prediction proof",
+                "source2 2026-09-11T14:35:00+00:00 Merge PR #785: credit MLB exact verified pre-T45 batting orders",
+            ),
+            _report(
+                "runtime_reports/mlb_scoring_guard_status_latest.json",
+                "2026-09-11T13:46:00Z",
+                '{"blockers":["source_failure"]}',
+            ),
+        ]
+    ) + "\n"
+
+    assert recent_fundamentals_repair_cutoff(evidence) == _epoch("2026-09-11T14:40:31Z")
+    filtered = filter_superseded_fundamentals_evidence(evidence)
+    assert "mlb_scoring_guard_status_latest.json" not in filtered
+    assert "evidence_supersession_receipt" in filtered
 
 
 def test_new_observation_after_repair_remains_authoritative_evidence() -> None:
