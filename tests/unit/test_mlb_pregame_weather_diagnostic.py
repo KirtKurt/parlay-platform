@@ -57,6 +57,8 @@ def _provider(*, game=None, venue=None, weather=None, state=None):
         if "/schedule?" in url:
             return {"dates": [{"date": "2026-09-11", "games": [schedule_game]}]}
         if "/venues/2394" in url:
+            if state is not None and "venue_receipt" in state:
+                state["now"] = state["venue_receipt"]
             return venue_payload
         assert "open-meteo.com/v1/forecast" in url
         if state is not None and "weather_receipt" in state:
@@ -74,6 +76,7 @@ def test_valid_weather_is_passive_source_evidence_only():
     assert report["productionAuthorityChanged"] is False
     row = report["games"][0]
     assert row["sourceValid"] is True and row["preT45"] is True
+    assert row["venueObservedAtUtc"] == NOW.isoformat().replace("+00:00", "Z")
     assert row["weather"]["temperatureF"] == 72.0
     assert row["weather"]["windSpeedMph"] == 8.0
     assert row["roofStatus"] is None and row["canCompleteWeatherRoofGroup"] is False
@@ -86,6 +89,21 @@ def test_exact_official_venue_identity_is_required():
     assert row["sourceValid"] is False
     assert any("venue_identity_mismatch" in error for error in row["errors"])
     assert report["roofStatusClaimCount"] == 0
+
+
+def test_slow_venue_lookup_crossing_t45_stops_before_weather_request():
+    state = {"now": START - timedelta(minutes=46), "venue_receipt": START - timedelta(minutes=44)}
+    calls = []
+    provider = _provider(state=state)
+    def fetch(url, timeout):
+        calls.append(url)
+        return provider(url, timeout)
+    report = SUBJECT.build_report(clock=lambda: state["now"], fetch_json=fetch)
+    row = report["games"][0]
+    assert row["sourceValid"] is False
+    assert row["errors"] == ["venue_response_received_at_or_after_t45"]
+    assert row["weatherObservedAtUtc"] is None
+    assert not any("open-meteo.com" in url for url in calls)
 
 
 def test_slow_weather_response_crossing_t45_is_not_backdated():
