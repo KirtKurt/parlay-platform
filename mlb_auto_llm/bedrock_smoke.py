@@ -35,6 +35,17 @@ def _runtime_route_priority(route_id: str) -> Tuple[int, str]:
     return (2, value)
 
 
+def _planner_prompt(event: Any) -> str | None:
+    if not isinstance(event, dict) or event.get("mode") != "engineering_plan":
+        return None
+    prompt = str(event.get("prompt") or "")
+    if not prompt.strip():
+        raise ValueError("ENGINEERING_PLAN_PROMPT_REQUIRED")
+    if len(prompt.encode("utf-8")) > 50000:
+        raise ValueError("ENGINEERING_PLAN_PROMPT_TOO_LARGE")
+    return prompt
+
+
 def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
     # Refresh endpoint-native catalogs, but retain warm-container failure
     # cooldowns so a deployment probe cannot repeatedly hammer routes already
@@ -43,25 +54,27 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
     mantle = mantle_models()
     runtime = runtime_models()
 
-    # A health check must prove the Bedrock service, not a single model/Region.
-    # Prefer geographic cross-Region profiles, then global profiles, before
-    # direct model pools. Keep the probe bounded while surviving a depleted
-    # per-model/per-Region daily-token allocation.
+    # A health check and the read-only engineering planner both prove/use the
+    # Bedrock service through the same bounded failover chain. No storage or
+    # production authority is available in this Lambda.
     route_limit = max(
         1, int(os.getenv("MLB_AUTO_BEDROCK_SMOKE_ROUTE_LIMIT", "12"))
     )
     models = sorted(runtime, key=_runtime_route_priority)[:route_limit]
     attempt_limit = max(1, len(models))
+    planner_prompt = _planner_prompt(event)
+    prompt = planner_prompt if planner_prompt is not None else "Return only the word OK."
     result = invoke_chain_text(
-        "Return only the word OK.",
+        prompt,
         models,
-        max_tokens=8,
-        temperature=0.0,
+        max_tokens=5000 if planner_prompt is not None else 8,
+        temperature=0.1 if planner_prompt is not None else 0.0,
         top_p=0.9,
         max_attempts=attempt_limit,
     )
     common = {
         "service": "mlb-auto-llm-bedrock-smoke",
+        "mode": "engineering_plan" if planner_prompt is not None else "smoke",
         "configuredRegions": configured_regions(),
         "configuredModelCount": len(models),
         "routeAttemptLimit": attempt_limit,
@@ -86,7 +99,7 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
             "ok": False,
             "errors": [{"errorCode": "EMPTY_BEDROCK_RESPONSE"}],
         }
-    return {
+    payload = {
         **common,
         "ok": True,
         "routeId": result.get("routeId"),
@@ -96,3 +109,6 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
         "responseNonEmpty": True,
         "errorsBeforeSuccess": result.get("errorsBeforeSuccess") or [],
     }
+    if planner_prompt is not None:
+        payload["text"] = text
+    return payload
