@@ -127,14 +127,14 @@ export function EngineeringConsole() {
             <textarea required value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Describe the engineering change and acceptance checks…" />
           </label>
           <label>Authorized paths (comma-separated)
-            <input required value={scope} onChange={(event) => setScope(event.target.value)} placeholder="Choose an allowed scope explicitly" />
+            <input required placeholder="Choose an approved scope, such as engineering_console_publication_proof" value={scope} onChange={(event) => setScope(event.target.value)} />
           </label>
           <div className="scope-card">
             <b>KirtKurt/parlay-platform</b>
             <span>Starting revision: repository HEAD</span>
             <span>Worker credentials: repository-scoped only</span>
           </div>
-          <button className="primary-button" disabled={authState !== 'verified'}>Submit job</button>
+          <button className="primary-button" disabled={authState !== 'verified' || !scope.trim()}>Submit job</button>
         </form>
         {message && <p role="alert">{message}</p>}
 
