@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import fs from 'node:fs';
 import path from 'node:path';
 
 const exec = promisify(execFile);
@@ -7,6 +8,11 @@ const exec = promisify(execFile);
 async function runGit(cwd, args, { trim = true } = {}) {
   const { stdout } = await exec('git', args, { cwd, maxBuffer: 20 * 1024 * 1024 });
   return trim ? stdout.trim() : stdout;
+}
+
+async function maybeGit(cwd, args) {
+  try { return await runGit(cwd, args); }
+  catch { return null; }
 }
 
 export async function git(cwd, args) {
@@ -28,7 +34,23 @@ export async function resolveRevision(repo, requested = 'HEAD') {
 export async function createWorkspace(config, job) {
   const branch = `inqsi/job-${job.id}`;
   const workspace = path.join(config.workspaceRoot, job.id);
-  await exec('mkdir', ['-p', config.workspaceRoot]);
+  fs.mkdirSync(config.workspaceRoot, { recursive: true, mode: 0o700 });
+
+  if (fs.existsSync(workspace)) {
+    const currentBranch = await maybeGit(workspace, ['branch', '--show-current']);
+    if (currentBranch !== branch) throw new Error('workspace_branch_mismatch');
+    return { branch, workspace };
+  }
+
+  await git(config.repository, ['worktree', 'prune']);
+  const existing = await maybeGit(config.repository, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`]);
+  if (existing) {
+    const base = await maybeGit(config.repository, ['merge-base', '--is-ancestor', job.startingRevision, existing]);
+    if (base === null) throw new Error('workspace_branch_starting_revision_mismatch');
+    await git(config.repository, ['worktree', 'add', workspace, branch]);
+    return { branch, workspace };
+  }
+
   await git(config.repository, ['worktree', 'add', '-b', branch, workspace, job.startingRevision]);
   return { branch, workspace };
 }
