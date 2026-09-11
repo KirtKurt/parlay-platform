@@ -54,6 +54,30 @@ test('redacted runtime instruction is marked nonrecoverable and never replayed a
   assert.deepEqual(enqueued, []);
 });
 
+test('legacy redacted durable instruction without recovery marker also fails closed', (t) => {
+  const dataDir = fixture(t);
+  const initial = new JobStore(dataDir);
+  const job = initial.create({ instruction: 'password=fixture-value write the bounded proof', authorizedScope: [PROOF_ROOT] }, 'owner', 'a'.repeat(40));
+  job.status = 'running';
+  initial.save(job);
+
+  const target = initial.file(job.id);
+  const legacy = JSON.parse(fs.readFileSync(target, 'utf8'));
+  assert.match(legacy.instruction, /\[REDACTED\]/);
+  delete legacy.instructionRecoverable;
+  fs.writeFileSync(target, `${JSON.stringify(legacy, null, 2)}\n`, { mode: 0o600 });
+
+  const recoveredStore = new JobStore(dataDir);
+  const enqueued = [];
+  const server = createServer({ config: config(dataDir), authorizer: async () => ({ id: 'owner' }), store: recoveredStore, queue: passiveQueue(enqueued) });
+  t.after(() => server.close());
+
+  const recovered = recoveredStore.get(job.id);
+  assert.equal(recovered.status, 'blocked');
+  assert.equal(recovered.error, 'runtime_instruction_unavailable_after_restart');
+  assert.deepEqual(enqueued, []);
+});
+
 test('unchanged durable instruction remains restart-recoverable', (t) => {
   const dataDir = fixture(t);
   const initial = new JobStore(dataDir);
