@@ -24,7 +24,7 @@ export class DurableQueue extends EventEmitter {
     try {
       while (this.pending.length && this.active.size < this.maxConcurrent) {
         const id = this.pending.shift();
-        const job = this.store.get(id);
+        const job = this.store.getForExecution(id);
         if (!job || job.status !== 'queued') continue;
 
         const controller = new AbortController();
