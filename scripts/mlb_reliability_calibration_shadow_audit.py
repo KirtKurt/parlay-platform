@@ -76,7 +76,7 @@ def audit(dataset: Dict[str, Any], challenger: Dict[str, Any], provenance: Dict[
     calibrated_later = _apply_calibrator(later, calibrator)
     threshold = walk_forward.select_reliability_threshold(
         calibrated_later,
-        minimum_selected=min(30, len(calibrated_later)),
+        minimum_selected=30,
         minimum_coverage=0.10,
     )
     if threshold.get("ok") is not True:
