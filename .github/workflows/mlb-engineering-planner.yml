@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-          fetch-depth: 30
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -82,10 +82,15 @@ jobs:
               'mlb_trainer_runtime_error',
               'mlb_trainer_function_error',
           )
-          # Echo source-honest accumulation/capture blockers and only the measured
-          # (non-null) reliability-calibration miss into the full-packet summary.
-          # Generic/null calibration diagnostics remain in their source reports and
-          # cannot become task authority merely because a gate field exists.
+          fundamentals_operational_paths = (
+              'hello_world/mlb_fundamentals_scoring_bridge_v1.py',
+              'hello_world/mlb_fundamentals_lock_authority_v1.py',
+              'hello_world/mlb_fundamentals_snapshot_v2.py',
+              'hello_world/mlb_statsapi_team_context.py',
+              'scripts/mlb_scoring_guard_status.py',
+              'scripts/mlb_scoring_guard_post_persistence.py',
+              'scripts/mlb_fundamentals_provenance_diagnostic.py',
+          )
           focus_signals = {
               'data_capture': (
                   'missing_t10_snapshots', 'coverage_mismatch', 'source_failure',
@@ -156,17 +161,44 @@ jobs:
                   ['git', 'log', '--date=iso-strict', '--pretty=format:%H %ad %s', '-20'],
                   text=True,
               )
-              # Recent-main history is task-completion evidence, not operational
-              # blocker evidence. Neutralize the bare token used by the runtime
-              # reliability scanner while preserving the human-readable subject.
               git_log = git_log.replace('FunctionError', 'Function-Error').replace('functionerror', 'function-error')
           except Exception:
               git_log = ''
+
+          source_history = []
+          for source_path in fundamentals_operational_paths:
+              try:
+                  # Use the first-parent landing commit and committer timestamp so
+                  # the cutoff represents when reviewed source actually reached main,
+                  # not the topic-branch author time. Keep receipt text neutral and
+                  # suppress patches so blocker scanners see metadata only.
+                  row = subprocess.check_output(
+                      [
+                          'git', 'log', '--first-parent', '--diff-merges=first-parent', '--no-patch', '-1',
+                          '--date=iso-strict', '--pretty=format:%H %cI operational-source-change',
+                          '--', source_path,
+                      ],
+                      text=True,
+                  ).strip()
+              except Exception:
+                  row = ''
+              if row:
+                  source_history.append(row)
+
           chunks = [json.dumps({
               'kind': 'recent_main_history',
               'currentCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
               'content': git_log,
           }, ensure_ascii=False)]
+          if source_history:
+              chunks.append(json.dumps({
+                  'kind': 'operational_source_history',
+                  'topic': 'mlb_fundamentals_runtime',
+                  'readOnly': True,
+                  'productionAuthorityChanged': False,
+                  'paths': list(fundamentals_operational_paths),
+                  'content': '\n'.join(source_history),
+              }, ensure_ascii=False))
           for path in selected:
               observed, text = candidates[path]
               chunks.append(json.dumps({
@@ -176,11 +208,6 @@ jobs:
                   'content': text[-12000:],
               }, ensure_ascii=False))
 
-          # The planner deliberately bounds its general prompt tail, but retry focus is
-          # computed from the complete filtered packet. Append a small source-honest
-          # excerpt index so a required retry domain is accompanied by the evidence
-          # that caused that domain to be selected. This is read-only planner context;
-          # it cannot change locks, ledgers, model promotion, or production authority.
           focus_hits = []
           feature_pipeline_hits = []
           for path in selected:
@@ -255,6 +282,7 @@ jobs:
               'count': len(selected),
               'focusEvidenceHitCount': len(focus_hits),
               'featurePipelineEvidenceHitCount': len(feature_pipeline_hits),
+              'operationalSourceHistoryCount': len(source_history),
               'excludedRetiredGenerations': list(retired),
           }))
           PY
