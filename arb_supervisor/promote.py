@@ -128,7 +128,7 @@ def dispatch_validation(branch: str, candidate_sha: str, base_sha: str) -> dict[
         "-f", f"candidate_branch={branch}",
         "-f", f"base_sha={base_sha}",
     ])
-    title = f"ARB supervisor validate {candidate_sha}"
+    title = f"ARB supervisor {candidate_sha}"
     run = wait_for_run(workflow="arb-supervisor-validate.yml", expected_title=title)
     jobs = {job.get("name"): job.get("conclusion") for job in run.get("jobs") or []}
     if jobs.get("validate-exact-candidate") != "success":
