@@ -127,8 +127,18 @@ def _capture_report() -> dict:
         "contractSafeGameCount": 2,
         "contractBlockedGameCount": 0,
         "games": [
-            {"gameIdentity": "1", "contractSafe": True, "groups": copy.deepcopy(groups)},
-            {"gameIdentity": "2", "contractSafe": True, "groups": copy.deepcopy(groups)},
+            {
+                "gameIdentity": "1",
+                "contractSafe": True,
+                "persistenceProofValid": True,
+                "groups": copy.deepcopy(groups),
+            },
+            {
+                "gameIdentity": "2",
+                "contractSafe": True,
+                "persistenceProofValid": True,
+                "groups": copy.deepcopy(groups),
+            },
         ],
     }
 
@@ -170,6 +180,12 @@ def test_capture_gap_refuses_any_contract_blocked_game() -> None:
     report["contractSafeGameCount"] = 1
     report["contractBlockedGameCount"] = 1
     report["games"][1]["contractSafe"] = False
+    assert fundamentals_capture_gap(report) is None
+
+
+def test_capture_gap_refuses_invalid_write_once_persistence_proof() -> None:
+    report = _capture_report()
+    report["games"][1]["persistenceProofValid"] = False
     assert fundamentals_capture_gap(report) is None
 
 
