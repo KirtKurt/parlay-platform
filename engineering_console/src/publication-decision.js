@@ -9,12 +9,20 @@ function decisionPath(dataDir, jobId) {
   return path.join(root, jobId);
 }
 
-function readDecision(target) {
-  try {
-    const value = fs.readFileSync(target, 'utf8').trim();
-    if (value !== 'cancelled' && value !== 'merge') throw new Error('invalid_publication_decision');
-    return value;
-  } catch (error) {
+function parseDecision(value) {
+  const text = String(value || '').trim();
+  if (text === 'cancelled' || text === 'merge') return { value: text, decidedAt: null };
+  let parsed;
+  try { parsed = JSON.parse(text); }
+  catch { throw new Error('invalid_publication_decision'); }
+  if (parsed?.version !== 1 || (parsed.value !== 'cancelled' && parsed.value !== 'merge')) throw new Error('invalid_publication_decision');
+  if (typeof parsed.decidedAt !== 'string' || !Number.isFinite(Date.parse(parsed.decidedAt))) throw new Error('invalid_publication_decision');
+  return { value: parsed.value, decidedAt: parsed.decidedAt };
+}
+
+function readDecisionRecord(target) {
+  try { return parseDecision(fs.readFileSync(target, 'utf8')); }
+  catch (error) {
     if (error.code === 'ENOENT') return null;
     throw error;
   }
@@ -22,12 +30,13 @@ function readDecision(target) {
 
 function decide(dataDir, jobId, value) {
   const target = decisionPath(dataDir, jobId);
+  const record = { version: 1, value, decidedAt: new Date().toISOString() };
   try {
-    fs.writeFileSync(target, `${value}\n`, { mode: 0o600, flag: 'wx' });
-    return value;
+    fs.writeFileSync(target, `${JSON.stringify(record)}\n`, { mode: 0o600, flag: 'wx' });
+    return record;
   } catch (error) {
     if (error.code !== 'EEXIST') throw error;
-    return readDecision(target);
+    return readDecisionRecord(target);
   }
 }
 
@@ -35,7 +44,7 @@ function decide(dataDir, jobId, value) {
  * makes publication permanently non-mergeable; once merge commitment wins,
  * cancellation returns false so the API can report that it is too late. */
 export function cancelPublication(dataDir, jobId) {
-  return decide(dataDir, jobId, 'cancelled') === 'cancelled';
+  return decide(dataDir, jobId, 'cancelled').value === 'cancelled';
 }
 
 /** Returns true for a new or recovered merge commitment. Throws if an accepted
@@ -43,11 +52,15 @@ export function cancelPublication(dataDir, jobId) {
  * crashed publisher to reconcile/retry without reopening the cancellation race. */
 export function beginPublicationMerge(dataDir, jobId) {
   const decision = decide(dataDir, jobId, 'merge');
-  if (decision === 'cancelled') throw new Error('publication_cancelled');
-  if (decision !== 'merge') throw new Error('invalid_publication_decision');
+  if (decision.value === 'cancelled') throw new Error('publication_cancelled');
+  if (decision.value !== 'merge') throw new Error('invalid_publication_decision');
   return true;
 }
 
 export function publicationDecision(dataDir, jobId) {
-  return readDecision(decisionPath(dataDir, jobId));
+  return readDecisionRecord(decisionPath(dataDir, jobId))?.value || null;
+}
+
+export function publicationDecisionRecord(dataDir, jobId) {
+  return readDecisionRecord(decisionPath(dataDir, jobId));
 }
