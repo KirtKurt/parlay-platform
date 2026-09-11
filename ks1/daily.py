@@ -47,6 +47,7 @@ class Crosswalk:
     """Only exact aliases learned from existing official IDs; never fuzzy guess."""
     def __init__(self, history, schedule):
         self.aliases, self.bbs_ids, self.rows = {}, {}, []
+        self.game_time_adjustments = []
         for g in history:
             for t in g['teams'].values():
                 self.add(*team_identity(t))
@@ -89,8 +90,31 @@ def bbs_assignments(payload, schedule, crosswalk, target_date):
             raise ValueError('duplicate BBS match ID')
         ids.add(event['id'])
         sides = {s: crosswalk.resolve(event[s]['name']) for s in ('home', 'away')}
-        matches = [g for g in schedule if all(sides[s] == str(g['teams'][s]['team']['id']) for s in sides)
-                   and abs((utc(event['kickoff_utc'])-utc(g['gameDate'])).total_seconds()) <= 90]
+        same_teams = [g for g in schedule
+                      if str(day(g['gameDate'])) == target_date
+                      and all(sides[s] == str(g['teams'][s]['team']['id']) for s in sides)]
+        matches = [g for g in same_teams
+                   if abs((utc(event['kickoff_utc'])-utc(g['gameDate'])).total_seconds()) <= 90]
+        if not matches and len(same_teams) == 1:
+            # Retained 2026-09-11 evidence: BBS CIN@MIL 23:40, MLB 23:45.
+            # Accept a bounded provider schedule lag only for one exact fixture
+            # in BOTH catalogues. Never choose among doubleheaders or guess IDs.
+            game = same_teams[0]
+            provider_fixtures = [e for e in data
+                                 if str(day(e['kickoff_utc'])) == target_date
+                                 and all(crosswalk.resolve(e[s]['name']) == sides[s] for s in sides)]
+            delta = abs((utc(event['kickoff_utc'])-utc(game['gameDate'])).total_seconds())
+            # Identity survives scheduled -> live/final. The prediction loop
+            # separately enforces pregame status and preserves frozen rows.
+            if (len(provider_fixtures) == 1 and delta <= 300
+                    and game.get('doubleHeader') == 'N'
+                    and game.get('status', {}).get('startTimeTBD') is False):
+                matches = [game]
+                crosswalk.game_time_adjustments.append({
+                    'game_id': str(game['gamePk']), 'bbs_game_id': str(event['id']),
+                    'bbs_start': event['kickoff_utc'], 'official_start': game['gameDate'],
+                    'difference_seconds': delta,
+                    'method': 'unique_exact_teams_single_game_within_5_minutes'})
         if len(matches) != 1:
             raise ValueError('ambiguous or unmatched BBS game identity: ' + str(event['id']))
         pk = str(matches[0]['gamePk'])
@@ -318,7 +342,8 @@ def predict(folder, output):
     odds_table = pa.Table.from_pylist(odds_rows, schema=pa.schema([(k, pa.string()) for k in ('event_id', 'as_of', 'payload_json')]))
     (output/'odds_cache.parquet').write_bytes(parquet_bytes(odds_table))
     (output/'lineup_cache.json').write_bytes(encode(inputs['feeds']))
-    (output/'crosswalk.json').write_bytes(encode({'teams': crosswalk.rows, 'fuzzy_matches': 0}))
+    (output/'crosswalk.json').write_bytes(encode({'teams': crosswalk.rows, 'fuzzy_matches': 0,
+                                               'game_time_adjustments': crosswalk.game_time_adjustments}))
     report = {'system': 'KS1', 'phase': 5, 'date': target_date, 'as_of': as_of, 'model_version': model_version,
               'rows': len(frame), 'newly_scored': len(rows), 'preserved_pregame_rows': len(frozen_ids),
               'unchanged_rows': len(unchanged), 'unchanged_game_ids': unchanged, 'changes': changes,
@@ -327,6 +352,7 @@ def predict(folder, output):
               'confirmed_lineups': int((frame.lineup_status == 'confirmed').sum()),
               'projected_lineups': int((frame.lineup_status == 'projected').sum()),
               'official_games': len(schedule), 'bbs_matched_games': len(assignments), 'exclusions': exclusions,
+              'bbs_time_adjustments': crosswalk.game_time_adjustments,
               'with_both_starters': int((frame.home_starter_id.notna() & frame.away_starter_id.notna()).sum()),
               'with_market_home_prob': int(frame.market_home_prob.notna().sum()), 'with_market_total': int(frame.market_total.notna().sum()),
               'parquet_sha256': hashlib.sha256(body).hexdigest(), 'parquet_readback_verified': True,

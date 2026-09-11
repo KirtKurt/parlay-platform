@@ -66,6 +66,48 @@ def test_capture_uses_all_utc_dates_and_never_treats_scores_as_match_ids():
                      ('/v1/matches', '2026-09-11'), ('/v1/stored/matches', '2026-09-11')]
 
 
+def adjusted_start_fixture():
+    # Identity/times observed in retained production artifact 10187948389.
+    game = {'gamePk': 823736, 'gameDate': '2026-09-11T23:45:00Z', 'doubleHeader': 'N',
+            'status': {'abstractGameState': 'Preview', 'detailedState': 'Scheduled', 'startTimeTBD': False},
+            'teams': {'home': {'team': {'id': 158, 'name': 'Milwaukee Brewers'}},
+                      'away': {'team': {'id': 113, 'name': 'Cincinnati Reds'}}}}
+    event = {'id': '9ba968c3-513f-4e43-81eb-34e1244b07a0', 'kickoff_utc': '2026-09-11T23:40:00Z',
+             'sport': 'baseball', 'league': 'MLB', 'status': 'scheduled',
+             'home': {'id': '3848ebb8-eb47-4135-b1ba-7354f1fb5b02', 'name': 'Milwaukee Brewers'},
+             'away': {'id': '49dfd770-26ca-4b8c-8eb9-68ab2dce1bb2', 'name': 'Cincinnati Reds'}}
+    return game, event
+
+
+def test_observed_five_minute_start_difference_binds_only_unique_fixture():
+    game, event = adjusted_start_fixture()
+    originals = deepcopy((game, event))
+    cw = Crosswalk([], [game])
+    assert bbs_assignments({'data': [event]}, [game], cw, '2026-09-11') == {'823736': event}
+    assert (game, event) == originals  # Official commence time/T-10 is never rewritten.
+    assert cw.game_time_adjustments[0]['official_start'] == '2026-09-11T23:45:00Z'
+    assert cw.game_time_adjustments[0]['difference_seconds'] == 300
+    assert cw.bbs_ids[event['home']['id']] == '158'
+
+
+@pytest.mark.parametrize('case', ['over_five_minutes', 'doubleheader', 'two_official_games',
+                                  'two_provider_games', 'unknown_team', 'reversed_teams',
+                                  'time_tbd', 'missing_dh_flag'])
+def test_start_adjustment_refuses_unverified_or_ambiguous_identity(case):
+    game, event = adjusted_start_fixture()
+    games, events = [game], [event]
+    if case == 'over_five_minutes': event['kickoff_utc'] = '2026-09-11T23:39:59Z'
+    elif case == 'doubleheader': game['doubleHeader'] = 'Y'
+    elif case == 'two_official_games': games.append(dict(deepcopy(game), gamePk=999, gameDate='2026-09-11T20:00:00Z'))
+    elif case == 'two_provider_games': events.append(dict(deepcopy(event), id='second', kickoff_utc='2026-09-11T20:00:00Z'))
+    elif case == 'unknown_team': event['home']['name'] = 'Unknown Team'
+    elif case == 'reversed_teams': event['home'], event['away'] = event['away'], event['home']
+    elif case == 'time_tbd': game['status']['startTimeTBD'] = True
+    elif case == 'missing_dh_flag': del game['doubleHeader']
+    with pytest.raises(ValueError, match='ambiguous or unmatched'):
+        bbs_assignments({'data': events}, games, Crosswalk([], games), '2026-09-11')
+
+
 def test_provider_failure_reports_status_shape_without_echoed_key_or_url():
     secret = 'not-a-real-key'
     def opener(request, **kwargs):

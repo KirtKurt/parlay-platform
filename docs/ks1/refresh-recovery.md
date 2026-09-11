@@ -74,3 +74,30 @@ an old pre-repair source SHA as a substitute for activating this repair.
 
 GitHub documents that [scheduled events may be delayed or dropped](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
 and that [workflow_dispatch can be triggered with GITHUB_TOKEN](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+
+## September 11 activation follow-up: provider start discrepancy
+
+After approval and merge of PR #712, production run
+[34570791833](https://github.com/KirtKurt/parlay-platform/actions/runs/34570791833)
+hit the same BBS identity rejection as the earlier pre-repair run. PR #714
+retains already-captured schedule identities on failure. The resulting
+[artifact in run 34571400992](https://github.com/KirtKurt/parlay-platform/actions/runs/34571400992)
+establishes the precise mismatch: Reds at Brewers, official game 823736, is
+23:45 UTC in MLB's schedule and 23:40 UTC in BBS. All other 14 games match.
+
+The daily matcher now admits a difference of at most five minutes only when
+the same exact home/away team IDs identify a single fixture in each feed and
+MLB explicitly marks it non-doubleheader with a known start. Larger
+differences, duplicate fixtures, unknown teams, doubleheaders and unknown
+start times still fail. Identity binding survives a game's status changing
+to live/final; the separate prediction admission checks still reject new
+post-cutoff picks, exclude postponed games and preserve existing frozen rows.
+The original 90-second path is unchanged. Each bounded adjustment is retained
+in crosswalk/report evidence. MLB's original start remains the prediction's
+commence time and determines T-10; no provider time replaces it.
+
+Offline replay of the retained catalogue binds all 15 official games, with
+exactly this one documented five-minute adjustment. This replay checks
+identities only; it does not reconstruct or publish predictions. The serving
+models, feature calculations, probability calibration and frozen rows are
+unchanged. A successful main publication/readback is required for live proof.
