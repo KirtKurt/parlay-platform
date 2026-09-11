@@ -11,6 +11,7 @@ import {
   withinAuthorizedScope,
   writePublicationReceipt
 } from '../src/publication.js';
+import { updateJobFromPublisher } from '../src/publisher-job-state.js';
 import { collectChanges } from '../src/git.js';
 
 const exec = promisify(execFile);
@@ -26,6 +27,11 @@ const dataDir = required('INQSI_ENGINEERING_DATA_DIR');
 const token = required('GH_TOKEN');
 const [owner] = repository.split('/');
 const dirs = publicationDirectories(dataDir);
+
+function record(receipt) {
+  writePublicationReceipt(dataDir, receipt);
+  updateJobFromPublisher(dataDir, receipt);
+}
 
 async function git(cwd, args, env = process.env, allowFailure = false) {
   try {
@@ -131,7 +137,7 @@ async function processClaim(claimDir) {
 
     let pr = await findExistingPullRequest(manifest.branch);
     if (pr?.merged_at) {
-      writePublicationReceipt(dataDir, { jobId: manifest.jobId, state: 'merged', branch: manifest.branch, commit: publishedCommit, pullRequest: pr.html_url, pullRequestNumber: pr.number, mergeCommit: pr.merge_commit_sha, patchSha256: manifest.patchSha256 });
+      record({ jobId: manifest.jobId, state: 'merged', branch: manifest.branch, commit: publishedCommit, pullRequest: pr.html_url, pullRequestNumber: pr.number, mergeCommit: pr.merge_commit_sha, patchSha256: manifest.patchSha256 });
       return true;
     }
     if (pr && pr.state !== 'open') throw new Error('publication_pr_closed_without_merge');
@@ -151,11 +157,11 @@ async function processClaim(claimDir) {
     const checks = await github(`/commits/${publishedCommit}/check-runs?per_page=100`);
     const evaluation = evaluateRequiredChecks(checks.check_runs || [], manifest.requiredChecks);
     if (evaluation.state === 'pending') {
-      writePublicationReceipt(dataDir, { jobId: manifest.jobId, state: 'checks_pending', reason: evaluation.reason, branch: manifest.branch, commit: publishedCommit, pullRequest: pr.html_url, pullRequestNumber: pr.number, patchSha256: manifest.patchSha256 });
+      record({ jobId: manifest.jobId, state: 'checks_pending', reason: evaluation.reason, branch: manifest.branch, commit: publishedCommit, pullRequest: pr.html_url, pullRequestNumber: pr.number, patchSha256: manifest.patchSha256 });
       return false;
     }
     if (evaluation.state === 'failed') {
-      writePublicationReceipt(dataDir, { jobId: manifest.jobId, state: 'checks_failed', reason: evaluation.reason, branch: manifest.branch, commit: publishedCommit, pullRequest: pr.html_url, pullRequestNumber: pr.number, patchSha256: manifest.patchSha256 });
+      record({ jobId: manifest.jobId, state: 'checks_failed', reason: evaluation.reason, branch: manifest.branch, commit: publishedCommit, pullRequest: pr.html_url, pullRequestNumber: pr.number, patchSha256: manifest.patchSha256 });
       return false;
     }
 
@@ -165,7 +171,7 @@ async function processClaim(claimDir) {
       body: JSON.stringify({ sha: publishedCommit, merge_method: 'merge', commit_title: `InQsi Engineering job ${manifest.jobId}` })
     });
     if (!merge.merged) throw new Error('publication_merge_rejected');
-    writePublicationReceipt(dataDir, { jobId: manifest.jobId, state: 'merged', branch: manifest.branch, commit: publishedCommit, pullRequest: pr.html_url, pullRequestNumber: pr.number, mergeCommit: merge.sha, patchSha256: manifest.patchSha256 });
+    record({ jobId: manifest.jobId, state: 'merged', branch: manifest.branch, commit: publishedCommit, pullRequest: pr.html_url, pullRequestNumber: pr.number, mergeCommit: merge.sha, patchSha256: manifest.patchSha256 });
     return true;
   } finally {
     fs.rmSync(checkout, { recursive: true, force: true });
@@ -181,7 +187,7 @@ for (const claim of claimDirectories()) {
     if (complete) fs.renameSync(claim, path.join(dirs.processed, id));
   } catch (error) {
     failed = true;
-    writePublicationReceipt(dataDir, { jobId: id, state: 'publisher_failed', reason: String(error?.message || error).slice(0, 300) });
+    record({ jobId: id, state: 'publisher_failed', reason: String(error?.message || error).slice(0, 300) });
   }
 }
 if (failed) process.exitCode = 1;
