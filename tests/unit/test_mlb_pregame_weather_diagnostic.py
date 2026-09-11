@@ -77,17 +77,24 @@ def test_valid_weather_is_passive_source_evidence_only():
     row = report["games"][0]
     assert row["sourceValid"] is True and row["preT45"] is True
     assert row["venueObservedAtUtc"] == NOW.isoformat().replace("+00:00", "Z")
+    assert row["weatherRequestAtUtc"] == NOW.isoformat().replace("+00:00", "Z")
+    assert row["weatherObservedAtUtc"] == NOW.isoformat().replace("+00:00", "Z")
+    assert row["failureStage"] is None
     assert row["weather"]["temperatureF"] == 72.0
     assert row["weather"]["windSpeedMph"] == 8.0
     assert row["roofStatus"] is None and row["canCompleteWeatherRoofGroup"] is False
 
 
-def test_exact_official_venue_identity_is_required():
+def test_exact_official_venue_identity_is_required_without_faking_weather_receipt():
     venue = _venue(); venue["venues"][0]["id"] = 999
     report = SUBJECT.build_report(clock=lambda: NOW, fetch_json=_provider(venue=venue))
     row = report["games"][0]
     assert row["sourceValid"] is False
     assert any("venue_identity_mismatch" in error for error in row["errors"])
+    assert row["failureStage"] == "venue_validation"
+    assert row["venueObservedAtUtc"] == NOW.isoformat().replace("+00:00", "Z")
+    assert row["weatherRequestAtUtc"] is None
+    assert row["weatherObservedAtUtc"] is None
     assert report["roofStatusClaimCount"] == 0
 
 
@@ -102,6 +109,29 @@ def test_slow_venue_lookup_crossing_t45_stops_before_weather_request():
     row = report["games"][0]
     assert row["sourceValid"] is False
     assert row["errors"] == ["venue_response_received_at_or_after_t45"]
+    assert row["failureStage"] == "venue_chronology"
+    assert row["weatherObservedAtUtc"] is None
+    assert not any("open-meteo.com" in url for url in calls)
+
+
+def test_cutoff_is_sampled_again_immediately_before_weather_request():
+    moments = iter([
+        START - timedelta(minutes=50),  # report created
+        START - timedelta(minutes=46),  # probe start
+        START - timedelta(minutes=46),  # venue receipt
+        START - timedelta(minutes=44),  # immediately before weather request
+    ])
+    calls = []
+    provider = _provider()
+    def fetch(url, timeout):
+        calls.append(url)
+        return provider(url, timeout)
+    report = SUBJECT.build_report(clock=lambda: next(moments), fetch_json=fetch)
+    row = report["games"][0]
+    assert row["sourceValid"] is False
+    assert row["errors"] == ["weather_request_would_start_at_or_after_t45"]
+    assert row["failureStage"] == "weather_request_chronology"
+    assert row["weatherRequestAtUtc"] == (START - timedelta(minutes=44)).isoformat().replace("+00:00", "Z")
     assert row["weatherObservedAtUtc"] is None
     assert not any("open-meteo.com" in url for url in calls)
 
@@ -113,6 +143,7 @@ def test_slow_weather_response_crossing_t45_is_not_backdated():
     assert row["sourceValid"] is False
     assert row["preT45"] is False
     assert row["errors"] == ["weather_response_received_at_or_after_t45"]
+    assert row["failureStage"] == "weather_chronology"
 
 
 def test_post_cutoff_probe_makes_no_weather_request():
@@ -135,4 +166,6 @@ def test_missing_temperature_fails_closed_without_roof_or_scoring_claim():
     assert row["sourceValid"] is False
     assert row["roofStatusClaimed"] is False
     assert row["canChangeProductionScoring"] is False
+    assert row["failureStage"] == "weather_validation"
+    assert row["weatherObservedAtUtc"] == NOW.isoformat().replace("+00:00", "Z")
     assert any("required_weather_values_missing" in error for error in row["errors"])
