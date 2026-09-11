@@ -80,6 +80,17 @@ jobs:
           path: /tmp/ks1-daily/
           if-no-files-found: warn
           retention-days: 90
+      - name: Retain captured schedule identities when publication fails
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: ks1-input-identities-${{ github.run_id }}
+          path: |
+            /tmp/ks1-daily-inputs/capture.json
+            /tmp/ks1-daily-inputs/official.json
+            /tmp/ks1-daily-inputs/bbs.json
+          if-no-files-found: ignore
+          retention-days: 90
       - uses: actions/upload-artifact@v4
         if: always()
         with:
