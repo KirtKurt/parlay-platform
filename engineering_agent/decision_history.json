@@ -20,6 +20,13 @@
       "plannerRun": 34596065164,
       "reason": "The accepted proposal attempted to count synthetic data augmentation and unspecified historical-window expansion toward observed starter-rate minima. The current StatsAPI starter adapter explicitly refuses historical reconstruction, and the retained completed-game/final-box corpora do not prove when target-game pregame starter observations were known. Those rows cannot be converted into observed pre-lock evidence without violating source honesty and chronology.",
       "reconsiderOnlyIf": "A verified immutable point-in-time pregame archive with exact game/starter identity, retrieval/effective timestamps, and payload provenance is available, or a current live pre-lock capture defect is demonstrated. Natural future source-honest accumulation remains valid."
+    },
+    {
+      "status": "REJECTED_AS_UNSAFE_OR_INAPPLICABLE",
+      "title": "Reduce Selected Reliability Calibration Error",
+      "plannerRun": 34596497953,
+      "reason": "The proposal would adjust model outputs, apply Platt/isotonic calibration, and retrain while the same evidence states only 36 prospective selected recommendations exist versus the required 100. That prospective set is an incomplete holdout and cannot be used to choose or fit calibration behavior without leaking evaluation evidence.",
+      "reconsiderOnlyIf": "The prospective selected-recommendation minimum is reached chronologically with immutable pregame predictions and settled labels, or the work is strictly read-only calibration diagnostics that do not tune, fit, select, or retrain a model."
     }
   ]
 }

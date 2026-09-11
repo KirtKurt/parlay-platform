@@ -28,6 +28,8 @@ _STOP_WORDS = {
 _PROSPECTIVE_UNDERPOWERED_SIGNALS = (
     "insufficient prospective selected recommendation",
     "insufficient_prospective_selected_recommendation",
+    "lacks sufficient prospective selected recommendation",
+    "prospective selected recommendation count below",
     "insufficient fresh test rows",
     "insufficient_fresh_test_rows",
     "insufficient prospective test rows",
@@ -37,12 +39,19 @@ _PROSPECTIVE_UNDERPOWERED_SIGNALS = (
 _CALIBRATION_MUTATION_SIGNALS = (
     "adjust calibration",
     "adjust the calibration",
+    "adjust model output",
     "recalibrat",
     "tune calibrat",
     "refit calibrat",
     "fit calibrat",
+    "calibration technique",
+    "platt scaling",
+    "isotonic regression",
+    "retrain model",
+    "retrain the model",
     "update calibration parameter",
     "change calibration parameter",
+    "adjusted calibration parameter",
 )
 
 _PROSPECTIVE_MUTATION_SIGNALS = (
