@@ -2,22 +2,33 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
+function trustedOwner(stat) {
+  if (typeof process.getuid !== 'function') throw new Error('publisher_lock_unix_runtime_required');
+  return stat.uid === process.getuid() && (stat.mode & 0o022) === 0;
+}
+
 /** Run the trusted publisher in a process that itself holds the kernel lock.
  * The lock file is NEVER unlinked. Kernel release on exit/crash avoids stale-PID
- * leases. The directory must be shared by all publishers, and inaccessible to
- * Codex. EFS/NFS lock behavior still requires deployment smoke verification.
+ * leases. The directory must be shared only by publisher identities; the worker
+ * must not mount it. Existing directories/files are rejected unless owned by the
+ * publisher uid and not group/other writable.
  */
 export async function runWithPublisherLock(directory, script, { args = [], env = process.env, stdio = 'inherit' } = {}) {
   if (!path.isAbsolute(directory) || !path.isAbsolute(script)) throw new Error('absolute_publisher_paths_required');
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   const real = fs.realpathSync(directory);
   if (real !== directory) throw new Error('publisher_lock_symlink_rejected');
-  const fd = fs.openSync(path.join(real, 'publisher.lock'), fs.constants.O_CREAT | fs.constants.O_RDWR | fs.constants.O_NOFOLLOW, 0o600);
-  if (!fs.fstatSync(fd).isFile()) { fs.closeSync(fd); throw new Error('publisher_lock_not_regular'); }
+  const directoryStat = fs.statSync(real);
+  if (!directoryStat.isDirectory() || !trustedOwner(directoryStat)) throw new Error('publisher_lock_directory_not_trusted');
+
+  const lockPath = path.join(real, 'publisher.lock');
+  const fd = fs.openSync(lockPath, fs.constants.O_CREAT | fs.constants.O_RDWR | fs.constants.O_NOFOLLOW, 0o600);
+  const lockStat = fs.fstatSync(fd);
+  if (!lockStat.isFile() || lockStat.nlink !== 1 || !trustedOwner(lockStat)) { fs.closeSync(fd); throw new Error('publisher_lock_file_not_trusted'); }
+
   const io = stdio === 'ignore' ? ['ignore', 'ignore', 'ignore', fd] : ['inherit', 'inherit', 'inherit', fd];
   let child;
   try {
-    // --no-fork execs Node with fd 3 and the lock retained for the entire run.
     child = spawn('flock', ['--nonblock', '--conflict-exit-code', '75', '--no-fork', '/proc/self/fd/3', process.execPath, script, ...args], { env, stdio: io });
   } finally { fs.closeSync(fd); }
   const forward = (signal) => { if (child.exitCode === null) child.kill(signal); };
