@@ -122,9 +122,19 @@ if [[ ${#FINAL_CHANGED[@]} -eq 0 ]]; then
 fi
 validate_scope "${FINAL_CHANGED[@]}"
 
-# Only now restore GitHub authentication. Codex has exited and cannot use this
-# credential. gh configures git without exposing the token in a remote URL.
-gh auth setup-git >/dev/null
+# Restore repository authentication only after Codex has exited and the exact
+# candidate bytes have passed independent validation. Avoid the GitHub CLI's
+# git-auth reconfiguration path because hosted runners can contain helper state
+# that makes its cleanup fail. A short-lived local extraheader gives only the
+# supervising wrapper's push access, is never placed in the remote URL, and is
+# removed immediately.
+cleanup_publish_auth() {
+  git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
+}
+PUBLISH_BASIC="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ${PUBLISH_BASIC}"
+unset PUBLISH_BASIC
+trap cleanup_publish_auth EXIT
 
 git config user.name "inqsi-arb-aec[bot]"
 git config user.email "inqsi-arb-aec@users.noreply.github.com"
@@ -136,7 +146,11 @@ fi
 
 git commit -m "ARB AEC: autonomous Codex increment"
 git push --set-upstream origin "$BRANCH"
+cleanup_publish_auth
+trap - EXIT
 
+# gh uses GITHUB_TOKEN from the environment; Git's temporary publication
+# credential is already gone before the draft-PR request.
 PR_URL=$(gh pr create \
   --draft \
   --base main \

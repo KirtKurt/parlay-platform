@@ -23,15 +23,29 @@ def test_runner_denies_codex_repo_and_aws_credentials_until_after_validation():
     codex_pos = text.index("codex --ask-for-approval")
     pytest_pos = text.index("python -m pytest -q inqsi-arb/tests")
     sam_pos = text.index("sam build --no-cached")
-    auth_restore_pos = text.index("gh auth setup-git")
+    auth_restore_pos = text.index('PUBLISH_BASIC="$(printf')
     push_pos = text.index('git push --set-upstream origin "$BRANCH"')
+    cleanup_after_push_pos = text.index("cleanup_publish_auth\ntrap - EXIT", push_pos)
     pr_pos = text.index("gh pr create")
 
     assert "git config --local --unset-all http.https://github.com/.extraheader" in text
     assert "-u GITHUB_TOKEN -u GH_TOKEN" in text
     assert "-u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN" in text
     assert "Do not push, open a pull request, alter remotes, or publish repository changes" in text
-    assert codex_pos < pytest_pos < sam_pos < auth_restore_pos < push_pos < pr_pos
+    assert "gh auth setup-git" not in text
+    assert 'git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ${PUBLISH_BASIC}"' in text
+    assert "x-access-token:%s" in text
+    assert codex_pos < pytest_pos < sam_pos < auth_restore_pos < push_pos < cleanup_after_push_pos < pr_pos
+
+
+def test_runner_cleans_temporary_publication_auth_on_success_or_failure():
+    text = RUNNER.read_text(encoding="utf-8")
+    assert "cleanup_publish_auth()" in text
+    assert "trap cleanup_publish_auth EXIT" in text
+    assert "unset PUBLISH_BASIC" in text
+    assert "cleanup_publish_auth\ntrap - EXIT" in text
+    assert "https://x-access-token" not in text
+    assert "token@github.com" not in text
 
 
 def test_runner_restores_host_path_and_normalizes_codex_local_commits():
