@@ -4,11 +4,13 @@ import path from 'node:path';
 
 export const JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA = /^[0-9a-f]{40}$/i;
-const PASSING = new Set(['success', 'neutral', 'skipped']);
+// Required tests must actually succeed; a skipped or neutral job is not proof.
+const PASSING = new Set(['success']);
 const PROTECTED_PUBLICATION_ROOTS = ['.github', 'engineering_console', 'frontend/app/api/engineering'];
 const SECRET_PATTERNS = [
   /\bsk-(?:proj-)?[A-Za-z0-9_-]{12,}\b/,
   /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/,
   /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/,
   /authorization\s*:\s*bearer\s+[^\s,;]+/i,
   /\b(?:api[_-]?key|token|secret|password|client[_-]?secret|access[_-]?key)\s*[:=]\s*[^\s,;]+/i
@@ -46,7 +48,7 @@ export function isProtectedPublicationPath(file) {
 }
 
 export function evaluateRequiredChecks(checkRuns, requiredChecks) {
-  if (!Array.isArray(requiredChecks) || !requiredChecks.length) return { state: 'failed', reason: 'required_checks_missing' };
+  if (!Array.isArray(requiredChecks) || !requiredChecks.length || requiredChecks.some((name) => typeof name !== 'string' || !name.trim())) return { state: 'failed', reason: 'required_checks_missing' };
   if (!Array.isArray(checkRuns)) return { state: 'pending', reason: 'check_runs_unavailable' };
 
   const newest = new Map();
@@ -88,8 +90,12 @@ export function publicationDirectories(dataDir) {
   };
 }
 
-export function writePublicationRequest(config, job, patch) {
+export function writePublicationRequest(config, job, patch, signal) {
   if (!JOB_ID.test(job?.id || '')) throw new Error('invalid_job_id');
+  const assertActive = () => {
+    if (signal?.aborted || job.cancelRequested) throw new Error('publication_cancelled');
+  };
+  assertActive();
   if (!Array.isArray(job.changedFiles) || !job.changedFiles.length) return null;
   if (job.changedFiles.some(isProtectedPublicationPath)) throw new Error('publication_protected_path_violation');
   if (patchContainsCredential(patch)) throw new Error('publication_patch_secret_detected');
@@ -110,17 +116,26 @@ export function writePublicationRequest(config, job, patch) {
     createdAt: new Date().toISOString()
   };
 
+  validatePublicationManifest(manifest, patch);
   if (fs.existsSync(finalDir)) {
     const existing = JSON.parse(fs.readFileSync(path.join(finalDir, 'manifest.json'), 'utf8'));
-    if (existing.patchSha256 !== manifest.patchSha256 || existing.startingRevision !== manifest.startingRevision) throw new Error('publication_request_collision');
+    // A retry may not silently reuse a request with different authorization/checks.
+    const immutableFields = ['version', 'jobId', 'repository', 'startingRevision', 'branch', 'authorizedScope', 'changedFiles', 'requiredChecks', 'patchSha256'];
+    if (immutableFields.some((key) => JSON.stringify(existing[key]) !== JSON.stringify(manifest[key]))) throw new Error('publication_request_collision');
+    validatePublicationManifest(existing, patch);
+    assertActive();
     return existing;
   }
 
-  const tempDir = path.join(dirs.outbox, `.${job.id}.${process.pid}.tmp`);
-  fs.mkdirSync(tempDir, { mode: 0o700 });
+  // Reused container PIDs must not collide with a crashed worker's staging path.
+  // Never delete another invocation's staging directory to make a retry succeed.
+  const tempDir = fs.mkdtempSync(path.join(dirs.outbox, `.${job.id}.tmp-`));
   try {
     fs.writeFileSync(path.join(tempDir, 'patch.diff'), patch, { mode: 0o600 });
     fs.writeFileSync(path.join(tempDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+    // This synchronous check/rename is the worker's visibility boundary.
+    // Publisher-side cancellation after visibility is a separate required gate.
+    assertActive();
     fs.renameSync(tempDir, finalDir);
   } catch (error) {
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -138,10 +153,16 @@ export function readPublicationReceipt(dataDir, jobId) {
 
 export function writePublicationReceipt(dataDir, receipt) {
   if (!JOB_ID.test(receipt?.jobId || '')) throw new Error('invalid_job_id');
+  const previous = readPublicationReceipt(dataDir, receipt.jobId);
+  if (previous?.state === 'merged') return previous;
   const { receipts } = publicationDirectories(dataDir);
   fs.mkdirSync(receipts, { recursive: true, mode: 0o700 });
   const target = path.join(receipts, `${receipt.jobId}.json`);
-  const temp = `${target}.${process.pid}.tmp`;
-  fs.writeFileSync(temp, `${JSON.stringify({ ...receipt, updatedAt: new Date().toISOString() }, null, 2)}\n`, { mode: 0o600 });
-  fs.renameSync(temp, target);
+  const value = { ...receipt, updatedAt: new Date().toISOString() };
+  const temp = `${target}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+    fs.renameSync(temp, target);
+  } finally { fs.rmSync(temp, { force: true }); }
+  return value;
 }

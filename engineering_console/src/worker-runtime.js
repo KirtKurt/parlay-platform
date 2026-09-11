@@ -74,11 +74,18 @@ export function createRunner(config, store, CodexClass = Codex) {
       const head = await git(workspace, ['rev-parse', 'HEAD']);
       if (head !== job.startingRevision) job.commit = head;
 
+      // collectChanges/git may yield after the earlier cancellation check.
+      if (signal.aborted || job.cancelRequested) {
+        job.status = 'cancelled';
+        store.save(job);
+        return;
+      }
+
       if (!result.changedFiles.length) {
         job.status = 'completed';
         job.publicationState = 'no_changes';
       } else {
-        writePublicationRequest(config, job, result.diff);
+        writePublicationRequest(config, job, result.diff, signal);
         job.status = 'awaiting_publication';
         job.publicationState = 'queued';
       }

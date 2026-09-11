@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { isPublishableScope, PROOF_CHECK } from './publication-policy.js';
 
 function normalizeScope(value) {
   if (typeof value !== 'string' || value.includes('\\')) throw new Error(`invalid allowed scope: ${value}`);
@@ -19,7 +20,9 @@ export function loadConfig(env = process.env) {
     'INQSI_ENGINEERING_DATA_DIR',
     'INQSI_ENGINEERING_WORKSPACE_ROOT',
     'INQSI_ENGINEERING_ORIGIN',
-    'INQSI_ENGINEERING_ALLOWED_SCOPES'
+    'INQSI_ENGINEERING_ALLOWED_SCOPES',
+    'INQSI_ENGINEERING_REQUIRED_CHECKS',
+    'INQSI_ENGINEERING_PUBLICATION_POLICY'
   ];
   const missing = required.filter((name) => !String(env[name] || '').trim());
   if (missing.length) throw new Error(`Engineering console disabled: missing ${missing.join(', ')}`);
@@ -41,7 +44,11 @@ export function loadConfig(env = process.env) {
   }
 
   const allowedScopes = [...new Set(env.INQSI_ENGINEERING_ALLOWED_SCOPES.split(',').map(normalizeScope))];
-  if (!allowedScopes.length) throw new Error('Engineering console disabled: no allowed scopes configured');
+  if (!allowedScopes.length || allowedScopes.some((scope) => !isPublishableScope(scope))) throw new Error('Engineering console disabled: invalid publication scope policy');
+  const requiredChecks = [...new Set(String(env.INQSI_ENGINEERING_REQUIRED_CHECKS).split(',').map((item) => item.trim()).filter(Boolean))];
+  if (requiredChecks.length !== 1 || requiredChecks[0] !== PROOF_CHECK || env.INQSI_ENGINEERING_PUBLICATION_POLICY !== 'proof-v1') {
+    throw new Error('Engineering console disabled: invalid publication check policy');
+  }
 
   const maxConcurrentJobs = Number(env.INQSI_ENGINEERING_MAX_CONCURRENT_JOBS || 1);
   if (!Number.isInteger(maxConcurrentJobs) || maxConcurrentJobs < 1 || maxConcurrentJobs > 8) {
@@ -58,7 +65,7 @@ export function loadConfig(env = process.env) {
     workspaceRoot: path.resolve(env.INQSI_ENGINEERING_WORKSPACE_ROOT),
     allowedOrigin,
     allowedScopes,
-    requiredChecks: [...new Set(String(env.INQSI_ENGINEERING_REQUIRED_CHECKS || 'build').split(',').map((item) => item.trim()).filter(Boolean))],
+    requiredChecks,
     maxConcurrentJobs,
     port: Number(env.PORT || 8787),
     maxInstructionBytes: Number(env.INQSI_ENGINEERING_MAX_INSTRUCTION_BYTES || 20000)

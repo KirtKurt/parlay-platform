@@ -16,6 +16,7 @@ type Job = {
   testResults: unknown[];
   commit?: string;
   pullRequest?: string;
+  publicationState?: string;
   error?: string;
   updatedAt: string;
 };
@@ -26,7 +27,7 @@ export function EngineeringConsole() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selected, setSelected] = useState<Job | null>(null);
   const [instruction, setInstruction] = useState('');
-  const [scope, setScope] = useState('engineering_console');
+  const [scope, setScope] = useState('');
   const [message, setMessage] = useState('');
   const [authState, setAuthState] = useState<AuthState>('checking');
 
@@ -109,6 +110,9 @@ export function EngineeringConsole() {
         ? 'Admin · access denied'
         : 'Engineering service unavailable';
 
+  const publicationVisible = Boolean(selected?.publicationState && selected.publicationState !== 'no_changes') || ['awaiting_publication', 'published'].includes(selected?.status || '');
+  const canCancel = Boolean(selected) && (['queued', 'running', 'awaiting_publication', 'published'].includes(selected.status) || (selected.status === 'failed' && publicationVisible));
+
   return <main className="shell engineering-console">
     <header className="topbar">
       <div className="brand-block">
@@ -127,14 +131,14 @@ export function EngineeringConsole() {
             <textarea required value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Describe the engineering change and acceptance checks…" />
           </label>
           <label>Authorized paths (comma-separated)
-            <input required value={scope} onChange={(event) => setScope(event.target.value)} />
+            <input required placeholder="Choose an approved scope, such as engineering_console_publication_proof" value={scope} onChange={(event) => setScope(event.target.value)} />
           </label>
           <div className="scope-card">
             <b>KirtKurt/parlay-platform</b>
             <span>Starting revision: repository HEAD</span>
             <span>Worker credentials: repository-scoped only</span>
           </div>
-          <button className="primary-button" disabled={authState !== 'verified'}>Submit job</button>
+          <button className="primary-button" disabled={authState !== 'verified' || !scope.trim()}>Submit job</button>
         </form>
         {message && <p role="alert">{message}</p>}
 
@@ -160,7 +164,7 @@ export function EngineeringConsole() {
             <span>Branch: {selected.branch || 'pending'}</span>
           </div>
           <div className="job-actions">
-            <button onClick={() => action('cancel')} disabled={!['queued', 'running'].includes(selected.status)}>Cancel worker</button>
+            <button onClick={() => action('cancel')} disabled={!canCancel}>{publicationVisible ? 'Cancel publication' : 'Cancel worker'}</button>
             <button onClick={() => action('continue')} disabled={!['completed', 'failed', 'blocked', 'awaiting_approval'].includes(selected.status) || !instruction}>Continue</button>
           </div>
           {selected.error && <p className="error">{selected.error}</p>}

@@ -3,13 +3,17 @@ import { JobStore } from './store.js';
 export function updateJobFromPublisher(dataDir, receipt) {
   const store = new JobStore(dataDir);
   const job = store.get(receipt.jobId);
-  if (!job) return;
+  if (!job || job.publicationState === 'merged') return;
   if (receipt.pullRequest) job.pullRequest = receipt.pullRequest;
   if (receipt.commit) job.commit = receipt.commit;
   if (receipt.mergeCommit) job.mergeCommit = receipt.mergeCommit;
   job.publicationState = receipt.state;
   if (receipt.state === 'merged') {
     job.status = 'completed';
+    job.error = null;
+  } else if (receipt.state === 'cancelled') {
+    job.status = 'cancelled';
+    job.cancelRequested = true;
     job.error = null;
   } else if (receipt.state === 'checks_failed' || receipt.state === 'publisher_failed') {
     job.status = 'failed';

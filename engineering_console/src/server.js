@@ -8,10 +8,13 @@ import { DurableQueue } from './queue.js';
 import { createRunner } from './worker-runtime.js';
 import { publicJob } from './sanitize.js';
 import { normalizeRepoPath } from './publication.js';
+import { isPublishableScope } from './publication-policy.js';
+import { assertMainAncestor } from './publication-git-guard.js';
+import { cancelPublication } from './publication-decision.js';
 
 function validScope(scope, allowedScopes) {
   const value = normalizeRepoPath(scope);
-  if (!value) return false;
+  if (!value || !isPublishableScope(scope)) return false;
   return allowedScopes.some((root) => value === root || value.startsWith(`${root}/`));
 }
 
@@ -54,16 +57,32 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
       if (request.method === 'POST' && !id) {
         if (!String(body.instruction || '').trim()) return send(400, { error: 'instruction_required' });
         if (!Array.isArray(body.authorizedScope) || !body.authorizedScope.length || body.authorizedScope.some((scope) => !validScope(scope, config.allowedScopes))) return send(400, { error: 'valid_authorized_scope_required' });
-        if (!body.startingRevision || body.startingRevision === 'HEAD') {
-          try { await refreshRepository(config.repository); }
-          catch { return send(503, { error: 'repository_refresh_failed' }); }
-        }
-        const revision = await resolveRevision(config.repository, body.startingRevision || 'HEAD'); const job = store.create(body, actor.id, revision); queue.enqueue(job.id); return send(202, { job: publicJob(job) });
+        if (body.startingRevision && body.startingRevision !== 'HEAD' && !/^[0-9a-f]{40}$/i.test(body.startingRevision)) return send(400, { error: 'valid_starting_revision_required' });
+        let mainRevision;
+        try { mainRevision = await refreshRepository(config.repository); }
+        catch { return send(503, { error: 'repository_refresh_failed' }); }
+        let revision;
+        try {
+          revision = await resolveRevision(config.repository, body.startingRevision || 'HEAD');
+          await assertMainAncestor(config.repository, revision, mainRevision);
+        } catch { return send(400, { error: 'starting_revision_not_on_main' }); }
+        const job = store.create(body, actor.id, revision); queue.enqueue(job.id); return send(202, { job: publicJob(job) });
       }
       const job = id && store.owned(id, actor.id); if (!job) return send(404, { error: 'job_not_found' });
       if (request.method === 'GET' && !action) return send(200, { job: publicJob(job) });
       if (request.method === 'GET' && action === 'events') { response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' }); const push=()=>response.write(`data: ${JSON.stringify(publicJob(store.owned(id, actor.id)))}\n\n`); push(); const interval=setInterval(push, 2000); request.on('close',()=>clearInterval(interval)); return; }
-      if (request.method === 'POST' && action === 'cancel') { queue.cancel(id); return send(202, { job: publicJob(store.owned(id, actor.id)) }); }
+      if (request.method === 'POST' && action === 'cancel') {
+        const publicationVisible = Boolean(job.publicationState && job.publicationState !== 'no_changes') || ['awaiting_publication','published'].includes(job.status);
+        const cancellableStatus = ['queued','running','awaiting_publication','published'].includes(job.status) || (job.status === 'failed' && publicationVisible);
+        if (!cancellableStatus) return send(409, { error: 'job_not_cancellable' });
+        if (publicationVisible && !cancelPublication(config.dataDir, id)) return send(409, { error: 'publication_merge_already_committed' });
+        queue.cancel(id);
+        if (publicationVisible) {
+          const cancelled = store.owned(id, actor.id);
+          cancelled.status = 'cancelled'; cancelled.publicationState = 'cancelled'; cancelled.error = null; cancelled.cancelRequested = true; store.save(cancelled);
+        }
+        return send(202, { job: publicJob(store.owned(id, actor.id)) });
+      }
       if (request.method === 'POST' && action === 'continue') {
         if (!['completed','failed','blocked','awaiting_approval'].includes(job.status)) return send(409, { error: 'job_not_continuable' });
         if (job.publicationState && job.publicationState !== 'no_changes') return send(409, { error: 'published_job_requires_new_task' });

@@ -1,0 +1,36 @@
+name: Engineering Console Publication Proof
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  engineering-console-publication-proof:
+    name: engineering-console-publication-proof
+    if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'inqsi/publish-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted validator from immutable PR base
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+      - name: Checkout exact candidate head as data only
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate bounded Markdown proof without executing candidate code
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_BRANCH: ${{ github.head_ref }}
+        run: node trusted/engineering_console/scripts/check-publication-proof.mjs candidate "$BASE_SHA" "$HEAD_SHA" "$HEAD_BRANCH"
