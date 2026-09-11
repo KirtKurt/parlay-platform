@@ -167,14 +167,15 @@ jobs:
           source_history = []
           for source_path in fundamentals_operational_paths:
               try:
-                  # Keep this receipt free of commit-message text: runtime focus
-                  # scanners inspect the full evidence packet for blocker words.
-                  # The fixed neutral subject preserves the existing parser while
-                  # path, SHA, and timestamp remain the only authority-bearing data.
+                  # Use the first-parent landing commit and committer timestamp so
+                  # the cutoff represents when reviewed source actually reached main,
+                  # not the topic-branch author time. Keep receipt text neutral so
+                  # blocker scanners cannot derive task authority from commit subjects.
                   row = subprocess.check_output(
                       [
-                          'git', 'log', '-1', '--date=iso-strict',
-                          '--pretty=format:%H %ad operational-source-change', '--', source_path,
+                          'git', 'log', '--first-parent', '--diff-merges=first-parent', '-1',
+                          '--date=iso-strict', '--pretty=format:%H %cI operational-source-change',
+                          '--', source_path,
                       ],
                       text=True,
                   ).strip()
