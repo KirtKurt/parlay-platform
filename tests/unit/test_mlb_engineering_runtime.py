@@ -10,6 +10,7 @@ from engineering_agent.runtime import (
     _validate_focus_domain,
     classify_task_domain,
     next_focus_domain,
+    planner_attempt_budget,
     prioritized_focus_domains,
 )
 
@@ -66,6 +67,35 @@ def test_next_focus_skips_domain_already_rejected_this_cycle() -> None:
         }
     ]
     assert next_focus_domain(evidence, rejected) == "challenger_model"
+
+
+def test_attempt_budget_expands_to_cover_evidenced_domains_after_initial_proposal() -> None:
+    evidence = (
+        "CALIBRATION_ERROR_TOO_HIGH "
+        "INSUFFICIENT_OBSERVED_TEAM_CONTEXT_TRAIN "
+        "MISSING_T10_SNAPSHOTS"
+    )
+    assert prioritized_focus_domains(evidence) == [
+        "data_capture",
+        "calibration",
+        "challenger_model",
+    ]
+    assert planner_attempt_budget(3, evidence) == 4
+
+
+def test_attempt_budget_remains_bounded_by_focus_domain_contract() -> None:
+    evidence = " ".join(
+        [
+            "health failed",
+            "MISSING_T10_SNAPSHOTS",
+            "CALIBRATION_ERROR_TOO_HIGH",
+            "INSUFFICIENT_OBSERVED_TEAM_CONTEXT_TRAIN",
+            "INSUFFICIENT_CLEAN_ROWS",
+        ]
+    )
+    assert len(prioritized_focus_domains(evidence)) == 5
+    assert planner_attempt_budget(3, evidence) == 5
+    assert planner_attempt_budget(99, evidence) == 5
 
 
 def test_focus_validation_rejects_cross_domain_retry() -> None:
