@@ -3,6 +3,7 @@ import math
 import numpy as np
 from mlb_research_sources_v1 import number
 from mlb_research_store_v1 import digest
+from mlb_research_provenance_v1 import implementation_manifest
 
 VERSION = 'MLB-RESEARCH-MODELS-v1-market-offset-linear-tree-poisson'
 PROTOCOL = {'version': VERSION, 'minimumGames': 600, 'minimumSlates': 40,
@@ -12,6 +13,10 @@ PROTOCOL = {'version': VERSION, 'minimumGames': 600, 'minimumSlates': 40,
             'maximumDevelopmentRows': 1200,
             'preferOriginalOnlyWhenMinimumGamesAndSlatesMet': True,
             'configurations': [['linear', .1], ['linear', 1.], ['trees', 15], ['trees', 30], ['poisson', .1]]}
+
+# Cache identity and experiment evidence include executable research lineage.
+# Statistical gates and active/sealed prospective tests are not changed.
+PROTOCOL['implementation'] = implementation_manifest()
 
 
 def logit(p):
