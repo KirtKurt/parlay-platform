@@ -75,3 +75,44 @@ def test_direct_request_preserves_auth_and_query_contract(transport):
     assert calls[0].get_header("Authorization") == "Bearer offline-test-token"
     assert calls[0].get_header("Accept") == "application/json"
     assert responses[0].closed
+
+
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+@pytest.mark.parametrize("url", [
+    "http://bbd.invalid", "ftp://bbd.invalid", "//bbd.invalid",
+    "https:///missing-host", "https://user:password@bbd.invalid",
+    "https://user@bbd.invalid", "https://bbd.invalid?token=value",
+    "https://bbd.invalid#fragment", "https://bbd.invalid?",
+    "https://bbd.invalid#", "https://bbd.invalid:bad",
+    "https://bbd.invalid:65536", "https://[broken",
+    " https://bbd.invalid", "https://bbd.invalid\n/path",
+    "https://bbd.invalid\\other", "https://bbd.invalid/\x01path",
+])
+def test_invalid_base_url_fails_before_transport(monkeypatch, transport, operation, url):
+    monkeypatch.setenv("BBD_BASE_URL", url)
+
+    def unexpected_opener(*args, **kwargs):
+        pytest.fail("invalid BBD destination must never reach transport")
+
+    monkeypatch.setattr(bbd_provider, "build_opener", unexpected_opener)
+
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_BASE_URL_INVALID"
+    assert "offline-test-token" not in str(result)
+    if operation != "health":
+        assert result[operation] == []
+
+
+@pytest.mark.parametrize("url", [
+    "https://bbd.invalid", "https://bbd.invalid:8443/context/",
+])
+def test_valid_https_base_urls_preserve_endpoint_path(monkeypatch, transport, url):
+    install, calls, _ = transport
+    monkeypatch.setenv("BBD_BASE_URL", url)
+    install(200)
+
+    assert bbd_provider.sports()["ok"] is True
+    assert calls[0].full_url == url.rstrip("/") + "/v1/sports"
+    assert calls[0].get_header("Authorization") == "Bearer offline-test-token"
