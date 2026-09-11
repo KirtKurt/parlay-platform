@@ -11,6 +11,7 @@ import boto3
 
 ROOT = Path(__file__).resolve().parents[1]
 POLICY = json.loads((ROOT / "engineering_agent/policy.json").read_text())
+DECISION_HISTORY_PATH = ROOT / "engineering_agent/decision_history.json"
 
 DEFAULT_MISSION = (
     "Continuously improve the MLB research and successor-learning platform. "
@@ -53,6 +54,16 @@ def parse_json(text: str) -> dict[str, Any]:
     return value
 
 
+def load_decision_history(path: Path | None = None) -> dict[str, Any]:
+    target = path or DECISION_HISTORY_PATH
+    if not target.exists():
+        return {"decisions": []}
+    value = json.loads(target.read_text())
+    if not isinstance(value, dict) or not isinstance(value.get("decisions", []), list):
+        raise ValueError("engineering decision history must contain a decisions array")
+    return value
+
+
 def normalize_task_title(value: Any) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
 
@@ -71,14 +82,15 @@ def blocked_task_titles(decision_history: dict[str, Any] | None) -> set[str]:
     return blocked
 
 
-def validate_against_history(value: dict[str, Any], decision_history: dict[str, Any] | None) -> dict[str, Any]:
+def validate_against_history(value: dict[str, Any], decision_history: dict[str, Any] | None = None) -> dict[str, Any]:
+    history = decision_history if decision_history is not None else load_decision_history()
     title = normalize_task_title(value.get("title"))
-    if title and title in blocked_task_titles(decision_history):
+    if title and title in blocked_task_titles(history):
         raise ValueError("task already completed or rejected by engineering decision history")
     return value
 
 
-def validate(value: dict[str, Any]) -> dict[str, Any]:
+def validate(value: dict[str, Any], *, decision_history: dict[str, Any] | None = None) -> dict[str, Any]:
     required = ("title", "objective", "implementation", "acceptanceTests", "safetyReceipts")
     for key in required:
         if not value.get(key):
@@ -103,7 +115,7 @@ def validate(value: dict[str, Any]) -> dict[str, Any]:
     value["noModelPromotion"] = True
     value["noSecretMutation"] = True
     value["noOtherSportChange"] = True
-    return value
+    return validate_against_history(value, decision_history)
 
 
 def main() -> int:
@@ -113,11 +125,7 @@ def main() -> int:
     parser.add_argument("--decision-history")
     args = parser.parse_args()
     evidence = Path(args.evidence).read_text(encoding="utf-8", errors="replace")[-50000:]
-    history = (
-        json.loads(Path(args.decision_history).read_text())
-        if args.decision_history
-        else {"decisions": []}
-    )
+    history = load_decision_history(Path(args.decision_history) if args.decision_history else None)
     mission = os.environ.get("INQSI_ENGINEERING_MISSION", "").strip() or DEFAULT_MISSION
     prompt = json.dumps({
         "mission": mission,
@@ -132,7 +140,7 @@ def main() -> int:
         ),
     })
     raw, route = invoke(prompt)
-    task = validate_against_history(validate(parse_json(raw)), history)
+    task = validate(parse_json(raw), decision_history=history)
     task["plannerRoute"] = route
     Path(args.output).write_text(json.dumps(task, indent=2, sort_keys=True) + "\n")
     print(json.dumps({"ok": True, "title": task["title"], "plannerRoute": route}))
