@@ -60,7 +60,6 @@ _FOCUS_SIGNAL_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "data_capture",
         (
             "missing_t10_snapshots",
-            "missedt10",
             "coverage_mismatch",
             "source_failure",
             "capture failure",
