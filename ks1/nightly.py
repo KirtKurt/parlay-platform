@@ -36,6 +36,24 @@ def require_main_workflow():
         raise ValueError('nightly writes require the existing main research ingestion workflow')
 
 
+def require_fresh_finals(prior, not_before, as_of):
+    """Do not seal a nightly checkpoint from a previous tick's results cache.
+
+    Ingestion can exit successfully with LEASE_BUSY, or publish partial source
+    coverage. Neither is proof that this run refreshed all completed games.
+    Source hashes/version IDs are still verified by Reader before this gate.
+    """
+    if not not_before:
+        raise ValueError('nightly publication requires the source refresh start time')
+    if prior.get('coverageComplete') is not True:
+        raise ValueError('nightly finals coverage is incomplete; retry after ingestion')
+    start, end = utc(not_before), utc(as_of)
+    observed = prior.get('receipt', {}).get('retrievedAtUtc')
+    updated = prior.get('updatedAtUtc')
+    if not observed or not updated or not (start <= utc(observed) <= utc(updated) <= end):
+        raise ValueError('nightly finals are stale or future-dated; retry after ingestion')
+
+
 def ledger_rows(ledger, as_of):
     if ledger.get('system') != 'KS1' or ledger.get('raw_model_version') != raw_model_version():
         raise ValueError('invalid KS1 grading ledger model')
@@ -146,6 +164,7 @@ def main():
     parser.add_argument('--inputs', type=Path, help='Retained capture for a local-only verification')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--publish', action='store_true')
+    parser.add_argument('--sources-not-before', help='UTC start of this run\'s source ingestion; required for due publication')
     args = parser.parse_args()
     if args.publish:
         require_main_workflow()
@@ -156,10 +175,25 @@ def main():
         as_of = datetime.now(timezone.utc).isoformat()
         checkpoint = latest_checkpoint(s3, bucket, as_of)
         if due_date(as_of, checkpoint) is None:
-            print(json.dumps({'status': 'not_due_or_already_completed'})); return
+            args.output.mkdir(parents=True, exist_ok=True)
+            report = {'status': 'not_due_or_already_completed', 'published': False, 'as_of': as_of}
+            (args.output/'report.json').write_bytes(encode(report))
+            print(json.dumps(report)); return
         reader = Reader(s3, bucket)
         prior = reader.pointer(reader.read(RESEARCH+'prior-games.json')['artifact'])
+        try:
+            require_fresh_finals(prior, args.sources_not_before, as_of)
+        except ValueError as exc:
+            args.output.mkdir(parents=True, exist_ok=True)
+            (args.output/'report.json').write_bytes(encode({
+                'status': 'source_refresh_not_verified', 'published': False,
+                'as_of': as_of, 'reason': str(exc), 'ledger_writes': 0,
+                'source_updated_at': prior.get('updatedAtUtc'),
+                'sources_not_before': args.sources_not_before}))
+            raise
         source = capture(s3, bucket, as_of, prior, reader.receipts)
+        args.output.mkdir(parents=True, exist_ok=True)
+        (args.output/'capture.json').write_bytes(encode(source))
         report = execute(source, args.output, s3=s3, bucket=bucket, checkpoint=checkpoint)
     else:
         if not args.inputs:

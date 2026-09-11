@@ -1,0 +1,39 @@
+name: KS1 hourly refresh watchdog
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Seed/recover the singleton owner; continuity does not depend on cron.
+    - cron: '7 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ks1-refresh-watchdog.yml'
+      - 'ks1/refresh_watchdog.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ks1-refresh-watchdog-main
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    if: github.repository == 'KirtKurt/parlay-platform' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Stale-gate hourly KS1 dispatch and hand off after 55 minutes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -m ks1.refresh_watchdog

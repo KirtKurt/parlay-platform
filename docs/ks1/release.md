@@ -22,7 +22,7 @@ sports' production authority changes are needed.
 1. Verify the release PR with the complete runtime test suite and retained
    calibration capture. The calibration PR job has no AWS credentials.
 2. Merge the checked release head to main. The existing main workflow runs
-   nightly grading if due, then source ingestion, live input capture,
+   source ingestion, then nightly grading if due, live input capture,
    calibration parameter loading and daily prediction publication.
 3. Verify the run's `ks1-nightly-*` and `ks1-daily-*` artifacts. Publication must
    report `published=true` with successful S3 readback, the expected KS1 date
@@ -32,8 +32,9 @@ sports' production authority changes are needed.
    become graded rows. Pending games wait for verified final results. The ledger
    is committed and read back before either mapping is fitted.
 
-The hourly cron moves from minute 23 to minute 0 so the existing trigger covers
-01:00 Eastern. DST and delayed-run catch-up are handled inside `ks1/nightly.py`.
+The hourly cron is at minute 17. DST and the 01:00 Eastern delayed-run catch-up
+are handled inside `ks1/nightly.py`. See `refresh-recovery.md` for the proposed
+KS1-only dispatch watchdog, source-freshness gate, and activation boundary.
 The unchanged Phase 1 main workflow may also rebuild its game table from
 existing retained data; it does not train or replace the serving models.
 

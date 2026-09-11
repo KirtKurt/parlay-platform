@@ -194,7 +194,7 @@ def test_missing_or_corrupt_committed_ledger_fails_closed(main_job, tmp_path):
         checkpoint(store)
 
 
-def test_existing_workflow_runs_nightly_before_ingestion_and_publish_without_extra_scheduler():
+def test_workflow_refreshes_finals_before_nightly_and_does_not_block_daily_on_grading_failure():
     path = Path(__file__).resolve().parents[2]/'.github/workflows/mlb-research-ingestion.yml'
     workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
     assert workflow['on']['schedule'] == [{'cron': '17 * * * *'}]
@@ -203,6 +203,76 @@ def test_existing_workflow_runs_nightly_before_ingestion_and_publish_without_ext
     night = next(i for i, s in enumerate(commands) if 'ks1.nightly' in s)
     ingest = next(i for i, s in enumerate(commands) if 'run_mlb_research_ingestion.py' in s)
     publish = next(i for i, s in enumerate(commands) if 'ks1.daily' in s)
-    assert night < ingest < publish
+    assert ingest < night < publish
+    refresh = next(s for s in steps if s.get('id') == 'research')
+    assert 'started_at=' in refresh['run'] and 'GITHUB_OUTPUT' in refresh['run']
+    nightly_step = next(s for s in steps if s.get('id') == 'nightly')
+    assert '--sources-not-before' in nightly_step['run']
+    assert nightly_step['env']['SOURCES_NOT_BEFORE'] == '${{ steps.research.outputs.started_at }}'
+    assert 'continue-on-error' not in nightly_step
+    daily = next(s for s in steps if 'ks1.daily' in s.get('run', ''))
+    assert daily['if'] == "${{ !cancelled() && steps.research.outcome == 'success' }}"
     assert 'refs/heads/main' in workflow['jobs']['ingest']['if']
     assert 'pull_request' in workflow['jobs']['verify-ks1']['if']
+
+
+def fresh_prior():
+    return {'coverageComplete': True, 'games': [],
+            'receipt': {'retrievedAtUtc': '2026-09-11T05:00:10Z'},
+            'updatedAtUtc': '2026-09-11T05:00:30Z'}
+
+
+def test_fresh_complete_results_allow_an_empty_real_slate():
+    nightly.require_fresh_finals(fresh_prior(), NOW, '2026-09-11T05:01:00Z')
+
+
+@pytest.mark.parametrize('change', [
+    {'coverageComplete': False}, {'coverageComplete': 'true'},
+    {'updatedAtUtc': '2026-09-11T04:59:00Z'},  # LEASE_BUSY/stale cache
+    {'receipt': {'retrievedAtUtc': '2026-09-10T01:00:00Z'}},
+    {'receipt': {}}, {'updatedAtUtc': None},
+    {'updatedAtUtc': '2026-09-11T05:02:00Z'},  # future source
+])
+def test_stale_incomplete_missing_or_future_results_cannot_seal_the_night(change):
+    with pytest.raises(ValueError, match='incomplete|stale|future'):
+        nightly.require_fresh_finals(dict(fresh_prior(), **change), NOW, '2026-09-11T05:01:00Z')
+
+
+def test_due_nightly_cli_fails_before_capture_or_writes_on_stale_finals(main_job, tmp_path, monkeypatch):
+    import sys
+    from datetime import datetime
+    from ks1 import sources
+
+    class Clock:
+        @staticmethod
+        def now(tz):
+            return datetime.fromisoformat('2026-09-11T05:01:00+00:00')
+
+    prior = fresh_prior()
+    prior['receipt']['retrievedAtUtc'] = '2026-09-10T01:00:00Z'
+    class ReadOnly:
+        def __init__(self, *args):
+            self.receipts = []
+        def read(self, key):
+            return {'artifact': {}}
+        def pointer(self, pointer):
+            return prior
+
+    monkeypatch.setattr(nightly, 'datetime', Clock)
+    monkeypatch.setattr(nightly, 'Reader', ReadOnly)
+    monkeypatch.setattr(sources, 'aws_clients', lambda *a: (None, object(), 'test'))
+    monkeypatch.setattr(nightly, 'latest_checkpoint', lambda *a: None)
+    monkeypatch.setattr(nightly, 'capture', lambda *a: pytest.fail('stale finals reached capture'))
+    monkeypatch.setattr(nightly, 'execute', lambda *a, **kw: pytest.fail('stale finals reached ledger writes'))
+    monkeypatch.setattr(sys, 'argv', ['nightly', '--publish', '--sources-not-before', NOW,
+                                    '--output', str(tmp_path)])
+    with pytest.raises(ValueError, match='stale'):
+        nightly.main()
+    report = json.loads((tmp_path/'report.json').read_text())
+    assert report['status'] == 'source_refresh_not_verified'
+    assert report['ledger_writes'] == 0 and report['published'] is False
+
+
+def test_publish_requires_source_refresh_start():
+    with pytest.raises(ValueError, match='requires the source refresh start'):
+        nightly.require_fresh_finals(fresh_prior(), None, '2026-09-11T05:01:00Z')

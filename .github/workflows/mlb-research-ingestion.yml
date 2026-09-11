@@ -2,7 +2,7 @@ name: MLB research source ingestion
 on:
   workflow_dispatch:
   pull_request:
-    paths: ['ks1/**', 'src/temperature_calibrator.py', 'tests/ks1_phase4/**', 'tests/ks1_phase5/**', 'tests/ks1_calibration/**', 'data/models/platt.json', 'data/models/temperature.json', '.github/workflows/mlb-research-ingestion.yml']
+    paths: ['ks1/**', 'src/temperature_calibrator.py', 'tests/ks1_phase4/**', 'tests/ks1_phase5/**', 'tests/ks1_calibration/**', 'data/models/platt.json', 'data/models/temperature.json', '.github/workflows/mlb-research-ingestion.yml', '.github/workflows/ks1-refresh-watchdog.yml']
   schedule:
     # Run once per hour away from GitHub's congested top-of-hour queue.
     # The nightly command still enforces its 01:00 America/New_York due gate.
@@ -45,8 +45,16 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
+      - name: Refresh retained results before the nightly checkpoint
+        id: research
+        run: |
+          echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)" >> "$GITHUB_OUTPUT"
+          python scripts/run_mlb_research_ingestion.py --seconds 2400
       - name: Grade KS1 at 01:00 Eastern, then fit calibration after verified ledger write
-        run: python -m ks1.nightly --output /tmp/ks1-nightly --publish
+        id: nightly
+        env:
+          SOURCES_NOT_BEFORE: ${{ steps.research.outputs.started_at }}
+        run: python -m ks1.nightly --sources-not-before "$SOURCES_NOT_BEFORE" --output /tmp/ks1-nightly --publish
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -54,8 +62,10 @@ jobs:
           path: /tmp/ks1-nightly/
           if-no-files-found: ignore
           retention-days: 90
-      - run: python scripts/run_mlb_research_ingestion.py --seconds 2400
       - name: Refresh KS1 lineups, starters and changed games using the existing hourly trigger
+        # A failed nightly check must remain red, but must not suppress today's
+        # independent pregame refresh. Do not bypass a failed source refresh.
+        if: ${{ !cancelled() && steps.research.outcome == 'success' }}
         env:
           BBS_API_KEY: ${{ secrets.BBS_API_KEY }}
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
