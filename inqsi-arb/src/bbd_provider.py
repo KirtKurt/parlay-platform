@@ -13,7 +13,7 @@ from dataclasses import dataclass, asdict
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 DEFAULT_BASE_URL = "https://api.bigballsdata.com"
 USER_AGENT = "inqsi-arb-bbd/1.0"
@@ -21,6 +21,19 @@ USER_AGENT = "inqsi-arb-bbd/1.0"
 
 class BBDError(RuntimeError):
     pass
+
+
+class _RejectRedirects(HTTPRedirectHandler):
+    """Never forward a BBD bearer token through a provider redirect."""
+
+    def http_error_302(self, req, fp, code, msg, headers):
+        fp.close()
+        raise BBDError("BBD_REDIRECT_NOT_ALLOWED")
+
+    http_error_301 = http_error_302
+    http_error_303 = http_error_302
+    http_error_307 = http_error_302
+    http_error_308 = http_error_302
 
 
 @dataclass(frozen=True)
@@ -71,7 +84,7 @@ def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int
         "User-Agent": USER_AGENT,
     })
     try:
-        with urlopen(request, timeout=timeout) as response:
+        with build_opener(_RejectRedirects()).open(request, timeout=timeout) as response:
             raw = response.read()
             payload = json.loads(raw.decode("utf-8")) if raw else {}
             return int(response.status), dict(response.headers.items()), payload

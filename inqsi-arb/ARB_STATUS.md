@@ -52,6 +52,8 @@ The 2026-09-11 bounded provider/context increment makes the optional BBD adapter
 
 ## Highest-priority remaining work
 
+The additional 2026-09-11 bounded increment addresses backlog item 1 only: the BBD transport now rejects redirects before any follow-up request can forward its bearer token. Failures return `BBD_REDIRECT_NOT_ALLOWED` and no context rows. Offline tests exercise urllib response processing for 301/302/303/307/308 across all three adapter operations and verify direct-request authorization and query encoding. Validation: `PYTHONDONTWRITEBYTECODE=1 python -m pytest -q -p no:cacheprovider inqsi-arb/tests` (324 passed); `SAM_CLI_TELEMETRY=0 sam build --no-cached --template-file template.yaml` from `inqsi-arb` (succeeded; global SAM metadata writes were blocked by the read-only home filesystem). Authenticated live fixtures and entitlement proof remain unavailable; runtime wiring, pagination and live identity/status/timestamp qualification remain blocked or pending. The Odds API remains the price authority.
+
 1. Wire the optional BBD context adapter into runtime endpoints only after credential and entitlement proof.
 2. Continue reviewed settlement-rule expansion across observed books, jurisdictions, market families and periods.
 3. Accumulate sustained live observation/audit evidence and add immutable raw-provider-bundle retention for stronger replay provenance.
