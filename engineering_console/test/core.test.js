@@ -10,9 +10,8 @@ import { loadConfig } from '../src/config.js';
 
 test('fails closed without identity configuration', () => assert.throws(() => loadConfig({}), /console disabled/));
 
-test('accepts complete explicit security configuration', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'inqsi-config-'));
-  const config = loadConfig({
+function completeConfig(root, overrides = {}) {
+  return {
     INQSI_ENGINEERING_OIDC_ISSUER: 'https://issuer.example',
     INQSI_ENGINEERING_OIDC_AUDIENCE: 'inqsi',
     INQSI_ENGINEERING_JWKS_URI: 'https://issuer.example/jwks.json',
@@ -24,10 +23,26 @@ test('accepts complete explicit security configuration', () => {
     INQSI_ENGINEERING_ALLOWED_SCOPES: 'engineering_console_publication_proof,engineering_console_publication_proof/probes',
     INQSI_ENGINEERING_PUBLICATION_POLICY: 'proof-v1',
     INQSI_ENGINEERING_REQUIRED_CHECKS: 'engineering-console-publication-proof',
-    INQSI_ENGINEERING_MAX_CONCURRENT_JOBS: '2'
-  });
+    INQSI_ENGINEERING_BIND_ADDRESS: '127.0.0.1',
+    INQSI_ENGINEERING_MAX_CONCURRENT_JOBS: '2',
+    ...overrides
+  };
+}
+
+test('accepts complete explicit security configuration', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'inqsi-config-'));
+  const config = loadConfig(completeConfig(root));
   assert.equal(config.allowedScopes.length, 2);
   assert.equal(config.maxConcurrentJobs, 2);
+  assert.equal(config.bindAddress, '127.0.0.1');
+});
+
+test('rejects implicit or invalid bind addresses', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'inqsi-config-'));
+  const missing = completeConfig(root);
+  delete missing.INQSI_ENGINEERING_BIND_ADDRESS;
+  assert.throws(() => loadConfig(missing), /missing INQSI_ENGINEERING_BIND_ADDRESS/);
+  assert.throws(() => loadConfig(completeConfig(root, { INQSI_ENGINEERING_BIND_ADDRESS: '::' })), /invalid bind address/);
 });
 
 test('durably stores jobs and scopes history to its owner', () => {
