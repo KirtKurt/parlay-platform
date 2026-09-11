@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Inqsi Arb - isolated provider-discovered arbitrage API
+Description: Inqsi ARB v3 - isolated provider-discovered arbitrage API
 Parameters:
   OddsApiKey:
     Type: String
@@ -18,48 +18,174 @@ Globals:
         ODDS_API_KEY: !Ref OddsApiKey
         ARB_REGIONS: !Ref ArbRegions
         ARB_MAX_EVENT_MARKET_EVENTS: '40'
+        ARB_MAX_MARKETS_PER_EVENT: '80'
         ARB_MAX_SPORTS_PER_ALL_SCAN: '100'
+        ARB_AUDIT_TABLE: !Ref ArbAuditTable
+        ARB_STATE_TABLE: !Ref ArbStateTable
+        ARB_CONNECTIONS_TABLE: !Ref ArbConnectionsTable
+        ARB_WEBSOCKET_MANAGEMENT_ENDPOINT: !Sub 'https://${ArbWebSocketApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod'
 Resources:
+  ArbAuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+  ArbStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+  ArbConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connection_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connection_id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
   ArbApi:
     Type: AWS::Serverless::Api
     Properties:
       StageName: Prod
       Cors:
         AllowMethods: "'GET,POST,OPTIONS'"
-        AllowHeaders: "'Content-Type'"
+        AllowHeaders: "'Content-Type,X-Inqsi-User-Id'"
         AllowOrigin: "'*'"
+
   ArbFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: src/
       Handler: app.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ArbAuditTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ArbStateTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref ArbConnectionsTable
+        - Statement:
+            - Effect: Allow
+              Action: execute-api:ManageConnections
+              Resource: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ArbWebSocketApi}/Prod/POST/@connections/*'
       Events:
         Health:
           Type: Api
-          Properties:
-            RestApiId: !Ref ArbApi
-            Path: /v1/arb/health
-            Method: GET
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/health, Method: GET}
         Catalog:
           Type: Api
-          Properties:
-            RestApiId: !Ref ArbApi
-            Path: /v1/arb/catalog
-            Method: GET
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/catalog, Method: GET}
+        Markets:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/markets, Method: GET}
+        UI:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/ui, Method: GET}
         Scan:
           Type: Api
-          Properties:
-            RestApiId: !Ref ArbApi
-            Path: /v1/arb/scan
-            Method: ANY
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/scan, Method: ANY}
+        Constraints:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/constraints, Method: POST}
+        PositionsRoot:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/positions, Method: ANY}
+        PositionsProxy:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: '/v1/arb/positions/{proxy+}', Method: ANY}
         LegacyScan:
           Type: Api
-          Properties:
-            RestApiId: !Ref ArbApi
-            Path: /v1/scan
-            Method: POST
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/scan, Method: POST}
+
+  ArbWebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: inqsi-arb-websocket
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: '$request.body.action'
+  ArbWebSocketFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: websocket.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ArbConnectionsTable
+  ArbWebSocketPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ArbWebSocketFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ArbWebSocketApi}/*'
+  ArbWebSocketIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ArbWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ArbWebSocketFunction.Arn}/invocations'
+  ArbWebSocketConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ArbWebSocketApi
+      RouteKey: '$connect'
+      AuthorizationType: NONE
+      Target: !Join ['/', ['integrations', !Ref ArbWebSocketIntegration]]
+  ArbWebSocketDisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ArbWebSocketApi
+      RouteKey: '$disconnect'
+      AuthorizationType: NONE
+      Target: !Join ['/', ['integrations', !Ref ArbWebSocketIntegration]]
+  ArbWebSocketPingRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ArbWebSocketApi
+      RouteKey: ping
+      AuthorizationType: NONE
+      Target: !Join ['/', ['integrations', !Ref ArbWebSocketIntegration]]
+  ArbWebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref ArbWebSocketApi
+      StageName: Prod
+      AutoDeploy: true
+
 Outputs:
   ArbApiUrl:
     Value: !Sub 'https://${ArbApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod'
   ArbHealthUrl:
     Value: !Sub 'https://${ArbApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/v1/arb/health'
+  ArbUiUrl:
+    Value: !Sub 'https://${ArbApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/v1/arb/ui'
+  ArbWebSocketUrl:
+    Value: !Sub 'wss://${ArbWebSocketApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod'
