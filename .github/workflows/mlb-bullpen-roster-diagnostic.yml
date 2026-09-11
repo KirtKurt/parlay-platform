@@ -1,0 +1,61 @@
+name: MLB Bullpen Roster Diagnostic
+
+on:
+  schedule:
+    - cron: '32 * * * *'
+  pull_request:
+    paths:
+      - 'scripts/mlb_bullpen_roster_diagnostic.py'
+      - 'tests/unit/test_mlb_bullpen_roster_diagnostic.py'
+      - '.github/workflows/mlb-bullpen-roster-diagnostic.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/mlb_bullpen_roster_diagnostic.py'
+      - 'tests/unit/test_mlb_bullpen_roster_diagnostic.py'
+      - '.github/workflows/mlb-bullpen-roster-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test runtime
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Verify diagnostic remains passive and fail-closed
+        run: |
+          python -m pytest -q tests/unit/test_mlb_bullpen_roster_diagnostic.py
+          python -m py_compile scripts/mlb_bullpen_roster_diagnostic.py
+
+  live-read:
+    if: github.event_name != 'pull_request'
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Probe official MLB Preview bullpen lists
+        run: |
+          python scripts/mlb_bullpen_roster_diagnostic.py \
+            --output runtime_reports/mlb_bullpen_roster_diagnostic_latest.json
+      - name: Upload passive diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-bullpen-roster-${{ github.run_id }}
+          path: runtime_reports/mlb_bullpen_roster_diagnostic_latest.json
+          if-no-files-found: error
+          retention-days: 30
