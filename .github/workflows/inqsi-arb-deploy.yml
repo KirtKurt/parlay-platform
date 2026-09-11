@@ -1,5 +1,9 @@
 name: Deploy Inqsi Arb
 on:
+  pull_request:
+    paths:
+      - 'inqsi-arb/**'
+      - '.github/workflows/inqsi-arb-deploy.yml'
   push:
     branches: [main]
     paths:
@@ -9,10 +13,10 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: inqsi-arb-production
+  group: inqsi-arb-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  test-deploy-verify:
+  test-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,19 +24,29 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install test runtime
-        run: python -m pip install --quiet "pytest>=8,<9"
-      - name: Test deterministic engine
+        run: python -m pip install --quiet "pytest>=8,<9" boto3
+      - name: Test deterministic engine and v3 integration
         run: python -m pytest -q inqsi-arb/tests
+      - uses: aws-actions/setup-sam@v2
+      - name: Validate and build
+        run: |
+          sam validate --lint --template-file inqsi-arb/template.yaml
+          sam build --no-cached --template-file inqsi-arb/template.yaml
+
+  deploy-verify:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
       - uses: aws-actions/setup-sam@v2
-      - name: Validate and build
-        run: |
-          sam validate --template-file inqsi-arb/template.yaml
-          sam build --no-cached --template-file inqsi-arb/template.yaml
+      - name: Build
+        run: sam build --no-cached --template-file inqsi-arb/template.yaml
       - name: Deploy isolated arb stack
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
@@ -47,20 +61,26 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}"
-      - name: Verify live health and provider catalog
+      - name: Verify live v3 health, catalog, UI and infrastructure
         run: |
           set -euo pipefail
           API_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ArbApiUrl'].OutputValue" --output text)
+          WS_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ArbWebSocketUrl'].OutputValue" --output text)
           test -n "$API_URL" && test "$API_URL" != "None"
-          python - "$API_URL" <<'PY'
+          test -n "$WS_URL" && test "$WS_URL" != "None"
+          python - "$API_URL" "$WS_URL" <<'PY'
           import json, sys, urllib.request
-          base=sys.argv[1].rstrip('/')
-          with urllib.request.urlopen(base+'/v1/arb/health', timeout=20) as r:
-              h=json.load(r)
-          assert h['ok'] is True and h['places_bets'] is False and h['provider_key_present'] is True, h
-          with urllib.request.urlopen(base+'/v1/arb/catalog', timeout=30) as r:
-              c=json.load(r)
+          base=sys.argv[1].rstrip('/'); ws=sys.argv[2]
+          with urllib.request.urlopen(base+'/v1/arb/health', timeout=20) as r: h=json.load(r)
+          assert h['ok'] is True and h['version']=='INQSI-ARB-v3' and h['places_bets'] is False, h
+          assert h['provider_key_present'] is True and h['audit_persistence'] is True, h
+          assert h['automatic_market_discovery'] is True and h['websocket_push_configured'] is True, h
+          with urllib.request.urlopen(base+'/v1/arb/catalog', timeout=30) as r: c=json.load(r)
           assert c['ok'] is True and c['n_sports'] > 0, c
           assert 'player_props' in c['market_families'] and 'futures' in c['market_families'], c
-          print(json.dumps({'api_url': base, 'health': h, 'active_sports': c['n_sports']}, indent=2))
+          with urllib.request.urlopen(base+'/v1/arb/ui', timeout=20) as r:
+              content_type=r.headers.get('content-type',''); html=r.read().decode('utf-8')
+          assert 'text/html' in content_type and 'Inqsi ARB' in html
+          assert ws.startswith('wss://'), ws
+          print(json.dumps({'api_url':base,'websocket_url':ws,'health':h,'active_sports':c['n_sports']}, indent=2))
           PY

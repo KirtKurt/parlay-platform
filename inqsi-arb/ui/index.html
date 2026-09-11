@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Inqsi ARB</title>
+<style>
+:root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111;background:#fff}
+body{margin:0}.wrap{max-width:1180px;margin:auto;padding:18px}.top{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.top h1{margin:0 16px 0 0;font-size:24px}.field{display:flex;flex-direction:column;gap:5px;font-size:12px}.field input,.field select{padding:9px;border:1px solid #ccc;border-radius:8px;background:#fff}button{padding:10px 14px;border-radius:8px;border:1px solid #111;background:#111;color:white;font-weight:700;cursor:pointer}.status{margin:14px 0;padding:12px;border:1px solid #ddd;border-radius:10px}.grid{display:grid;gap:10px}.card{border:1px solid #ddd;border-radius:12px;padding:14px}.row{display:flex;justify-content:space-between;gap:14px;align-items:center}.muted{color:#666;font-size:12px}.good{font-weight:800}.warn{font-weight:700}.legs{display:grid;gap:7px;margin-top:10px}.leg{padding:9px;background:#f6f6f6;border-radius:8px}.pill{display:inline-block;padding:4px 8px;border:1px solid #ccc;border-radius:999px;font-size:11px;margin-right:6px}details{margin-top:8px}pre{white-space:pre-wrap;font-size:11px;overflow:auto}.empty{padding:30px;text-align:center;border:1px dashed #bbb;border-radius:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Inqsi ARB</h1>
+    <label class="field">Sport<input id="sport" value="baseball_mlb" /></label>
+    <label class="field">Markets<input id="markets" value="h2h,spreads,totals" /></label>
+    <label class="field">Bankroll<input id="bankroll" type="number" min="1" value="1000" /></label>
+    <button id="scan">Scan</button>
+  </div>
+  <div class="status" id="status">Ready.</div>
+  <div class="grid" id="results"></div>
+</div>
+<script>
+const qs=new URLSearchParams(location.search);const api=(qs.get('api')||'').replace(/\/$/,'');
+const $=id=>document.getElementById(id);const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+function card(x){const verified=(x.validation?.rules_status||'').toLowerCase()==='compatible';return `<div class="card"><div class="row"><div><div class="good">${esc(x.event)}</div><div class="muted">${esc(x.market)} · ${esc(x.commence_time||'')}</div></div><div><span class="pill">${verified?'VERIFIED':'DETECTED'}</span><b>${Number(x.margin_pct||0).toFixed(2)}%</b></div></div><div class="legs">${(x.legs||[]).map(l=>`<div class="leg"><b>${esc(l.outcome)}</b> · ${esc(l.book)} · ${esc(l.american)} <span class="muted">source ${esc(l.last_update||'unknown')}</span></div>`).join('')}</div><details><summary>Evidence</summary><pre>${esc(JSON.stringify(x,null,2))}</pre></details></div>`}
+async function scan(){if(!api){$('status').textContent='Missing ?api=https://.../Prod embed parameter.';return}$('status').textContent='Scanning…';$('results').innerHTML='';const p=new URLSearchParams({sport:$('sport').value,markets:$('markets').value,bankroll:$('bankroll').value});try{const r=await fetch(`${api}/v1/arb/scan?${p}`);const j=await r.json();$('status').textContent=`${j.n_arbs||0} qualifying arbs · ${j.n_markets||0} markets · version ${j.version||''}`;const hits=j.hits||[];$('results').innerHTML=hits.length?hits.map(card).join(''):'<div class="empty">No qualifying arbitrage opportunities across the selected sport and markets.</div>'}catch(e){$('status').textContent='Data unavailable: '+e.message}}
+$('scan').addEventListener('click',scan);
+</script>
+</body>
+</html>
