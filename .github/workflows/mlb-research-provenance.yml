@@ -5,6 +5,7 @@ on:
       - 'mlb_research/**'
       - 'tests/unit/test_mlb_research_v1.py'
       - 'tests/unit/test_mlb_research_provenance.py'
+      - 'tests/unit/test_mlb_feature_discovery_v1.py'
       - '.github/workflows/mlb-research-provenance.yml'
   push:
     branches: [main]
@@ -12,6 +13,7 @@ on:
       - 'mlb_research/**'
       - 'tests/unit/test_mlb_research_v1.py'
       - 'tests/unit/test_mlb_research_provenance.py'
+      - 'tests/unit/test_mlb_feature_discovery_v1.py'
       - '.github/workflows/mlb-research-provenance.yml'
 permissions:
   contents: read
@@ -36,7 +38,7 @@ jobs:
         run: python -m pip install -r mlb_research/requirements.txt 'pytest>=8,<9' 'PyYAML>=6,<7'
       - name: Verify current research behavior and source-bound registry
         run: |
-          python -m pytest -q tests/unit/test_mlb_research_v1.py tests/unit/test_mlb_research_provenance.py --junitxml=runtime_reports/mlb-research-provenance-tests.xml
+          python -m pytest -q tests/unit/test_mlb_research_v1.py tests/unit/test_mlb_research_provenance.py tests/unit/test_mlb_feature_discovery_v1.py --junitxml=runtime_reports/mlb-research-provenance-tests.xml
           python -m compileall -q mlb_research
       - name: Record non-secret implementation evidence
         run: |
