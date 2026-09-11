@@ -18,6 +18,21 @@ _FORBIDDEN_AUTHORITY_FIELDS = (
     "otherSportChangeAllowed",
 )
 
+# A green NO_ACTION cycle is reserved for real task proposals that were
+# deliberately rejected by the controller's task/history/safety policy. Provider
+# failures, empty/malformed output, schema drift, or missing authority receipts
+# are controller-health failures and must remain hard workflow failures.
+_TASK_POLICY_REJECTION_MARKERS = (
+    "task belongs to excluded focus domain",
+    "task does not satisfy required focus domain",
+    "task duplicates engineering decision history",
+    "task repeats a proposal already rejected this cycle",
+    "prospective evaluation rows are immutable holdout evidence",
+    "prospective holdout is underpowered",
+    "source-observed pregame inputs cannot be synthesized",
+    "historical pregame expansion requires explicit immutable point-in-time source provenance",
+)
+
 
 def _validated_rejected_attempts(attempts: list[dict[str, Any]], expected: int) -> None:
     if len(attempts) != expected or not 1 <= len(attempts) <= _MAX_BOUNDED_ATTEMPTS:
@@ -27,8 +42,22 @@ def _validated_rejected_attempts(attempts: list[dict[str, Any]], expected: int) 
             raise ValueError("bounded exhaustion attempt ledger is not sequential")
         if attempt.get("attemptBudget") != expected:
             raise ValueError("bounded exhaustion attempt budget mismatch")
-        if attempt.get("accepted") is True or not str(attempt.get("rejected") or "").strip():
+        reason = str(attempt.get("rejected") or "").strip()
+        if attempt.get("accepted") is True or not reason:
             raise ValueError("bounded exhaustion ledger contains a non-rejected attempt")
+
+        # Do not let a bounded sequence of broken planner responses masquerade as
+        # a healthy cycle with no eligible task. Runtime summaries for provider,
+        # empty, and parse/schema failures either have no real task title or do
+        # not carry one of the explicit policy-rejection reasons below.
+        title = str(attempt.get("title") or "").strip()
+        if not title or title.startswith("<"):
+            raise ValueError("bounded exhaustion contains a planner/runtime failure")
+        if attempt.get("ok") is not True or attempt.get("mode") != "engineering_plan":
+            raise ValueError("bounded exhaustion contains a planner/runtime failure")
+        lowered = reason.lower()
+        if not any(marker in lowered for marker in _TASK_POLICY_REJECTION_MARKERS):
+            raise ValueError("bounded exhaustion contains a non-policy planner rejection")
 
 
 def build_no_action_receipt(
@@ -38,12 +67,13 @@ def build_no_action_receipt(
     task_published: bool,
     response_published: bool,
 ) -> dict[str, Any]:
-    """Convert only proven bounded planner exhaustion into a read-only no-op outcome.
+    """Convert only proven bounded policy exhaustion into a read-only no-op outcome.
 
     This never changes ``run()`` semantics: the planner runtime still fails closed and
     writes only its rejection ledger. The scheduled wrapper may use this receipt to
-    distinguish a healthy, bounded "nothing eligible to publish" cycle from an
-    infrastructure/runtime failure. Any other exception remains a hard failure.
+    distinguish a healthy, bounded "nothing safe/distinct to publish" cycle from an
+    infrastructure, provider, formatting, schema, or runtime failure. Any non-policy
+    failure remains a hard failure.
     """
     match = _EXHAUSTION.search(runtime_log)
     if match is None:
