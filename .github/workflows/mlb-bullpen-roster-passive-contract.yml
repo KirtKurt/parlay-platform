@@ -1,0 +1,38 @@
+name: MLB Passive Bullpen Roster Contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'hello_world/mlb_statsapi_team_context.py'
+      - 'hello_world/mlb_three_api_llm_analyst.py'
+      - 'tests/unit/test_mlb_bullpen_roster_observations.py'
+      - '.github/workflows/mlb-bullpen-roster-passive-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'hello_world/mlb_statsapi_team_context.py'
+      - 'hello_world/mlb_three_api_llm_analyst.py'
+      - 'tests/unit/test_mlb_bullpen_roster_observations.py'
+      - '.github/workflows/mlb-bullpen-roster-passive-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install focused MLB test runtime
+        run: python -m pip install --quiet -r mlb_research/requirements.txt "pytest>=8,<9" "scipy>=1.13,<2"
+      - name: Verify passive roster observations cannot gain prediction authority
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: |
+          python -m py_compile hello_world/mlb_statsapi_team_context.py hello_world/mlb_three_api_llm_analyst.py
+          python -m pytest -q tests/unit/test_mlb_bullpen_roster_observations.py
