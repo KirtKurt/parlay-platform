@@ -1,14 +1,24 @@
 import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+
 const origin = process.env.INQSI_ENGINEERING_CONSOLE_URL;
 const source = process.env.INQSI_ENGINEERING_SOURCE_SHA;
 const issuer = process.env.INQSI_ENGINEERING_OIDC_ISSUER;
-if (!/^https:\/\//.test(origin || '') || !/^https:\/\//.test(issuer || '') || !/^[0-9a-f]{40}$/.test(source || '')) throw new Error('live_probe_configuration_invalid');
+
+export function recoveryPollDecision(recoveryReady, unavailableSince, now = Date.now(), timeoutMs = 180000) {
+  if (!recoveryReady) return { retry: false, since: unavailableSince };
+  const since = unavailableSince ?? now;
+  return { retry: now - since <= timeoutMs, since };
+}
+
 async function json(url, options = {}) {
   const r = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(20000), ...options });
   if (!r.ok) throw new Error(`live_probe_http_${r.status}`);
   return r.json();
 }
-try {
+
+async function main() {
+  if (!/^https:\/\//.test(origin || '') || !/^https:\/\//.test(issuer || '') || !/^[0-9a-f]{40}$/.test(source || '')) throw new Error('live_probe_configuration_invalid');
   const health = await json(`${origin}/healthz`);
   if (health.revision !== source || health.execution !== 'isolated-ecs') throw new Error('deployed_source_mismatch');
   const unauthorized = await fetch(`${origin}/v1/engineering`, { redirect: 'error' });
@@ -31,8 +41,21 @@ try {
   const deadline = Date.now() + 30 * 60 * 1000;
   let job;
   let recoveryReady = false;
+  let recoveryUnavailableSince = null;
   while (Date.now() < deadline) {
-    ({ job } = await json(`${origin}/v1/engineering/${created.job.id}`, { headers: await authorization() }));
+    try {
+      ({ job } = await json(`${origin}/v1/engineering/${created.job.id}`, { headers: await authorization() }));
+      recoveryUnavailableSince = null;
+    } catch (error) {
+      const decision = recoveryPollDecision(recoveryReady, recoveryUnavailableSince);
+      recoveryUnavailableSince = decision.since;
+      if (!decision.retry) {
+        if (!recoveryReady) throw error;
+        throw new Error('controller_recovery_unavailable_timeout');
+      }
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      continue;
+    }
     if (!recoveryReady && job.status === 'running' && job.execution?.id && job.execution?.taskArn) {
       console.log(JSON.stringify({ recoveryReady: true, source, jobId: job.id, executionId: job.execution.id, executionTask: job.execution.taskArn, observedAt: new Date().toISOString() }));
       recoveryReady = true;
@@ -53,4 +76,11 @@ try {
   const content = Buffer.from(file.content || '', 'base64').toString('utf8');
   if (!content.includes(source) || !content.includes(nonce) || !/^# Runtime proof\s*$/m.test(content)) throw new Error('proof_content_mismatch');
   console.log(JSON.stringify({ verified: true, source, jobId: job.id, executionId: job.execution.id, executionTask: job.execution.taskArn, pullRequest: job.pullRequest, commit: job.commit, mergeCommit: job.mergeCommit, checkedAt: new Date().toISOString() }));
-} catch (error) { console.error(String(error.message).replace(/[^a-zA-Z0-9_:-]/g, '_')); process.exitCode = 1; }
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(String(error.message).replace(/[^a-zA-Z0-9_:-]/g, '_'));
+    process.exitCode = 1;
+  });
+}
