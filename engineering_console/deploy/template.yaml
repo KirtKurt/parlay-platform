@@ -1,0 +1,433 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Isolated InQsi Engineering Console runtime. Console-only; no sports/ARB resources.
+
+Parameters:
+  ImageUri:
+    Type: String
+    Description: Immutable container image URI including @sha256 digest.
+    AllowedPattern: '^.+@sha256:[0-9a-f]{64}$'
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PrivateSubnetAId:
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnetBId:
+    Type: AWS::EC2::Subnet::Id
+  IngressSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group of the trusted caller allowed to reach the internal HTTPS load balancer.
+  CertificateArn:
+    Type: String
+    AllowedPattern: '^arn:aws[a-zA-Z-]*:acm:[^:]+:[0-9]{12}:certificate/.+$'
+  HostedZoneId:
+    Type: String
+  ConsoleDomainName:
+    Type: String
+  OidcIssuer:
+    Type: String
+    AllowedPattern: '^https://.+$'
+  OidcAudience:
+    Type: String
+  JwksUri:
+    Type: String
+    AllowedPattern: '^https://.+$'
+  AdminClaim:
+    Type: String
+  AllowedOrigin:
+    Type: String
+    AllowedPattern: '^https://.+$'
+  WorkerOpenAISecretArn:
+    Type: String
+    Description: Secrets Manager secret containing only the worker OPENAI_API_KEY value.
+    AllowedPattern: '^arn:aws[a-zA-Z-]*:secretsmanager:[^:]+:[0-9]{12}:secret:.+$'
+  PublisherGitHubSecretArn:
+    Type: String
+    Description: Secrets Manager secret containing only the publisher GH_TOKEN value.
+    AllowedPattern: '^arn:aws[a-zA-Z-]*:secretsmanager:[^:]+:[0-9]{12}:secret:.+$'
+  WorkerDesiredCount:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 2
+  PublisherDesiredCount:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 1
+
+Resources:
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: inqsi-engineering-console
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  WorkerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: InQsi Engineering Console worker
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8787
+          ToPort: 8787
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+
+  PublisherSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: InQsi Engineering Console publisher
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Private HTTPS ingress for InQsi Engineering Console
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref IngressSecurityGroupId
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 8787
+          ToPort: 8787
+          DestinationSecurityGroupId: !Ref WorkerSecurityGroup
+
+  EfsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EFS access for InQsi Engineering Console only
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref WorkerSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref PublisherSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+
+  FileSystem:
+    Type: AWS::EFS::FileSystem
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Encrypted: true
+      BackupPolicy:
+        Status: ENABLED
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+      FileSystemTags:
+        - Key: Name
+          Value: inqsi-engineering-console
+
+  MountTargetA:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Ref PrivateSubnetAId
+      SecurityGroups: [!Ref EfsSecurityGroup]
+
+  MountTargetB:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Ref PrivateSubnetBId
+      SecurityGroups: [!Ref EfsSecurityGroup]
+
+  AccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref FileSystem
+      PosixUser:
+        Uid: '10001'
+        Gid: '10001'
+      RootDirectory:
+        Path: /inqsi
+        CreationInfo:
+          OwnerUid: '10001'
+          OwnerGid: '10001'
+          Permissions: '0750'
+
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: /inqsi/engineering-console/worker
+      RetentionInDays: 30
+
+  PublisherLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: /inqsi/engineering-console/publisher
+      RetentionInDays: 30
+
+  WorkerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: WorkerSecretOnly
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref WorkerOpenAISecretArn
+
+  PublisherExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: PublisherSecretOnly
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref PublisherGitHubSecretArn
+
+  WorkerTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+
+  PublisherTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+
+  WorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: inqsi-engineering-console-worker
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '1024'
+      Memory: '2048'
+      ExecutionRoleArn: !GetAtt WorkerExecutionRole.Arn
+      TaskRoleArn: !GetAtt WorkerTaskRole.Arn
+      Volumes:
+        - Name: state
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref FileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref AccessPoint
+              IAM: DISABLED
+      ContainerDefinitions:
+        - Name: worker
+          Image: !Ref ImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8787
+              Protocol: tcp
+          MountPoints:
+            - SourceVolume: state
+              ContainerPath: /srv/inqsi
+          Environment:
+            - { Name: INQSI_ENGINEERING_ROLE, Value: worker }
+            - { Name: INQSI_ENGINEERING_BIND_ADDRESS, Value: 0.0.0.0 }
+            - { Name: PORT, Value: '8787' }
+            - { Name: INQSI_ENGINEERING_REPOSITORY, Value: /srv/inqsi/repository }
+            - { Name: INQSI_ENGINEERING_DATA_DIR, Value: /srv/inqsi/data }
+            - { Name: INQSI_ENGINEERING_WORKSPACE_ROOT, Value: /srv/inqsi/workspaces }
+            - { Name: INQSI_ENGINEERING_PUBLICATION_POLICY, Value: proof-v1 }
+            - { Name: INQSI_ENGINEERING_ALLOWED_SCOPES, Value: engineering_console_publication_proof }
+            - { Name: INQSI_ENGINEERING_REQUIRED_CHECKS, Value: engineering-console-publication-proof }
+            - Name: INQSI_ENGINEERING_OIDC_ISSUER
+              Value: !Ref OidcIssuer
+            - Name: INQSI_ENGINEERING_OIDC_AUDIENCE
+              Value: !Ref OidcAudience
+            - Name: INQSI_ENGINEERING_JWKS_URI
+              Value: !Ref JwksUri
+            - Name: INQSI_ENGINEERING_ADMIN_CLAIM
+              Value: !Ref AdminClaim
+            - Name: INQSI_ENGINEERING_ORIGIN
+              Value: !Ref AllowedOrigin
+          Secrets:
+            - Name: OPENAI_API_KEY
+              ValueFrom: !Ref WorkerOpenAISecretArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref WorkerLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: worker
+
+  PublisherTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: inqsi-engineering-console-publisher
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn: !GetAtt PublisherExecutionRole.Arn
+      TaskRoleArn: !GetAtt PublisherTaskRole.Arn
+      Volumes:
+        - Name: state
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref FileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref AccessPoint
+              IAM: DISABLED
+      ContainerDefinitions:
+        - Name: publisher
+          Image: !Ref ImageUri
+          Essential: true
+          MountPoints:
+            - SourceVolume: state
+              ContainerPath: /srv/inqsi
+          Environment:
+            - { Name: INQSI_ENGINEERING_ROLE, Value: publisher }
+            - { Name: INQSI_ENGINEERING_DATA_DIR, Value: /srv/inqsi/data }
+            - { Name: INQSI_ENGINEERING_PUBLISHER_LOCK_DIR, Value: /srv/inqsi/publisher-lock }
+            - { Name: INQSI_ENGINEERING_PUBLISH_INTERVAL_SECONDS, Value: '15' }
+            - { Name: INQSI_ENGINEERING_PUBLICATION_POLICY, Value: proof-v1 }
+            - { Name: INQSI_ENGINEERING_ALLOWED_SCOPES, Value: engineering_console_publication_proof }
+            - { Name: INQSI_ENGINEERING_REQUIRED_CHECKS, Value: engineering-console-publication-proof }
+            - { Name: GITHUB_REPOSITORY, Value: KirtKurt/parlay-platform }
+          Secrets:
+            - Name: GH_TOKEN
+              ValueFrom: !Ref PublisherGitHubSecretArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref PublisherLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: publisher
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internal
+      Type: application
+      Subnets: [!Ref PrivateSubnetAId, !Ref PrivateSubnetBId]
+      SecurityGroups: [!Ref LoadBalancerSecurityGroup]
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Port: 8787
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckPath: /healthz
+      Matcher:
+        HttpCode: '200'
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  WorkerService:
+    Type: AWS::ECS::Service
+    DependsOn: [HttpsListener, MountTargetA, MountTargetB]
+    Properties:
+      Cluster: !Ref Cluster
+      DesiredCount: !Ref WorkerDesiredCount
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      TaskDefinition: !Ref WorkerTaskDefinition
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: [!Ref PrivateSubnetAId, !Ref PrivateSubnetBId]
+          SecurityGroups: [!Ref WorkerSecurityGroup]
+      LoadBalancers:
+        - ContainerName: worker
+          ContainerPort: 8787
+          TargetGroupArn: !Ref TargetGroup
+
+  PublisherService:
+    Type: AWS::ECS::Service
+    DependsOn: [MountTargetA, MountTargetB]
+    Properties:
+      Cluster: !Ref Cluster
+      DesiredCount: !Ref PublisherDesiredCount
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      TaskDefinition: !Ref PublisherTaskDefinition
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: [!Ref PrivateSubnetAId, !Ref PrivateSubnetBId]
+          SecurityGroups: [!Ref PublisherSecurityGroup]
+
+  ConsoleRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref ConsoleDomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt LoadBalancer.DNSName
+        HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
+
+Outputs:
+  ConsoleUrl:
+    Value: !Sub 'https://${ConsoleDomainName}'
+  WorkerTaskDefinitionArn:
+    Value: !Ref WorkerTaskDefinition
+  PublisherTaskDefinitionArn:
+    Value: !Ref PublisherTaskDefinition
+  FileSystemId:
+    Value: !Ref FileSystem
