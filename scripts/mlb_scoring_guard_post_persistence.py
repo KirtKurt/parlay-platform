@@ -28,7 +28,14 @@ import mlb_scoring_guard_status as base
 # Import after the base guard adds the repository-owned hello_world directory to
 # sys.path. These contracts are used only for deterministic validation/evaluation.
 import inqsi_pull_history as history_contract
+import mlb_fundamentals_lock_authority_v1 as lock_authority
 import mlb_fundamentals_scoring_bridge_v1 as shadow_contract
+
+# The live MLB bridge already installs this exact resolver. Install it in this
+# read-only post-persistence proof too so diagnostics evaluate the same persisted
+# lock authorities instead of falsely treating lockedCardAudit/last gate locks as
+# absent. This adds no new lock source and does not weaken provenance validation.
+lock_authority.install(shadow_contract)
 
 
 PROOF_TYPE = "MLB_SCORING_GUARD_POST_PERSISTENCE_SHADOW_READ_ONLY_PROOF"

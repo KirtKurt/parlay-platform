@@ -125,7 +125,7 @@ def _live_prediction() -> dict:
         "confidenceTier": "Solid",
         "predictionSourcePullAt": "2026-07-22T12:00:00+00:00",
         "predictionSourcePullId": "pull-fixture",
-        "lockedAtUtc": LOCK_AT,
+        "lockedCardAudit": {"lockAtUtc": LOCK_AT},
         "winnerOptimizer": {
             "fundamentalsApplied": False,
             "fundamentalsMode": "FUNDAMENTALS_V2_NOT_ACTIVE_IN_LIVE_SCORING",
@@ -298,3 +298,25 @@ def test_missing_proof_preserves_existing_passive_guard_state() -> None:
     assert result["summary"]["fundamentalsShadowEvaluatedCount"] == 0
     assert result["summary"]["fundamentalsPostPersistenceProofCount"] == 0
     assert result["games"][0]["fundamentalsPostPersistenceProofPresent"] is False
+
+
+def test_missing_canonical_lock_authority_remains_fail_closed() -> None:
+    live = _live_prediction()
+    live["data"].pop("lockedCardAudit", None)
+    proof = _proof(live)
+
+    result = SUBJECT.enhance_report(
+        _report(),
+        prediction_items=[live],
+        pregame_snapshot_items=[proof],
+        observed_at=datetime(2026, 7, 22, 18, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["guardPassed"] is True
+    assert result["summary"]["fundamentalsPostPersistenceProofInvalidCount"] == 1
+    assert result["summary"]["fundamentalsPostPersistenceShadowEvaluatedCount"] == 0
+    assert result["summary"]["fundamentalsShadowEvaluatedCount"] == 0
+    game = result["games"][0]
+    assert game["fundamentalsState"] == "NOT_ACTIVE"
+    assert game["fundamentalsPostPersistenceProofValid"] is False
+    assert game["fundamentalsPostPersistenceErrors"]
