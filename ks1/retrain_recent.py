@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss
 
-from ks1.features import ET
+from ks1.features import ET, Features
 from ks1.inventory import encode
 from ks1.sources import aws_clients, load_existing
 from ks1.table import build, contract
@@ -57,6 +57,11 @@ def choose_features(train):
         rejected = [c for c in features if individual_feature(c)]
         features = [c for c in features if c not in rejected]
         omitted = sorted(set(omitted) | set(rejected))
+    supported = {side+'_'+key for side in ('home', 'away')
+                 for key in Features([]).at(SPLIT_DATE+'T04:00:00Z', '0')}
+    supported.update(('market_home_prob', 'market_total', 'market_spread'))
+    if set(features) - supported:
+        raise ValueError('training features missing from daily inference: '+','.join(sorted(set(features)-supported)))
     if not any(c.endswith('_7d') for c in features):
         raise ValueError('seven-day features unavailable in training')
     return features, omitted, coverage
