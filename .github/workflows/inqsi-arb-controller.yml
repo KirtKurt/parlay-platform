@@ -1,0 +1,51 @@
+name: Inqsi ARB Production Controller
+on:
+  schedule:
+    - cron: '7,27,47 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: inqsi-arb-production-controller
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Resolve deployed endpoints
+        id: endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ArbApiUrl'].OutputValue" --output text)
+          SPORTSBOOK_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-sportsbook-catalog-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='SportsbooksUrl'].OutputValue" --output text 2>/dev/null || true)
+          test -n "$API_URL" && test "$API_URL" != "None"
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+          echo "sportsbook_url=$SPORTSBOOK_URL" >> "$GITHUB_OUTPUT"
+      - name: Inspect production and provider health
+        env:
+          BBD_API_KEY: ${{ secrets.BBD_API_KEY }}
+          BIG_BALLS_DATA_API_KEY: ${{ secrets.BIG_BALLS_DATA_API_KEY }}
+        run: |
+          python inqsi-arb/ops/controller.py \
+            --api-url '${{ steps.endpoints.outputs.api_url }}' \
+            --sportsbook-url '${{ steps.endpoints.outputs.sportsbook_url }}' \
+            --output arb-controller-report.json
+      - name: Upload controller evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inqsi-arb-controller-${{ github.run_id }}
+          path: arb-controller-report.json
+          if-no-files-found: warn
+          retention-days: 30
