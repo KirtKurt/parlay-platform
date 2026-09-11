@@ -10,6 +10,7 @@ async function git(repo, args) {
   return stdout;
 }
 function sha(value) { if (!SHA.test(value || '')) throw new Error('invalid_publication_revision'); }
+function expectedFiles(manifest) { return [...manifest.changedFiles].sort(); }
 
 export async function assertMainAncestor(repo, startingRevision, mainRevision) {
   sha(startingRevision); sha(mainRevision);
@@ -17,25 +18,11 @@ export async function assertMainAncestor(repo, startingRevision, mainRevision) {
   catch { throw new Error('publication_start_not_on_main'); }
 }
 
-export async function validatePublicationHistory(repo, manifest, head, main, policy, { alreadyMerged = false } = {}) {
-  sha(head); sha(main); sha(manifest.startingRevision);
-  await assertMainAncestor(repo, manifest.startingRevision, main);
-  const parents = (await git(repo, ['show', '-s', '--format=%P', head])).trim().split(' ');
-  if (parents.length !== 1 || parents[0] !== manifest.startingRevision) throw new Error('publication_unexpected_parent');
-  const base = (await git(repo, ['merge-base', main, head])).trim();
-  if (alreadyMerged) {
-    if (base !== head) throw new Error('publication_merge_not_on_main');
-  } else if (base !== manifest.startingRevision) {
-    throw new Error('publication_unexpected_merge_base');
-  }
-  // For an open PR, this is the complete main...head diff, not a worker-local diff.
-  // On recovery of an externally merged PR, the single-parent constraint plus
-  // the original start..head diff still binds the exact original patch content.
-  const diffBase = alreadyMerged ? manifest.startingRevision : base;
-  const files = (await git(repo, ['diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--name-only', '-z', diffBase, head, '--'])).split('\0').filter(Boolean).sort();
-  if (!files.length || files.length > policy.maxFiles || JSON.stringify(files) !== JSON.stringify([...manifest.changedFiles].sort())) throw new Error('publication_complete_diff_mismatch');
+async function validateFiles(repo, manifest, base, head, policy) {
+  const files = (await git(repo, ['diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--name-only', '-z', base, head, '--'])).split('\0').filter(Boolean).sort();
+  if (!files.length || files.length > policy.maxFiles || JSON.stringify(files) !== JSON.stringify(expectedFiles(manifest))) throw new Error('publication_complete_diff_mismatch');
   if (files.some((file) => !isProofFile(file) || !withinAuthorizedScope(file, policy.allowedScopes) || !withinAuthorizedScope(file, manifest.authorizedScope))) throw new Error('publication_complete_diff_scope_violation');
-  const patch = await git(repo, ['diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--binary', diffBase, head, '--']);
+  const patch = await git(repo, ['diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--binary', base, head, '--']);
   if (Buffer.byteLength(patch) > policy.maxPatchBytes || patchContainsCredential(patch)) throw new Error('publication_complete_diff_rejected');
   for (const file of files) {
     const entry = (await git(repo, ['ls-tree', head, '--', file])).trim();
@@ -47,5 +34,38 @@ export async function validatePublicationHistory(repo, manifest, head, main, pol
     const contents = await git(repo, ['cat-file', 'blob', object]);
     if (contents.includes('\0') || patchContainsCredential(contents)) throw new Error('publication_file_content_rejected');
   }
+  return files;
+}
+
+export async function validatePublicationHistory(repo, manifest, head, main, policy) {
+  sha(head); sha(main); sha(manifest.startingRevision);
+  await assertMainAncestor(repo, manifest.startingRevision, main);
+  const parents = (await git(repo, ['show', '-s', '--format=%P', head])).trim().split(' ');
+  if (parents.length !== 1 || parents[0] !== manifest.startingRevision) throw new Error('publication_unexpected_parent');
+  const base = (await git(repo, ['merge-base', main, head])).trim();
+  if (base !== manifest.startingRevision) throw new Error('publication_unexpected_merge_base');
+  const files = await validateFiles(repo, manifest, base, head, policy);
   return { files, head, main, startingRevision: manifest.startingRevision };
+}
+
+/** Validate a GitHub merge/squash/rebase result without assuming the original
+ * PR head itself became an ancestor of main. The merged commit must be on main,
+ * must introduce exactly the authorized proof files relative to its first
+ * parent, and every resulting proof blob must exactly match the reviewed PR
+ * head. A normal merge additionally binds its second parent to the PR head. */
+export async function validateMergedPublication(repo, manifest, publishedHead, mergeCommit, main, policy) {
+  sha(publishedHead); sha(mergeCommit); sha(main); sha(manifest.startingRevision);
+  await validatePublicationHistory(repo, manifest, publishedHead, main, policy);
+  try { await git(repo, ['merge-base', '--is-ancestor', mergeCommit, main]); }
+  catch { throw new Error('publication_merge_not_on_main'); }
+  const parents = (await git(repo, ['show', '-s', '--format=%P', mergeCommit])).trim().split(' ').filter(Boolean);
+  if (parents.length < 1 || parents.length > 2) throw new Error('publication_merge_parent_shape_invalid');
+  if (parents.length === 2 && parents[1] !== publishedHead) throw new Error('publication_merge_head_mismatch');
+  const files = await validateFiles(repo, manifest, parents[0], mergeCommit, policy);
+  for (const file of files) {
+    const expected = (await git(repo, ['rev-parse', `${publishedHead}:${file}`]).catch(() => '')).trim();
+    const merged = (await git(repo, ['rev-parse', `${mergeCommit}:${file}`]).catch(() => '')).trim();
+    if (expected !== merged) throw new Error('publication_merged_content_mismatch');
+  }
+  return { files, publishedHead, mergeCommit, main };
 }
