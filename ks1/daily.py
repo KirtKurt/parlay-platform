@@ -21,27 +21,26 @@ from ks1.inventory import encode
 from ks1.poisson import home_probability, predict_exported
 from ks1.publish import parquet_bytes
 from ks1.refresh import change_reason, fingerprint, observe
+from ks1.selection import apply as apply_selection
 from ks1.table import american, team_identity
 
 PREFIX = 'mlb/ks1/predictions-v1/'
 ROOT = Path(__file__).parent
 FLOATS = ['p_home', 'lambda_home', 'lambda_away', 'proj_total', 'market_home_prob', 'edge_home',
-          'market_total', 'edge_total', 'market_spread', 'p_home_poisson', 'odds_match_confidence', 'p_raw']
+          'market_total', 'edge_total', 'market_spread', 'p_home_poisson', 'odds_match_confidence', 'p_raw', 'p_lgb']
 STRINGS = ['date', 'game_id', 'bbs_game_id', 'odds_event_id', 'home_team', 'away_team', 'home_id', 'away_id',
            'bbs_home_id', 'bbs_away_id', 'home_starter_name', 'away_starter_name', 'home_starter_id', 'away_starter_id',
            'home_starter_status', 'away_starter_status', 'starter_source', 'commence_time', 'model_version',
            'as_of', 'lineup_status', 'prediction_status', 'market_status', 'history_source_as_of',
            'environment_status', 'history_status', 'input_fingerprint', 'status',
            'home_lineup_status', 'away_lineup_status', 'home_lineup_ids', 'away_lineup_ids',
-           'home_offense_source', 'away_offense_source', 'lineup_source_status', 'starter_feature_source', 'calibration_version', 'calibration_method']
-# Dictionary date also reads cleanly with Arrow's automatic Hive partitioning.
+           'home_offense_source', 'away_offense_source', 'lineup_source_status', 'starter_feature_source',
+           'calibration_version', 'calibration_method', 'pick_status', 'selection_reason']
 SCHEMA = pa.schema([pa.field(k, pa.dictionary(pa.int32(), pa.string()) if k == 'date' else pa.string())
                     for k in STRINGS] + [pa.field(k, pa.float64()) for k in FLOATS])
 
-
 def name_key(name):
     return re.sub(r'[^a-z0-9]', '', str(name).lower())
-
 
 class Crosswalk:
     """Only exact aliases learned from existing official IDs; never fuzzy guess."""
@@ -54,14 +53,11 @@ class Crosswalk:
         for g in schedule:
             for t in g['teams'].values():
                 self.add(*team_identity(t))
-
     def add(self, team_id, name):
         self.aliases.setdefault(name_key(name), set()).add(str(team_id))
-
     def resolve(self, name):
         ids = self.aliases.get(name_key(name), set())
         return next(iter(ids)) if len(ids) == 1 else None
-
     def bind(self, bbs_id, official_id, name):
         old = self.bbs_ids.get(str(bbs_id))
         if old and old != str(official_id):
@@ -70,7 +66,6 @@ class Crosswalk:
             self.bbs_ids[str(bbs_id)] = str(official_id)
             self.rows.append({'bbs_id': str(bbs_id), 'mlb_id': str(official_id), 'observed_name': name,
                               'method': 'unique_exact_alias_and_game_start', 'confidence': 1.0})
-
 
 def bbs_assignments(payload, schedule, crosswalk, target_date):
     data = payload.get('data')
@@ -125,7 +120,6 @@ def bbs_assignments(payload, schedule, crosswalk, target_date):
             crosswalk.bind(event[side]['id'], sides[side], event[side]['name'])
     return assigned
 
-
 def market_for(game, events, crosswalk, as_of):
     candidates = [e for e in events if all(crosswalk.resolve(e[s+'_team']) == str(game['teams'][s]['team']['id'])
                   for s in ('home', 'away')) and abs((utc(e['commence_time'])-utc(game['gameDate'])).total_seconds()) <= 90]
@@ -176,7 +170,6 @@ def market_for(game, events, crosswalk, as_of):
             'market_spread': statistics.median(spreads) if spreads else None, 'odds_event_id': str(event['id']),
             'odds_match_confidence': 1.0, 'market_status': 'available' if probabilities else 'missing_fresh_h2h'}
 
-
 def load_inputs(folder):
     manifest = json.loads((folder/'capture.json').read_bytes())
     if manifest.get('system') != 'KS1' or manifest.get('errors'):
@@ -203,7 +196,6 @@ def load_inputs(folder):
     values['feeds'] = json.loads((folder/'feeds.json').read_bytes()) if (folder/'feeds.json').exists() else {'games': {}}
     return manifest, values
 
-
 def preserve_frozen(current, previous, target_date, as_of):
     if previous is None or previous.empty:
         return current
@@ -211,11 +203,14 @@ def preserve_frozen(current, previous, target_date, as_of):
         raise ValueError('invalid previous date predictions')
     if any(utc(t) > utc(as_of) for t in previous.as_of):
         raise ValueError('refuse to overwrite a newer prediction snapshot')
-    frozen = previous.loc[previous.commence_time.map(lambda t: utc(t)-timedelta(minutes=10) < utc(as_of))]
+    past_cutoff = previous.commence_time.map(lambda t: utc(t)-timedelta(minutes=10) < utc(as_of))
+    frozen = previous.loc[past_cutoff]
     if any(utc(r.as_of) > utc(r.commence_time)-timedelta(minutes=10) for r in frozen.itertuples()):
         raise ValueError('previous prediction violated pregame cutoff')
     return pd.concat([current.loc[~current.game_id.isin(frozen.game_id)], frozen], ignore_index=True)
 
+def valid_pregame_lock(row):
+    return utc(row['as_of']) <= utc(row['commence_time'])-timedelta(minutes=10)
 
 def predict(folder, output):
     manifest, inputs = load_inputs(folder)
@@ -245,8 +240,6 @@ def predict(folder, output):
     frozen_ids = set(frozen.game_id) if len(frozen) else set()
     prior_rows = {r['game_id']: r for r in pq.ParquetFile(folder/'previous.parquet').read().to_pylist()} if previous is not None else {}
     retained, changes, unchanged = [], [], []
-    # Frozen Phase 4 rows acquire only conservative status defaults; their
-    # predictions and original cutoff are retained, never rescored postgame.
     migrated_frozen = []
     for pk in sorted(frozen_ids):
         row = dict(prior_rows[pk])
@@ -315,10 +308,14 @@ def predict(folder, output):
         if not (np.isfinite(p_home).all() and (p_home >= 0).all() and (p_home <= 1).all()):
             raise ValueError('invalid LightGBM probabilities')
         for i, row in enumerate(rows):
-            row.update(p_home=float(p_home[i]), lambda_home=float(h[i]), lambda_away=float(a[i]),
-                       proj_total=float(h[i]+a[i]), p_home_poisson=float(p_poisson[i]),
-                       edge_home=float(p_home[i]-row['market_home_prob']) if row['market_home_prob'] is not None else None,
-                       edge_total=float(h[i]+a[i]-row['market_total']) if row['market_total'] is not None else None)
+            row.update(apply_selection(row, float(p_home[i]), float(p_poisson[i]), float(h[i]), float(a[i])))
+    kept = {r['game_id'] for r in rows} | {r['game_id'] for r in retained} | set(unchanged)
+    recovered = []
+    for pk, row in prior_rows.items():
+        if pk not in kept and valid_pregame_lock(row):
+            retained.append(dict(row))
+            recovered.append(pk)
+            kept.add(pk)
     current = pa.Table.from_pylist(rows+retained, schema=SCHEMA).to_pandas()
     frame = current.sort_values(['commence_time', 'game_id']).reset_index(drop=True)
     table = pa.Table.from_pandas(frame, schema=SCHEMA, preserve_index=False)
@@ -349,6 +346,7 @@ def predict(folder, output):
               'unchanged_rows': len(unchanged), 'unchanged_game_ids': unchanged, 'changes': changes,
               'migrated_frozen_game_ids': migrated_frozen,
               'removed_game_ids': sorted(set(prior_rows)-set(frame.game_id)),
+              'recovered_lock_game_ids': recovered,
               'confirmed_lineups': int((frame.lineup_status == 'confirmed').sum()),
               'projected_lineups': int((frame.lineup_status == 'projected').sum()),
               'official_games': len(schedule), 'bbs_matched_games': len(assignments), 'exclusions': exclusions,
@@ -365,11 +363,12 @@ def predict(folder, output):
                   'Confirmed batting orders are recorded; the accepted models still use shrunk team offense priors.',
                   'An identity-only scratch rebuilds the game but can leave the accepted model probabilities unchanged.',
                   'Unchanged rows retain their original as_of; this report records the latest poll. T-10 remains the cutoff.',
-                  'Stored history can lag games completed since its last refresh.']}
+                  'Stored history can lag games completed since its last refresh.',
+                  'Valid pregame locks are retained even if a later poll cannot rescore the game.',
+                  'New scores blend totals 50/50 with market and pass winner picks on engine disagreement or unverified starters.']}
     (output/'report.json').write_bytes(encode(report))
     print(json.dumps({k: v for k, v in report.items() if k not in ('source_capture', 'provider_receipts', 'lineup_receipts')}, indent=2))
     return table, report, output
-
 
 def publish(s3, bucket, table, report, output, *, calibration='temperature', platt_model_path=None, temperature_model_path=None):
     if report.get('source_capture', {}).get('verification_only'):
@@ -392,7 +391,6 @@ def publish(s3, bucket, table, report, output, *, calibration='temperature', pla
               'temperature': json.loads((temperature_model_path or TEMPERATURE_PATH).read_bytes())}
     if calibration not in models:
         raise ValueError('unknown publication calibration')
-    # The raw scorer and lock function are unchanged. Apply exactly once here.
     prepared, changed = prepare_rows(table.to_pylist(), models[calibration], report['as_of'], calibration)
     prepared_table = pa.Table.from_pylist(prepared, schema=table.schema) if changed else table
     if not (local_table.equals(table) or local_table.equals(prepared_table)):
@@ -428,6 +426,23 @@ def publish(s3, bucket, table, report, output, *, calibration='temperature', pla
                 captured_etag = report['source_capture'].get('previous_etag')
                 if captured_etag != existing['ETag']:
                     raise ValueError('date predictions changed since input capture')
+                published_ids = set(table.to_pandas().game_id)
+                missing = [r for r in prior.to_dict('records')
+                           if r['game_id'] not in published_ids and valid_pregame_lock(r)]
+                if missing:
+                    merged = pa.Table.from_pandas(
+                        pd.concat([table.to_pandas(), pd.DataFrame(missing)], ignore_index=True)
+                        .drop_duplicates('game_id')
+                        .sort_values(['commence_time', 'game_id']),
+                        schema=table.schema, preserve_index=False)
+                    table = merged
+                    body = parquet_bytes(table)
+                    sha = hashlib.sha256(body).hexdigest()
+                    (output/'predictions.parquet').write_bytes(body)
+                    table.to_pandas().to_csv(output/'predictions.csv', index=False)
+                    report['parquet_sha256'] = sha
+                    report['recovered_lock_game_ids'] = sorted({*report.get('recovered_lock_game_ids', []),
+                                                               *[r['game_id'] for r in missing]})
         kwargs = {'IfMatch': existing['ETag']} if existing else {'IfNoneMatch': '*'}
         result = s3.put_object(Bucket=bucket, Key=key, Body=body, Metadata={'sha256': sha, 'system': 'KS1'}, **kwargs)
         stored = s3.get_object(Bucket=bucket, Key=key, **({'VersionId': result['VersionId']} if result.get('VersionId') else {}))['Body'].read()
@@ -435,7 +450,6 @@ def publish(s3, bucket, table, report, output, *, calibration='temperature', pla
             raise ValueError('published date artifact readback mismatch')
         writes.append(key)
     return {'bucket': bucket, 'prefix': prefix, 'write_keys': writes, 'readback_verified': True}
-
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -456,7 +470,6 @@ def main():
         (output/'report.json').write_bytes(encode(report))
         (output/'publication.json').write_bytes(encode(result))
         print(json.dumps(result))
-
 
 if __name__ == '__main__':
     main()
