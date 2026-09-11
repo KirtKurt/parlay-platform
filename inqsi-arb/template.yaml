@@ -135,6 +135,19 @@ Resources:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/scan, Method: POST}
 
+  ArbCalculatorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: calculator_api.lambda_handler
+      Events:
+        ExchangeBackLay:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/exchange/back-lay, Method: POST}
+        VerifyDiscreteStakes:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/stakes/verify, Method: POST}
+
   ArbWebSocketApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
