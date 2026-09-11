@@ -22,8 +22,7 @@ export function loadConfig(env = process.env) {
     'INQSI_ENGINEERING_ORIGIN',
     'INQSI_ENGINEERING_ALLOWED_SCOPES',
     'INQSI_ENGINEERING_REQUIRED_CHECKS',
-    'INQSI_ENGINEERING_PUBLICATION_POLICY',
-    'INQSI_ENGINEERING_BIND_ADDRESS'
+    'INQSI_ENGINEERING_PUBLICATION_POLICY'
   ];
   const missing = required.filter((name) => !String(env[name] || '').trim());
   if (missing.length) throw new Error(`Engineering console disabled: missing ${missing.join(', ')}`);
@@ -44,7 +43,7 @@ export function loadConfig(env = process.env) {
     throw new Error('Engineering console disabled: JWKS URI and origin must use https');
   }
 
-  const bindAddress = String(env.INQSI_ENGINEERING_BIND_ADDRESS).trim();
+  const bindAddress = String(env.INQSI_ENGINEERING_BIND_ADDRESS || '127.0.0.1').trim();
   if (!['127.0.0.1', '0.0.0.0'].includes(bindAddress)) throw new Error('Engineering console disabled: invalid bind address');
 
   const allowedScopes = [...new Set(env.INQSI_ENGINEERING_ALLOWED_SCOPES.split(',').map(normalizeScope))];
