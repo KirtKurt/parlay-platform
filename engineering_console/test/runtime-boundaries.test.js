@@ -78,12 +78,14 @@ test('cancellation expires the capability and waits for confirmed STOPPED', asyn
   await stopExecution({ transportDir: root, cluster: 'test' }, job, { save: () => saves++ }, aws, { pollMs: 1, attempts: 3 });
   assert.equal(describes, 2); assert.equal(saves, 1); assert.ok(job.execution.stoppedAt);
   assert.throws(() => authenticateTask(root, `Bearer ${transport.token}`));
+  assert.equal(fs.existsSync(path.join(transport.directory, 'input.json')), false);
 });
 test('unconfirmed task stop never records terminal cancellation', async t => {
   const root = temporary(t); const transport = createTaskTransport(root, {});
   const job = { execution: { id: transport.id, taskArn: 'task/1' } };
   await assert.rejects(stopExecution({ transportDir: root, cluster: 'test' }, job, { save() { assert.fail('cannot save stopped'); } }, async () => ({}), { pollMs: 1, attempts: 2 }), /stop_unconfirmed/);
   assert.equal(job.execution.stoppedAt, undefined);
+  assert.equal(fs.existsSync(path.join(transport.directory, 'input.json')), true);
 });
 
 test('remote task recovery uses the durable task identity and applies an approved result only once', async t => {
@@ -120,6 +122,8 @@ test('remote task recovery uses the durable task identity and applies an approve
     assert.equal(git('diff', '--binary', '--full-index', '--no-ext-diff', '--no-textconv', startingRevision, '--'), patch.trim());
   }
   assert.equal(launches, 2);
+  assert.equal(fs.existsSync(path.join(transport.directory, 'input.json')), false);
+  assert.equal(fs.existsSync(path.join(transport.directory, 'result.json')), true);
   const uncertain = createTaskTransport(transportDir, {});
   job.execution = { id: uncertain.id, taskArn: null, requestedAt: new Date().toISOString() };
   run.callAws = async (_, operation) => {

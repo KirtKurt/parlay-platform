@@ -10,6 +10,22 @@ import crypto from 'node:crypto';
 const exec = promisify(execFile);
 async function persistJob(store, job) { return store.saveAsync ? store.saveAsync(job) : store.save(job); }
 
+export function removeTerminalInput(config, execution) {
+  if (!execution?.stoppedAt) throw new Error('terminal_input_cleanup_requires_confirmed_stop');
+  scrubTerminalTransport(transportDirectory(config.transportDir, execution.id));
+}
+
+export function scrubTerminalTransport(directory) {
+  const authFile = path.join(directory, 'auth.json');
+  try {
+    const auth = JSON.parse(fs.readFileSync(authFile, 'utf8'));
+    delete auth.token;
+    auth.expires = 0;
+    atomicTransportWrite(authFile, JSON.stringify(auth));
+  } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  fs.rmSync(path.join(directory, 'input.json'), { force: true });
+}
+
 export function validateReturnedPatch(patch, changedFiles) {
   // The manifest is untrusted. Verify the actual Git headers before any write
   // into the controller checkout. proof-v1 permits regular Markdown files only.
@@ -26,26 +42,10 @@ export function validateReturnedPatch(patch, changedFiles) {
   if (!files.length || new Set(files).size !== files.length || JSON.stringify(files.sort()) !== JSON.stringify([...changedFiles].sort())) throw new Error('returned_patch_manifest_mismatch');
 }
 
-export function scrubTerminalTransport(directory) {
-  const authFile = path.join(directory, 'auth.json');
-  try {
-    const auth = JSON.parse(fs.readFileSync(authFile, 'utf8'));
-    delete auth.token;
-    auth.expires = 0;
-    atomicTransportWrite(authFile, JSON.stringify(auth));
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-  }
-  // The terminal input contains the literal administrator instruction and the
-  // full repository archive. Neither is needed after STOPPED is confirmed.
-  // Keep checkpoint/result evidence for reconciliation and continuation.
-  fs.rmSync(path.join(directory, 'input.json'), { force: true });
-}
-
 export async function stopExecution(config, job, store, callAws = aws, { pollMs = 2000, attempts = 75 } = {}) {
-  if (!job.execution || job.execution.stoppedAt) return;
-  const directory = transportDirectory(config.transportDir, job.execution.id);
-  const authFile = path.join(directory, 'auth.json');
+  if (!job.execution) return;
+  if (job.execution.stoppedAt) { removeTerminalInput(config, job.execution); return; }
+  const authFile = path.join(transportDirectory(config.transportDir, job.execution.id), 'auth.json');
   const auth = JSON.parse(fs.readFileSync(authFile, 'utf8'));
   atomicTransportWrite(authFile, JSON.stringify({ ...auth, expires: 0 }));
   try {
@@ -58,10 +58,8 @@ export async function stopExecution(config, job, store, callAws = aws, { pollMs 
     for (let attempt = 0; attempt < attempts; attempt++) {
       const result = await callAws('ecs', 'describe-tasks', { cluster: config.cluster, tasks: [job.execution.taskArn] });
       if (!result.failures?.length && result.tasks?.[0]?.taskArn === job.execution.taskArn && result.tasks[0].lastStatus === 'STOPPED') {
-        job.execution.stoppedAt = new Date().toISOString();
-        await persistJob(store, job);
-        scrubTerminalTransport(directory);
-        return;
+        job.execution.stoppedAt = new Date().toISOString(); await persistJob(store, job);
+        removeTerminalInput(config, job.execution); return;
       }
       await new Promise(resolve => setTimeout(resolve, pollMs));
     }
@@ -111,10 +109,7 @@ export class EcsCodex {
     const directory = transportDirectory(config.transportDir, job.execution.id);
     const token = JSON.parse(fs.readFileSync(path.join(directory, 'auth.json'), 'utf8')).token;
     const readResult = () => { try { return JSON.parse(fs.readFileSync(path.join(directory, 'result.json'), 'utf8')); } catch (e) { if (e.code === 'ENOENT') return null; throw e; } };
-    if (!job.execution.taskArn && (signal.aborted || job.cancelRequested)) {
-      // A lost RunTask response and a never-launched execution are intentionally
-      // indistinguishable here. Discover/stop fail-closed; never launch after a
-      // cancellation has already been accepted.
+    if (signal.aborted || job.cancelRequested || store.get?.(job.id)?.cancelRequested) {
       await stopExecution(config, job, store, callAws, { pollMs: this.pollMs });
       return;
     }
@@ -127,6 +122,10 @@ export class EcsCodex {
       };
       let result;
       for (let attempt = 0; attempt < 3; attempt++) {
+        if (signal.aborted || job.cancelRequested || store.get?.(job.id)?.cancelRequested) {
+          await stopExecution(config, job, store, callAws, { pollMs: this.pollMs });
+          return;
+        }
         try { result = await callAws('ecs', 'run-task', launch); break; }
         catch {
           if (attempt === 2) {
@@ -213,12 +212,8 @@ export class EcsCodex {
       }
     } finally {
       if (!stopped) await stopExecution(config, job, store, callAws, { pollMs: this.pollMs });
-      if (job.execution?.stoppedAt) scrubTerminalTransport(directory);
-      else {
-        const authFile = path.join(directory, 'auth.json');
-        const auth = JSON.parse(fs.readFileSync(authFile, 'utf8')); auth.expires = 0;
-        atomicTransportWrite(authFile, JSON.stringify(auth));
-      }
+      // Keep only reconciliation material after confirmed termination.
+      removeTerminalInput(config, job.execution);
     }
   }
 }

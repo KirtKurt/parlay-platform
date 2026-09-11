@@ -3,11 +3,11 @@ import { createWorkspace, collectChanges, git } from './git.js';
 import { sanitize } from './sanitize.js';
 import { withinAuthorizedScope, writePublicationRequest } from './publication.js';
 
-export function shouldStopCancelledExecution(job, isolatedRuntime = true) {
-  return isolatedRuntime && Boolean(job?.cancelRequested && job?.execution && !job.execution.stoppedAt);
+export function shouldStopCancelledExecution(job, isolatedRuntime = true, aborted = false) {
+  return isolatedRuntime && Boolean((job?.cancelRequested || aborted) && job?.execution && !job.execution.stoppedAt);
 }
 
-export function createRunner(config, store, CodexClass = null) {
+export function createRunner(config, store, CodexClass = null, { executionStop = stopExecution } = {}) {
   return async (job, signal) => {
     let workspace;
     try {
@@ -15,11 +15,8 @@ export function createRunner(config, store, CodexClass = null) {
       job.error = null;
       await store.saveAsync(job);
 
-      if (shouldStopCancelledExecution(job, !CodexClass)) {
-        // A recovered execution may have a durable execution id but no taskArn
-        // because the controller lost the RunTask response. stopExecution owns
-        // task discovery and must run before any relaunch can occur.
-        await stopExecution(config, job, store);
+      if (shouldStopCancelledExecution(job, !CodexClass, signal.aborted)) {
+        await executionStop(config, job, store);
         job.status = 'cancelled'; await store.saveAsync(job); return;
       }
 

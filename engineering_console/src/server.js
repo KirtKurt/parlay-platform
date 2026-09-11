@@ -1,5 +1,6 @@
 import http from 'node:http';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { loadConfig } from './config.js';
 import { createAuthorizer } from './auth.js';
 import { JobStore } from './store.js';
@@ -26,6 +27,7 @@ function validJobScopes(job, allowedScopes) {
 }
 
 export function createServer({ config = loadConfig(), authorizer, store, queue } = {}) {
+  const instance = crypto.randomUUID();
   store ||= new JobStore(config.dataDir);
   authorizer ||= createAuthorizer(config);
   const browserAuth = config.browserAuthEnabled ? createBrowserAuth(config, authorizer) : null;
@@ -55,6 +57,11 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
         continue;
       }
       recovered.status = 'queued';
+      if (recovered.execution) recovered.controllerRecovery = {
+        instance, executionId: recovered.execution.id, taskArn: recovered.execution.taskArn,
+        eventOffset: recovered.execution.eventOffset || 0, threadId: recovered.threadId,
+        recoveredAt: new Date().toISOString()
+      };
       store.save(recovered);
       queue.enqueue(recovered.id);
     }
@@ -63,7 +70,7 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
   return http.createServer(async (request, response) => {
     const send = (status, value) => { response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); response.end(JSON.stringify(value)); };
     try {
-      if (request.method === 'GET' && request.url === '/healthz') return send(200, { status: 'ok', revision: process.env.INQSI_ENGINEERING_SOURCE_SHA || null, execution: 'isolated-ecs' });
+      if (request.method === 'GET' && request.url === '/healthz') return send(200, { status: 'ok', revision: process.env.INQSI_ENGINEERING_SOURCE_SHA || null, execution: 'isolated-ecs', instance });
       if (browserAuth && await browserAuth(request, response)) return;
       if (request.method === 'GET' && request.url === '/' && browserAuth) {
         try { await authorizer(request); }
@@ -102,17 +109,15 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
         const publicationVisible = Boolean(job.publicationState && job.publicationState !== 'no_changes') || ['awaiting_publication','published'].includes(job.status);
         const cancellableStatus = ['queued','running','awaiting_publication','published'].includes(job.status) || (job.status === 'failed' && publicationVisible);
         if (!cancellableStatus) return send(409, { error: 'job_not_cancellable' });
-        // Arbitrate every accepted cancellation before acknowledging it. The
-        // publication outbox can become visible before the worker's later job
-        // state save; a durable cancellation decision closes that race even
-        // when this snapshot still looks like an ordinary running job.
+        // The outbox can be visible before its job-state update. Every accepted
+        // cancellation must arbitrate with the publisher, even while running.
         if (!cancelPublication(config.dataDir, id)) return send(409, { error: 'publication_merge_already_committed' });
         queue.cancel(id);
         if (publicationVisible) markPublicationCancellationPending(store, id, actor.id);
         return send(202, { job: publicJob(store.owned(id, actor.id)) });
       }
       if (request.method === 'POST' && action === 'continue') {
-        if (!['completed','failed','blocked','awaiting_approval'].includes(job.status)) return send(409, { error: 'job_not_continuable' });
+        if (job.cancelRequested || !['completed','failed','blocked','awaiting_approval'].includes(job.status)) return send(409, { error: 'job_not_continuable' });
         if (job.publicationState && job.publicationState !== 'no_changes') return send(409, { error: 'published_job_requires_new_task' });
         if (!validJobScopes(job, config.allowedScopes)) return send(409, { error: 'authorized_scope_no_longer_allowed' });
         if (typeof body.instruction !== 'string' || !body.instruction.trim()) return send(400, { error: 'instruction_required' });
