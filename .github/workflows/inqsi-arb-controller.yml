@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: write
 concurrency:
   group: inqsi-arb-production-controller
   cancel-in-progress: false
@@ -33,9 +34,12 @@ jobs:
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
           echo "sportsbook_url=$SPORTSBOOK_URL" >> "$GITHUB_OUTPUT"
       - name: Inspect production and provider health
+        id: inspect
+        continue-on-error: true
         env:
           BBD_API_KEY: ${{ secrets.BBD_API_KEY }}
           BIG_BALLS_DATA_API_KEY: ${{ secrets.BIG_BALLS_DATA_API_KEY }}
+          BIGBALLS_DATA_API_KEY: ${{ secrets.BIGBALLS_DATA_API_KEY }}
         run: |
           python inqsi-arb/ops/controller.py \
             --api-url '${{ steps.endpoints.outputs.api_url }}' \
@@ -49,3 +53,15 @@ jobs:
           path: arb-controller-report.json
           if-no-files-found: warn
           retention-days: 30
+      - name: Dispatch one bounded repair
+        if: steps.inspect.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run inqsi-arb-repair.yml --ref main
+      - name: Preserve failed health signal
+        if: steps.inspect.outcome == 'failure'
+        run: |
+          echo 'Production health failed; one bounded repair was dispatched. A later controller run will verify recovery.'
+          exit 1
