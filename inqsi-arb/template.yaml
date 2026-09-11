@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Inqsi Arb - isolated provider-discovered arbitrage API
+Parameters:
+  OddsApiKey:
+    Type: String
+    NoEcho: true
+  ArbRegions:
+    Type: String
+    Default: us,us2,uk,eu,au
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 60
+    MemorySize: 512
+    Environment:
+      Variables:
+        ODDS_API_KEY: !Ref OddsApiKey
+        ARB_REGIONS: !Ref ArbRegions
+        ARB_MAX_EVENT_MARKET_EVENTS: '40'
+        ARB_MAX_SPORTS_PER_ALL_SCAN: '100'
+Resources:
+  ArbApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type'"
+        AllowOrigin: "'*'"
+  ArbFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: app.lambda_handler
+      Events:
+        Health:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ArbApi
+            Path: /v1/arb/health
+            Method: GET
+        Catalog:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ArbApi
+            Path: /v1/arb/catalog
+            Method: GET
+        Scan:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ArbApi
+            Path: /v1/arb/scan
+            Method: ANY
+        LegacyScan:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ArbApi
+            Path: /v1/scan
+            Method: POST
+Outputs:
+  ArbApiUrl:
+    Value: !Sub 'https://${ArbApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod'
+  ArbHealthUrl:
+    Value: !Sub 'https://${ArbApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/v1/arb/health'
