@@ -1,4 +1,4 @@
-FROM node:20.20.2-bookworm-slim
+FROM node:24.21.0-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553
 
 ENV NODE_ENV=production \
     HOME=/home/inqsi
@@ -10,8 +10,8 @@ RUN apt-get update \
     && useradd --system --uid 10001 --gid inqsi --create-home --home-dir /home/inqsi inqsi
 
 WORKDIR /app
-COPY package.json ./
-RUN npm install --omit=dev --ignore-scripts --no-audit --no-fund \
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
     && npm cache clean --force
 
 COPY src ./src

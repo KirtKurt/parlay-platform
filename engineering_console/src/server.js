@@ -40,6 +40,16 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
         store.save(recovered);
         continue;
       }
+      // Instructions that required durable redaction are intentionally not
+      // persisted verbatim. After a process restart the ephemeral original is
+      // gone, so never execute the altered/redacted prompt as if it were exact.
+      // The owner can submit a fresh continuation instruction instead.
+      if (recovered.instructionRecoverable === false && !store.hasRuntimeInstruction(recovered.id)) {
+        recovered.status = 'blocked';
+        recovered.error = 'runtime_instruction_unavailable_after_restart';
+        store.save(recovered);
+        continue;
+      }
       recovered.status = 'queued';
       store.save(recovered);
       queue.enqueue(recovered.id);
@@ -79,8 +89,16 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
         if (publicationVisible && !cancelPublication(config.dataDir, id)) return send(409, { error: 'publication_merge_already_committed' });
         queue.cancel(id);
         if (publicationVisible) {
-          const cancelled = store.owned(id, actor.id);
-          cancelled.status = 'cancelled'; cancelled.publicationState = 'cancelled'; cancelled.error = null; cancelled.cancelRequested = true; store.save(cancelled);
+          const pending = store.owned(id, actor.id);
+          // Accepting the durable cancellation decision is not proof that an
+          // already-visible GitHub PR was closed rather than concurrently merged.
+          // Keep the UI/state pending until the trusted publisher confirms the
+          // remote outcome and emits a terminal cancelled or merge_conflict receipt.
+          pending.status = pending.pullRequest ? 'published' : 'awaiting_publication';
+          pending.publicationState = 'cancellation_pending';
+          pending.error = 'publication_cancellation_pending_confirmation';
+          pending.cancelRequested = true;
+          store.save(pending);
         }
         return send(202, { job: publicJob(store.owned(id, actor.id)) });
       }
@@ -89,7 +107,7 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
         if (job.publicationState && job.publicationState !== 'no_changes') return send(409, { error: 'published_job_requires_new_task' });
         if (!validJobScopes(job, config.allowedScopes)) return send(409, { error: 'authorized_scope_no_longer_allowed' });
         if (!String(body.instruction || '').trim()) return send(400, { error: 'instruction_required' });
-        job.instruction = String(body.instruction); job.status = 'queued'; job.cancelRequested = false; job.error = null; store.save(job); queue.enqueue(id); return send(202, { job: publicJob(job) });
+        job.instruction = String(body.instruction); store.rememberInstruction(id, job.instruction); job.status = 'queued'; job.cancelRequested = false; job.error = null; store.save(job); queue.enqueue(id); return send(202, { job: publicJob(job) });
       }
       return send(404, { error: 'not_found' });
     } catch (error) { send(error.status || 500, { error: error.status ? error.message : 'internal_error' }); }

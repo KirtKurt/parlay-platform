@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=24 <25"
   },
   "scripts": {
-    "start": "node src/server.js",
+    "start": "node scripts/start-worker.mjs",
     "publish": "node scripts/publish.mjs",
     "test": "node --test"
   },
