@@ -28,6 +28,8 @@ jobs:
       - name: Test deterministic engine and v3 integration
         run: python -m pytest -q inqsi-arb/tests
       - uses: aws-actions/setup-sam@v2
+      - name: Stamp clean Python release identity
+        run: python inqsi-arb/ops/release_proof.py stamp
       - name: Validate and build
         run: |
           sam validate --lint --template-file inqsi-arb/template.yaml
@@ -45,6 +47,8 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
       - uses: aws-actions/setup-sam@v2
+      - name: Stamp clean Python release identity
+        run: python inqsi-arb/ops/release_proof.py stamp
       - name: Build
         run: sam build --no-cached --template-file inqsi-arb/template.yaml
       - name: Deploy isolated arb stack
@@ -65,6 +69,7 @@ jobs:
         run: |
           set -euo pipefail
           API_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ArbApiUrl'].OutputValue" --output text)
+          python inqsi-arb/ops/release_proof.py verify --api-url "$API_URL" --output arb-release-proof.json
           WS_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ArbWebSocketUrl'].OutputValue" --output text)
           test -n "$API_URL" && test "$API_URL" != "None"
           test -n "$WS_URL" && test "$WS_URL" != "None"
@@ -173,3 +178,11 @@ jobs:
               'embedded_websocket_ui_smoke':'pass'
           }, indent=2))
           PY
+      - name: Preserve release identity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inqsi-arb-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: arb-release-proof.json
+          if-no-files-found: warn
+          retention-days: 30
