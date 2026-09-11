@@ -54,6 +54,56 @@ _PROSPECTIVE_MUTATION_SIGNALS = (
     "manufacture prospective",
 )
 
+_SOURCE_OBSERVED_PREGAME_SIGNALS = (
+    "observed starter",
+    "starter rate",
+    "starter_rates",
+    "observed team context",
+    "team_context",
+    "observed lineup",
+    "confirmed lineup",
+    "bullpen availability",
+    "pregame context",
+    "pre-lock context",
+    "prelock context",
+)
+
+_SYNTHETIC_OBSERVATION_SIGNALS = (
+    "data augmentation",
+    "augment starter",
+    "augment observed",
+    "synthetic starter",
+    "synthetic pregame",
+    "synthesize starter",
+    "simulate starter",
+    "fabricate starter",
+    "impute observed",
+    "manufacture observed",
+)
+
+_HISTORICAL_EXPANSION_SIGNALS = (
+    "more historical games",
+    "historical training window",
+    "historical data window",
+    "expand historical",
+    "extend historical",
+    "backfill historical",
+    "historical starter",
+    "historical pregame",
+)
+
+_POINT_IN_TIME_ARCHIVE_PROOF_SIGNALS = (
+    "immutable pregame",
+    "point-in-time pregame",
+    "point in time pregame",
+    "original observation",
+    "archived pregame",
+    "source provenance",
+    "sourceprovenance",
+    "retrievedatutc",
+    "payloadfingerprint",
+)
+
 
 def invoke(prompt: str) -> tuple[str, str]:
     regions = [x.strip() for x in os.environ.get("INQSI_ENGINEERING_REGIONS", "us-east-1,us-east-2,us-west-2").split(",") if x.strip()]
@@ -65,7 +115,7 @@ def invoke(prompt: str) -> tuple[str, str]:
             try:
                 response = client.converse(
                     modelId=model,
-                    system=[{"text": "You are the InQsi autonomous senior MLB engineering planner. You plan one small, testable engineering task at a time. You never weaken fail-closed safety, chronology, immutable evidence, prospective holdouts, or production authority."}],
+                    system=[{"text": "You are the InQsi autonomous senior MLB engineering planner. You plan one small, testable engineering task at a time. You never weaken fail-closed safety, chronology, immutable evidence, source-honest pregame provenance, prospective holdouts, or production authority."}],
                     messages=[{"role": "user", "content": [{"text": prompt}]}],
                     inferenceConfig={"temperature": 0.1, "maxTokens": 5000},
                 )
@@ -200,6 +250,34 @@ def validate_prospective_holdout_safety(value: dict[str, Any]) -> dict[str, Any]
     return value
 
 
+def validate_source_honest_pregame_safety(value: dict[str, Any]) -> dict[str, Any]:
+    """Do not let planning convert unavailable historical context into observed evidence."""
+    evidence = " ".join(str(x) for x in value.get("evidenceBasis") or []).lower()
+    implementation = " ".join(str(x) for x in value.get("implementation") or []).lower()
+    task_text = " ".join(
+        [
+            str(value.get("title") or ""),
+            str(value.get("objective") or ""),
+            implementation,
+            evidence,
+        ]
+    ).lower()
+    targets_source_observed = any(signal in task_text for signal in _SOURCE_OBSERVED_PREGAME_SIGNALS)
+    if not targets_source_observed:
+        return value
+    if any(signal in implementation for signal in _SYNTHETIC_OBSERVATION_SIGNALS):
+        raise ValueError(
+            "source-observed pregame inputs cannot be synthesized or data-augmented into observed evidence"
+        )
+    expands_history = any(signal in implementation for signal in _HISTORICAL_EXPANSION_SIGNALS)
+    archive_proven = any(signal in evidence for signal in _POINT_IN_TIME_ARCHIVE_PROOF_SIGNALS)
+    if expands_history and not archive_proven:
+        raise ValueError(
+            "historical pregame expansion requires explicit immutable point-in-time source provenance"
+        )
+    return value
+
+
 def validate(value: dict[str, Any], *, decision_history: dict[str, Any] | None = None) -> dict[str, Any]:
     for key in ("title", "objective"):
         if not isinstance(value.get(key), str) or not value[key].strip():
@@ -210,6 +288,7 @@ def validate(value: dict[str, Any], *, decision_history: dict[str, Any] | None =
         raise ValueError("likelyFiles must be an array")
 
     validate_prospective_holdout_safety(value)
+    validate_source_honest_pregame_safety(value)
 
     required_receipts = {str(x) for x in POLICY.get("required_negative_authority_receipts") or []}
     supplied_receipts = set(value["safetyReceipts"])
@@ -254,6 +333,7 @@ def main() -> int:
             "Choose exactly one highest-value unresolved engineering task that is actionable from current evidence and can be implemented in a small reviewed PR. "
             "Never return a title in blockedTaskTitles or a cosmetic rewording of one. Do not propose weakening thresholds merely to pass. "
             "Prospective evaluation rows are immutable holdout evidence, never training or calibration material. If the prospective minimum is not met, do not tune a model or calibrator against that incomplete set; treat chronological accumulation as a wait condition unless current evidence proves a distinct capture defect. Never fabricate, backfill, rewrite, or reclassify prospective evaluation rows. "
+            "Source-observed pregame features such as starter rates, lineups, team context, and bullpen availability may count as observed only when supported by pre-lock source provenance. Never data-augment or synthesize them into observed rows. Historical expansion is allowed only when evidence identifies immutable point-in-time pregame observations with source provenance; final boxes or current-season totals cannot be reconstructed into past locks. "
             "Return strict JSON only with: title (string), objective (string), implementation (array of concrete steps), likelyFiles (array), acceptanceTests (array), safetyReceipts (array containing every required_negative_authority_receipts value), evidenceBasis (array)."
         ),
     })
