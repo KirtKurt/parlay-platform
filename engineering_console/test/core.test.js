@@ -21,7 +21,9 @@ test('accepts complete explicit security configuration', () => {
     INQSI_ENGINEERING_DATA_DIR: path.join(root, 'data'),
     INQSI_ENGINEERING_WORKSPACE_ROOT: path.join(root, 'workspaces'),
     INQSI_ENGINEERING_ORIGIN: 'https://engineering.example',
-    INQSI_ENGINEERING_ALLOWED_SCOPES: 'engineering_console,frontend/app/api/engineering',
+    INQSI_ENGINEERING_ALLOWED_SCOPES: 'engineering_console_publication_proof,engineering_console_publication_proof/probes',
+    INQSI_ENGINEERING_PUBLICATION_POLICY: 'proof-v1',
+    INQSI_ENGINEERING_REQUIRED_CHECKS: 'engineering-console-publication-proof',
     INQSI_ENGINEERING_MAX_CONCURRENT_JOBS: '2'
   });
   assert.equal(config.allowedScopes.length, 2);
