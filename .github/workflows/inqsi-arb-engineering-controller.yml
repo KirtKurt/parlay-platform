@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - 'inqsi-arb/ops/engineering_controller.py'
+      - 'inqsi-arb/ops/codex_cli_runner.sh'
       - 'inqsi-arb/tests/test_engineering_controller.py'
       - 'inqsi-arb/ARB_ENGINEERING_CONTROLLER.md'
       - '.github/workflows/inqsi-arb-engineering-controller.yml'
@@ -27,8 +28,8 @@ env:
   ARB_AEC_ALLOW_DISPATCH: 'true'
   ARB_AEC_ALLOW_ISSUE: 'true'
   ARB_AEC_PAUSED: ${{ vars.ARB_AEC_PAUSED || 'false' }}
-  ARB_CODE_AGENT_MODEL: ${{ vars.ARB_CODE_AGENT_MODEL }}
-  ARB_CODE_AGENT_COMMAND: ${{ vars.ARB_CODE_AGENT_COMMAND }}
+  ARB_CODE_AGENT_MODEL: 'codex-cli-default'
+  ARB_CODE_AGENT_COMMAND: 'bash inqsi-arb/ops/codex_cli_runner.sh'
 
 jobs:
   inspect-decide-act:
@@ -38,12 +39,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
-          fetch-depth: 2
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install controller test runtime
-        run: python -m pip install --quiet "pytest>=8,<9" boto3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: aws-actions/setup-sam@v2
+      - name: Install controller and Codex runtime
+        run: |
+          python -m pip install --quiet "pytest>=8,<9" boto3
+          npm install --global @openai/codex
+          codex --version
       - name: Prove controller guardrails before acting
         run: python -m pytest -q inqsi-arb/tests/test_engineering_controller.py
       - uses: aws-actions/configure-aws-credentials@v4
@@ -64,9 +72,10 @@ jobs:
       - name: Inspect, prioritize and execute one bounded engineering action
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.Inqsi_ARB_Autonomous_Coding_Agent }}
         run: |
           set -euo pipefail
+          test -n "${OPENAI_API_KEY:-}"
           python inqsi-arb/ops/engineering_controller.py \
             --repository "$GITHUB_REPOSITORY" \
             --api-url '${{ steps.endpoints.outputs.api_url }}' \
