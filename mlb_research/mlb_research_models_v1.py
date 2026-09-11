@@ -5,6 +5,7 @@ from mlb_research_sources_v1 import number
 from mlb_research_store_v1 import digest
 from mlb_research_provenance_v1 import implementation_manifest
 import mlb_research_feature_programs_v1 as programs
+import mlb_research_feature_replay_v1 as replay_v1
 
 VERSION = 'MLB-RESEARCH-MODELS-v2-bounded-feature-programs'
 PROTOCOL = {'version': VERSION, 'minimumGames': 600, 'minimumSlates': 40,
@@ -51,13 +52,17 @@ def metrics(rows, probabilities):
 def matrix(rows, model):
     if model.get('kind') == 'adaptive_linear':
         plan = model.get('featureProgram')
-        rows = programs.apply_rows(rows, plan)
-        generated = programs.python_source(plan)
+        # Frozen artifacts dispatch to their retained version, never to the
+        # latest discovery implementation or its mutable research limits.
+        if not isinstance(plan, dict) or plan.get('version') != replay_v1.VERSION:
+            raise ValueError('unsupported frozen feature program version')
+        rows = replay_v1.apply_rows(rows, plan)
+        generated = replay_v1.python_source(plan)
         if (model.get('generatedFeaturePython') != generated
-                or model.get('generatedFeatureSourceSha256') != programs.source_sha256(generated)
+                or model.get('generatedFeatureSourceSha256') != replay_v1.source_sha256(generated)
                 or model.get('features') != plan['baseFeatures']
                 or not isinstance(model.get('matrixFeatures'), list)
-                or not 0 < len(model['matrixFeatures']) <= programs.LIMITS['maximumBaseFeatures']+programs.LIMITS['maximumGeneratedFeatures']
+                or not 0 < len(model['matrixFeatures']) <= replay_v1.LIMITS['maximumBaseFeatures']+replay_v1.LIMITS['maximumGeneratedFeatures']
                 or len(set(model['matrixFeatures'])) != len(model['matrixFeatures'])
                 or not set(model['matrixFeatures']).issubset(set(plan['baseFeatures']) | {r['name'] for r in plan['programs']})):
             raise ValueError('adaptive feature source or input contract mismatch')
@@ -74,9 +79,9 @@ def fit(rows, kind, parameter):
     model = {'kind': kind, 'parameter': parameter, 'features': [], 'means': {}, 'scales': {}}
     if kind == 'adaptive_linear':
         plan = programs.discover(rows)
-        generated = programs.python_source(plan)
+        generated = replay_v1.python_source(plan)
         model.update(featureProgram=plan, generatedFeaturePython=generated,
-                     generatedFeatureSourceSha256=programs.source_sha256(generated))
+                     generatedFeatureSourceSha256=replay_v1.source_sha256(generated))
         rows = programs.apply_rows(rows, plan)
     names = sorted({k for r in rows for k in r['features'] if k != 'marketHomeProbability'})
     for key in names:
@@ -141,7 +146,7 @@ def fit(rows, kind, parameter):
                 raise ValueError('model convergence failed')
             return w.tolist()
         if kind == 'poisson':
-            if any(number(r.get(s+'Runs')) is None for r in rows for s in ('home', 'away')):
+            if any(number(r.get(s+'Runs')) is None for r in rows for s in ('home','away')):
                 raise ValueError('Poisson run labels unavailable')
             model['weights'] = [optimize(np.asarray([r[s+'Runs'] for r in rows]), np.full(len(rows), math.log(4.5)), True) for s in ('home','away')]
         else:
@@ -243,14 +248,25 @@ def research(rows):
             candidate['legacyComparison'] = {'kind':baseline['kind'], 'parameter':baseline['parameter'],
                                              'validation':baseline['validation']}
     eligible = [c for c in candidates if c['kind'] != 'adaptive_linear' or c['eligibleForHoldoutSelection']]
-    chosen = min(eligible, key=lambda c:(c['validation']['brier'],c['validation']['logLoss'],
-                                        c['kind']=='adaptive_linear',c['kind'],c['parameter']))
-    model = fit(group(0,partitions[-1]), chosen['kind'], chosen['parameter'])
+    ordered = sorted(eligible, key=lambda c:(c['validation']['brier'],c['validation']['logLoss'],
+                                           c['kind']=='adaptive_linear',c['kind'],c['parameter']))
+    final_fit_failures = []
+    for chosen in ordered:
+        try:
+            model = fit(group(0,partitions[-1]), chosen['kind'], chosen['parameter'])
+            break
+        except ValueError as exc:
+            # Coverage/convergence may change in the larger development fold.
+            # Fall back before any holdout observation, not after poor results.
+            final_fit_failures.append({'kind':chosen['kind'], 'parameter':chosen['parameter'],
+                                       'reason':str(exc), 'stage':'development_final_refit'})
+    else:
+        raise ValueError('all selected development refits failed')
     holdout = group(partitions[-1],len(dates))
     comp = comparison(holdout,predict(holdout,model))
     reasons = blockers(comp)
     return {**report, 'status':'HISTORICAL_SCREEN_FAILED' if reasons else 'READY_FOR_NEW_FUTURE_TEST',
-            'comparisons':candidates,'fitFailures':failures, 'chosen':chosen,
+            'comparisons':candidates,'fitFailures':failures, 'finalFitFailures':final_fit_failures, 'chosen':chosen,
             'holdout':comp, 'holdoutBlockers':reasons, 'model':model,
             'partitionDates':{'development':dates[:partitions[-1]],'holdout':dates[partitions[-1]:]},
             'nextRequiredEvidence':'100 new immutable pregame predictions after model freeze'}
