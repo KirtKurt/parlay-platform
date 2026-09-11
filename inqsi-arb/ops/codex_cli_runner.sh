@@ -44,10 +44,10 @@ Before finishing, run the relevant ARB tests. Keep the repository building. If t
 EOF
 )
 
-# Ubuntu 24.04 GitHub-hosted runners can reject bubblewrap loopback namespace
-# setup. Keep Codex sandboxing enabled but opt into the supported legacy
-# Landlock sandbox path so shell/file operations remain bounded to workspace-write.
-codex --enable use_legacy_landlock --ask-for-approval never exec --sandbox workspace-write "$PROMPT"
+# The workflow prepares the ephemeral Ubuntu runner so Codex can use its
+# current workspace-write sandbox. Keep the coding worker non-interactive and
+# sandboxed; independent path validation and tests run again after Codex exits.
+codex --ask-for-approval never exec --sandbox workspace-write "$PROMPT"
 
 mapfile -t CHANGED < <(git status --porcelain=v1 | sed -E 's/^.. //' | sed -E 's/.* -> //' | sed '/^$/d')
 if [[ ${#CHANGED[@]} -eq 0 ]]; then
