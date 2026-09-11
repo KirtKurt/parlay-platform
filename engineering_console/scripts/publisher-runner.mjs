@@ -16,7 +16,7 @@ import { collectChanges } from '../src/git.js';
 import { JobStore } from '../src/store.js';
 import { sanitize } from '../src/sanitize.js';
 import { loadPublicationPolicy, validatePublisherRequest, validatePullRequestIdentity, PROOF_WORKFLOW } from '../src/publication-policy.js';
-import { assertMainAncestor, validatePublicationHistory } from '../src/publication-git-guard.js';
+import { assertMainAncestor, validatePublicationHistory, validateMergedPublication } from '../src/publication-git-guard.js';
 import { beginPublicationMerge } from '../src/publication-decision.js';
 
 const exec = promisify(execFile);
@@ -37,6 +37,12 @@ const dirs = publicationDirectories(dataDir);
 function record(receipt) {
   const durable = writePublicationReceipt(dataDir, receipt);
   updateJobFromPublisher(dataDir, durable);
+}
+
+function archiveClaim(claim, id) {
+  const target = path.join(dirs.processed, id);
+  if (fs.existsSync(target)) fs.rmSync(claim, { recursive: true, force: true });
+  else fs.renameSync(claim, target);
 }
 
 async function git(cwd, args, env = process.env, allowFailure = false) {
@@ -108,7 +114,7 @@ async function processClaim(claimDir) {
   validatePublisherRequest(manifest, patch, policy);
   if (path.basename(claimDir) !== `.processing-${manifest.jobId}`) throw new Error('publication_claim_identity_mismatch');
   const previous = readPublicationReceipt(dataDir, manifest.jobId);
-  if (previous?.state === 'merged') { record(previous); return true; }
+  if (previous?.state === 'merged' || previous?.state === 'cancelled') { record(previous); return true; }
   const assertNotCancelled = () => {
     const job = new JobStore(dataDir).get(manifest.jobId);
     if (!job || job.cancelRequested || job.status === 'cancelled') throw new Error('publication_cancelled');
@@ -176,7 +182,14 @@ async function processClaim(claimDir) {
     validatePullRequestIdentity(pr, manifest, publishedCommit);
     await git(checkout, ['fetch', 'origin', 'refs/heads/main:refs/remotes/origin/main']);
     mainRevision = await git(checkout, ['rev-parse', 'refs/remotes/origin/main']);
-    await validatePublicationHistory(checkout, manifest, publishedCommit, mainRevision, policy, { alreadyMerged: Boolean(pr.merged_at) });
+    if (pr.merged_at) {
+      if (!/^[0-9a-f]{40}$/i.test(pr.merge_commit_sha || '')) throw new Error('publication_merge_commit_missing');
+      await git(checkout, ['fetch', 'origin', pr.merge_commit_sha]);
+      await validateMergedPublication(checkout, manifest, publishedCommit, pr.merge_commit_sha, mainRevision, policy);
+    } else {
+      await validatePublicationHistory(checkout, manifest, publishedCommit, mainRevision, policy);
+    }
+
     const checks = await github(`/commits/${publishedCommit}/check-runs?per_page=100`);
     const trustedChecks = (checks.check_runs || []).filter((run) => run.head_sha === publishedCommit && run.app?.slug === 'github-actions');
     const evaluation = evaluateRequiredChecks(trustedChecks, policy.requiredChecks);
@@ -204,9 +217,6 @@ async function processClaim(claimDir) {
     pr = await github(`/pulls/${pr.number}`);
     validatePullRequestIdentity(pr, manifest, publishedCommit);
     assertNotCancelled();
-    // This creates one durable winner between cancellation and merge. Once the
-    // merge commitment wins, a later cancel request is rejected instead of
-    // being acknowledged and then raced by the GitHub merge API call.
     beginPublicationMerge(dataDir, manifest.jobId);
     const merge = await github(`/pulls/${pr.number}/merge`, {
       method: 'PUT',
@@ -227,10 +237,20 @@ for (const claim of claimDirectories()) {
   const id = path.basename(claim).replace(/^\.processing-/, '');
   try {
     const complete = await processClaim(claim);
-    if (complete) fs.renameSync(claim, path.join(dirs.processed, id));
+    if (complete) archiveClaim(claim, id);
   } catch (error) {
+    const reason = String(error?.message || error);
+    if (reason === 'publication_cancelled') {
+      try {
+        const pr = await findExistingPullRequest(`inqsi/publish-${id}`);
+        if (pr?.state === 'open' && !pr.merged_at) await github(`/pulls/${pr.number}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ state: 'closed' }) });
+      } catch { /* cancellation remains authoritative even if PR cleanup is unavailable */ }
+      record({ jobId: id, state: 'cancelled', reason: 'publication_cancelled' });
+      archiveClaim(claim, id);
+      continue;
+    }
     failed = true;
-    record({ jobId: id, state: 'publisher_failed', reason: sanitize(error?.message || error).slice(0, 300) });
+    record({ jobId: id, state: 'publisher_failed', reason: sanitize(reason).slice(0, 300) });
   }
 }
 if (failed) process.exitCode = 1;
