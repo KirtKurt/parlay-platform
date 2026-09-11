@@ -37,13 +37,20 @@ async function validateFiles(repo, manifest, base, head, policy) {
   return files;
 }
 
-export async function validatePublicationHistory(repo, manifest, head, main, policy) {
+export async function validatePublicationHistory(repo, manifest, head, main, policy, { alreadyMerged = false } = {}) {
   sha(head); sha(main); sha(manifest.startingRevision);
   await assertMainAncestor(repo, manifest.startingRevision, main);
-  const parents = (await git(repo, ['show', '-s', '--format=%P', head])).trim().split(' ');
+  const parents = (await git(repo, ['show', '-s', '--format=%P', head])).trim().split(' ').filter(Boolean);
   if (parents.length !== 1 || parents[0] !== manifest.startingRevision) throw new Error('publication_unexpected_parent');
-  const base = (await git(repo, ['merge-base', main, head])).trim();
-  if (base !== manifest.startingRevision) throw new Error('publication_unexpected_merge_base');
+
+  // Before merge, bind the candidate to the exact trusted-main merge base. After
+  // an external merge, the reviewed head may itself be an ancestor of main (a
+  // normal merge) or may not be present in main at all (squash/rebase). In that
+  // recovery case, verify the immutable reviewed head directly against its
+  // recorded trusted parent; validateMergedPublication separately verifies the
+  // actual commit that landed on main and exact resulting blob contents.
+  const base = alreadyMerged ? manifest.startingRevision : (await git(repo, ['merge-base', main, head])).trim();
+  if (!alreadyMerged && base !== manifest.startingRevision) throw new Error('publication_unexpected_merge_base');
   const files = await validateFiles(repo, manifest, base, head, policy);
   return { files, head, main, startingRevision: manifest.startingRevision };
 }
@@ -55,7 +62,7 @@ export async function validatePublicationHistory(repo, manifest, head, main, pol
  * head. A normal merge additionally binds its second parent to the PR head. */
 export async function validateMergedPublication(repo, manifest, publishedHead, mergeCommit, main, policy) {
   sha(publishedHead); sha(mergeCommit); sha(main); sha(manifest.startingRevision);
-  await validatePublicationHistory(repo, manifest, publishedHead, main, policy);
+  await validatePublicationHistory(repo, manifest, publishedHead, main, policy, { alreadyMerged: true });
   try { await git(repo, ['merge-base', '--is-ancestor', mergeCommit, main]); }
   catch { throw new Error('publication_merge_not_on_main'); }
   const parents = (await git(repo, ['show', '-s', '--format=%P', mergeCommit])).trim().split(' ').filter(Boolean);
