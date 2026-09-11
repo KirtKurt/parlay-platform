@@ -49,6 +49,7 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
   return http.createServer(async (request, response) => {
     const send = (status, value) => { response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); response.end(JSON.stringify(value)); };
     try {
+      if (request.url === '/healthz' && request.method === 'GET') return send(200, { ok: true });
       if (!request.url.startsWith('/v1/engineering')) return send(404, { error: 'not_found' });
       const actor = await authorizer(request);
       const url = new URL(request.url, 'http://localhost'); const parts = url.pathname.split('/').filter(Boolean); const id = parts[2]; const action = parts[3];
@@ -70,7 +71,7 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
       }
       const job = id && store.owned(id, actor.id); if (!job) return send(404, { error: 'job_not_found' });
       if (request.method === 'GET' && !action) return send(200, { job: publicJob(job) });
-      if (request.method === 'GET' && action === 'events') { response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' }); const push=()=>response.write(`data: ${JSON.stringify(publicJob(store.owned(id, actor.id)))}\n\n`); push(); const interval=setInterval(push, 2000); request.on('close',()=>clearInterval(interval)); return; }
+      if (request.method === 'GET' && action === 'events') { response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' }); const push=()=>response.write(`data: ${JSON.stringify(publicJob(store.owned(id, actor.id)))}\n\n`); push(); const interval=setInterval(push, 2000); request.on('close',()=>clearInterval(timer)); return; }
       if (request.method === 'POST' && action === 'cancel') {
         const publicationVisible = Boolean(job.publicationState && job.publicationState !== 'no_changes') || ['awaiting_publication','published'].includes(job.status);
         const cancellableStatus = ['queued','running','awaiting_publication','published'].includes(job.status) || (job.status === 'failed' && publicationVisible);
@@ -95,4 +96,4 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
   });
 }
 
-if (process.argv[1] === new URL(import.meta.url).pathname) { const config = loadConfig(); createServer({ config }).listen(config.port, '127.0.0.1', () => console.log(`InQsi engineering service listening on ${config.port}`)); }
+if (process.argv[1] === new URL(import.meta.url).pathname) { const config = loadConfig(); createServer({ config }).listen(config.port, config.bindAddress, () => console.log(`InQsi engineering service listening on ${config.bindAddress}:${config.port}`)); }
