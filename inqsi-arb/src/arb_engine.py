@@ -2,7 +2,8 @@
 
 The engine has no network or AWS dependencies. It evaluates normalized quote
 sets and explicitly separates mathematical detection from settlement-verified
-arbitrage qualification.
+arbitrage qualification. Mathematical opportunity detection is never enough to
+label an opportunity a verified arb: settlement rules must be COMPATIBLE.
 """
 from __future__ import annotations
 
@@ -46,7 +47,7 @@ def _net_decimal(decimal_odds: float, commission_rate: float) -> float:
 
 def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Mapping[str, Any]],
                 bankroll: float = 1000.0, expected_outcomes: Optional[Iterable[str]] = None,
-                rules_status: str = "provider_identity_only", context: Optional[Mapping[str, Any]] = None,
+                rules_status: str = "unknown", context: Optional[Mapping[str, Any]] = None,
                 commence_time: Optional[str] = None) -> Optional[Dict[str, Any]]:
     bankroll = float(bankroll)
     if not isfinite(bankroll) or bankroll <= 0:
@@ -76,7 +77,8 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
     if len(best) < 2: return None
     implied_sum = sum(1.0 / best[o]["net_decimal"] for o in sorted(expected_set) if o in best)
     math_arb = bool(complete and implied_sum < 1.0)
-    rules_compatible = str(rules_status).lower() in {"compatible", "provider_identity_only"}
+    normalized_rules_status = str(rules_status or "unknown").strip().lower()
+    rules_compatible = normalized_rules_status == "compatible"
     is_arb = bool(math_arb and rules_compatible)
     theoretical_return = (1.0 / implied_sum - 1.0) if implied_sum > 0 else -1.0
     stake_rows: List[Dict[str, Any]] = []
@@ -93,10 +95,18 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
                                "last_update": q.get("last_update"), "provider": q.get("provider"), "link": q.get("link"), "limit": q.get("limit")})
     min_profit = min((r["profit_if_wins"] for r in stake_rows), default=None)
     min_payout = min((r["payout_if_wins"] for r in stake_rows), default=None)
+    validation = {
+        "outcome_coverage": "complete" if complete else "incomplete",
+        "rules_status": normalized_rules_status,
+        "rules_compatible": rules_compatible,
+        "missing_outcomes": missing,
+        "extra_outcomes": extra,
+    }
+    if math_arb and not rules_compatible:
+        validation["qualification_reason"] = "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
     return {"market_id": market_id, "event": event, "market": market, "commence_time": commence_time,
             "math_arb": math_arb, "arb": is_arb,
-            "validation": {"outcome_coverage": "complete" if complete else "incomplete", "rules_status": rules_status,
-                           "missing_outcomes": missing, "extra_outcomes": extra},
+            "validation": validation,
             "sum_implied": round(implied_sum, 8), "margin_pct": round(theoretical_return * 100.0, 4),
             "hold_pct": round((implied_sum - 1.0) * 100.0, 4), "bankroll": round(bankroll, 2), "legs": stake_rows,
             "minimum_payout": min_payout if math_arb else None, "minimum_profit": min_profit if math_arb else None,
@@ -109,10 +119,11 @@ def scan_all(payload: Mapping[str, Any]) -> Dict[str, Any]:
     for item in payload.get("events") or []:
         row = scan_market(market_id=str(item.get("id") or item.get("market_id") or ""), event=str(item.get("event") or ""),
                           market=str(item.get("market") or "unknown"), quotes=item.get("quotes") or [], bankroll=bankroll,
-                          expected_outcomes=item.get("expected_outcomes"), rules_status=str(item.get("rules_status") or "provider_identity_only"),
+                          expected_outcomes=item.get("expected_outcomes"), rules_status=str(item.get("rules_status") or "unknown"),
                           context=item.get("context") or {}, commence_time=item.get("commence_time"))
         if row is None: continue
-        invalid = row["validation"]["outcome_coverage"] != "complete" or str(row["validation"]["rules_status"]).lower() == "incompatible"
+        rules_status = str(row["validation"]["rules_status"]).lower()
+        invalid = row["validation"]["outcome_coverage"] != "complete" or rules_status == "incompatible"
         if invalid: rejected.append(row)
         elif row["arb"]: hits.append(row)
         elif row["math_arb"]: detected.append(row)
