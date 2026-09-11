@@ -7,6 +7,9 @@ import http from 'node:http';
 import { JobStore } from '../src/store.js';
 import { createServer } from '../src/server.js';
 import { PROOF_ROOT } from '../src/publication-policy.js';
+import { publicationDecision, beginPublicationMerge } from '../src/publication-decision.js';
+import { shouldStopCancelledExecution } from '../src/worker-runtime.js';
+import { scrubTerminalTransport } from '../src/ecs-job.js';
 
 function fixture(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'inqsi-restart-safety-'));
@@ -28,6 +31,23 @@ function passiveQueue(enqueued = []) {
     enqueue(id) { enqueued.push(id); return true; },
     cancel() { return true; }
   };
+}
+
+async function postCancel(server, id) {
+  const address = server.address();
+  return new Promise((resolve, reject) => {
+    const request = http.request({
+      hostname: '127.0.0.1', port: address.port,
+      path: `/v1/engineering/${id}/cancel`, method: 'POST',
+      headers: { 'content-type': 'application/json' }
+    }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
+    });
+    request.on('error', reject);
+    request.end('{}');
+  });
 }
 
 test('redacted runtime instruction is marked nonrecoverable and never replayed after restart', (t) => {
@@ -109,21 +129,8 @@ test('accepted publication cancellation stays pending until trusted publisher co
   const server = createServer({ config: config(dataDir), authorizer: async () => ({ id: 'owner' }), store, queue });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => server.close());
-  const address = server.address();
 
-  const response = await new Promise((resolve, reject) => {
-    const request = http.request({
-      hostname: '127.0.0.1', port: address.port,
-      path: `/v1/engineering/${job.id}/cancel`, method: 'POST',
-      headers: { 'content-type': 'application/json' }
-    }, (res) => {
-      let body = '';
-      res.on('data', (chunk) => { body += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
-    });
-    request.on('error', reject);
-    request.end('{}');
-  });
+  const response = await postCancel(server, job.id);
 
   assert.equal(response.status, 202);
   assert.deepEqual(cancelled, [job.id]);
@@ -134,4 +141,57 @@ test('accepted publication cancellation stays pending until trusted publisher co
   assert.equal(pending.error, 'publication_cancellation_pending_confirmation');
   assert.equal(response.body.job.status, 'published');
   assert.equal(response.body.job.publicationState, 'cancellation_pending');
+});
+
+test('ordinary running cancellation enters durable merge arbitration before acknowledgement', async (t) => {
+  const dataDir = fixture(t);
+  const store = new JobStore(dataDir);
+  const server = createServer({ config: config(dataDir), authorizer: async () => ({ id: 'owner' }), store, queue: passiveQueue() });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const job = store.create({ instruction: 'write proof', authorizedScope: [PROOF_ROOT] }, 'owner', 'a'.repeat(40));
+  job.status = 'running'; store.save(job);
+
+  const response = await postCancel(server, job.id);
+  assert.equal(response.status, 202);
+  assert.equal(publicationDecision(dataDir, job.id), 'cancelled');
+});
+
+test('an already committed merge decision cannot be hidden by stale running job state', async (t) => {
+  const dataDir = fixture(t);
+  const store = new JobStore(dataDir);
+  const server = createServer({ config: config(dataDir), authorizer: async () => ({ id: 'owner' }), store, queue: passiveQueue() });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const job = store.create({ instruction: 'write proof', authorizedScope: [PROOF_ROOT] }, 'owner', 'a'.repeat(40));
+  job.status = 'running'; store.save(job);
+  beginPublicationMerge(dataDir, job.id);
+
+  const response = await postCancel(server, job.id);
+  assert.equal(response.status, 409);
+  assert.equal(publicationDecision(dataDir, job.id), 'merge');
+});
+
+test('cancelled isolated execution requires stop reconciliation even without task ARN', () => {
+  assert.equal(shouldStopCancelledExecution({ cancelRequested: true, execution: { id: 'execution', taskArn: null } }, true), true);
+  assert.equal(shouldStopCancelledExecution({ cancelRequested: true, execution: { id: 'execution', taskArn: 'arn', stoppedAt: 'done' } }, true), false);
+  assert.equal(shouldStopCancelledExecution({ cancelRequested: false, execution: { id: 'execution', taskArn: null } }, true), false);
+  assert.equal(shouldStopCancelledExecution({ cancelRequested: true, execution: { id: 'execution', taskArn: null } }, false), false);
+});
+
+test('terminal transport removes input and reusable capability while keeping reconciliation evidence', (t) => {
+  const directory = fixture(t);
+  fs.writeFileSync(path.join(directory, 'auth.json'), JSON.stringify({ token: 'fixture-capability', hash: 'abcd', expires: Date.now() + 10000, maxRequests: 200 }));
+  fs.writeFileSync(path.join(directory, 'input.json'), JSON.stringify({ instruction: 'private fixture instruction', archive: 'fixture archive' }));
+  fs.writeFileSync(path.join(directory, 'checkpoint.json'), JSON.stringify({ events: [] }));
+  fs.writeFileSync(path.join(directory, 'result.json'), JSON.stringify({ completed: true }));
+
+  scrubTerminalTransport(directory);
+
+  assert.equal(fs.existsSync(path.join(directory, 'input.json')), false);
+  const auth = JSON.parse(fs.readFileSync(path.join(directory, 'auth.json'), 'utf8'));
+  assert.equal(Object.hasOwn(auth, 'token'), false);
+  assert.equal(auth.expires, 0);
+  assert.equal(fs.existsSync(path.join(directory, 'checkpoint.json')), true);
+  assert.equal(fs.existsSync(path.join(directory, 'result.json')), true);
 });
