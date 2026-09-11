@@ -1,7 +1,6 @@
 """Read-only current pregame source proof; never backfills a locked snapshot."""
 import argparse
 import json
-import math
 import sys
 import time
 from datetime import datetime, timezone, timedelta
@@ -23,12 +22,22 @@ def _parse_time(value):
 
 
 def _positive_int(value):
+    """Accept only producer-compatible integer identities plus DynamoDB Decimal readback."""
     if isinstance(value,bool):return None
-    try:
-        number=float(value)
-    except (TypeError,ValueError,OverflowError):return None
-    if not math.isfinite(number) or number<=0 or not number.is_integer():return None
-    return int(number)
+    if isinstance(value,int):return value if value>0 else None
+    if isinstance(value,Decimal):
+        if not value.is_finite() or value<=0 or value!=value.to_integral_value():return None
+        return int(value)
+    return None
+
+
+def _official_game_pk(row):
+    return _positive_int(row.get('officialGamePk') if row.get('officialGamePk') is not None else row.get('official_game_pk'))
+
+
+def _exact_feed_endpoint(provenance, game_pk):
+    endpoint=str((provenance or {}).get('endpoint') or '')
+    return bool(game_pk and f'/game/{game_pk}/feed/live' in endpoint)
 
 
 def passive_lineup_observation(row):
@@ -36,22 +45,33 @@ def passive_lineup_observation(row):
     context=(row.get('advanced_context') or row.get('advancedContext') or {})
     lineup=context.get('confirmed_lineups') if isinstance(context,dict) else None
     lineup=lineup if isinstance(lineup,dict) else {}
-    passive_keys=('lineupSeasonBattingVersion','home_lineup_season_batting','away_lineup_season_batting')
-    present=any(key in lineup for key in passive_keys)
+    # The version marker is emitted before batting orders are posted. Only an
+    # actual per-batter payload constitutes an observation; two null arrays are
+    # normal absence and must not fail the read-only proof.
+    home_payload=lineup.get('home_lineup_season_batting')
+    away_payload=lineup.get('away_lineup_season_batting')
+    present=home_payload is not None or away_payload is not None
     result={'present':present,'valid':False,'errors':[],'homeBatterCount':0,'awayBatterCount':0,
             'retrievedAtUtc':None,'preT45':None}
     if not present:return result
     errors=[]
+    official=_official_game_pk(row)
+    observed_game=_positive_int(lineup.get('game_pk'))
+    if official is None:errors.append('passive_batting_official_game_pk_invalid')
+    elif observed_game!=official:errors.append('passive_batting_game_identity_mismatch')
     if lineup.get('lineupSeasonBattingVersion') != source.BATTING_OBSERVATION_VERSION:
         errors.append('passive_batting_version_mismatch')
     provenance=lineup.get('sourceProvenance')
     provenance=provenance if isinstance(provenance,dict) else {}
     if provenance.get('provider')!='MLB Stats API' or provenance.get('dataset')!=source.VERSION:
         errors.append('passive_batting_source_provenance_invalid')
+    if official is not None and not _exact_feed_endpoint(provenance,official):
+        errors.append('passive_batting_endpoint_identity_mismatch')
     retrieved=_parse_time(provenance.get('retrievedAtUtc'))
     commence=_parse_time(row.get('commenceTime') or row.get('commence_time'))
     result['retrievedAtUtc']=provenance.get('retrievedAtUtc')
     if retrieved is None:errors.append('passive_batting_retrieved_at_invalid')
+    if commence is None:errors.append('passive_batting_commence_time_invalid')
     if commence is not None and retrieved is not None:
         result['preT45']=retrieved < commence-timedelta(minutes=45)
         if not result['preT45']:errors.append('passive_batting_not_pre_t45')
@@ -68,7 +88,7 @@ def passive_lineup_observation(row):
         observed_ids=[]
         for expected_slot,item in enumerate(observations,1):
             if not isinstance(item,dict):
-                errors.append(side+'_passive_batter_row_invalid');continue
+                errors.append(side+'_passive_batter_row_invalid');observed_ids.append(None);continue
             identity=_positive_int(item.get('playerId'))
             slot=_positive_int(item.get('battingSlot'))
             if identity is None or slot!=expected_slot:
@@ -86,17 +106,34 @@ def passive_bullpen_roster_observation(row):
     context=(row.get('advanced_context') or row.get('advancedContext') or {})
     bullpen=context.get('bullpen_fatigue') if isinstance(context,dict) else None
     bullpen=bullpen if isinstance(bullpen,dict) else {}
-    keys=('bullpenRosterObservationStatus','home_bullpen_roster_player_ids','away_bullpen_roster_player_ids')
-    present=any(key in bullpen for key in keys)
-    result={'present':present,'valid':False,'errors':[],'availabilityClaimed':False}
+    home_payload=bullpen.get('home_bullpen_roster_player_ids')
+    away_payload=bullpen.get('away_bullpen_roster_player_ids')
+    present=home_payload is not None or away_payload is not None
+    result={'present':present,'valid':False,'errors':[],'availabilityClaimed':False,
+            'retrievedAtUtc':None,'preT45':None}
     if not present:return result
     errors=[]
+    official=_official_game_pk(row)
+    if official is None:errors.append('bullpen_roster_official_game_pk_invalid')
+    observed_game=bullpen.get('game_pk')
+    if observed_game is not None and _positive_int(observed_game)!=official:
+        errors.append('bullpen_roster_game_identity_mismatch')
     if bullpen.get('bullpenRosterObservationStatus')!='OBSERVED_ROSTER_ONLY':
         errors.append('bullpen_roster_status_invalid')
     provenance=bullpen.get('bullpenRosterSourceProvenance')
     provenance=provenance if isinstance(provenance,dict) else {}
     if provenance.get('provider')!='MLB Stats API' or provenance.get('dataset')!=source.VERSION:
         errors.append('bullpen_roster_source_provenance_invalid')
+    if official is not None and not _exact_feed_endpoint(provenance,official):
+        errors.append('bullpen_roster_endpoint_identity_mismatch')
+    retrieved=_parse_time(provenance.get('retrievedAtUtc'))
+    commence=_parse_time(row.get('commenceTime') or row.get('commence_time'))
+    result['retrievedAtUtc']=provenance.get('retrievedAtUtc')
+    if retrieved is None:errors.append('bullpen_roster_retrieved_at_invalid')
+    if commence is None:errors.append('bullpen_roster_commence_time_invalid')
+    if commence is not None and retrieved is not None:
+        result['preT45']=retrieved < commence-timedelta(minutes=45)
+        if not result['preT45']:errors.append('bullpen_roster_not_pre_t45')
     for side in ('home','away'):
         values=bullpen.get(side+'_bullpen_roster_player_ids')
         if not isinstance(values,list) or not values:
@@ -104,8 +141,9 @@ def passive_bullpen_roster_observation(row):
         identities=[_positive_int(value) for value in values]
         if any(value is None for value in identities) or len(set(identities))!=len(identities):
             errors.append(side+'_bullpen_roster_identity_invalid')
-    # Explicitly prove this passive metadata did not turn into an availability claim.
-    if any(bullpen.get(side+'_available_relievers') not in (None,[]) for side in ('home','away')):
+    # A non-null value, including [], would be an availability claim; passive
+    # roster membership has no authority to make one.
+    if any(bullpen.get(side+'_available_relievers') is not None for side in ('home','away')):
         result['availabilityClaimed']=True
         errors.append('passive_roster_must_not_claim_available_relievers')
     result['errors']=sorted(set(errors));result['valid']=not result['errors']
@@ -161,7 +199,8 @@ def main():
     if not schedule.get('ok') or not history.get('ok'):raise RuntimeError('official schedule unavailable')
     started=time.monotonic();rows=[]
     for game in advanced._schedule_games(schedule):
-        if game.get('status',{}).get('abstractGameState')!='Preview' or source._time(game.get('gameDate'))-timedelta(minutes=45)<=now:
+        start=source._time(game.get('gameDate'))
+        if game.get('status',{}).get('abstractGameState')!='Preview' or start is None or start-timedelta(minutes=45)<=now:
             continue
         at=time.monotonic();a,b=source.observe(day,game,history,advanced._http_get_json)
         rows.append({'officialGamePk':game['gamePk'],'elapsedSeconds':round(time.monotonic()-at,3),'lineup':a,'bullpen':b})
