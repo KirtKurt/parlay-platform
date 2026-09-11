@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Read-only probe for the official MLB pregame boxscore ``bullpen`` arrays.
 
-This diagnostic is intentionally non-authoritative.  It proves only whether the
+This diagnostic is intentionally non-authoritative. It proves only whether the
 current official Preview feed exposes internally consistent bullpen player IDs
-for each team.  It does NOT interpret that list as injury clearance, workload
+for each team. It does NOT interpret that list as injury clearance, workload
 clearance, manager intent, or actual pitcher availability, and therefore cannot
 satisfy Fundamentals V2 ``availableRelievers`` or change production scoring.
 """
@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 from zoneinfo import ZoneInfo
 
-VERSION = "MLB-BULLPEN-ROSTER-DIAGNOSTIC-v1-passive-official-preview"
+VERSION = "MLB-BULLPEN-ROSTER-DIAGNOSTIC-v2-feed-receipt-time"
 REPORT_TYPE = "MLB_BULLPEN_ROSTER_READ_ONLY_DIAGNOSTIC"
 ET = ZoneInfo("America/New_York")
 SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
@@ -112,10 +112,9 @@ def validate_team_bullpen(team: Any) -> Dict[str, Any]:
 def diagnose_game(
     schedule_game: Mapping[str, Any],
     *,
-    observed_at: datetime,
     fetch_json: Callable[[str, int], Dict[str, Any]],
+    clock: Callable[[], datetime],
 ) -> Dict[str, Any]:
-    observed = observed_at.astimezone(timezone.utc)
     game_pk = schedule_game.get("gamePk")
     start = _parse_dt(schedule_game.get("gameDate"))
     schedule_status = str((schedule_game.get("status") or {}).get("abstractGameState") or "")
@@ -125,8 +124,9 @@ def diagnose_game(
         "gamePk": game_pk,
         "commenceTimeUtc": start.isoformat() if start else None,
         "scheduleStatus": schedule_status,
-        "minutesToStart": round((start - observed).total_seconds() / 60.0, 3) if start else None,
-        "preT45": bool(start and observed < start - timedelta(minutes=45)),
+        "feedObservedAtUtc": None,
+        "minutesToStartAtFeedReceipt": None,
+        "preT45": False,
         "feedIdentityValid": False,
         "home": None,
         "away": None,
@@ -146,8 +146,18 @@ def diagnose_game(
     try:
         feed = fetch_json(url, 8)
     except Exception as exc:
+        base["feedObservedAtUtc"] = clock().astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         base["feedErrors"] = [f"feed_fetch_failed:{type(exc).__name__}"]
         return base
+
+    # Evidence cannot be timestamped at run start. The provider payload is only
+    # observable after its request returns, so use the receipt-time clock for the
+    # T-45 boundary. This intentionally fails closed for a slow request that
+    # starts before T-45 and completes after it.
+    feed_observed = clock().astimezone(timezone.utc)
+    base["feedObservedAtUtc"] = feed_observed.isoformat().replace("+00:00", "Z")
+    base["minutesToStartAtFeedReceipt"] = round((start - feed_observed).total_seconds() / 60.0, 3)
+    base["preT45"] = feed_observed < start - timedelta(minutes=45)
 
     game_data = feed.get("gameData") or {}
     box_teams = ((feed.get("liveData") or {}).get("boxscore") or {}).get("teams") or {}
@@ -187,9 +197,16 @@ def build_report(
     *,
     observed_at: Optional[datetime] = None,
     fetch_json: Callable[[str, int], Dict[str, Any]] = _http_json,
+    clock: Optional[Callable[[], datetime]] = None,
 ) -> Dict[str, Any]:
-    observed = (observed_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    slate_date = observed.astimezone(ET).date().isoformat()
+    if clock is None:
+        if observed_at is not None:
+            fixed = observed_at.astimezone(timezone.utc)
+            clock = lambda: fixed
+        else:
+            clock = lambda: datetime.now(timezone.utc)
+    created = clock().astimezone(timezone.utc)
+    slate_date = created.astimezone(ET).date().isoformat()
     url = SCHEDULE_URL + "?" + urllib.parse.urlencode({"sportId": 1, "date": slate_date})
     schedule = fetch_json(url, 8)
     games = [
@@ -201,7 +218,7 @@ def build_report(
         and str((game.get("status") or {}).get("abstractGameState") or "") == "Preview"
     ]
     diagnostics = [
-        diagnose_game(game, observed_at=observed, fetch_json=fetch_json)
+        diagnose_game(game, fetch_json=fetch_json, clock=clock)
         for game in games
     ]
     valid_both = sum(item.get("bothBullpenIdentityValid") is True for item in diagnostics)
@@ -213,7 +230,7 @@ def build_report(
         "ok": True,
         "version": VERSION,
         "reportType": REPORT_TYPE,
-        "createdAtUtc": observed.isoformat().replace("+00:00", "Z"),
+        "createdAtUtc": created.isoformat().replace("+00:00", "Z"),
         "slateDateEt": slate_date,
         "readOnly": True,
         "provider": "MLB Stats API",
