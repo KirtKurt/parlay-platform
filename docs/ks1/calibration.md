@@ -50,10 +50,12 @@ fit_from_ledger(locked_official_rows)
 ```
 
 `ks1/nightly.py` now supplies the missing caller inside the **existing**
-`mlb-research-ingestion.yml` workflow. Its single hourly cron moves from minute
-23 to minute 0; no additional trigger is added. Grading is due at **01:00
-America/New_York**, including daylight saving time, before the research ingest
-and daily publication steps. GitHub may delay scheduled runs; the next hourly
+`mlb-research-ingestion.yml` workflow. Its hourly cron is at minute 17. Grading
+is due at **01:00 America/New_York**, including daylight saving time, after
+the research source ingest and before daily publication. The due publisher
+requires a `--sources-not-before` timestamp from this run's ingestion step
+and complete, freshly observed retained finals. See `refresh-recovery.md` for
+the KS1-only dispatch watchdog proposal. GitHub may delay runs; the next hourly
 tick catches up if the nightly checkpoint is incomplete. A completed date never
 fits twice, including the repeated 01:00 hour in autumn.
 
