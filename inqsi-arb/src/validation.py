@@ -13,6 +13,7 @@ from typing import Any, Dict, Iterable, List
 
 from freshness import assess_quote
 from rules import UNKNOWN, compatibility, lookup
+import rules_fanatics  # noqa: F401  # reviewed supplemental registrations
 
 
 def sport_family(sport_key: str) -> str:
