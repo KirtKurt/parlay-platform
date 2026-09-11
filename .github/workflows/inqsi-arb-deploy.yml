@@ -61,28 +61,36 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}"
-      - name: Verify live v3 health, catalog, UI and infrastructure
+      - name: Verify live v3 health, rules, catalog, persistence, constraints, UI and infrastructure
         run: |
           set -euo pipefail
           API_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ArbApiUrl'].OutputValue" --output text)
           WS_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ArbWebSocketUrl'].OutputValue" --output text)
           test -n "$API_URL" && test "$API_URL" != "None"
           test -n "$WS_URL" && test "$WS_URL" != "None"
+          for resource in ArbAuditTable ArbStateTable ArbConnectionsTable ArbFunction ArbWebSocketFunction ArbWebSocketApi; do
+            STATUS=$(aws cloudformation describe-stack-resource --stack-name inqsi-arb-prod --logical-resource-id "$resource" --region "${{ secrets.AWS_REGION }}" --query 'StackResourceDetail.ResourceStatus' --output text)
+            test "$STATUS" = "CREATE_COMPLETE" -o "$STATUS" = "UPDATE_COMPLETE"
+          done
           python - "$API_URL" "$WS_URL" <<'PY'
           import json, sys, time, urllib.error, urllib.request
           base=sys.argv[1].rstrip('/'); ws=sys.argv[2]
 
-          def get(path, *, attempts=12, timeout=30):
+          def request(path, *, method='GET', payload=None, headers=None, attempts=12, timeout=30):
               url=base+path
               last=None
+              body=None if payload is None else json.dumps(payload).encode()
+              hdr={'accept':'application/json', **(headers or {})}
+              if body is not None:
+                  hdr['content-type']='application/json'
               for i in range(1, attempts+1):
                   try:
-                      with urllib.request.urlopen(url, timeout=timeout) as r:
-                          body=r.read()
-                          return r.status, r.headers, body
+                      req=urllib.request.Request(url, data=body, headers=hdr, method=method)
+                      with urllib.request.urlopen(req, timeout=timeout) as r:
+                          return r.status, r.headers, r.read()
                   except urllib.error.HTTPError as exc:
-                      body=exc.read().decode('utf-8','replace')[:1000]
-                      last=f'HTTP {exc.code}: {body}'
+                      err=exc.read().decode('utf-8','replace')[:1000]
+                      last=f'HTTP {exc.code}: {err}'
                   except Exception as exc:
                       last=f'{type(exc).__name__}: {exc}'
                   print(f'waiting for endpoint propagation {path} attempt={i}/{attempts} last={last}', flush=True)
@@ -90,20 +98,48 @@ jobs:
                       time.sleep(min(5*i, 15))
               raise RuntimeError(f'{path} unavailable after {attempts} attempts: {last}')
 
-          _,_,hb=get('/v1/arb/health')
+          _,_,hb=request('/v1/arb/health')
           h=json.loads(hb)
           assert h['ok'] is True and h['version']=='INQSI-ARB-v3' and h['places_bets'] is False, h
           assert h['provider_key_present'] is True and h['audit_persistence'] is True, h
           assert h['automatic_market_discovery'] is True and h['websocket_push_configured'] is True, h
+          assert h['rules_registry_entries'] >= 6, h
 
-          _,_,cb=get('/v1/arb/catalog')
+          _,_,rb=request('/v1/arb/rules')
+          rules=json.loads(rb)
+          assert rules['ok'] is True and rules['count'] >= 6, rules
+          assert {'draftkings','fanduel'}.issubset({r['book'] for r in rules['rules']}), rules
+          assert all(r.get('reviewed') and r.get('source','').startswith('https://') for r in rules['rules']), rules
+
+          _,_,cb=request('/v1/arb/catalog')
           c=json.loads(cb)
           assert c['ok'] is True and c['n_sports'] > 0, c
           assert 'player_props' in c['market_families'] and 'futures' in c['market_families'], c
 
-          _,headers,htmlb=get('/v1/arb/ui')
+          _,_,constraint_b=request('/v1/arb/constraints', method='POST', payload={
+              'legs':[{'book':'draftkings','stake':80,'limit':100}],
+              'profiles':{'draftkings':{'balance':50,'max_stake':90}}
+          })
+          constraint=json.loads(constraint_b)
+          assert constraint['ok'] is True and constraint['feasible'] is False, constraint
+
+          verify_headers={'X-Inqsi-User-Id':'deploy-verifier'}
+          _,_,pb=request('/v1/arb/positions', method='POST', headers=verify_headers, payload={
+              'position_id':'ci-smoke', 'market_id':'ci-smoke-market', 'required_outcomes':['A','B']
+          })
+          p=json.loads(pb)
+          assert p['ok'] is True and p['position']['position_id']=='ci-smoke', p
+          _,_,pgb=request('/v1/arb/positions/ci-smoke', headers=verify_headers)
+          pg=json.loads(pgb)
+          assert pg['ok'] is True and pg['position']['market_id']=='ci-smoke-market', pg
+
+          _,headers,htmlb=request('/v1/arb/ui')
           content_type=headers.get('content-type',''); html=htmlb.decode('utf-8','replace')
           assert 'text/html' in content_type and 'Inqsi ARB' in html
           assert ws.startswith('wss://'), ws
-          print(json.dumps({'api_url':base,'websocket_url':ws,'health':h,'active_sports':c['n_sports']}, indent=2))
+          print(json.dumps({
+              'api_url':base, 'websocket_url':ws, 'health':h,
+              'active_sports':c['n_sports'], 'reviewed_rules':rules['count'],
+              'constraint_smoke':'pass', 'position_persistence_smoke':'pass'
+          }, indent=2))
           PY
