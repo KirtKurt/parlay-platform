@@ -84,8 +84,7 @@ export class JobStore {
   }
 
   #writeError(status, error) {
-    const conflict = status === 73;
-    if (conflict) return Object.assign(new Error('job_store_write_conflict'), { code: 'ESTALE' });
+    if (status === 73) return Object.assign(new Error('job_store_write_conflict'), { code: 'ESTALE' });
     if (error) return Object.assign(new Error('job_store_write_failed'), { code: 'EIO', cause: error });
     return Object.assign(new Error('job_store_write_failed'), { code: status === 75 ? 'EBUSY' : 'EIO' });
   }
@@ -133,13 +132,17 @@ export class JobStore {
     try { target = this.file(id); }
     catch (error) { if (error.code === 'EINVAL') return null; throw error; }
     try {
-      const persisted = JSON.parse(fs.readFileSync(target, 'utf8'));
-      const job = { ...persisted };
-      if (this.runtimeInstructions.has(id)) job.instruction = this.runtimeInstructions.get(id);
-      this.snapshots.set(job, structuredClone(persisted));
+      const job = JSON.parse(fs.readFileSync(target, 'utf8'));
+      this.snapshots.set(job, structuredClone(job));
       return job;
     }
     catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  }
+
+  getForExecution(id) {
+    const job = this.get(id);
+    if (job && this.runtimeInstructions.has(id)) job.instruction = this.runtimeInstructions.get(id);
+    return job;
   }
 
   list(owner) {
