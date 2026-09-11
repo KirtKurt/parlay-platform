@@ -53,3 +53,35 @@ test('expired capability cannot use the model or read prior job state', async t 
   const file = path.join(a.directory, 'auth.json'); const auth = JSON.parse(fs.readFileSync(file)); auth.expires = 1; fs.writeFileSync(file, JSON.stringify(auth));
   assert.equal((await fetch(`${url}/broker/transport/${a.id}/input`, { headers: { authorization: `Bearer ${a.token}` } })).status, 401);
 });
+
+test('missing input returns an error without terminating the broker', async t => {
+  const { a, url } = await fixture(t);
+  fs.unlinkSync(path.join(a.directory, 'input.json'));
+  assert.equal((await fetch(`${url}/broker/transport/${a.id}/input`, { headers: { authorization: `Bearer ${a.token}` } })).status, 503);
+  assert.equal((await fetch(`${url}/healthz`)).status, 200);
+});
+test('invalid durable quota state cannot dispatch a model operation', async t => {
+  let calls = 0;
+  const { a, url } = await fixture(t, async () => { calls++; return Response.json({ ok: true }); });
+  const authFile = path.join(a.directory, 'auth.json');
+  const original = JSON.parse(fs.readFileSync(authFile));
+  const request = () => fetch(`${url}/broker/v1/responses`, { method: 'POST', headers: { authorization: `Bearer ${a.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: 'test-model', input: 'proof' }) });
+  for (const maxRequests of [undefined, null, '200', -1, 0, 201]) {
+    fs.writeFileSync(authFile, JSON.stringify({ ...original, maxRequests }));
+    assert.equal((await request()).status, 503);
+  }
+  fs.writeFileSync(authFile, JSON.stringify(original));
+  fs.writeFileSync(path.join(a.directory, 'requests.json'), JSON.stringify({ count: -1 }));
+  assert.equal((await request()).status, 503); assert.equal(calls, 0);
+});
+test('revocation while upstream is pending prevents its response from being forwarded', async t => {
+  let release, entered;
+  const pending = new Promise(resolve => { release = resolve; });
+  const started = new Promise(resolve => { entered = resolve; });
+  const { a, url } = await fixture(t, async () => { entered(); await pending; return Response.json({ result: 'late output' }); });
+  const result = fetch(`${url}/broker/v1/responses`, { method: 'POST', headers: { authorization: `Bearer ${a.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: 'test-model', input: 'proof' }) });
+  await started;
+  const file = path.join(a.directory, 'auth.json'); const auth = JSON.parse(fs.readFileSync(file)); auth.expires = 0; fs.writeFileSync(file, JSON.stringify(auth));
+  release();
+  const response = await result; assert.equal(response.status, 401); assert.equal((await response.text()).includes('late output'), false);
+});

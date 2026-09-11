@@ -26,8 +26,17 @@ export function createJobBroker({ root, openAIKey, model, upstream = fetch } = {
         if (match[1] !== task.id) return send(403, { error: 'task_scope_mismatch' });
         const name = match[2];
         if (name === 'input' && request.method === 'GET') {
-          response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-          return fs.createReadStream(path.join(task.directory, 'input.json')).pipe(response);
+          const input = fs.createReadStream(path.join(task.directory, 'input.json'));
+          input.once('error', () => {
+            if (response.headersSent) response.destroy();
+            else send(503, { error: 'task_input_unavailable' });
+          });
+          input.once('open', () => {
+            response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+            input.pipe(response);
+          });
+          response.once('close', () => input.destroy());
+          return;
         }
         if (['checkpoint', 'result'].includes(name) && request.method === 'PUT') {
           const body = await readBody(request, MAX_TRANSPORT_BYTES);
@@ -54,7 +63,8 @@ export function createJobBroker({ root, openAIKey, model, upstream = fetch } = {
       const countPath = path.join(task.directory, 'requests.json');
       let count = 0;
       try { count = JSON.parse(fs.readFileSync(countPath, 'utf8')).count; } catch (e) { if (e.code !== 'ENOENT') throw e; }
-      if (!Number.isSafeInteger(count) || count >= task.auth.maxRequests) return send(429, { error: 'job_request_limit' });
+      if (!Number.isSafeInteger(count) || count < 0 || !Number.isSafeInteger(task.auth.maxRequests) || task.auth.maxRequests < 1 || task.auth.maxRequests > 200) return send(503, { error: 'job_quota_state_invalid' });
+      if (count >= task.auth.maxRequests) return send(429, { error: 'job_request_limit' });
       atomicTransportWrite(countPath, JSON.stringify({ count: count + 1 }));
       body.store = false;
       body.max_output_tokens = Math.min(Number(body.max_output_tokens) || 32768, 32768);
@@ -64,6 +74,11 @@ export function createJobBroker({ root, openAIKey, model, upstream = fetch } = {
         method: 'POST', redirect: 'error', signal: AbortSignal.timeout(120000),
         headers: { authorization: `Bearer ${openAIKey}`, 'content-type': 'application/json' }, body: JSON.stringify(body)
       });
+      try { authenticateTask(root, request.headers.authorization); }
+      catch {
+        try { await result.body?.cancel(); } catch { /* release the pending response when possible */ }
+        return send(401, { error: 'task_authentication_required' });
+      }
       if (!result.ok) return send(result.status, { error: 'upstream_request_rejected' });
       response.writeHead(result.status, { 'content-type': result.headers.get('content-type') || 'application/json', 'cache-control': 'no-store' });
       if (result.body) Readable.fromWeb(result.body).on('error', () => response.destroy()).pipe(response);
