@@ -25,7 +25,7 @@ export function createRunner(config, store, CodexClass = Codex) {
       };
       const thread = job.threadId ? codex.resumeThread(job.threadId, threadOptions) : codex.startThread(threadOptions);
 
-      const prompt = `Authorized repository: KirtKurt/parlay-platform\nAuthorized paths: ${job.authorizedScope.join(', ')}\nDo not modify files outside those paths. Keep credentials out of code and output. Publishing and deployment credentials are not available to this coding worker.\n\n${job.instruction}`;
+      const prompt = `Authorized repository: KirtKurt/parlay-platform\nAuthorized paths: ${job.authorizedScope.join(', ')}\nDo not modify files outside those paths. Keep secrets out of code and output. Publishing and deployment authority are not available to this coding worker.\n\n${job.instruction}`;
       const { events } = await thread.runStreamed(prompt, { signal });
 
       let sawEvent = false;
@@ -52,7 +52,7 @@ export function createRunner(config, store, CodexClass = Codex) {
         }
         if (event.type === 'turn.completed') turnCompleted = true;
         if (event.type === 'turn.failed') turnFailure = event.error?.message || 'codex_turn_failed';
-        store.save(job);
+        await store.saveAsync(job);
       }
 
       if (signal.aborted || job.cancelRequested) {
@@ -74,7 +74,6 @@ export function createRunner(config, store, CodexClass = Codex) {
       const head = await git(workspace, ['rev-parse', 'HEAD']);
       if (head !== job.startingRevision) job.commit = head;
 
-      // collectChanges/git may yield after the earlier cancellation check.
       if (signal.aborted || job.cancelRequested) {
         job.status = 'cancelled';
         store.save(job);
@@ -91,8 +90,6 @@ export function createRunner(config, store, CodexClass = Codex) {
       }
       store.save(job);
     } catch (error) {
-      // Another trusted process committed a conflicting transition. Preserve
-      // that durable state; never replace a publisher receipt with our stale job.
       if (error?.code === 'ESTALE') return;
       job.status = signal.aborted || job.cancelRequested ? 'cancelled' : 'failed';
       job.error = sanitize(error?.message || error);
