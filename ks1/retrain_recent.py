@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss
 
+from ks1.features import ET
 from ks1.inventory import encode
 from ks1.sources import aws_clients, load_existing
 from ks1.table import build, contract
@@ -27,7 +28,11 @@ def split_recent(frame):
     labeled = frame.loc[frame.home_win.notna() & frame.home_score.notna() & frame.away_score.notna()].copy()
     if not set(labeled.home_win.unique()).issubset({True, False, 0, 1}):
         raise ValueError('invalid labels')
-    train = labeled.loc[labeled.date < SPLIT_DATE].sort_values(['date', 'game_id'])
+    # A resumed August game completed in September cannot supply a training
+    # label that was unavailable at the start of the holdout.
+    completed = pd.to_datetime(labeled.label_completed_at, utc=True, errors='raise')
+    boundary = pd.Timestamp(SPLIT_DATE, tz=ET).tz_convert('UTC')
+    train = labeled.loc[(labeled.date < SPLIT_DATE) & (completed < boundary)].sort_values(['date', 'game_id'])
     test = labeled.loc[labeled.date >= SPLIT_DATE].sort_values(['date', 'game_id'])
     if len(train) < MIN_TRAIN or len(test) < MIN_TEST:
         raise ValueError('insufficient chronological train/test games')
@@ -129,7 +134,12 @@ def main():
     bundle = load_existing(cf, s3, bucket)
     table, source_report, *_ = build(bundle)
     args.output.mkdir(parents=True, exist_ok=True)
-    table.to_pandas().to_parquet(args.output/'input_table.parquet', index=False)
+    frame = table.to_pandas()
+    history = {str(g['officialGamePk']): g for g in bundle.get('compact', [])}
+    history.update({str(g['officialGamePk']): g for g in bundle.get('full', [])})
+    frame['label_completed_at'] = frame.game_id.map(
+        lambda pk: history.get(str(pk), {}).get('completedAtUtc'))
+    frame.to_parquet(args.output/'input_table.parquet', index=False)
     refs = json.loads((Path(__file__).parent/'model_refs.json').read_bytes())
     ref = refs['lightgbm']
     body = s3.get_object(Bucket=bucket, Key=ref['key'], VersionId=ref['version_id'])['Body'].read()
@@ -138,7 +148,7 @@ def main():
     proof = {'input_table_sha256': hashlib.sha256((args.output/'input_table.parquet').read_bytes()).hexdigest(),
              'source_receipts': source_report['source_receipts'], 'source_coverage': source_report['coverage'],
              'incumbent_ref': ref, 'provider_calls': 0}
-    report = evaluate(table.to_pandas(), body, args.output, proof)
+    report = evaluate(frame, body, args.output, proof)
     # Only isolated experiment artifacts are saved. A separate reviewed model
     # reference change is required for serving; no authority or ledger write.
     save_artifact(s3, bucket, args.output)
