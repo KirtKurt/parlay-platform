@@ -47,8 +47,13 @@ def read_locked_predictions(s3, bucket, as_of):
                         and utc(row['as_of']) <= utc(source['stored_at']) <= cutoff < utc(as_of)):
                     candidates[row['game_id']] = {'row': row, 'evidence': source}
         for pk, entry in candidates.items():
-            now = (current or {}).get(pk, {})
-            if not now or any(now.get(k) != v for k, v in entry['row'].items()):
+            now = (current or {}).get(pk)
+            if now is None:
+                entry = dict(entry)
+                entry['evidence'] = dict(entry['evidence'], recovered_missing_current=True)
+                admitted.append(entry)
+                continue
+            if any(now.get(k) != v for k, v in entry['row'].items()):
                 excluded.append({'game_id': pk, 'reason': 'changed_or_missing_frozen_row'}); continue
             admitted.append(entry)
         for pk, row in (current or {}).items():
