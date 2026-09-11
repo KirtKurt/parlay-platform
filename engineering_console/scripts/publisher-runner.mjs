@@ -7,7 +7,6 @@ import {
   JOB_ID,
   evaluateRequiredChecks,
   publicationDirectories,
-  validatePublicationManifest,
   withinAuthorizedScope,
   writePublicationReceipt,
   readPublicationReceipt
@@ -18,6 +17,7 @@ import { JobStore } from '../src/store.js';
 import { sanitize } from '../src/sanitize.js';
 import { loadPublicationPolicy, validatePublisherRequest, validatePullRequestIdentity, PROOF_WORKFLOW } from '../src/publication-policy.js';
 import { assertMainAncestor, validatePublicationHistory } from '../src/publication-git-guard.js';
+import { beginPublicationMerge } from '../src/publication-decision.js';
 
 const exec = promisify(execFile);
 
@@ -204,6 +204,10 @@ async function processClaim(claimDir) {
     pr = await github(`/pulls/${pr.number}`);
     validatePullRequestIdentity(pr, manifest, publishedCommit);
     assertNotCancelled();
+    // This creates one durable winner between cancellation and merge. Once the
+    // merge commitment wins, a later cancel request is rejected instead of
+    // being acknowledged and then raced by the GitHub merge API call.
+    beginPublicationMerge(dataDir, manifest.jobId);
     const merge = await github(`/pulls/${pr.number}/merge`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
