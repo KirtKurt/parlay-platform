@@ -1,0 +1,56 @@
+name: MLB research implementation provenance
+on:
+  pull_request:
+    paths:
+      - 'mlb_research/**'
+      - 'tests/unit/test_mlb_research_v1.py'
+      - 'tests/unit/test_mlb_research_provenance.py'
+      - '.github/workflows/mlb-research-provenance.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'mlb_research/**'
+      - 'tests/unit/test_mlb_research_v1.py'
+      - 'tests/unit/test_mlb_research_provenance.py'
+      - '.github/workflows/mlb-research-provenance.yml'
+permissions:
+  contents: read
+concurrency:
+  group: mlb-research-provenance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      AWS_EC2_METADATA_DISABLED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing research test dependencies
+        run: python -m pip install -r mlb_research/requirements.txt 'pytest>=8,<9' 'PyYAML>=6,<7'
+      - name: Verify current research behavior and source-bound registry
+        run: |
+          python -m pytest -q tests/unit/test_mlb_research_v1.py tests/unit/test_mlb_research_provenance.py --junitxml=runtime_reports/mlb-research-provenance-tests.xml
+          python -m compileall -q mlb_research
+      - name: Record non-secret implementation evidence
+        run: |
+          PYTHONPATH=mlb_research python - <<'PY'
+          import json
+          from pathlib import Path
+          from mlb_research_models_v1 import PROTOCOL
+          Path('runtime_reports/mlb-research-implementation.json').write_text(json.dumps(PROTOCOL['implementation'], indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-research-provenance-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb-research-provenance-tests.xml
+            runtime_reports/mlb-research-implementation.json
+          retention-days: 30
