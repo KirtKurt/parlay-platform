@@ -45,9 +45,6 @@ def passive_lineup_observation(row):
     context=(row.get('advanced_context') or row.get('advancedContext') or {})
     lineup=context.get('confirmed_lineups') if isinstance(context,dict) else None
     lineup=lineup if isinstance(lineup,dict) else {}
-    # The version marker is emitted before batting orders are posted. Only an
-    # actual per-batter payload constitutes an observation; two null arrays are
-    # normal absence and must not fail the read-only proof.
     home_payload=lineup.get('home_lineup_season_batting')
     away_payload=lineup.get('away_lineup_season_batting')
     present=home_payload is not None or away_payload is not None
@@ -141,11 +138,16 @@ def passive_bullpen_roster_observation(row):
         identities=[_positive_int(value) for value in values]
         if any(value is None for value in identities) or len(set(identities))!=len(identities):
             errors.append(side+'_bullpen_roster_identity_invalid')
-    # A non-null value, including [], would be an availability claim; passive
-    # roster membership has no authority to make one.
-    if any(bullpen.get(side+'_available_relievers') is not None for side in ('home','away')):
+    # Passive roster membership cannot conclude either side of the availability
+    # question. Any non-null available/unavailable value, including [], is an
+    # authority-bearing claim and must fail the diagnostic.
+    availability_fields=(
+        'home_available_relievers','away_available_relievers',
+        'home_unavailable_relievers','away_unavailable_relievers',
+    )
+    if any(bullpen.get(field) is not None for field in availability_fields):
         result['availabilityClaimed']=True
-        errors.append('passive_roster_must_not_claim_available_relievers')
+        errors.append('passive_roster_must_not_claim_reliever_availability')
     result['errors']=sorted(set(errors));result['valid']=not result['errors']
     return result
 
