@@ -59,7 +59,6 @@ jobs:
           for path in root.glob('mlb_*.json'):
               if path.is_file() and path.stat().st_size <= 2_000_000 and path not in candidates:
                   candidates.append(path)
-          # Prefer the freshest retained operational evidence instead of file-name order.
           selected = sorted(candidates, key=lambda p: (p.stat().st_mtime_ns, str(p)))[-20:]
           chunks = []
           for path in selected:
@@ -79,7 +78,8 @@ jobs:
           from pathlib import Path
 
           policy = json.loads(Path('engineering_agent/policy.json').read_text())
-          evidence = Path('runtime_reports/engineering_planner/evidence.jsonl').read_text(encoding='utf-8', errors='replace')[-50000:]
+          # Reserve ample headroom for JSON escaping, mission text, policy and instruction.
+          evidence = Path('runtime_reports/engineering_planner/evidence.jsonl').read_text(encoding='utf-8', errors='replace')[-32000:]
           prompt = json.dumps({
               'mission': (
                   'Continuously improve the MLB research and successor-learning platform. '
@@ -97,11 +97,13 @@ jobs:
                   'likelyFiles (array), acceptanceTests (array), safetyReceipts (array), evidenceBasis (array).'
               ),
           }, separators=(',', ':'))
-          if len(prompt.encode('utf-8')) > 50000:
-              raise SystemExit('planner request exceeded 50KB contract')
+          size = len(prompt.encode('utf-8'))
+          if size > 50000:
+              raise SystemExit(f'planner request exceeded 50KB contract: {size}')
           Path('/tmp/mlb-planner-event.json').write_text(
               json.dumps({'mode': 'engineering_plan', 'prompt': prompt}), encoding='utf-8'
           )
+          print(json.dumps({'promptBytes': size, 'evidenceChars': len(evidence)}))
           PY
 
       - name: Invoke planner through Bedrock-capable AWS runtime role
