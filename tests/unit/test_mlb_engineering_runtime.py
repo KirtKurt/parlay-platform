@@ -144,3 +144,25 @@ def test_healthy_capture_words_do_not_create_false_data_capture_priority() -> No
         '"snapshotWrites":15,"missedT10":[]}'
     )
     assert "data_capture" not in prioritized_focus_domains(evidence)
+
+
+def test_focus_scan_must_use_full_filtered_evidence_not_prompt_tail() -> None:
+    early_blocker = json.dumps(
+        {
+            "kind": "current_runtime_report",
+            "path": "runtime_reports/mlb_successor_v2_verification_20260909.json",
+            "observedEpoch": 9999999999,
+            "content": '{"blockers":["INSUFFICIENT_OBSERVED_TEAM_CONTEXT_TRAIN"]}',
+        }
+    )
+    late_large_report = json.dumps(
+        {
+            "kind": "current_runtime_report",
+            "path": "runtime_reports/mlb_scoring_fix_post_deploy_latest.json",
+            "observedEpoch": 9999999999,
+            "content": "x" * 32000,
+        }
+    )
+    filtered = _filter_superseded_evidence(early_blocker + "\n" + late_large_report)
+    assert next_focus_domain(filtered, []) == "challenger_model"
+    assert next_focus_domain(filtered[-28000:], []) is None
