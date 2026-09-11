@@ -1,10 +1,11 @@
 import path from 'node:path';
 
 function normalizeScope(value) {
-  const raw = String(value || '').trim().replaceAll('\\', '/').replace(/^\.\//, '').replace(/\/$/, '');
+  if (typeof value !== 'string' || value.includes('\\')) throw new Error(`invalid allowed scope: ${value}`);
+  const raw = value.trim().replace(/^\.\//, '').replace(/\/$/, '');
   if (!raw || raw === '.' || raw.startsWith('/') || path.isAbsolute(raw)) throw new Error(`invalid allowed scope: ${value}`);
   const segments = raw.split('/');
-  if (segments.some((segment) => !segment || segment === '..' || segment === '.git')) throw new Error(`invalid allowed scope: ${value}`);
+  if (segments.some((segment) => !segment || segment === '.' || segment === '..' || segment === '.git')) throw new Error(`invalid allowed scope: ${value}`);
   return raw;
 }
 
@@ -57,6 +58,7 @@ export function loadConfig(env = process.env) {
     workspaceRoot: path.resolve(env.INQSI_ENGINEERING_WORKSPACE_ROOT),
     allowedOrigin,
     allowedScopes,
+    requiredChecks: [...new Set(String(env.INQSI_ENGINEERING_REQUIRED_CHECKS || 'build').split(',').map((item) => item.trim()).filter(Boolean))],
     maxConcurrentJobs,
     port: Number(env.PORT || 8787),
     maxInstructionBytes: Number(env.INQSI_ENGINEERING_MAX_INSTRUCTION_BYTES || 20000)

@@ -3,15 +3,15 @@ import fs from 'node:fs';
 import { loadConfig } from './config.js';
 import { createAuthorizer } from './auth.js';
 import { JobStore } from './store.js';
-import { resolveRevision } from './git.js';
+import { refreshRepository, resolveRevision } from './git.js';
 import { DurableQueue } from './queue.js';
 import { createRunner } from './worker-runtime.js';
 import { publicJob } from './sanitize.js';
+import { normalizeRepoPath } from './publication.js';
 
 function validScope(scope, allowedScopes) {
-  if (typeof scope !== 'string') return false;
-  const value = scope.trim().replaceAll('\\', '/').replace(/^\.\//, '').replace(/\/$/, '');
-  if (!value || value === '.' || value.startsWith('/') || value.split('/').some((part) => !part || part === '..' || part === '.git')) return false;
+  const value = normalizeRepoPath(scope);
+  if (!value) return false;
   return allowedScopes.some((root) => value === root || value.startsWith(`${root}/`));
 }
 
@@ -54,6 +54,10 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
       if (request.method === 'POST' && !id) {
         if (!String(body.instruction || '').trim()) return send(400, { error: 'instruction_required' });
         if (!Array.isArray(body.authorizedScope) || !body.authorizedScope.length || body.authorizedScope.some((scope) => !validScope(scope, config.allowedScopes))) return send(400, { error: 'valid_authorized_scope_required' });
+        if (!body.startingRevision || body.startingRevision === 'HEAD') {
+          try { await refreshRepository(config.repository); }
+          catch { return send(503, { error: 'repository_refresh_failed' }); }
+        }
         const revision = await resolveRevision(config.repository, body.startingRevision || 'HEAD'); const job = store.create(body, actor.id, revision); queue.enqueue(job.id); return send(202, { job: publicJob(job) });
       }
       const job = id && store.owned(id, actor.id); if (!job) return send(404, { error: 'job_not_found' });
@@ -62,6 +66,7 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
       if (request.method === 'POST' && action === 'cancel') { queue.cancel(id); return send(202, { job: publicJob(store.owned(id, actor.id)) }); }
       if (request.method === 'POST' && action === 'continue') {
         if (!['completed','failed','blocked','awaiting_approval'].includes(job.status)) return send(409, { error: 'job_not_continuable' });
+        if (job.publicationState && job.publicationState !== 'no_changes') return send(409, { error: 'published_job_requires_new_task' });
         if (!validJobScopes(job, config.allowedScopes)) return send(409, { error: 'authorized_scope_no_longer_allowed' });
         if (!String(body.instruction || '').trim()) return send(400, { error: 'instruction_required' });
         job.instruction = String(body.instruction); job.status = 'queued'; job.cancelRequested = false; job.error = null; store.save(job); queue.enqueue(id); return send(202, { job: publicJob(job) });

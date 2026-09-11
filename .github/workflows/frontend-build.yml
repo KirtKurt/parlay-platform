@@ -37,7 +37,7 @@ jobs:
       - name: Check Engineering Console syntax
         working-directory: engineering_console
         run: |
-          for file in src/*.js test/*.js; do node --check "$file"; done
+          for file in src/*.js test/*.js scripts/*.mjs; do node --check "$file"; done
 
       - name: Test Engineering Console
         working-directory: engineering_console
