@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 from engineering_agent.evidence_freshness import (
     filter_superseded_fundamentals_evidence,
@@ -226,3 +227,12 @@ def test_malformed_or_unstructured_lines_are_preserved_and_never_create_cutoff()
     evidence = "not-json\n" + _history("malformed commit history line") + "\n"
     assert recent_fundamentals_repair_cutoff(evidence) is None
     assert filter_superseded_fundamentals_evidence(evidence) == evidence
+
+
+def test_planner_workflow_tracks_report_generator_at_first_parent_landing() -> None:
+    workflow = Path(".github/workflows/mlb-engineering-planner.yml").read_text(encoding="utf-8")
+    assert "'scripts/mlb_scoring_guard_status.py'," in workflow
+    assert "'--first-parent'" in workflow
+    assert "'--diff-merges=first-parent'" in workflow
+    assert "%cI operational-source-change" in workflow
+    assert "%ad operational-source-change" not in workflow
