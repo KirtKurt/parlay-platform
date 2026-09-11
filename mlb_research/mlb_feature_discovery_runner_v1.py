@@ -1,5 +1,5 @@
 """Publish fail-isolated feature-discovery evidence from the canonical dataset."""
-from mlb_research_store_v1 import digest, now
+from mlb_research_store_v1 import now
 import mlb_feature_discovery_v1 as discovery
 
 VERSION = 'MLB-FEATURE-DISCOVERY-RUNNER-v1'
@@ -22,11 +22,20 @@ def development_slice(rows):
             [r for r in ordered if r['slateDateEt'] in holdout_dates], dates)
 
 
+def _failed(dataset, at, exc):
+    return {'runnerVersion': VERSION, 'status': 'FAILED', 'updatedAtUtc': at,
+            'datasetRowsHash': dataset.get('rowsHash'), 'error': type(exc).__name__,
+            'holdoutLabelsInspectedByScreen': False,
+            'productionAuthorityChanged': False, 'researchOnly': True}
+
+
 def publish(store, dataset):
     """Screen development rows only; never expose holdout labels to the screen.
 
-    Failures are persisted as research evidence and returned instead of
-    raising, so canonical dataset publication cannot be blocked by discovery.
+    Discovery *and all sidecar persistence* are best-effort. No exception from
+    this function may block the already-authoritative canonical dataset path.
+    When storage itself is unavailable, returning FAILED is the only safe
+    evidence possible; the next canonical publication retries naturally.
     """
     at = now().isoformat()
     try:
@@ -45,15 +54,14 @@ def publish(store, dataset):
                  'holdoutLabelsInspectedByScreen': False,
                  'productionAuthorityChanged': False,
                  'researchOnly': True}
+        artifact = store.artifact('feature-discovery', value)
+        latest = {'artifact': artifact, 'updatedAtUtc': at, 'status': value['status'],
+                  'datasetRowsHash': value.get('datasetRowsHash'),
+                  'candidateCount': len(value.get('candidates', [])),
+                  'productionAuthorityChanged': False}
+        store.latest('feature-discovery.json', latest)
+        return value
     except Exception as exc:
-        value = {'runnerVersion': VERSION, 'status': 'FAILED', 'updatedAtUtc': at,
-                 'datasetRowsHash': dataset.get('rowsHash'), 'error': type(exc).__name__,
-                 'holdoutLabelsInspectedByScreen': False,
-                 'productionAuthorityChanged': False, 'researchOnly': True}
-    artifact = store.artifact('feature-discovery', value)
-    latest = {'artifact': artifact, 'updatedAtUtc': at, 'status': value['status'],
-              'datasetRowsHash': value.get('datasetRowsHash'),
-              'candidateCount': len(value.get('candidates', [])),
-              'productionAuthorityChanged': False}
-    store.latest('feature-discovery.json', latest)
-    return value
+        # Never retry storage recursively here: the failure itself may be S3.
+        # Canonical dataset publication has already succeeded and must remain so.
+        return _failed(dataset, at, exc)
