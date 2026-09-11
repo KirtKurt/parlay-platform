@@ -1,0 +1,51 @@
+name: Inqsi ARB Latency Proof
+on:
+  workflow_dispatch:
+    inputs:
+      requests:
+        description: Measured requests after warmup
+        required: false
+        default: '300'
+      concurrency:
+        description: Concurrent clients
+        required: false
+        default: '20'
+permissions:
+  contents: read
+concurrency:
+  group: inqsi-arb-latency-proof
+  cancel-in-progress: false
+jobs:
+  cached-api-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Resolve production API
+        id: endpoint
+        run: |
+          set -euo pipefail
+          API_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ArbApiUrl'].OutputValue" --output text)
+          test -n "$API_URL" && test "$API_URL" != "None"
+          echo "health_url=${API_URL%/}/v1/arb/health" >> "$GITHUB_OUTPUT"
+      - name: Measure cached/read-only production API latency
+        run: |
+          python inqsi-arb/ops/latency_probe.py \
+            --url '${{ steps.endpoint.outputs.health_url }}' \
+            --requests '${{ inputs.requests }}' \
+            --concurrency '${{ inputs.concurrency }}' \
+            --p95-target-ms 500 \
+            --output arb-latency-proof.json
+      - name: Upload latency evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inqsi-arb-latency-proof-${{ github.run_id }}
+          path: arb-latency-proof.json
+          if-no-files-found: warn
+          retention-days: 30
