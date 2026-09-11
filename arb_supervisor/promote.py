@@ -25,12 +25,17 @@ from arb_supervisor.validate_candidate import SHA_RE, validate_candidate
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 POLL_SECONDS = 10
 DISCOVERY_TIMEOUT = 180
+PR_CI_TIMEOUT = 20 * 60
 VALIDATION_TIMEOUT = 25 * 60
 DEPLOYMENT_TIMEOUT = 50 * 60
 
 
 class PromotionError(RuntimeError):
     pass
+
+
+class PRCIWaiting(PromotionError):
+    """Ordinary CI is not yet complete; this is not an approval grant."""
 
 
 def command(args: list[str], *, cwd: Path | None = None, check: bool = True) -> str:
@@ -90,8 +95,10 @@ def require_pr_ci(repo: str, number: int, head_sha: str) -> None:
     """Never replace pending/blocked PR Actions approval with a new dispatch."""
     rows = api(repo, f"actions/runs?head_sha={head_sha}&event=pull_request&per_page=100")
     runs = rows.get("workflow_runs") if isinstance(rows, dict) else None
-    if not isinstance(runs, list) or not runs or rows.get("total_count", 0) > 100:
+    if not isinstance(runs, list) or rows.get("total_count", 0) > 100:
         raise PromotionError("PR_CI_EVIDENCE_MISSING_OR_INCOMPLETE")
+    if not runs:
+        raise PRCIWaiting("PR_CI_NOT_VISIBLE_YET")
     relevant = [r for r in runs if r.get("head_sha") == head_sha
                 and r.get("event") == "pull_request"
                 and any(p.get("number") == number for p in r.get("pull_requests", []))]
@@ -105,7 +112,9 @@ def require_pr_ci(repo: str, number: int, head_sha: str) -> None:
     for run in latest.values():
         if run.get("conclusion") == "action_required":
             raise PromotionError(f"PR_ACTIONS_APPROVAL_REQUIRED:{run.get('id')}")
-        if run.get("status") != "completed" or run.get("conclusion") not in ("success", "skipped"):
+        if run.get("status") != "completed":
+            raise PRCIWaiting(f"PR_CI_PENDING:{run.get('id')}")
+        if run.get("conclusion") not in ("success", "skipped"):
             raise PromotionError(f"PR_CI_NOT_GREEN:{run.get('id')}")
     build_runs = [r for r in latest.values()
                   if r.get("path") == ".github/workflows/inqsi-arb-deploy.yml"
@@ -113,6 +122,17 @@ def require_pr_ci(repo: str, number: int, head_sha: str) -> None:
     if len(build_runs) != 1:
         raise PromotionError("PR_BUILD_EVIDENCE_MISSING")
     require_jobs(repo, build_runs[0]["id"], {"test-build"})
+
+
+def wait_for_pr_ci(repo: str, number: int, head_sha: str) -> None:
+    deadline = time.monotonic() + PR_CI_TIMEOUT
+    while time.monotonic() < deadline:
+        try:
+            require_pr_ci(repo, number, head_sha)
+            return
+        except PRCIWaiting:
+            time.sleep(POLL_SECONDS)
+    raise PromotionError("PR_CI_TIMEOUT")
 
 
 def require_jobs(repo: str, run_id: int, expected: set[str]) -> list[dict[str, Any]]:
@@ -270,7 +290,7 @@ def main() -> int:
     verify_pr(initial, branch=args.branch, head_sha=args.head_sha, require_draft=True, repository=args.repository)
     ensure_no_relevant_main_advance(repo_dir, args.base_sha)
 
-    require_pr_ci(args.repository, args.pr_number, args.head_sha)
+    wait_for_pr_ci(args.repository, args.pr_number, args.head_sha)
     validation = dispatch_validation(args.repository, args.branch, args.head_sha, args.base_sha)
 
     # Re-read after asynchronous validation and re-check main drift before any mutation.

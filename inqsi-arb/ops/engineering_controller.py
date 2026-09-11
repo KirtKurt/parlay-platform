@@ -305,7 +305,7 @@ class EngineeringController:
         env["ARB_AEC_MAIN_SHA"] = snapshot.main_sha
         env["ARB_AEC_ALLOWED_PATHS"] = ",".join(ALLOWED_PATH_PREFIXES)
         env["ARB_AEC_TASK"] = action.reason
-        completed = subprocess.run(command, shell=True, env=env, timeout=5400, check=False)
+        completed = subprocess.run(command, shell=True, env=env, timeout=7200, check=False)
         return {
             "action": asdict(action),
             "status": "completed" if completed.returncode == 0 else "failed",

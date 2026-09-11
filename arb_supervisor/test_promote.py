@@ -200,3 +200,26 @@ def test_main_preserves_merge_race_failure_without_deploying(monkeypatch):
     with pytest.raises(promote.PromotionError, match='MERGED_BASE_CHANGED_DEPLOYMENT_BLOCKED:' + 'd' * 40):
         promote.main()
     assert not calls
+
+
+def test_normal_pr_ci_queue_waits_without_substituting_another_workflow(monkeypatch):
+    now = [0]
+    calls = []
+    monkeypatch.setattr(promote.time, 'monotonic', lambda: now[0])
+    monkeypatch.setattr(promote.time, 'sleep', lambda seconds: now.__setitem__(0, now[0] + seconds))
+    def check(*args):
+        calls.append(now[0])
+        if len(calls) < 3:
+            raise promote.PRCIWaiting('PR_CI_PENDING:123')
+    monkeypatch.setattr(promote, 'require_pr_ci', check)
+    promote.wait_for_pr_ci('owner/repo', 831, 'a' * 40)
+    assert len(calls) == 3
+
+
+def test_actions_approval_stops_without_polling_or_dispatch(monkeypatch):
+    def check(*args):
+        raise promote.PromotionError('PR_ACTIONS_APPROVAL_REQUIRED:123')
+    monkeypatch.setattr(promote, 'require_pr_ci', check)
+    monkeypatch.setattr(promote.time, 'sleep', lambda *_: pytest.fail('Approval is not a queue delay'))
+    with pytest.raises(promote.PromotionError, match='PR_ACTIONS_APPROVAL_REQUIRED'):
+        promote.wait_for_pr_ci('owner/repo', 831, 'a' * 40)
