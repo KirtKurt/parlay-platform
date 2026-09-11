@@ -40,16 +40,16 @@ def test_classifies_completed_deployment_identity_domain() -> None:
     assert classify_task_domain(task) == "deployment_identity"
 
 
-def test_current_blockers_prioritize_clean_cohort_before_model_tuning() -> None:
+def test_current_blockers_prioritize_measured_performance_before_accumulation() -> None:
     evidence = """
     {"reason":"insufficient_clean_rows"}
     {"blockers":["NO_POSITIVE_BRIER_SKILL","CALIBRATION_ERROR_TOO_HIGH"]}
     {"successor":{"blockers":["INSUFFICIENT_OBSERVED_TEAM_CONTEXT_TRAIN"]}}
     """
     ranked = prioritized_focus_domains(evidence)
-    assert ranked[0] == "clean_cohort"
+    assert ranked[0] == "calibration"
     assert "challenger_model" in ranked
-    assert "calibration" in ranked
+    assert "clean_cohort" in ranked
 
 
 def test_next_focus_skips_domain_already_rejected_this_cycle() -> None:
@@ -60,8 +60,8 @@ def test_next_focus_skips_domain_already_rejected_this_cycle() -> None:
     )
     rejected = [
         {
-            "title": "Diagnose clean cohort",
-            "domain": "clean_cohort",
+            "title": "Diagnose calibration deficit",
+            "domain": "calibration",
             "reason": "schema invalid",
         }
     ]
@@ -136,3 +136,11 @@ def test_retired_diagnostic_optimizer_reports_cannot_drive_planner_focus() -> No
     filtered = _filter_superseded_evidence(evidence)
     assert "mlb_ml_outcome_challenger_latest.json" not in filtered
     assert "mlb_successor_runtime_health_latest.json" in filtered
+
+
+def test_healthy_capture_words_do_not_create_false_data_capture_priority() -> None:
+    evidence = (
+        '{"ingestion":{"health":"HEALTHY","errors":[]},"statcastDays":30,'
+        '"snapshotWrites":15,"missedT10":[]}'
+    )
+    assert "data_capture" not in prioritized_focus_domains(evidence)
