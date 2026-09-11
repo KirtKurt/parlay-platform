@@ -26,16 +26,23 @@ try {
   }
   const nonce = crypto.randomBytes(12).toString('hex');
   const proofPath = `engineering_console_publication_proof/runtime-${nonce}.md`;
-  const created = await json(`${origin}/v1/engineering`, { method: 'POST', headers: await authorization(), body: JSON.stringify({ instruction: `Create ${proofPath} containing exactly a Markdown heading "Runtime proof", source revision ${source}, and nonce ${nonce}. Make no other changes.`, authorizedScope: ['engineering_console_publication_proof'], startingRevision: 'HEAD' }) });
+  const instruction = `First execute the shell command sleep 60 and wait for it to finish. Only then create ${proofPath} containing exactly a Markdown heading "Runtime proof", source revision ${source}, and nonce ${nonce}. Make no other changes.`;
+  const created = await json(`${origin}/v1/engineering`, { method: 'POST', headers: await authorization(), body: JSON.stringify({ instruction, authorizedScope: ['engineering_console_publication_proof'], startingRevision: 'HEAD' }) });
   const deadline = Date.now() + 30 * 60 * 1000;
   let job;
+  let recoveryReady = false;
   while (Date.now() < deadline) {
     ({ job } = await json(`${origin}/v1/engineering/${created.job.id}`, { headers: await authorization() }));
+    if (!recoveryReady && job.status === 'running' && job.execution?.id && job.execution?.taskArn) {
+      console.log(JSON.stringify({ recoveryReady: true, source, jobId: job.id, executionId: job.execution.id, executionTask: job.execution.taskArn, observedAt: new Date().toISOString() }));
+      recoveryReady = true;
+    }
     if (job.publicationState === 'merged' && job.status === 'completed') break;
     if (['failed', 'blocked', 'cancelled'].includes(job.status)) throw new Error(`controlled_job_${job.status}`);
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, recoveryReady ? 5000 : 1000));
   }
-  if (job?.publicationState !== 'merged' || !job.mergeCommit || !job.execution?.taskArn) throw new Error('controlled_job_merge_not_verified');
+  if (!recoveryReady) throw new Error('recovery_probe_never_observed_active_execution');
+  if (job?.publicationState !== 'merged' || !job.mergeCommit || !job.execution?.taskArn || !job.execution?.id) throw new Error('controlled_job_merge_not_verified');
   const match = /^https:\/\/github.com\/KirtKurt\/parlay-platform\/pull\/(\d+)$/.exec(job.pullRequest || '');
   if (!match) throw new Error('proof_pr_identity_missing');
   const pr = await json(`https://api.github.com/repos/KirtKurt/parlay-platform/pulls/${match[1]}`);
@@ -45,5 +52,5 @@ try {
   const file = await json(`https://api.github.com/repos/KirtKurt/parlay-platform/contents/${proofPath}?ref=${job.mergeCommit}`);
   const content = Buffer.from(file.content || '', 'base64').toString('utf8');
   if (!content.includes(source) || !content.includes(nonce) || !/^# Runtime proof\s*$/m.test(content)) throw new Error('proof_content_mismatch');
-  console.log(JSON.stringify({ verified: true, source, jobId: job.id, executionTask: job.execution.taskArn, pullRequest: job.pullRequest, commit: job.commit, mergeCommit: job.mergeCommit, checkedAt: new Date().toISOString() }));
+  console.log(JSON.stringify({ verified: true, source, jobId: job.id, executionId: job.execution.id, executionTask: job.execution.taskArn, pullRequest: job.pullRequest, commit: job.commit, mergeCommit: job.mergeCommit, checkedAt: new Date().toISOString() }));
 } catch (error) { console.error(String(error.message).replace(/[^a-zA-Z0-9_:-]/g, '_')); process.exitCode = 1; }
