@@ -32,10 +32,9 @@ def _failed(dataset, at, exc):
 def publish(store, dataset):
     """Screen development rows only; never expose holdout labels to the screen.
 
-    Discovery *and all sidecar persistence* are best-effort. No exception from
-    this function may block the already-authoritative canonical dataset path.
-    When storage itself is unavailable, returning FAILED is the only safe
-    evidence possible; the next canonical publication retries naturally.
+    Screen failures are persisted when storage is healthy. All persistence is
+    itself best-effort: an S3/conditional-write failure returns FAILED and may
+    never block the already-authoritative canonical dataset publication path.
     """
     at = now().isoformat()
     try:
@@ -54,14 +53,17 @@ def publish(store, dataset):
                  'holdoutLabelsInspectedByScreen': False,
                  'productionAuthorityChanged': False,
                  'researchOnly': True}
+    except Exception as exc:
+        value = _failed(dataset, at, exc)
+    try:
         artifact = store.artifact('feature-discovery', value)
         latest = {'artifact': artifact, 'updatedAtUtc': at, 'status': value['status'],
                   'datasetRowsHash': value.get('datasetRowsHash'),
                   'candidateCount': len(value.get('candidates', [])),
                   'productionAuthorityChanged': False}
         store.latest('feature-discovery.json', latest)
-        return value
     except Exception as exc:
-        # Never retry storage recursively here: the failure itself may be S3.
-        # Canonical dataset publication has already succeeded and must remain so.
+        # Do not recursively attempt to persist a storage failure: storage may
+        # be the fault. The next canonical publication retries naturally.
         return _failed(dataset, at, exc)
+    return value
