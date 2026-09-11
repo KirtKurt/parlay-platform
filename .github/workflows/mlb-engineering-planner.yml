@@ -54,6 +54,8 @@ jobs:
           import json
           import subprocess
 
+          from engineering_agent.evidence import fundamentals_feature_pipeline_gap
+
           root = Path('runtime_reports')
           patterns = (
               'mlb_research_*.json',
@@ -181,6 +183,7 @@ jobs:
           # that caused that domain to be selected. This is read-only planner context;
           # it cannot change locks, ledgers, model promotion, or production authority.
           focus_hits = []
+          feature_pipeline_hits = []
           for path in selected:
               observed, text = candidates[path]
               name = path.name.lower()
@@ -209,12 +212,41 @@ jobs:
                       'matchedSignals': matched[:5],
                       'snippets': snippets,
                   })
+
+              try:
+                  parsed_report = json.loads(text)
+              except Exception:
+                  parsed_report = None
+              if isinstance(parsed_report, dict):
+                  gap = fundamentals_feature_pipeline_gap(parsed_report)
+                  if gap is not None:
+                      feature_pipeline_hits.append({
+                          'path': str(path),
+                          'observedEpoch': observed,
+                          'status': 'FUNDAMENTALS_FEATURE_PIPELINE_INACTIVE',
+                          'evidence': gap,
+                          'readOnly': True,
+                          'productionAuthorityChanged': False,
+                      })
           chunks.append(json.dumps({
               'kind': 'planner_focus_evidence_summary',
               'readOnly': True,
               'productionAuthorityChanged': False,
               'hits': focus_hits[-16:],
           }, ensure_ascii=False))
+          if feature_pipeline_hits:
+              chunks.append(json.dumps({
+                  'kind': 'planner_feature_pipeline_evidence_summary',
+                  'readOnly': True,
+                  'productionAuthorityChanged': False,
+                  'instruction': (
+                      'Treat these numeric observations as a distinct MLB feature-pipeline '
+                      'bottleneck. Diagnose why source-honest fundamentals are not reaching '
+                      'shadow evaluation; do not fabricate missing inputs, rewrite immutable '
+                      'predictions, or activate production authority.'
+                  ),
+                  'hits': feature_pipeline_hits[-4:],
+              }, ensure_ascii=False))
 
           Path('runtime_reports/engineering_planner/evidence.jsonl').write_text(
               '\n'.join(chunks) + '\n', encoding='utf-8'
@@ -223,6 +255,7 @@ jobs:
               'selectedFiles': [str(p) for p in selected],
               'count': len(selected),
               'focusEvidenceHitCount': len(focus_hits),
+              'featurePipelineEvidenceHitCount': len(feature_pipeline_hits),
               'excludedRetiredGenerations': list(retired),
           }))
           PY
