@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-import validate_candidate as policy
+from arb_supervisor import validate_candidate as policy
 
 
 def git(repo: Path, *args: str) -> str:
