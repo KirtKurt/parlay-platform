@@ -12,8 +12,11 @@ from engineering_agent.planner import (
     POLICY,
     blocked_task_titles,
     load_decision_history,
+    normalize_task_title,
     parse_json,
+    title_similarity,
     validate,
+    validate_against_history,
 )
 
 
@@ -31,17 +34,26 @@ def _planner_payload(
             "blockedTaskTitles": sorted(blocked_task_titles(history)),
             "rejectedProposalsThisCycle": rejected,
             "requiredSafetyReceipts": required_receipts,
-            "policy": POLICY,
+            "requiredOutputSchema": {
+                "title": "string",
+                "objective": "string",
+                "implementation": ["step 1", "step 2"],
+                "likelyFiles": ["allowed/path.py"],
+                "acceptanceTests": ["test 1", "test 2"],
+                "safetyReceipts": required_receipts,
+                "evidenceBasis": ["specific current evidence"],
+            },
             "instruction": (
                 "Choose exactly one highest-value unresolved MLB engineering task actionable from current evidence "
-                "and suitable for a small reviewed PR. Never return a title in blockedTaskTitles. Never repeat any "
-                "rejectedProposalsThisCycle. Recent main-history evidence is authoritative for whether work is already "
-                "merged. Historical-training-only rows with intentionally unavailable label-observation times are not "
-                "a reason to fabricate timestamps or weaken chronology. Prefer active current blockers over expected "
-                "fail-closed diagnostic errors. Do not weaken thresholds, chronology, immutable evidence, qualification, "
-                "calibration, promotion, or production authority merely to pass. Return strict JSON only with title, "
-                "objective, implementation, likelyFiles, acceptanceTests, safetyReceipts, and evidenceBasis. "
-                "safetyReceipts MUST contain every string in requiredSafetyReceipts exactly."
+                "and suitable for a small reviewed PR. Never return a title in blockedTaskTitles or a semantic/cosmetic "
+                "rewording of one. Never repeat any rejectedProposalsThisCycle title. Recent main-history evidence is "
+                "authoritative for whether work is already merged. Historical-training-only rows with intentionally "
+                "unavailable label-observation times are not a reason to fabricate timestamps or weaken chronology. "
+                "Prefer active current blockers over expected fail-closed diagnostic errors. Do not weaken thresholds, "
+                "chronology, immutable evidence, qualification, calibration, promotion, or production authority merely "
+                "to pass. Return ONE strict JSON object matching requiredOutputSchema. implementation, likelyFiles, "
+                "acceptanceTests, safetyReceipts, and evidenceBasis MUST be JSON arrays of strings. safetyReceipts MUST "
+                "contain every string in requiredSafetyReceipts exactly. Do not return prose outside the JSON object."
             ),
         },
         separators=(",", ":"),
@@ -74,6 +86,22 @@ def _function_name(stack_name: str, logical_id: str) -> str:
     if not value or value == "None":
         raise RuntimeError("planner Lambda physical resource ID unavailable")
     return value
+
+
+def _reject_cycle_repeat(title: str, rejected: list[dict[str, str]]) -> None:
+    normalized = normalize_task_title(title)
+    if not normalized:
+        return
+    for prior in rejected:
+        prior_title = str(prior.get("title") or "")
+        if prior_title.startswith("<"):
+            continue
+        similarity = title_similarity(normalized, prior_title)
+        if normalized == normalize_task_title(prior_title) or similarity >= 0.60:
+            raise ValueError(
+                f"task repeats a proposal already rejected this cycle: {prior_title} "
+                f"(similarity={similarity:.2f})"
+            )
 
 
 def run(
@@ -127,6 +155,8 @@ def run(
         try:
             parsed = parse_json(text)
             proposed_title = str(parsed.get("title") or "<untitled>")
+            _reject_cycle_repeat(proposed_title, rejected)
+            validate_against_history(parsed, history)
             task = validate(parsed, decision_history=history)
         except Exception as exc:
             reason = f"{type(exc).__name__}: {exc}"
@@ -162,7 +192,7 @@ def main() -> int:
     parser.add_argument("--attempts", type=Path, required=True)
     parser.add_argument("--stack", required=True)
     parser.add_argument("--logical-function", required=True)
-    parser.add_argument("--max-attempts", type=int, default=3)
+    parser.add_argument("--max-attempts", type=int, default=5)
     args = parser.parse_args()
     task = run(
         evidence_path=args.evidence,
