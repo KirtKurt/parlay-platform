@@ -3,7 +3,7 @@ from __future__ import annotations
 from engineering_agent.evidence import fundamentals_feature_pipeline_gap
 
 
-def test_feature_gap_requires_positive_all-game_inactivity_and_zero_shadow_evaluation() -> None:
+def test_feature_gap_requires_positive_all_game_inactivity_and_zero_shadow_evaluation() -> None:
     report = {
         "scoringSummary": {
             "officialGameCount": 15,
