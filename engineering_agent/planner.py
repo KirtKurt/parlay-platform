@@ -25,6 +25,35 @@ _STOP_WORDS = {
     "implement", "implementation", "update", "fix", "repair", "add", "ensure", "make",
 }
 
+_PROSPECTIVE_UNDERPOWERED_SIGNALS = (
+    "insufficient prospective selected recommendation",
+    "insufficient_prospective_selected_recommendation",
+    "insufficient fresh test rows",
+    "insufficient_fresh_test_rows",
+    "insufficient prospective test rows",
+    "insufficient_prospective_test_rows",
+)
+
+_CALIBRATION_MUTATION_SIGNALS = (
+    "adjust calibration",
+    "adjust the calibration",
+    "recalibrat",
+    "tune calibrat",
+    "refit calibrat",
+    "fit calibrat",
+    "update calibration parameter",
+    "change calibration parameter",
+)
+
+_PROSPECTIVE_MUTATION_SIGNALS = (
+    "fabricate prospective",
+    "synthesize prospective",
+    "backfill prospective",
+    "rewrite prospective",
+    "reclassify prospective",
+    "manufacture prospective",
+)
+
 
 def invoke(prompt: str) -> tuple[str, str]:
     regions = [x.strip() for x in os.environ.get("INQSI_ENGINEERING_REGIONS", "us-east-1,us-east-2,us-west-2").split(",") if x.strip()]
@@ -36,7 +65,7 @@ def invoke(prompt: str) -> tuple[str, str]:
             try:
                 response = client.converse(
                     modelId=model,
-                    system=[{"text": "You are the InQsi autonomous senior MLB engineering planner. You plan one small, testable engineering task at a time. You never weaken fail-closed safety, chronology, immutable evidence, or production authority."}],
+                    system=[{"text": "You are the InQsi autonomous senior MLB engineering planner. You plan one small, testable engineering task at a time. You never weaken fail-closed safety, chronology, immutable evidence, prospective holdouts, or production authority."}],
                     messages=[{"role": "user", "content": [{"text": prompt}]}],
                     inferenceConfig={"temperature": 0.1, "maxTokens": 5000},
                 )
@@ -147,6 +176,30 @@ def _require_string_list(value: dict[str, Any], key: str) -> list[str]:
     return result
 
 
+def validate_prospective_holdout_safety(value: dict[str, Any]) -> dict[str, Any]:
+    """Reject planner work that would tune against an incomplete prospective holdout."""
+    evidence = " ".join(str(x) for x in value.get("evidenceBasis") or []).lower()
+    implementation = " ".join(str(x) for x in value.get("implementation") or []).lower()
+    task_text = " ".join(
+        [
+            str(value.get("title") or ""),
+            str(value.get("objective") or ""),
+            implementation,
+            evidence,
+        ]
+    ).lower()
+    underpowered = any(signal in task_text for signal in _PROSPECTIVE_UNDERPOWERED_SIGNALS)
+    mutates_calibration = any(signal in implementation for signal in _CALIBRATION_MUTATION_SIGNALS)
+    mutates_prospective_rows = any(signal in task_text for signal in _PROSPECTIVE_MUTATION_SIGNALS)
+    if mutates_prospective_rows:
+        raise ValueError("prospective evaluation rows are immutable holdout evidence")
+    if underpowered and mutates_calibration:
+        raise ValueError(
+            "prospective holdout is underpowered; do not tune calibration against incomplete prospective evaluation"
+        )
+    return value
+
+
 def validate(value: dict[str, Any], *, decision_history: dict[str, Any] | None = None) -> dict[str, Any]:
     for key in ("title", "objective"):
         if not isinstance(value.get(key), str) or not value[key].strip():
@@ -155,6 +208,8 @@ def validate(value: dict[str, Any], *, decision_history: dict[str, Any] | None =
         _require_string_list(value, key)
     if "likelyFiles" in value and value["likelyFiles"] is not None and not isinstance(value["likelyFiles"], list):
         raise ValueError("likelyFiles must be an array")
+
+    validate_prospective_holdout_safety(value)
 
     required_receipts = {str(x) for x in POLICY.get("required_negative_authority_receipts") or []}
     supplied_receipts = set(value["safetyReceipts"])
@@ -197,8 +252,9 @@ def main() -> int:
         "policy": POLICY,
         "instruction": (
             "Choose exactly one highest-value unresolved engineering task that is actionable from current evidence and can be implemented in a small reviewed PR. "
-            "Never return a title in blockedTaskTitles or a cosmetic rewording of one. Do not propose weakening thresholds merely to pass. Return strict JSON only with: "
-            "title (string), objective (string), implementation (array of concrete steps), likelyFiles (array), acceptanceTests (array), safetyReceipts (array containing every required_negative_authority_receipts value), evidenceBasis (array)."
+            "Never return a title in blockedTaskTitles or a cosmetic rewording of one. Do not propose weakening thresholds merely to pass. "
+            "Prospective evaluation rows are immutable holdout evidence, never training or calibration material. If the prospective minimum is not met, do not tune a model or calibrator against that incomplete set; treat chronological accumulation as a wait condition unless current evidence proves a distinct capture defect. Never fabricate, backfill, rewrite, or reclassify prospective evaluation rows. "
+            "Return strict JSON only with: title (string), objective (string), implementation (array of concrete steps), likelyFiles (array), acceptanceTests (array), safetyReceipts (array containing every required_negative_authority_receipts value), evidenceBasis (array)."
         ),
     })
     raw, route = invoke(prompt)
