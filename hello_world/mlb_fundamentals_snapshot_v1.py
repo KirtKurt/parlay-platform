@@ -160,13 +160,19 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
 def _install_live_scoring_bridge(module: Any) -> None:
     """Install deterministic V2 shadow evaluation without scoring authority."""
     try:
+        import mlb_fundamentals_lock_authority_v1 as lock_authority
         import mlb_fundamentals_scoring_bridge_v1 as scoring_bridge
         import mlb_fundamentals_snapshot_v2 as snapshot_v2
         import mlb_winner_stack_v2 as winner_stack
 
+        # Align only to lock authorities already accepted by the MLB clean
+        # cohort and production verifier. The downstream provenance check is
+        # unchanged and still fails closed on absent/late evidence.
+        lock_authority.install(scoring_bridge)
         scoring_bridge.install_snapshot_determinism(snapshot_v2)
         scoring_bridge.install_winner_stack(winner_stack)
         scoring_bridge.install_snapshot_shadow_evaluation(snapshot_v2)
+        module.MLB_FUNDAMENTALS_LOCK_AUTHORITY_VERSION = lock_authority.VERSION
         module.MLB_FUNDAMENTALS_SCORING_BRIDGE_VERSION = scoring_bridge.VERSION
         module.MLB_FUNDAMENTALS_SCORING_BRIDGE_AUTHORITY_MODE = (
             scoring_bridge.AUTHORITY_MODE
@@ -187,6 +193,13 @@ def _install_live_scoring_bridge(module: Any) -> None:
         )
         module.MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_VERSION = (
             scoring_bridge.SNAPSHOT_DETERMINISM_VERSION
+        )
+        module._INQSI_MLB_FUNDAMENTALS_CANONICAL_LOCK_AUTHORITY_V1_INSTALLED = bool(
+            getattr(
+                scoring_bridge,
+                "_INQSI_MLB_FUNDAMENTALS_CANONICAL_LOCK_AUTHORITY_V1_INSTALLED",
+                False,
+            )
         )
         module._INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED = bool(
             getattr(
@@ -218,6 +231,7 @@ def _install_live_scoring_bridge(module: Any) -> None:
         )
         module.MLB_FUNDAMENTALS_SCORING_BRIDGE_INSTALL_ERROR = None
     except Exception as exc:
+        module._INQSI_MLB_FUNDAMENTALS_CANONICAL_LOCK_AUTHORITY_V1_INSTALLED = False
         module._INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED = False
         module._INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED = False
         module._INQSI_MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_V1_INSTALLED = False
