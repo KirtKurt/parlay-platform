@@ -88,8 +88,8 @@ def test_path_specific_source_history_is_durable_when_recent_log_has_only_noise(
                 "noise2 2026-09-11T14:58:00+00:00 Merge PR #787: disable unsafe manual MLB planner dispatch",
             ),
             _source_history(
-                "source1 2026-09-11T14:40:31+00:00 Merge PR #786: bind MLB provenance diagnostics to durable prediction proof",
-                "source2 2026-09-11T14:35:00+00:00 Merge PR #785: credit MLB exact verified pre-T45 batting orders",
+                "source1 2026-09-11T14:40:31+00:00 operational-source-change",
+                "source2 2026-09-11T14:35:00+00:00 operational-source-change",
             ),
             _report(
                 "runtime_reports/mlb_scoring_guard_status_latest.json",
@@ -103,6 +103,29 @@ def test_path_specific_source_history_is_durable_when_recent_log_has_only_noise(
     filtered = filter_superseded_fundamentals_evidence(evidence)
     assert "mlb_scoring_guard_status_latest.json" not in filtered
     assert "evidence_supersession_receipt" in filtered
+
+
+def test_source_history_outranks_later_subject_only_repair_text() -> None:
+    evidence = "\n".join(
+        [
+            _history(
+                "later 2026-09-11T15:05:00+00:00 Fix MLB fundamentals documentation and notes"
+            ),
+            _source_history(
+                "source1 2026-09-11T14:40:31+00:00 operational-source-change"
+            ),
+            _report(
+                "runtime_reports/mlb_scoring_guard_status_latest.json",
+                "2026-09-11T14:50:00Z",
+                '{"blockers":["source_failure"]}',
+            ),
+        ]
+    ) + "\n"
+
+    assert recent_fundamentals_repair_cutoff(evidence) == _epoch("2026-09-11T14:40:31Z")
+    filtered = filter_superseded_fundamentals_evidence(evidence)
+    assert "mlb_scoring_guard_status_latest.json" in filtered
+    assert "source_failure" in filtered
 
 
 def test_new_observation_after_repair_remains_authoritative_evidence() -> None:
