@@ -102,8 +102,41 @@ def test_runner_failure_is_persisted_without_raising_or_gaining_authority(monkey
     assert store.latest_value['candidateCount']==0
 
 
+def test_sidecar_artifact_storage_failure_never_escapes(monkeypatch):
+    monkeypatch.setattr(runner.discovery,'screen',lambda _: {'status':'NO_REPEATABLE_CANDIDATES','candidates':[]})
+    class BrokenStore(Store):
+        def artifact(self,kind,value): raise RuntimeError('s3 unavailable')
+    report=runner.publish(BrokenStore(),{'rows':rows(),'rowsHash':'fixture-hash','originalRows':0})
+    assert report['status']=='FAILED' and report['error']=='RuntimeError'
+    assert report['productionAuthorityChanged'] is False
+
+
+def test_sidecar_latest_storage_failure_never_escapes(monkeypatch):
+    monkeypatch.setattr(runner.discovery,'screen',lambda _: {'status':'NO_REPEATABLE_CANDIDATES','candidates':[]})
+    class BrokenStore(Store):
+        def latest(self,name,value): raise RuntimeError('conditional write failed')
+    report=runner.publish(BrokenStore(),{'rows':rows(),'rowsHash':'fixture-hash','originalRows':0})
+    assert report['status']=='FAILED' and report['error']=='RuntimeError'
+    assert report['productionAuthorityChanged'] is False
+
+
+def test_sidecar_cache_read_failure_never_escapes():
+    class BrokenStore(Store):
+        def get(self,name): raise RuntimeError('s3 read unavailable')
+    report=runner.publish(BrokenStore(),{'rows':rows(),'rowsHash':'fixture-hash','originalRows':0})
+    assert report['status']=='FAILED' and report['error']=='RuntimeError'
+    assert report['productionAuthorityChanged'] is False
+
+
 def test_small_dataset_returns_insufficient_without_candidate_invention():
     report=discovery.screen(rows(days=5,games_per_day=5))
     assert report['status']=='INSUFFICIENT_DEVELOPMENT_DATA'
     assert report['candidates']==[]
     assert report['evaluatedFeatures']==0
+
+
+def test_daily_expansion_installs_research_runtime_and_tracks_all_research_changes():
+    text=(ROOT/'.github/workflows/mlb-data-expansion.yml').read_text()
+    assert "-r mlb_research/requirements.txt" in text
+    assert "- 'mlb_research/**'" in text
+    assert "OPENBLAS_NUM_THREADS: '1'" in text
