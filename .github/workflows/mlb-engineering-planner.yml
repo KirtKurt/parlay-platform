@@ -27,6 +27,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 30
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -43,32 +44,103 @@ jobs:
       - name: Install planner validation runtime
         run: python -m pip install 'boto3>=1.34,<2'
 
-      - name: Build bounded MLB evidence packet
+      - name: Build current-system MLB evidence packet
         shell: bash
         run: |
           mkdir -p runtime_reports/engineering_planner
           python - <<'PY'
+          from datetime import datetime, timezone
           from pathlib import Path
           import json
+          import subprocess
 
           root = Path('runtime_reports')
-          candidates = []
-          for path in root.glob('*mlb*latest*.json'):
-              if path.is_file() and path.stat().st_size <= 2_000_000:
-                  candidates.append(path)
-          for path in root.glob('mlb_*.json'):
-              if path.is_file() and path.stat().st_size <= 2_000_000 and path not in candidates:
-                  candidates.append(path)
-          selected = sorted(candidates, key=lambda p: (p.stat().st_mtime_ns, str(p)))[-20:]
-          chunks = []
-          for path in selected:
+          patterns = (
+              'mlb_research_*.json',
+              'mlb_trainer_*.json',
+              'mlb_successor_*.json',
+              'mlb_ml_*latest*.json',
+              'ks1_*latest*.json',
+              'mlb_bedrock_*latest*.json',
+          )
+          retired_tokens = ('mlb_v7_', 'mlb_v8_', 'mlb_v9_', 'mlb_v10_', 'mlb_v15_')
+          timestamp_keys = (
+              'updatedAtUtc', 'createdAtUtc', 'observedAtUtc', 'generatedAtUtc',
+              'capturedAtUtc', 'asOfUtc', 'runAtUtc', 'timestamp', 'as_of', 'updated_at',
+          )
+
+          def parse_time(value):
+              if not isinstance(value, str):
+                  return None
+              text = value.strip().replace('Z', '+00:00')
               try:
-                  text = path.read_text(encoding='utf-8', errors='replace')
-              except Exception:
-                  continue
-              chunks.append(json.dumps({'path': str(path), 'content': text[-12000:]}, ensure_ascii=False))
-          Path('runtime_reports/engineering_planner/evidence.jsonl').write_text('\n'.join(chunks) + ('\n' if chunks else ''), encoding='utf-8')
-          print(json.dumps({'selectedFiles': [str(p) for p in selected], 'count': len(selected)}))
+                  dt = datetime.fromisoformat(text)
+              except ValueError:
+                  return None
+              if dt.tzinfo is None:
+                  dt = dt.replace(tzinfo=timezone.utc)
+              return dt.timestamp()
+
+          def evidence_time(value):
+              if isinstance(value, dict):
+                  direct = [parse_time(value.get(k)) for k in timestamp_keys]
+                  direct = [x for x in direct if x is not None]
+                  if direct:
+                      return max(direct)
+                  nested = [evidence_time(v) for v in value.values()]
+                  nested = [x for x in nested if x is not None]
+                  return max(nested) if nested else None
+              if isinstance(value, list):
+                  nested = [evidence_time(v) for v in value]
+                  nested = [x for x in nested if x is not None]
+                  return max(nested) if nested else None
+              return None
+
+          candidates = {}
+          for pattern in patterns:
+              for path in root.glob(pattern):
+                  name = path.name.lower()
+                  if not path.is_file() or path.stat().st_size > 2_000_000:
+                      continue
+                  if any(token in name for token in retired_tokens):
+                      continue
+                  try:
+                      text = path.read_text(encoding='utf-8', errors='replace')
+                      parsed = json.loads(text)
+                  except Exception:
+                      continue
+                  candidates[path] = (evidence_time(parsed) or 0.0, text)
+
+          selected = sorted(candidates, key=lambda p: (candidates[p][0], str(p)))[-20:]
+          chunks = []
+          try:
+              git_log = subprocess.check_output(
+                  ['git', 'log', '--date=iso-strict', '--pretty=format:%H %ad %s', '-20'],
+                  text=True,
+              )
+          except Exception:
+              git_log = ''
+          chunks.append(json.dumps({
+              'kind': 'recent_main_history',
+              'currentCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+              'content': git_log,
+          }, ensure_ascii=False))
+          for path in selected:
+              observed, text = candidates[path]
+              chunks.append(json.dumps({
+                  'kind': 'current_runtime_report',
+                  'path': str(path),
+                  'observedEpoch': observed,
+                  'content': text[-12000:],
+              }, ensure_ascii=False))
+          Path('runtime_reports/engineering_planner/evidence.jsonl').write_text(
+              '\n'.join(chunks) + '\n', encoding='utf-8'
+          )
+          print(json.dumps({
+              'selectedFiles': [str(p) for p in selected],
+              'count': len(selected),
+              'excludedRetiredGenerations': list(retired_tokens),
+          }))
           PY
 
       - name: Build bounded planner request
@@ -78,7 +150,6 @@ jobs:
           from pathlib import Path
 
           policy = json.loads(Path('engineering_agent/policy.json').read_text())
-          # Reserve ample headroom for JSON escaping, mission text, policy and instruction.
           evidence = Path('runtime_reports/engineering_planner/evidence.jsonl').read_text(encoding='utf-8', errors='replace')[-32000:]
           prompt = json.dumps({
               'mission': (
@@ -90,11 +161,13 @@ jobs:
               'latestOperationalEvidence': evidence,
               'policy': policy,
               'instruction': (
-                  'Choose exactly one highest-value engineering task that is actionable from current evidence '
-                  'and can be implemented in a small reviewed PR. Do not repeat a task already shown as fixed. '
-                  'Do not propose weakening thresholds merely to pass. Return strict JSON only with: '
-                  'title (string), objective (string), implementation (array of concrete steps), '
-                  'likelyFiles (array), acceptanceTests (array), safetyReceipts (array), evidenceBasis (array).'
+                  'Choose exactly one highest-value unresolved engineering task actionable from current evidence '
+                  'and suitable for a small reviewed PR. Recent main-history evidence is authoritative for whether '
+                  'a repair has already been merged; do not re-propose a task already represented by a newer main '
+                  'commit merely because an older runtime report still contains its pre-repair symptom. Do not '
+                  'weaken thresholds merely to pass. Return strict JSON only with: title (string), objective '
+                  '(string), implementation (array of concrete steps), likelyFiles (array), acceptanceTests '
+                  '(array), safetyReceipts (array), evidenceBasis (array).'
               ),
           }, separators=(',', ':'))
           size = len(prompt.encode('utf-8'))
