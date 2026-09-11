@@ -20,6 +20,11 @@ DEFAULT_MISSION = (
     "chronological validation, fail-closed production authority, and sport isolation."
 )
 
+_STOP_WORDS = {
+    "a", "an", "and", "for", "from", "in", "into", "of", "on", "the", "to", "with",
+    "implement", "implementation", "update", "fix", "repair", "add", "ensure", "make",
+}
+
 
 def invoke(prompt: str) -> tuple[str, str]:
     regions = [x.strip() for x in os.environ.get("INQSI_ENGINEERING_REGIONS", "us-east-1,us-east-2,us-west-2").split(",") if x.strip()]
@@ -68,6 +73,33 @@ def normalize_task_title(value: Any) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
 
 
+def _stem_token(token: str) -> str:
+    if token == "binding":
+        return "bind"
+    if len(token) > 5 and token.endswith("ing"):
+        return token[:-3].rstrip("n")
+    if len(token) > 4 and token.endswith("ed"):
+        return token[:-2]
+    if len(token) > 4 and token.endswith("s"):
+        return token[:-1]
+    return token
+
+
+def task_title_tokens(value: Any) -> set[str]:
+    return {
+        _stem_token(token)
+        for token in normalize_task_title(value).split()
+        if token and token not in _STOP_WORDS
+    }
+
+
+def title_similarity(left: Any, right: Any) -> float:
+    a, b = task_title_tokens(left), task_title_tokens(right)
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
 def blocked_task_titles(decision_history: dict[str, Any] | None) -> set[str]:
     blocked: set[str] = set()
     for decision in (decision_history or {}).get("decisions") or []:
@@ -85,22 +117,52 @@ def blocked_task_titles(decision_history: dict[str, Any] | None) -> set[str]:
 def validate_against_history(value: dict[str, Any], decision_history: dict[str, Any] | None = None) -> dict[str, Any]:
     history = decision_history if decision_history is not None else load_decision_history()
     title = normalize_task_title(value.get("title"))
-    if title and title in blocked_task_titles(history):
-        raise ValueError("task already completed or rejected by engineering decision history")
+    for decision in history.get("decisions") or []:
+        if not isinstance(decision, dict):
+            continue
+        status = str(decision.get("status") or "").upper()
+        if status not in {"COMPLETED", "REJECTED_AS_UNSAFE_OR_INAPPLICABLE"}:
+            continue
+        prior = normalize_task_title(decision.get("title"))
+        if not title or not prior:
+            continue
+        similarity = title_similarity(title, prior)
+        shared = len(task_title_tokens(title) & task_title_tokens(prior))
+        if title == prior or (similarity >= 0.60 and shared >= 3):
+            raise ValueError(
+                f"task duplicates engineering decision history: {decision.get('title')} "
+                f"(similarity={similarity:.2f})"
+            )
     return value
 
 
+def _require_string_list(value: dict[str, Any], key: str) -> list[str]:
+    raw = value.get(key)
+    if not isinstance(raw, list) or not raw:
+        raise ValueError(f"{key} must be a non-empty array")
+    result = [str(item).strip() for item in raw if str(item).strip()]
+    if not result:
+        raise ValueError(f"{key} must contain non-empty strings")
+    value[key] = result
+    return result
+
+
 def validate(value: dict[str, Any], *, decision_history: dict[str, Any] | None = None) -> dict[str, Any]:
-    required = ("title", "objective", "implementation", "acceptanceTests", "safetyReceipts")
-    for key in required:
-        if not value.get(key):
-            raise ValueError(f"missing {key}")
+    for key in ("title", "objective"):
+        if not isinstance(value.get(key), str) or not value[key].strip():
+            raise ValueError(f"{key} must be a non-empty string")
+    for key in ("implementation", "acceptanceTests", "safetyReceipts", "evidenceBasis"):
+        _require_string_list(value, key)
+    if "likelyFiles" in value and value["likelyFiles"] is not None and not isinstance(value["likelyFiles"], list):
+        raise ValueError("likelyFiles must be an array")
+
     required_receipts = {str(x) for x in POLICY.get("required_negative_authority_receipts") or []}
-    supplied_receipts = {str(x) for x in value.get("safetyReceipts") or []}
+    supplied_receipts = set(value["safetyReceipts"])
     missing_receipts = sorted(required_receipts - supplied_receipts)
     if missing_receipts:
         raise ValueError("missing required safety receipts: " + ",".join(missing_receipts))
-    files = [str(x) for x in value.get("likelyFiles") or []][:10]
+
+    files = [str(x).strip() for x in value.get("likelyFiles") or [] if str(x).strip()][:10]
     forbidden = [str(x).lower() for x in POLICY["forbidden_path_fragments"]]
     exact = set(POLICY["forbidden_exact_paths"])
     allowed = []
@@ -135,7 +197,7 @@ def main() -> int:
         "policy": POLICY,
         "instruction": (
             "Choose exactly one highest-value unresolved engineering task that is actionable from current evidence and can be implemented in a small reviewed PR. "
-            "Never return a title in blockedTaskTitles. Do not propose weakening thresholds merely to pass. Return strict JSON only with: "
+            "Never return a title in blockedTaskTitles or a cosmetic rewording of one. Do not propose weakening thresholds merely to pass. Return strict JSON only with: "
             "title (string), objective (string), implementation (array of concrete steps), likelyFiles (array), acceptanceTests (array), safetyReceipts (array containing every required_negative_authority_receipts value), evidenceBasis (array)."
         ),
     })
