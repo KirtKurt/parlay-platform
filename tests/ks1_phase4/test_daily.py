@@ -92,7 +92,7 @@ def test_observed_five_minute_start_difference_binds_only_unique_fixture():
 
 @pytest.mark.parametrize('case', ['over_five_minutes', 'doubleheader', 'two_official_games',
                                   'two_provider_games', 'unknown_team', 'reversed_teams',
-                                  'not_scheduled', 'provider_live', 'time_tbd', 'missing_dh_flag'])
+                                  'time_tbd', 'missing_dh_flag'])
 def test_start_adjustment_refuses_unverified_or_ambiguous_identity(case):
     game, event = adjusted_start_fixture()
     games, events = [game], [event]
@@ -102,8 +102,6 @@ def test_start_adjustment_refuses_unverified_or_ambiguous_identity(case):
     elif case == 'two_provider_games': events.append(dict(deepcopy(event), id='second', kickoff_utc='2026-09-11T20:00:00Z'))
     elif case == 'unknown_team': event['home']['name'] = 'Unknown Team'
     elif case == 'reversed_teams': event['home'], event['away'] = event['away'], event['home']
-    elif case == 'not_scheduled': game['status']['detailedState'] = 'Postponed'
-    elif case == 'provider_live': event['status'] = 'live'
     elif case == 'time_tbd': game['status']['startTimeTBD'] = True
     elif case == 'missing_dh_flag': del game['doubleHeader']
     with pytest.raises(ValueError, match='ambiguous or unmatched'):

@@ -135,6 +135,62 @@ def test_unchanged_poll_reuses_every_row_and_parquet_bytes_without_inference(cap
     assert all(r['status'] == 'confirmed_lineups' for r in second.to_pylist())
 
 
+def start_adjusted_inputs(folder):
+    official = json.loads((folder/'official.json').read_bytes())['payload']
+    games = official['dates'][0]['games']
+    games[0]['doubleHeader'] = 'N'
+    games[0]['status']['startTimeTBD'] = False
+    games[1]['gameDate'] = DATE+'T22:00:00Z'
+    bbs = json.loads((folder/'bbs.json').read_bytes())['payload']
+    bbs['data'][0]['kickoff_utc'] = DATE+'T19:55:00Z'
+    bbs['data'][1]['kickoff_utc'] = games[1]['gameDate']
+    (folder/'official.json').write_bytes(encode(envelope(official)))
+    (folder/'bbs.json').write_bytes(encode(envelope(bbs)))
+    seal(folder)
+
+
+@pytest.mark.parametrize('abstract,detailed,bbs_status', [
+    ('Preview', 'Pre-Game', 'inprogress'), ('Live', 'In Progress', 'live'), ('Final', 'Final', 'finished')])
+def test_adjusted_fixture_status_transition_preserves_lock_and_refreshes_later_game(capture, abstract, detailed, bbs_status):
+    folder, output, calls, _ = capture
+    start_adjusted_inputs(folder)
+    first, _, out = daily.predict(folder, output)
+    original_lock = next(r for r in first.to_pylist() if r['game_id'] == '1')
+    at = DATE+'T20:01:00+00:00'
+    advance(folder, out, at)
+    official = json.loads((folder/'official.json').read_bytes())['payload']
+    official['dates'][0]['games'][0]['status'].update(abstractGameState=abstract, detailedState=detailed)
+    official['dates'][0]['games'][1]['teams']['home']['probablePitcher'] = {'id': 777, 'fullName': 'New starter'}
+    (folder/'official.json').write_bytes(encode(envelope(official, at)))
+    bbs = json.loads((folder/'bbs.json').read_bytes())['payload']
+    bbs['data'][0]['status'] = bbs_status
+    (folder/'bbs.json').write_bytes(encode(envelope(bbs, at)))
+    seal(folder, at)
+    result, report, _ = daily.predict(folder, output)
+    assert next(r for r in result.to_pylist() if r['game_id'] == '1') == original_lock
+    assert calls == [2, 1] and report['preserved_pregame_rows'] == 1
+    assert report['changes'] == [{'game_id': '2', 'reason': 'starter_changed'}]
+
+
+def test_adjusted_identity_does_not_admit_new_nonpregame_predictions(capture):
+    folder, output, calls, _ = capture
+    start_adjusted_inputs(folder)
+    bbs = json.loads((folder/'bbs.json').read_bytes())['payload']
+    bbs['data'][0]['status'] = 'live'
+    (folder/'bbs.json').write_bytes(encode(envelope(bbs)))
+    seal(folder)
+    with pytest.raises(ValueError, match='BBS and official pregame status disagree'):
+        daily.predict(folder, output)
+    assert calls == []
+    official = json.loads((folder/'official.json').read_bytes())['payload']
+    official['dates'][0]['games'][0]['status']['detailedState'] = 'Postponed'
+    (folder/'official.json').write_bytes(encode(envelope(official)))
+    seal(folder)
+    result, report, _ = daily.predict(folder, output)
+    assert result['game_id'].to_pylist() == ['2']
+    assert report['exclusions'] == [{'game_id': '1', 'reason': 'not_scheduled_before_T10'}]
+
+
 def test_scratch_rebuilds_only_affected_game_and_next_rerun_is_noop(capture):
     folder, output, calls, _ = capture
     first, _, out = daily.predict(folder, output); advance(folder, out)

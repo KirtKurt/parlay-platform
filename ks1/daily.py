@@ -104,12 +104,11 @@ def bbs_assignments(payload, schedule, crosswalk, target_date):
                                  if str(day(e['kickoff_utc'])) == target_date
                                  and all(crosswalk.resolve(e[s]['name']) == sides[s] for s in sides)]
             delta = abs((utc(event['kickoff_utc'])-utc(game['gameDate'])).total_seconds())
+            # Identity survives scheduled -> live/final. The prediction loop
+            # separately enforces pregame status and preserves frozen rows.
             if (len(provider_fixtures) == 1 and delta <= 300
                     and game.get('doubleHeader') == 'N'
-                    and game.get('status', {}).get('abstractGameState') == 'Preview'
-                    and game.get('status', {}).get('detailedState') == 'Scheduled'
-                    and game.get('status', {}).get('startTimeTBD') is False
-                    and event.get('status', '').lower() == 'scheduled'):
+                    and game.get('status', {}).get('startTimeTBD') is False):
                 matches = [game]
                 crosswalk.game_time_adjustments.append({
                     'game_id': str(game['gamePk']), 'bbs_game_id': str(event['id']),

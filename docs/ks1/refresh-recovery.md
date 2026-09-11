@@ -86,10 +86,12 @@ establishes the precise mismatch: Reds at Brewers, official game 823736, is
 23:45 UTC in MLB's schedule and 23:40 UTC in BBS. All other 14 games match.
 
 The daily matcher now admits a difference of at most five minutes only when
-the same exact home/away team IDs identify a single fixture in each feed,
-MLB explicitly marks it non-doubleheader with a known start, and both feeds
-mark the game scheduled. Larger differences, duplicate fixtures, unknown
-teams, doubleheaders, postponed games and unknown start times still fail.
+the same exact home/away team IDs identify a single fixture in each feed and
+MLB explicitly marks it non-doubleheader with a known start. Larger
+differences, duplicate fixtures, unknown teams, doubleheaders and unknown
+start times still fail. Identity binding survives a game's status changing
+to live/final; the separate prediction admission checks still reject new
+post-cutoff picks, exclude postponed games and preserve existing frozen rows.
 The original 90-second path is unchanged. Each bounded adjustment is retained
 in crosswalk/report evidence. MLB's original start remains the prediction's
 commence time and determines T-10; no provider time replaces it.
