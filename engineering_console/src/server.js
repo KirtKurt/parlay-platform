@@ -72,8 +72,9 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
       if (request.method === 'GET' && !action) return send(200, { job: publicJob(job) });
       if (request.method === 'GET' && action === 'events') { response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' }); const push=()=>response.write(`data: ${JSON.stringify(publicJob(store.owned(id, actor.id)))}\n\n`); push(); const interval=setInterval(push, 2000); request.on('close',()=>clearInterval(interval)); return; }
       if (request.method === 'POST' && action === 'cancel') {
-        if (!['queued','running','awaiting_publication','published'].includes(job.status)) return send(409, { error: 'job_not_cancellable' });
         const publicationVisible = Boolean(job.publicationState && job.publicationState !== 'no_changes') || ['awaiting_publication','published'].includes(job.status);
+        const cancellableStatus = ['queued','running','awaiting_publication','published'].includes(job.status) || (job.status === 'failed' && publicationVisible);
+        if (!cancellableStatus) return send(409, { error: 'job_not_cancellable' });
         if (publicationVisible && !cancelPublication(config.dataDir, id)) return send(409, { error: 'publication_merge_already_committed' });
         queue.cancel(id);
         if (publicationVisible) {
