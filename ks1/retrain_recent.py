@@ -30,7 +30,7 @@ def split_recent(frame):
         raise ValueError('invalid labels')
     # A resumed August game completed in September cannot supply a training
     # label that was unavailable at the start of the holdout.
-    completed = pd.to_datetime(labeled.label_completed_at, utc=True, errors='raise')
+    completed = pd.to_datetime(labeled.label_completed_at, format='ISO8601', utc=True, errors='raise')
     boundary = pd.Timestamp(SPLIT_DATE, tz=ET).tz_convert('UTC')
     train = labeled.loc[(labeled.date < SPLIT_DATE) & (completed < boundary)].sort_values(['date', 'game_id'])
     test = labeled.loc[labeled.date >= SPLIT_DATE].sort_values(['date', 'game_id'])
