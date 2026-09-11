@@ -44,9 +44,10 @@ Before finishing, run the relevant ARB tests. Keep the repository building. If t
 EOF
 )
 
-# Codex CLI >=0.147 removed exec --full-auto. Use the explicit workspace-write
-# sandbox plus automatic review for unattended CI execution.
-codex exec --sandbox workspace-write --approve-for-me "$PROMPT"
+# Headless Codex runs default to no interactive approval. Keep an explicit
+# workspace-write sandbox; do not combine it with --approve-for-me, which is a
+# mutually exclusive guardian mode in current Codex CLI releases.
+codex --ask-for-approval never exec --sandbox workspace-write "$PROMPT"
 
 mapfile -t CHANGED < <(git status --porcelain=v1 | sed -E 's/^.. //' | sed -E 's/.* -> //' | sed '/^$/d')
 if [[ ${#CHANGED[@]} -eq 0 ]]; then
@@ -73,7 +74,6 @@ if command -v sam >/dev/null 2>&1; then
   sam build --no-cached --template-file inqsi-arb/template.yaml
 fi
 
-# Re-check after tests/build in case a tool unexpectedly modified tracked files.
 mapfile -t FINAL_CHANGED < <(git status --porcelain=v1 | sed -E 's/^.. //' | sed -E 's/.* -> //' | sed '/^$/d')
 for path in "${FINAL_CHANGED[@]}"; do
   case "$path" in
