@@ -11,6 +11,10 @@ export function updateJobFromPublisher(dataDir, receipt) {
   if (receipt.state === 'merged') {
     job.status = 'completed';
     job.error = null;
+  } else if (receipt.state === 'cancelled') {
+    job.status = 'cancelled';
+    job.cancelRequested = true;
+    job.error = null;
   } else if (receipt.state === 'checks_failed' || receipt.state === 'publisher_failed') {
     job.status = 'failed';
     job.error = receipt.reason || receipt.state;
