@@ -66,6 +66,45 @@ jobs:
               'mlb_bedrock_*latest*.json',
           )
           retired = ('mlb_v7_', 'mlb_v8_', 'mlb_v9_', 'mlb_v10_', 'mlb_v15_')
+          retired_diagnostic_reports = {
+              'mlb_ml_optimization_status_latest.json',
+              'mlb_ml_clean_cohort_latest.json',
+              'mlb_ml_outcome_challenger_latest.json',
+              'mlb_ml_reliability_challenger_latest.json',
+              'mlb_ml_challenger_bundle_latest.json',
+          }
+          superseded_health_cutoff_epoch = 1789120225.0
+          superseded_health_tokens = (
+              'mlb_successor_runtime_health',
+              'mlb_trainer_deploy_health_diagnostic',
+              'mlb_trainer_health_diagnostic',
+              'mlb_trainer_runtime_error',
+              'mlb_trainer_function_error',
+          )
+          focus_signals = {
+              'reliability': (
+                  'functionerror', 'function error', 'scheduled failure', 'runtime error',
+                  'health failed', 'execution failure', '"timeout": true',
+              ),
+              'data_capture': (
+                  'missing_t10_snapshots', 'coverage_mismatch', 'source_failure',
+                  'capture failure', 'ingestion failure',
+              ),
+              'calibration': (
+                  'calibration_error_too_high', 'selected_reliability_calibration_too_high',
+                  'no_positive_brier_skill', 'log_loss_not_lower', 'accuracy_lift_too_low',
+              ),
+              'challenger_model': (
+                  'insufficient_observed_starter', 'insufficient_observed_team_context',
+                  'insufficient_whole_slate_development_rows',
+                  'accumulating_team_context_development_data',
+                  'accumulating_starter_rate_development_data',
+              ),
+              'clean_cohort': (
+                  'insufficient_clean_rows', 'insufficient_clean_official_evidence',
+                  'clean_cohort_blocked',
+              ),
+          }
           time_keys = (
               'updatedAtUtc', 'createdAtUtc', 'observedAtUtc', 'generatedAtUtc',
               'capturedAtUtc', 'asOfUtc', 'runAtUtc', 'timestamp', 'as_of', 'updated_at',
@@ -132,12 +171,55 @@ jobs:
                   'observedEpoch': observed,
                   'content': text[-12000:],
               }, ensure_ascii=False))
+
+          # The planner deliberately bounds its general prompt tail, but retry focus is
+          # computed from the complete filtered packet. Append a small source-honest
+          # excerpt index so a required retry domain is accompanied by the evidence
+          # that caused that domain to be selected. This is read-only planner context;
+          # it cannot change locks, ledgers, model promotion, or production authority.
+          focus_hits = []
+          for path in selected:
+              observed, text = candidates[path]
+              name = path.name.lower()
+              if name in retired_diagnostic_reports:
+                  continue
+              if (
+                  any(token in name for token in superseded_health_tokens)
+                  and observed <= superseded_health_cutoff_epoch
+              ):
+                  continue
+              lowered = text.lower()
+              for domain, signals in focus_signals.items():
+                  matched = [signal for signal in signals if signal in lowered]
+                  if not matched:
+                      continue
+                  snippets = []
+                  for signal in matched[:3]:
+                      idx = lowered.find(signal)
+                      start = max(0, idx - 250)
+                      end = min(len(text), idx + len(signal) + 650)
+                      snippets.append(text[start:end])
+                  focus_hits.append({
+                      'domain': domain,
+                      'path': str(path),
+                      'observedEpoch': observed,
+                      'matchedSignals': matched[:5],
+                      'snippets': snippets,
+                  })
+          chunks.append(json.dumps({
+              'kind': 'planner_focus_evidence_summary',
+              'readOnly': True,
+              'productionAuthorityChanged': False,
+              'hits': focus_hits[-16:],
+          }, ensure_ascii=False))
+
           Path('runtime_reports/engineering_planner/evidence.jsonl').write_text(
               '\n'.join(chunks) + '\n', encoding='utf-8'
           )
           print(json.dumps({
               'selectedFiles': [str(p) for p in selected],
               'count': len(selected),
+              'focusEvidenceHitCount': len(focus_hits),
               'excludedRetiredGenerations': list(retired),
           }))
           PY
