@@ -113,10 +113,16 @@ def test_passive_batter_observation_at_or_after_t45_fails_closed():
         SUBJECT.persisted_observations(Table([row]), "2026-09-11")
 
 
-def test_passive_bullpen_roster_never_satisfies_available_relievers_even_with_empty_list():
+@pytest.mark.parametrize("field,value", [
+    ("home_available_relievers", []),
+    ("away_available_relievers", [401]),
+    ("home_unavailable_relievers", []),
+    ("away_unavailable_relievers", [402]),
+])
+def test_passive_bullpen_roster_never_makes_available_or_unavailable_claim(field, value):
     row = _row()
-    row["data"]["advanced_context"]["bullpen_fatigue"]["home_available_relievers"] = []
-    with pytest.raises(RuntimeError, match="passive_roster_must_not_claim_available_relievers"):
+    row["data"]["advanced_context"]["bullpen_fatigue"][field] = value
+    with pytest.raises(RuntimeError, match="passive_roster_must_not_claim_reliever_availability"):
         SUBJECT.persisted_observations(Table([row]), "2026-09-11")
 
 
