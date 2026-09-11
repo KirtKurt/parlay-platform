@@ -43,6 +43,12 @@ jobs:
       - name: Install planner runtime
         run: python -m pip install 'boto3>=1.34,<2'
 
+      - name: Refresh read-only MLB fundamentals provenance evidence
+        run: |
+          mkdir -p runtime_reports
+          python scripts/mlb_fundamentals_provenance_diagnostic.py \
+            --output runtime_reports/mlb_fundamentals_provenance_diagnostic_latest.json
+
       - name: Build current-system MLB evidence packet
         shell: bash
         run: |
@@ -53,7 +59,10 @@ jobs:
           import json
           import subprocess
 
-          from engineering_agent.evidence import fundamentals_feature_pipeline_gap
+          from engineering_agent.evidence import (
+              fundamentals_capture_gap,
+              fundamentals_feature_pipeline_gap,
+          )
 
           root = Path('runtime_reports')
           patterns = (
@@ -63,6 +72,7 @@ jobs:
               'mlb_ml_*latest*.json',
               'mlb_scoring_*latest*.json',
               'mlb_*post_deploy*latest*.json',
+              'mlb_fundamentals_provenance_diagnostic_latest.json',
               'ks1_*latest*.json',
               'mlb_bedrock_*latest*.json',
           )
@@ -210,6 +220,7 @@ jobs:
 
           focus_hits = []
           feature_pipeline_hits = []
+          fundamentals_capture_hits = []
           for path in selected:
               observed, text = candidates[path]
               name = path.name.lower()
@@ -244,6 +255,25 @@ jobs:
               except Exception:
                   parsed_report = None
               if isinstance(parsed_report, dict):
+                  capture_gap = fundamentals_capture_gap(parsed_report)
+                  if capture_gap is not None:
+                      capture = {
+                          'path': str(path),
+                          'observedEpoch': observed,
+                          'status': 'LIVE_FUNDAMENTALS_CAPTURE_INCOMPLETE',
+                          **capture_gap,
+                          'readOnly': True,
+                          'productionAuthorityChanged': False,
+                      }
+                      fundamentals_capture_hits.append(capture)
+                      focus_hits.append({
+                          'domain': 'data_capture',
+                          'path': str(path),
+                          'observedEpoch': observed,
+                          'matchedSignals': ['live_fundamentals_capture_incomplete'],
+                          'snippets': [json.dumps(capture, sort_keys=True)],
+                      })
+
                   gap = fundamentals_feature_pipeline_gap(parsed_report)
                   if gap is not None:
                       feature_pipeline_hits.append({
@@ -260,6 +290,20 @@ jobs:
               'productionAuthorityChanged': False,
               'hits': focus_hits[-16:],
           }, ensure_ascii=False))
+          if fundamentals_capture_hits:
+              chunks.append(json.dumps({
+                  'kind': 'planner_fundamentals_capture_evidence_summary',
+                  'readOnly': True,
+                  'productionAuthorityChanged': False,
+                  'instruction': (
+                      'Treat fresh source-honest incomplete immutable pregame fundamentals as '
+                      'an MLB data-capture/reliability bottleneck. Improve only point-in-time '
+                      'source coverage or source-honest capture diagnostics; do not fabricate '
+                      'missing inputs, reconstruct postgame data into pregame rows, rewrite '
+                      'immutable predictions, or activate production/wager/model-promotion authority.'
+                  ),
+                  'hits': fundamentals_capture_hits[-4:],
+              }, ensure_ascii=False))
           if feature_pipeline_hits:
               chunks.append(json.dumps({
                   'kind': 'planner_feature_pipeline_evidence_summary',
@@ -281,6 +325,7 @@ jobs:
               'selectedFiles': [str(p) for p in selected],
               'count': len(selected),
               'focusEvidenceHitCount': len(focus_hits),
+              'fundamentalsCaptureEvidenceHitCount': len(fundamentals_capture_hits),
               'featurePipelineEvidenceHitCount': len(feature_pipeline_hits),
               'operationalSourceHistoryCount': len(source_history),
               'excludedRetiredGenerations': list(retired),

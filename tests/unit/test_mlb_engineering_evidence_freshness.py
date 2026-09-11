@@ -81,6 +81,40 @@ def test_newer_reviewed_fundamentals_repair_supersedes_older_scoring_snapshot() 
     assert "removedRuntimeReportCount\": 1" in filtered
 
 
+def test_stale_live_capture_summary_is_superseded_with_its_provenance_report() -> None:
+    evidence = "\n".join(
+        [
+            _source_history(
+                "source1 2026-09-11T14:40:31+00:00 operational-source-change"
+            ),
+            _report(
+                "runtime_reports/mlb_fundamentals_provenance_diagnostic_latest.json",
+                "2026-09-11T14:20:00Z",
+                '{"reportType":"MLB_FUNDAMENTALS_PROVENANCE_READ_ONLY_DIAGNOSTIC"}',
+            ),
+            json.dumps(
+                {
+                    "kind": "planner_fundamentals_capture_evidence_summary",
+                    "hits": [
+                        {
+                            "path": "runtime_reports/mlb_fundamentals_provenance_diagnostic_latest.json",
+                            "observedEpoch": _epoch("2026-09-11T14:20:00Z"),
+                            "status": "LIVE_FUNDAMENTALS_CAPTURE_INCOMPLETE",
+                        }
+                    ],
+                }
+            ),
+        ]
+    ) + "\n"
+
+    filtered = filter_superseded_fundamentals_evidence(evidence)
+
+    assert "mlb_fundamentals_provenance_diagnostic_latest.json" not in filtered
+    assert "LIVE_FUNDAMENTALS_CAPTURE_INCOMPLETE" not in filtered
+    assert "removedRuntimeReportCount\": 1" in filtered
+    assert "removedDerivedHitCount\": 1" in filtered
+
+
 def test_path_specific_source_history_is_durable_when_recent_log_has_only_noise() -> None:
     evidence = "\n".join(
         [

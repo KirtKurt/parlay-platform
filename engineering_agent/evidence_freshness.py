@@ -15,6 +15,10 @@ _FUNDAMENTALS_RUNTIME_REPORT_TOKENS = (
     "mlb_scoring_fix_post_deploy",
     "mlb_fundamentals_provenance_diagnostic",
 )
+_FUNDAMENTALS_DERIVED_SUMMARY_KINDS = {
+    "planner_feature_pipeline_evidence_summary",
+    "planner_fundamentals_capture_evidence_summary",
+}
 
 # Recent-main history is backward-compatible fallback only for evidence packets
 # that predate path-specific operational source history.
@@ -159,7 +163,7 @@ def filter_superseded_fundamentals_evidence(evidence: str) -> str:
                 removed_reports += 1
                 continue
 
-        if kind == "planner_feature_pipeline_evidence_summary":
+        if kind in _FUNDAMENTALS_DERIVED_SUMMARY_KINDS:
             hits = item.get("hits")
             if isinstance(hits, list):
                 current = [hit for hit in hits if not _hit_is_superseded(hit, cutoff)]

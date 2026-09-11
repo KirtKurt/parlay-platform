@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from engineering_agent.evidence import fundamentals_feature_pipeline_gap
+from engineering_agent.evidence import (
+    FUNDAMENTALS_EXPECTED_GROUPS,
+    fundamentals_capture_gap,
+    fundamentals_feature_pipeline_gap,
+)
+from engineering_agent.runtime import prioritized_focus_domains
 
 
 def test_feature_gap_requires_positive_all_game_inactivity_and_zero_shadow_evaluation() -> None:
@@ -99,3 +104,120 @@ def test_missing_counter_is_not_inferred(field):
 @pytest.mark.parametrize("value", [None, [], "unparsed", 15])
 def test_malformed_report_does_not_crash_or_authorize_a_gap(value):
     assert fundamentals_feature_pipeline_gap(value) is None
+
+
+def _capture_report() -> dict:
+    groups = [
+        {"group": "confirmed_probable_pitchers", "status": "CONNECTED"},
+        {"group": "starter_quality", "status": "PARTIAL"},
+        {"group": "starter_handedness_splits", "status": "PARTIAL"},
+        {"group": "bullpen_availability", "status": "PARTIAL"},
+        {"group": "confirmed_lineups", "status": "CONNECTED"},
+        {"group": "ballpark_factors", "status": "PARTIAL"},
+        {"group": "travel_rest", "status": "CONNECTED"},
+    ]
+    return {
+        "reportType": "MLB_FUNDAMENTALS_PROVENANCE_READ_ONLY_DIAGNOSTIC",
+        "readOnly": True,
+        "mutatedPersistence": False,
+        "immutablePredictionRewriteAllowed": False,
+        "modelPromotionAllowed": False,
+        "productionAuthorityChanged": False,
+        "automaticWagerAllowed": False,
+        "gameCount": 2,
+        "contractSafeGameCount": 2,
+        "contractBlockedGameCount": 0,
+        "games": [
+            {
+                "gameIdentity": "1",
+                "contractSafe": True,
+                "persistenceProofValid": True,
+                "groups": copy.deepcopy(groups),
+            },
+            {
+                "gameIdentity": "2",
+                "contractSafe": True,
+                "persistenceProofValid": True,
+                "groups": copy.deepcopy(groups),
+            },
+        ],
+    }
+
+
+def test_capture_gap_requires_contract_safe_read_only_immutable_proof() -> None:
+    report = _capture_report()
+    original = copy.deepcopy(report)
+    gap = fundamentals_capture_gap(report)
+    assert gap is not None
+    assert gap["signal"] == "coverage_mismatch"
+    assert prioritized_focus_domains(str(gap))[0] == "data_capture"
+    assert gap["gameCount"] == 2
+    assert gap["incompleteGameCount"] == 2
+    assert gap["contractSafeGameCount"] == 2
+    assert gap["contractBlockedGameCount"] == 0
+    assert gap["automaticWagerAllowed"] is False
+    assert gap["groupStatusCounts"]["confirmed_probable_pitchers"] == {"CONNECTED": 2}
+    assert gap["groupStatusCounts"]["starter_quality"] == {"PARTIAL": 2}
+    assert gap["groupStatusCounts"]["offense_quality"] == {"MISSING_FROM_DIAGNOSTIC_PROOF": 2}
+    assert gap["groupStatusCounts"]["weather_roof"] == {"MISSING_FROM_DIAGNOSTIC_PROOF": 2}
+    assert gap["groupStatusCounts"]["injuries_late_scratches"] == {"MISSING_FROM_DIAGNOSTIC_PROOF": 2}
+    assert report == original
+
+
+@pytest.mark.parametrize("field,bad", [
+    ("readOnly", False),
+    ("mutatedPersistence", True),
+    ("immutablePredictionRewriteAllowed", True),
+    ("modelPromotionAllowed", True),
+    ("productionAuthorityChanged", True),
+    ("automaticWagerAllowed", True),
+])
+def test_capture_gap_refuses_mutable_or_authority_bearing_reports(field, bad) -> None:
+    report = _capture_report()
+    report[field] = bad
+    assert fundamentals_capture_gap(report) is None
+
+
+def test_capture_gap_refuses_any_contract_blocked_game() -> None:
+    report = _capture_report()
+    report["contractSafeGameCount"] = 1
+    report["contractBlockedGameCount"] = 1
+    report["games"][1]["contractSafe"] = False
+    assert fundamentals_capture_gap(report) is None
+
+
+def test_capture_gap_refuses_invalid_write_once_persistence_proof() -> None:
+    report = _capture_report()
+    report["games"][1]["persistenceProofValid"] = False
+    assert fundamentals_capture_gap(report) is None
+
+
+@pytest.mark.parametrize("field,value", [
+    ("gameCount", 0),
+    ("gameCount", 2.5),
+    ("contractSafeGameCount", 1),
+    ("contractBlockedGameCount", 1),
+])
+def test_capture_gap_refuses_malformed_or_inconsistent_counts(field, value) -> None:
+    report = _capture_report()
+    report[field] = value
+    assert fundamentals_capture_gap(report) is None
+
+
+def test_capture_gap_refuses_duplicate_group_evidence() -> None:
+    report = _capture_report()
+    report["games"][0]["groups"].append(
+        {"group": "travel_rest", "status": "CONNECTED"}
+    )
+    assert fundamentals_capture_gap(report) is None
+
+
+def test_capture_gap_returns_none_when_every_required_group_is_connected() -> None:
+    report = _capture_report()
+    connected = [
+        {"group": group, "status": "CONNECTED"}
+        for group in FUNDAMENTALS_EXPECTED_GROUPS
+    ]
+    for game in report["games"]:
+        game["groups"] = copy.deepcopy(connected)
+    assert fundamentals_capture_gap(report) is None
