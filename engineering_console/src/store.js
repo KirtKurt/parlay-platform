@@ -1,16 +1,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { sanitizeValue } from './sanitize.js';
 
 const JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const MAX_JOB_RECORD_BYTES = 16 * 1024 * 1024;
+const WRITER = fileURLToPath(new URL('../scripts/store-write.mjs', import.meta.url));
 
 export class JobStore {
   constructor(directory) {
     this.directory = path.resolve(directory);
     this.snapshots = new WeakMap();
+    this.runtimeInstructions = new Map();
     fs.mkdirSync(this.directory, { recursive: true, mode: 0o700 });
   }
 
@@ -43,32 +46,86 @@ export class JobStore {
       pullRequest: null,
       error: null
     };
+    this.runtimeInstructions.set(job.id, job.instruction);
     this.save(job);
     return job;
   }
 
-  save(job) {
-    const target = this.file(job.id);
-    // Hold one shared kernel lock across read/compare/write. Never unlink it:
-    // replacing the inode would let concurrent containers hold different locks.
-    const fd = fs.openSync(`${target}.lock`, fs.constants.O_CREAT | fs.constants.O_RDWR | fs.constants.O_NOFOLLOW, 0o600);
-    let result;
-    try {
-      const stat = fs.fstatSync(fd);
-      if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid() || (stat.mode & 0o022)) throw new Error('job_store_lock_not_trusted');
-      result = spawnSync('flock', ['--exclusive', '--timeout', '5', '--conflict-exit-code', '75', '--no-fork', '/proc/self/fd/3', process.execPath, fileURLToPath(new URL('../scripts/store-write.mjs', import.meta.url)), target], {
-        input: JSON.stringify({ base: this.snapshots.get(job) ?? null, job: sanitizeValue(job) }),
-        encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe', fd], maxBuffer: 32 * 1024 * 1024
-      });
-    } finally { fs.closeSync(fd); }
-    if (result.error || result.status !== 0) {
-      const conflict = result.status === 73;
-      throw Object.assign(new Error(conflict ? 'job_store_write_conflict' : 'job_store_write_failed'), { code: conflict ? 'ESTALE' : 'EIO' });
+  #prepare(job) {
+    const persistedJob = sanitizeValue(job);
+    const jobBytes = Buffer.byteLength(JSON.stringify(persistedJob));
+    if (jobBytes > MAX_JOB_RECORD_BYTES) {
+      throw Object.assign(new Error('job_store_record_too_large'), { code: 'EFBIG' });
     }
-    const persisted = JSON.parse(result.stdout);
+    if (typeof job.instruction === 'string') this.runtimeInstructions.set(job.id, job.instruction);
+    return {
+      target: this.file(job.id),
+      payload: JSON.stringify({ base: this.snapshots.get(job) ?? null, job: persistedJob })
+    };
+  }
+
+  #openLock(target) {
+    const fd = fs.openSync(`${target}.lock`, fs.constants.O_CREAT | fs.constants.O_RDWR | fs.constants.O_NOFOLLOW, 0o600);
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid() || (stat.mode & 0o022)) {
+      fs.closeSync(fd);
+      throw new Error('job_store_lock_not_trusted');
+    }
+    return fd;
+  }
+
+  #applyCommitted(job, target) {
+    const persisted = JSON.parse(fs.readFileSync(target, 'utf8'));
+    const runtimeInstruction = this.runtimeInstructions.get(job.id);
     for (const key of Object.keys(job)) if (!(key in persisted)) delete job[key];
     Object.assign(job, persisted);
+    if (runtimeInstruction !== undefined) job.instruction = runtimeInstruction;
     this.snapshots.set(job, structuredClone(persisted));
+  }
+
+  #writeError(status, error) {
+    const conflict = status === 73;
+    if (conflict) return Object.assign(new Error('job_store_write_conflict'), { code: 'ESTALE' });
+    if (error) return Object.assign(new Error('job_store_write_failed'), { code: 'EIO', cause: error });
+    return Object.assign(new Error('job_store_write_failed'), { code: status === 75 ? 'EBUSY' : 'EIO' });
+  }
+
+  save(job) {
+    const { target, payload } = this.#prepare(job);
+    const fd = this.#openLock(target);
+    let result;
+    try {
+      result = spawnSync('flock', ['--exclusive', '--timeout', '5', '--conflict-exit-code', '75', '--no-fork', '/proc/self/fd/3', process.execPath, WRITER, target], {
+        input: payload,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe', fd],
+        maxBuffer: 1024 * 1024
+      });
+    } finally { fs.closeSync(fd); }
+    if (result.error || result.status !== 0) throw this.#writeError(result.status, result.error);
+    this.#applyCommitted(job, target);
+  }
+
+  async saveAsync(job) {
+    const { target, payload } = this.#prepare(job);
+    const fd = this.#openLock(target);
+    let child;
+    try {
+      child = spawn('flock', ['--exclusive', '--timeout', '5', '--conflict-exit-code', '75', '--no-fork', '/proc/self/fd/3', process.execPath, WRITER, target], {
+        stdio: ['pipe', 'ignore', 'ignore', fd]
+      });
+    } catch (error) {
+      fs.closeSync(fd);
+      throw this.#writeError(null, error);
+    }
+    fs.closeSync(fd);
+    child.stdin.end(payload);
+    const status = await new Promise((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', resolve);
+    }).catch((error) => { throw this.#writeError(null, error); });
+    if (status !== 0) throw this.#writeError(status);
+    this.#applyCommitted(job, target);
   }
 
   get(id) {
@@ -76,8 +133,10 @@ export class JobStore {
     try { target = this.file(id); }
     catch (error) { if (error.code === 'EINVAL') return null; throw error; }
     try {
-      const job = JSON.parse(fs.readFileSync(target, 'utf8'));
-      this.snapshots.set(job, structuredClone(job));
+      const persisted = JSON.parse(fs.readFileSync(target, 'utf8'));
+      const job = { ...persisted };
+      if (this.runtimeInstructions.has(id)) job.instruction = this.runtimeInstructions.get(id);
+      this.snapshots.set(job, structuredClone(persisted));
       return job;
     }
     catch (error) { if (error.code === 'ENOENT') return null; throw error; }
