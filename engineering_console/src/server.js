@@ -89,7 +89,7 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
         if (job.publicationState && job.publicationState !== 'no_changes') return send(409, { error: 'published_job_requires_new_task' });
         if (!validJobScopes(job, config.allowedScopes)) return send(409, { error: 'authorized_scope_no_longer_allowed' });
         if (!String(body.instruction || '').trim()) return send(400, { error: 'instruction_required' });
-        job.instruction = String(body.instruction); job.status = 'queued'; job.cancelRequested = false; job.error = null; store.save(job); queue.enqueue(id); return send(202, { job: publicJob(job) });
+        job.instruction = String(body.instruction); store.rememberInstruction(id, job.instruction); job.status = 'queued'; job.cancelRequested = false; job.error = null; store.save(job); queue.enqueue(id); return send(202, { job: publicJob(job) });
       }
       return send(404, { error: 'not_found' });
     } catch (error) { send(error.status || 500, { error: error.status ? error.message : 'internal_error' }); }
