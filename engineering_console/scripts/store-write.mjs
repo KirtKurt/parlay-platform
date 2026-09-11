@@ -35,7 +35,9 @@ try {
   temporary = undefined;
   const directory = fs.openSync(path.dirname(target), 'r');
   try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
-  process.stdout.write(content);
+  // Keep the acknowledgment bounded. The trusted parent rereads the committed
+  // file after the lock helper exits instead of echoing the complete job record.
+  process.stdout.write('{"committed":true}\n');
 } catch {
   // Never echo job contents or filesystem errors into service logs.
   process.exitCode = 74;
