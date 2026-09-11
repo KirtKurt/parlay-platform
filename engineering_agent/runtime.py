@@ -36,10 +36,7 @@ _RETIRED_DIAGNOSTIC_REPORTS = (
     "mlb_ml_challenger_bundle_latest.json",
 )
 
-_MAX_PLANNER_ATTEMPTS = 6
-
 FOCUS_DOMAINS = (
-    "feature_pipeline",
     "clean_cohort",
     "challenger_model",
     "calibration",
@@ -58,13 +55,6 @@ _FOCUS_SIGNAL_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "health failed",
             "execution failure",
             '\"timeout\": true',
-        ),
-    ),
-    (
-        "feature_pipeline",
-        (
-            "fundamentals_feature_pipeline_inactive",
-            "fundamentals feature pipeline inactive",
         ),
     ),
     (
@@ -115,15 +105,6 @@ _TASK_DOMAIN_SIGNALS: dict[str, tuple[str, ...]] = {
         "implementation identity",
         "git sha mismatch",
         "template sha",
-    ),
-    "feature_pipeline": (
-        "feature pipeline",
-        "fundamentals pipeline",
-        "fundamentals scoring shadow",
-        "fundamentals shadow",
-        "shadow evaluation",
-        "scoring bridge",
-        "scoring shadow",
     ),
     "clean_cohort": (
         "clean cohort",
@@ -216,7 +197,6 @@ def classify_task_domain(value: dict[str, Any]) -> str:
         return "other"
     for domain in (
         "deployment_identity",
-        "feature_pipeline",
         "clean_cohort",
         "challenger_model",
         "calibration",
@@ -266,16 +246,18 @@ def next_focus_domain(
 
 
 def planner_attempt_budget(requested: int, evidence: str) -> int:
-    """Keep retries bounded while preserving the existing six-attempt hard cap.
+    """Keep retries bounded while leaving one safe fallback after domain exhaustion.
 
-    An initial unconstrained proposal can consume one slot and evidence-ranked
-    domains may consume subsequent slots. Adding a focus domain must never grow
-    the controller's authority or retry surface beyond six attempts; every retry
-    remains subject to the same history, safety, chronology, and authority gates.
+    An initial unconstrained proposal can consume one slot, each evidenced focus domain
+    may consume another, and a final unconstrained fallback is useful when every
+    evidence-ranked domain is rejected by history or safety validation. The fallback
+    is still subject to every normal validator and is explicitly told not to revisit
+    rejected domains. The total remains capped at one initial attempt plus the five
+    focus domains; no production or model authority is granted here.
     """
     requested_budget = max(1, int(requested))
     evidenced_budget = len(prioritized_focus_domains(evidence)) + 2
-    return min(_MAX_PLANNER_ATTEMPTS, max(requested_budget, evidenced_budget))
+    return min(len(FOCUS_DOMAINS) + 1, max(requested_budget, evidenced_budget))
 
 
 def _planner_payload(
