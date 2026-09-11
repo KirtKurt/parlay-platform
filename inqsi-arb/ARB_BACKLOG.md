@@ -7,6 +7,7 @@ Priority order is dependency-driven. Do not lower correctness gates to make an i
    - Prove BBD authentication, schema, pagination, entitlement, IDs, status and timestamp behavior.
    - Keep The Odds API as sportsbook-price authority.
    - 2026-09-11 increment: BBD collection parsing now rejects unknown envelopes and non-object rows with `BBD_COLLECTION_SCHEMA_INVALID`; recognized empty collections remain valid. Offline regression coverage exercises health, sports and events, plus access-failure reasons.
+   - 2026-09-11 identity increment: BBD event collections now fail closed on missing, malformed or conflicting identity aliases (`BBD_EVENT_IDENTITY_INVALID`) and repeated normalized IDs (`BBD_EVENT_IDENTITY_DUPLICATE`), returning no partial context. Opaque string IDs and integer IDs (including zero) are preserved; null aliases may fall back to a valid alias. Offline fixtures validate this local contract only. Validation: all 269 ARB tests passed (`PYTHONDONTWRITEBYTECODE=1 python -m pytest -q -p no:cacheprovider inqsi-arb/tests`); ARB `sam build --no-cached --template-file template.yaml` succeeded, with global metadata writes blocked by the read-only home filesystem.
    - Blocker: authenticated live fixtures and entitlement proof are not available for this increment. Runtime wiring remains pending; local schema tests do not prove live authentication, pagination, event identity, status or timestamps.
 
 2. **Persistent coverage registry**

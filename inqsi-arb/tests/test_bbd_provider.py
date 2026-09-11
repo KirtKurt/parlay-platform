@@ -126,3 +126,53 @@ def test_events_preserve_bbd_identity_and_no_prices(monkeypatch):
     assert row["source"] == "big_balls_data"
     assert "price" not in row
     assert result["request_id"] == "req-1"
+
+
+@pytest.mark.parametrize("row", [
+    {}, {"id": None}, {"id": ""}, {"id": " "}, {"id": " x"},
+    {"id": True}, {"id": False}, {"id": 1.5}, {"id": []}, {"id": {}},
+    {"id": "a", "match_id": "b"}, {"id": "a", "event_id": {}},
+])
+def test_invalid_event_identity_rejects_entire_collection(monkeypatch, row):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    monkeypatch.setattr(bbd_provider, "_request", lambda *a, **kw: (
+        200, {}, {"data": [{"id": "valid"}, row]}))
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_EVENT_IDENTITY_INVALID"
+    assert result["events"] == []
+
+
+@pytest.mark.parametrize("row, expected", [
+    ({"id": 0}, "0"), ({"match_id": 123}, "123"),
+    ({"id": None, "event_id": "opaque-001"}, "opaque-001"),
+    ({"id": 123, "match_id": "123", "event_id": "123"}, "123"),
+    ({"id": "00123"}, "00123"),
+])
+def test_valid_event_identity_preserves_opaque_value(monkeypatch, row, expected):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    monkeypatch.setattr(bbd_provider, "_request", lambda *a, **kw: (200, {}, [row]))
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is True
+    assert result["events"][0]["bbd_event_id"] == expected
+    assert result["events"][0]["raw"] == row
+
+
+@pytest.mark.parametrize("second", [{"id": 123}, {"event_id": "123", "status": "cancelled"}])
+def test_duplicate_event_identity_rejects_entire_collection(monkeypatch, second):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    monkeypatch.setattr(bbd_provider, "_request", lambda *a, **kw: (
+        200, {}, [{"id": 123, "status": "scheduled"}, second]))
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_EVENT_IDENTITY_DUPLICATE"
+    assert result["events"] == []

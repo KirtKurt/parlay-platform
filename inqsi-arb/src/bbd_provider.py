@@ -183,6 +183,24 @@ def sports() -> Dict[str, Any]:
         return {"ok": False, "enabled": True, "reason": str(exc).split(":", 1)[0], "sports": []}
 
 
+def _event_id(row: Dict[str, Any]) -> str:
+    """Require one unambiguous opaque identity; never stringify structured IDs."""
+    identities = []
+    for key in ("id", "match_id", "event_id"):
+        value = row.get(key)
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (str, int)):
+            raise BBDError("BBD_EVENT_IDENTITY_INVALID")
+        identity = str(value)
+        if not identity or identity != identity.strip():
+            raise BBDError("BBD_EVENT_IDENTITY_INVALID")
+        identities.append(identity)
+    if not identities or len(set(identities)) != 1:
+        raise BBDError("BBD_EVENT_IDENTITY_INVALID")
+    return identities[0]
+
+
 def events(*, sport: Optional[str] = None, league: Optional[str] = None,
            status: Optional[str] = None) -> Dict[str, Any]:
     """Return BBD event/match context without any sportsbook prices.
@@ -211,11 +229,16 @@ def events(*, sport: Optional[str] = None, league: Optional[str] = None,
             }
         rows = _items(payload)
         normalized: List[Dict[str, Any]] = []
+        seen_ids = set()
         for row in rows:
+            identity = _event_id(row)
+            if identity in seen_ids:
+                raise BBDError("BBD_EVENT_IDENTITY_DUPLICATE")
+            seen_ids.add(identity)
             home = row.get("home") or row.get("home_team")
             away = row.get("away") or row.get("away_team")
             normalized.append({
-                "bbd_event_id": str(row.get("id") or row.get("match_id") or row.get("event_id") or "") or None,
+                "bbd_event_id": identity,
                 "sport": row.get("sport") or sport,
                 "league": row.get("league") or row.get("competition") or league,
                 "status": row.get("status"),
