@@ -85,8 +85,7 @@ jobs:
       - name: Reject mutable image references
         env:
           IMAGE_URI: ${{ inputs.image_uri }}
-        run: |
-          printf '%s' "$IMAGE_URI" | grep -Eq '^.+@sha256:[0-9a-f]{64}$'
+        run: printf '%s' "$IMAGE_URI" | grep -Eq '^.+@sha256:[0-9a-f]{64}$'
       - name: Configure AWS credentials through OIDC
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
         with:
@@ -113,7 +112,7 @@ jobs:
         run: |
           set -eu
           for name in VPC_ID PRIVATE_SUBNET_A_ID PRIVATE_SUBNET_B_ID INGRESS_SECURITY_GROUP_ID CERTIFICATE_ARN HOSTED_ZONE_ID CONSOLE_DOMAIN_NAME OIDC_ISSUER OIDC_AUDIENCE JWKS_URI ADMIN_CLAIM ALLOWED_ORIGIN WORKER_OPENAI_SECRET_ARN PUBLISHER_GITHUB_SECRET_ARN; do
-            eval "value=\${$name:-}"
+            value="$(printenv "$name" || true)"
             if [ -z "$value" ]; then echo "Missing protected environment variable: $name" >&2; exit 1; fi
           done
           aws cloudformation deploy \
@@ -143,9 +142,9 @@ jobs:
         run: |
           aws cloudformation describe-stacks --stack-name "$STACK_NAME" \
             --query 'Stacks[0].{Status:StackStatus,Outputs:Outputs}' --output json
-          cluster=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text)
-          worker=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='WorkerServiceName'].OutputValue" --output text)
-          publisher=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='PublisherServiceName'].OutputValue" --output text)
+          cluster=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id Cluster --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          worker=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id WorkerService --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          publisher=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id PublisherService --query 'StackResourceDetail.PhysicalResourceId' --output text)
           aws ecs wait services-stable --cluster "$cluster" --services "$worker" "$publisher"
           aws ecs describe-services --cluster "$cluster" --services "$worker" "$publisher" \
             --query 'services[].{service:serviceName,taskDefinition:taskDefinition,running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}' --output json
