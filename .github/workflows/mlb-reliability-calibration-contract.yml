@@ -6,20 +6,27 @@ on:
     paths:
       - 'hello_world/mlb_reliability_calibration_v1.py'
       - 'hello_world/mlb_reliability_calibration_selection_v1.py'
+      - 'hello_world/mlb_ml_dual_model_v2.py'
+      - 'hello_world/mlb_ml_walk_forward_v2.py'
+      - 'scripts/mlb_challenger_benchmark.py'
       - 'scripts/mlb_reliability_calibration_shadow_audit.py'
       - 'tests/unit/test_mlb_reliability_calibration_v1.py'
       - 'tests/unit/test_mlb_reliability_calibration_selection_v1.py'
+      - 'tests/unit/test_mlb_reliability_calibration_review_regressions.py'
       - '.github/workflows/mlb-reliability-calibration-contract.yml'
   push:
     branches: [main]
     paths:
       - 'hello_world/mlb_reliability_calibration_v1.py'
       - 'hello_world/mlb_reliability_calibration_selection_v1.py'
+      - 'hello_world/mlb_ml_dual_model_v2.py'
+      - 'hello_world/mlb_ml_walk_forward_v2.py'
+      - 'scripts/mlb_challenger_benchmark.py'
       - 'scripts/mlb_reliability_calibration_shadow_audit.py'
       - 'tests/unit/test_mlb_reliability_calibration_v1.py'
       - 'tests/unit/test_mlb_reliability_calibration_selection_v1.py'
+      - 'tests/unit/test_mlb_reliability_calibration_review_regressions.py'
       - '.github/workflows/mlb-reliability-calibration-contract.yml'
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -57,10 +64,11 @@ jobs:
         run: |
           python -m pytest -q \
             tests/unit/test_mlb_reliability_calibration_v1.py \
-            tests/unit/test_mlb_reliability_calibration_selection_v1.py
+            tests/unit/test_mlb_reliability_calibration_selection_v1.py \
+            tests/unit/test_mlb_reliability_calibration_review_regressions.py
 
   shadow-audit:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
