@@ -44,10 +44,10 @@ Before finishing, run the relevant ARB tests. Keep the repository building. If t
 EOF
 )
 
-# Headless Codex runs default to no interactive approval. Keep an explicit
-# workspace-write sandbox; do not combine it with --approve-for-me, which is a
-# mutually exclusive guardian mode in current Codex CLI releases.
-codex --ask-for-approval never exec --sandbox workspace-write "$PROMPT"
+# Ubuntu 24.04 GitHub-hosted runners can reject bubblewrap loopback namespace
+# setup. Keep Codex sandboxing enabled but opt into the supported legacy
+# Landlock sandbox path so shell/file operations remain bounded to workspace-write.
+codex --enable use_legacy_landlock --ask-for-approval never exec --sandbox workspace-write "$PROMPT"
 
 mapfile -t CHANGED < <(git status --porcelain=v1 | sed -E 's/^.. //' | sed -E 's/.* -> //' | sed '/^$/d')
 if [[ ${#CHANGED[@]} -eq 0 ]]; then
