@@ -15,9 +15,10 @@ function trustedOwner(stat) {
  */
 export async function runWithPublisherLock(directory, script, { args = [], env = process.env, stdio = 'inherit' } = {}) {
   if (!path.isAbsolute(directory) || !path.isAbsolute(script)) throw new Error('absolute_publisher_paths_required');
-  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const real = fs.realpathSync(directory);
-  if (real !== directory) throw new Error('publisher_lock_symlink_rejected');
+  const normalized = path.resolve(directory);
+  fs.mkdirSync(normalized, { recursive: true, mode: 0o700 });
+  const real = fs.realpathSync(normalized);
+  if (real !== normalized) throw new Error('publisher_lock_symlink_rejected');
   const directoryStat = fs.statSync(real);
   if (!directoryStat.isDirectory() || !trustedOwner(directoryStat)) throw new Error('publisher_lock_directory_not_trusted');
 
