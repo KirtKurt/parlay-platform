@@ -31,6 +31,10 @@ export function createJobBroker({ root, openAIKey, model, upstream = fetch } = {
         }
         if (['checkpoint', 'result'].includes(name) && request.method === 'PUT') {
           const body = await readBody(request, MAX_TRANSPORT_BYTES);
+          // Uploads can outlive cancellation, expiry or token rotation. Re-read
+          // the capability immediately before accepting durable task output.
+          try { task = authenticateTask(root, request.headers.authorization); }
+          catch { return send(401, { error: 'task_authentication_required' }); }
           const value = JSON.parse(body);
           if (typeof value !== 'object' || !value || Array.isArray(value)) return send(400, { error: 'invalid_task_result' });
           try { atomicTransportWrite(path.join(task.directory, `${name}.json`), body, { immutable: name === 'result' }); }
@@ -42,6 +46,10 @@ export function createJobBroker({ root, openAIKey, model, upstream = fetch } = {
       if (url.pathname === '/broker/v1/models' && request.method === 'GET') return send(200, { object: 'list', data: [{ id: model, object: 'model', owned_by: 'openai' }] });
       if (url.pathname !== '/broker/v1/responses' || request.method !== 'POST') return send(404, { error: 'broker_route_not_allowed' });
       const body = JSON.parse(await readBody(request, 8 * 1024 * 1024));
+      // Never start a new model operation using authorization captured before
+      // awaiting a potentially slow body. In-flight upstream calls are separate.
+      try { task = authenticateTask(root, request.headers.authorization); }
+      catch { return send(401, { error: 'task_authentication_required' }); }
       if (body.model !== model || (body.tools || []).some(t => !['function', 'custom', 'local_shell'].includes(t.type))) return send(403, { error: 'model_or_tool_not_allowed' });
       const countPath = path.join(task.directory, 'requests.json');
       let count = 0;
