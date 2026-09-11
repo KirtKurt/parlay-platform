@@ -27,8 +27,8 @@ def _clip_probability(value: Any) -> float:
     probability = float(value)
     if not math.isfinite(probability):
         raise ValueError("reliability probability must be finite")
-    if not 0.0 < probability < 1.0:
-        raise ValueError("reliability probability must be strictly between zero and one")
+    if probability < 0.0 or probability > 1.0:
+        raise ValueError("reliability probability must be between zero and one")
     return min(1.0 - PROBABILITY_FLOOR, max(PROBABILITY_FLOOR, probability))
 
 
