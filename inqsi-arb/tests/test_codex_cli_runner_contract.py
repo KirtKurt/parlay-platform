@@ -7,12 +7,14 @@ WORKFLOW = ROOT / ".github" / "workflows" / "inqsi-arb-engineering-controller.ym
 
 def test_runner_is_arb_scoped_and_draft_only():
     text = RUNNER.read_text(encoding="utf-8")
+    lowered = text.lower()
     assert "inqsi-arb/*|.github/workflows/inqsi-arb-*" in text
     assert "gh pr create" in text
     assert "--draft" in text
     assert "gh pr merge" not in text
     assert "sam deploy" not in text
-    assert "place wager" not in text.lower()
+    assert "do not place wagers" in lowered
+    assert "do not merge or deploy" in lowered
     assert "python -m pytest -q inqsi-arb/tests" in text
 
 
