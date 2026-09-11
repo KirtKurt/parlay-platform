@@ -1,6 +1,7 @@
 import { Codex } from '@openai/codex-sdk';
 import { createWorkspace, collectChanges, git } from './git.js';
 import { sanitize } from './sanitize.js';
+import { writePublishBundle } from './publish-bundle.js';
 import path from 'node:path';
 
 function normalizeRepoPath(value) {
@@ -16,6 +17,11 @@ function isWithinScope(file, scopes) {
   });
 }
 
+function codexEnvironment(env = process.env) {
+  const safeNames = ['HOME', 'PATH', 'TMPDIR', 'LANG', 'LC_ALL', 'SHELL', 'USER'];
+  return Object.fromEntries(safeNames.filter((name) => env[name]).map((name) => [name, env[name]]));
+}
+
 export function createRunner(config, store, CodexClass = Codex) {
   return async (job, signal) => {
     let workspace;
@@ -28,7 +34,10 @@ export function createRunner(config, store, CodexClass = Codex) {
       else ({ workspace, branch: job.branch } = await createWorkspace(config, job));
       store.save(job);
 
-      const codex = new CodexClass();
+      const codex = new CodexClass({
+        apiKey: process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY,
+        env: codexEnvironment()
+      });
       const threadOptions = {
         workingDirectory: workspace,
         skipGitRepoCheck: false,
@@ -79,14 +88,22 @@ export function createRunner(config, store, CodexClass = Codex) {
 
       const result = await collectChanges(workspace, job.startingRevision);
       job.changedFiles = result.changedFiles;
-      job.diff = result.diff;
 
       const outside = result.changedFiles.filter((file) => !isWithinScope(file, job.authorizedScope));
       if (outside.length) throw new Error(`scope_violation:${outside.join(',')}`);
 
       const head = await git(workspace, ['rev-parse', 'HEAD']);
       if (head !== job.startingRevision) job.commit = head;
-      job.status = 'completed';
+
+      const bundle = config.outboxDir ? writePublishBundle(config, job, result.diff) : null;
+      job.diff = result.diff;
+      if (bundle) {
+        job.publishState = 'queued';
+        job.publishPatchSha256 = bundle.patchSha256;
+        job.status = 'awaiting_publish';
+      } else {
+        job.status = 'completed';
+      }
       store.save(job);
     } catch (error) {
       job.status = signal.aborted || job.cancelRequested ? 'cancelled' : 'failed';
