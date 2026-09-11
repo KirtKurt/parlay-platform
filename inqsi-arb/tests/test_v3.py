@@ -74,7 +74,7 @@ def test_unreviewed_book_does_not_poison_reviewed_pair():
             {"book": "unknownbook", "outcome": "A", "decimal": 9.9, "last_update": ts},
         ],
     }
-    rows = validate_events([event])
+    rows = validate_events([event], jurisdiction="ny")
     compatible = [r for r in rows if r["rules_status"] == "compatible"]
     assert len(compatible) == 1
     assert {q["book"] for q in compatible[0]["quotes"]} == {"draftkings", "fanduel"}
