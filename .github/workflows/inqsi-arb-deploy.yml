@@ -61,7 +61,7 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}"
-      - name: Verify live v3 health, rules, catalog, persistence, constraints, UI and infrastructure
+      - name: Verify live v3 health, rules, history, optimization, persistence, completion, UI and infrastructure
         run: |
           set -euo pipefail
           API_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ArbApiUrl'].OutputValue" --output text)
@@ -103,7 +103,9 @@ jobs:
           assert h['ok'] is True and h['version']=='INQSI-ARB-v3' and h['places_bets'] is False, h
           assert h['provider_key_present'] is True and h['audit_persistence'] is True, h
           assert h['automatic_market_discovery'] is True and h['websocket_push_configured'] is True, h
-          assert h['rules_registry_entries'] >= 6, h
+          assert h['websocket_public_url_present'] is True, h
+          assert h['balance_aware_optimizer'] is True and h['two_leg_completion_assistant'] is True, h
+          assert h['opportunity_history'] is True and h['rules_registry_entries'] >= 6, h
 
           _,_,rb=request('/v1/arb/rules')
           rules=json.loads(rb)
@@ -116,6 +118,10 @@ jobs:
           assert c['ok'] is True and c['n_sports'] > 0, c
           assert 'player_props' in c['market_families'] and 'futures' in c['market_families'], c
 
+          _,_,history_b=request('/v1/arb/history?limit=5')
+          history=json.loads(history_b)
+          assert history['ok'] is True and history['kind']=='SCAN' and isinstance(history['history'], list), history
+
           _,_,constraint_b=request('/v1/arb/constraints', method='POST', payload={
               'legs':[{'book':'draftkings','stake':80,'limit':100}],
               'profiles':{'draftkings':{'balance':50,'max_stake':90}}
@@ -123,23 +129,47 @@ jobs:
           constraint=json.loads(constraint_b)
           assert constraint['ok'] is True and constraint['feasible'] is False, constraint
 
+          _,_,opt_b=request('/v1/arb/optimize', method='POST', payload={
+              'bankroll':100,
+              'legs':[{'outcome':'A','book':'draftkings','decimal':2.2},{'outcome':'B','book':'fanduel','decimal':2.2}],
+              'profiles':{'draftkings':{'balance':40},'fanduel':{'balance':100}}
+          })
+          opt=json.loads(opt_b)
+          assert opt['ok'] is True and opt['places_bets'] is False, opt
+          assert opt['constraint_bound'] is True and opt['guaranteed_profit'] > 0, opt
+
           verify_headers={'X-Inqsi-User-Id':'deploy-verifier'}
           _,_,pb=request('/v1/arb/positions', method='POST', headers=verify_headers, payload={
               'position_id':'ci-smoke', 'market_id':'ci-smoke-market', 'required_outcomes':['A','B']
           })
           p=json.loads(pb)
           assert p['ok'] is True and p['position']['position_id']=='ci-smoke', p
+          _,_,leg_b=request('/v1/arb/positions/ci-smoke/legs', method='POST', headers=verify_headers, payload={
+              'outcome':'A','book':'draftkings','stake':40,'decimal':2.2
+          })
+          leg=json.loads(leg_b)
+          assert leg['ok'] is True and leg['position']['state']=='LEG_RECORDED', leg
+          _,_,complete_b=request('/v1/arb/positions/ci-smoke/complete', method='POST', headers=verify_headers, payload={
+              'candidate_quotes':[{'outcome':'B','book':'fanduel','decimal':2.2,'limit':100}],
+              'profiles':{'fanduel':{'balance':100}}
+          })
+          complete=json.loads(complete_b)
+          assert complete['ok'] is True and complete['places_bets'] is False, complete
+          assert complete['n_feasible'] == 1 and complete['recommendations'][0]['guaranteed_profit'] > 0, complete
           _,_,pgb=request('/v1/arb/positions/ci-smoke', headers=verify_headers)
           pg=json.loads(pgb)
           assert pg['ok'] is True and pg['position']['market_id']=='ci-smoke-market', pg
 
           _,headers,htmlb=request('/v1/arb/ui')
           content_type=headers.get('content-type',''); html=htmlb.decode('utf-8','replace')
-          assert 'text/html' in content_type and 'Inqsi ARB' in html
-          assert ws.startswith('wss://'), ws
+          assert 'text/html' in content_type and 'Inqsi ARB Console' in html
+          assert ws.startswith('wss://') and ws in html, (ws, html[:500])
           print(json.dumps({
               'api_url':base, 'websocket_url':ws, 'health':h,
               'active_sports':c['n_sports'], 'reviewed_rules':rules['count'],
-              'constraint_smoke':'pass', 'position_persistence_smoke':'pass'
+              'history_count':history['count'],
+              'constraint_smoke':'pass', 'optimizer_smoke':'pass',
+              'position_persistence_smoke':'pass', 'completion_assistant_smoke':'pass',
+              'embedded_websocket_ui_smoke':'pass'
           }, indent=2))
           PY
