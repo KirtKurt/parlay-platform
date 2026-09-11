@@ -55,3 +55,22 @@ disabled and unavailable workflow checks, persistent outage handoff, early
 live/final/revised-start transitions, legitimate withdrawals, and rejection of
 frozen-row deletion or mutation before any storage writes. Existing KS1 tests
 continue to exercise idempotency, ETags, startup calibration and frozen values.
+
+## Production follow-up: Warmup
+
+The first repaired production run
+[34653093544](https://github.com/KirtKurt/parlay-platform/actions/runs/34653093544)
+correctly rejected removal of Tigers game 824227 at 22:15 UTC, preserving the
+prior publication. Its retained official schedule shows first pitch 22:40 UTC
+and status `{abstractGameState: Live, codedGameState: P, statusCode: PW,
+detailedState: Warmup}`; BBS still reports the exact fixture as scheduled.
+[MLB's status catalogue](https://statsapi.mlb.com/api/v1/gameStatus) confirms
+this Warmup tuple differs from in-progress code I. The old abstract-state-only
+filter incorrectly discarded this pregame state.
+
+A shared predicate now recognizes this exact Warmup tuple in schedule
+eligibility, bounded feed collection, and lineup confirmation. All existing
+time, identity, hash, freshness and T-10 checks remain in place. Other Live
+states are excluded and frozen rows remain unchanged. Tests cover the full
+Warmup refresh path, malformed/in-progress status rejection, and no post-cutoff
+feed collection or rescoring. Earlier missing historical rows remain excluded.

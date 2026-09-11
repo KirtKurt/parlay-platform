@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 from ks1.features import ET, day, utc
 from ks1.inventory import Reader, RESEARCH, RECONSTRUCTED, encode
 from ks1.sources import aws_clients
+from ks1.refresh import pregame_status
 
 
 def shape(value, depth=0):
@@ -120,8 +121,7 @@ def lineup_feeds(target_date, official_games, *, requester=fetch, now=None):
     """
     at = now or datetime.now(timezone.utc)
     games = [g for g in official_games if str(day(g['gameDate'])) == target_date
-             and g.get('status', {}).get('abstractGameState') == 'Preview'
-             and g.get('status', {}).get('detailedState') not in ('Postponed', 'Cancelled')
+             and pregame_status(g.get('status'))
              and at <= utc(g['gameDate'])-timedelta(minutes=10)]
     if len(games) > 40 or len({g['gamePk'] for g in games}) != len(games):
         raise ValueError('invalid lineup feed slate')
