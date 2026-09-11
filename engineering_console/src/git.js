@@ -13,6 +13,14 @@ export async function git(cwd, args) {
   return runGit(cwd, args);
 }
 
+export async function refreshRepository(repo) {
+  const branch = await git(repo, ['branch', '--show-current']);
+  if (branch !== 'main') throw new Error('repository_root_not_on_main');
+  await git(repo, ['fetch', '--prune', 'origin', 'main']);
+  await git(repo, ['merge', '--ff-only', 'origin/main']);
+  return git(repo, ['rev-parse', 'HEAD']);
+}
+
 export async function resolveRevision(repo, requested = 'HEAD') {
   return git(repo, ['rev-parse', '--verify', `${requested}^{commit}`]);
 }
