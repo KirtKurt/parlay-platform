@@ -47,13 +47,15 @@ export function loadConfig(env = process.env) {
     throw new Error('Engineering console disabled: invalid max concurrent jobs');
   }
 
+  const dataDir = path.resolve(env.INQSI_ENGINEERING_DATA_DIR);
   return {
     issuer: env.INQSI_ENGINEERING_OIDC_ISSUER,
     audience: env.INQSI_ENGINEERING_OIDC_AUDIENCE,
     jwksUri,
     adminClaim: env.INQSI_ENGINEERING_ADMIN_CLAIM,
     repository: path.resolve(env.INQSI_ENGINEERING_REPOSITORY),
-    dataDir: path.resolve(env.INQSI_ENGINEERING_DATA_DIR),
+    dataDir,
+    outboxDir: path.join(dataDir, 'publish-outbox'),
     workspaceRoot: path.resolve(env.INQSI_ENGINEERING_WORKSPACE_ROOT),
     allowedOrigin,
     allowedScopes,
