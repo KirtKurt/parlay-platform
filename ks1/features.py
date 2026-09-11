@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 import math
 
 ET = ZoneInfo("America/New_York")
-WINDOWS = (10, 30, 75)
+WINDOWS = (7, 10, 30, 75)
 
 
 def utc(value):
