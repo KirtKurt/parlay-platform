@@ -1,0 +1,58 @@
+name: MLB Pregame Weather Diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/mlb_pregame_weather_diagnostic.py'
+      - 'tests/unit/test_mlb_pregame_weather_diagnostic.py'
+      - '.github/workflows/mlb-pregame-weather-diagnostic.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/mlb_pregame_weather_diagnostic.py'
+      - 'tests/unit/test_mlb_pregame_weather_diagnostic.py'
+      - '.github/workflows/mlb-pregame-weather-diagnostic.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '52 * * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'pytest>=8,<9'
+      - name: Verify weather proof remains point-in-time and passive
+        run: |
+          python -m pytest -q tests/unit/test_mlb_pregame_weather_diagnostic.py
+          python -m py_compile scripts/mlb_pregame_weather_diagnostic.py
+
+  live-read:
+    if: github.event_name != 'pull_request'
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Remove tracked evidence before this run
+        run: rm -f runtime_reports/mlb_pregame_weather_diagnostic_latest.json
+      - name: Read exact official venues and current forecast only
+        run: python scripts/mlb_pregame_weather_diagnostic.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-pregame-weather-${{ github.run_id }}
+          path: runtime_reports/mlb_pregame_weather_diagnostic_latest.json
+          if-no-files-found: error
+          retention-days: 30
