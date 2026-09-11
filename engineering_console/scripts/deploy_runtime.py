@@ -29,6 +29,31 @@ def validate_job_egress(group):
             raise ValueError('job_egress_must_target_approved_security_groups_or_prefix_lists')
     if not group.get('IpPermissionsEgress'): raise ValueError('job_requires_private_broker_and_ecr_endpoints')
 
+def validate_restore_targets(targets, subnets, reuse, managed):
+    if targets and ((not reuse and not managed) or {t['SubnetId'] for t in targets} != set(subnets) or any(t['LifeCycleState'] != 'available' for t in targets)):
+        raise ValueError('restore_mount_targets_require_explicit_complete_reuse')
+    if reuse and not targets: raise ValueError('restore_mount_targets_missing')
+
+def observed_task(result, arn, definition):
+    tasks = result.get('tasks') if isinstance(result, dict) else None
+    if result.get('failures') or not isinstance(tasks, list) or len(tasks) != 1:
+        raise ValueError('task_observation_incomplete')
+    task = tasks[0]
+    if not isinstance(task, dict) or task.get('taskArn') != arn or task.get('taskDefinitionArn') != definition or not task.get('lastStatus'):
+        raise ValueError('task_observation_identity_mismatch')
+    return task
+
+def require_task_evidence(task, name, image_digest, status):
+    containers = task.get('containers') if isinstance(task, dict) else None
+    if task.get('lastStatus') != status or not isinstance(containers, list) or len(containers) != 1:
+        raise ValueError('task_container_evidence_incomplete')
+    container = containers[0]
+    if not isinstance(container, dict) or container.get('name') != name or container.get('imageDigest') != image_digest or container.get('lastStatus') != status:
+        raise ValueError('task_container_evidence_mismatch')
+    if status == 'STOPPED' and container.get('exitCode') != 0:
+        raise ValueError('private_end_to_end_proof_failed')
+    return container
+
 def preflight():
     raw = os.environ.get('ENG_CONSOLE_PARAMETERS_JSON', '')
     if not raw: raise ValueError('missing_protected_environment_ENG_CONSOLE_PARAMETERS_JSON')
@@ -51,6 +76,11 @@ def preflight():
     if group['VpcId'] != cfg['VpcId']: raise ValueError('job_security_group_vpc_mismatch')
     validate_job_egress(group)
     previous = aws('cloudformation', 'describe-stacks', '--stack-name', STACK, allow_missing=True)
+    previous_parameters = {p['ParameterKey']: p['ParameterValue'] for p in previous['Stacks'][0].get('Parameters', [])} if previous else {}
+    if previous:
+        for name, default in [('ExistingFileSystemId', ''), ('ExistingMountTargetsPresent', 'false')]:
+            if cfg.get(name, default) != previous_parameters.get(name, default):
+                raise ValueError('existing_stack_storage_mode_must_be_preserved:' + name)
     existing = cfg.get('ExistingFileSystemId')
     if existing:
         tags = aws('efs', 'list-tags-for-resource', '--resource-id', existing)['Tags']
@@ -59,9 +89,8 @@ def preflight():
         # A deleted stack retains data but removes its mount targets. Recreate
         # them when absent; explicitly reuse a complete external pair otherwise.
         reuse = cfg.get('ExistingMountTargetsPresent', 'false') == 'true'
-        if targets and (not reuse or {t['SubnetId'] for t in targets} != set(subnets) or any(t['LifeCycleState'] != 'available' for t in targets)):
-            raise ValueError('restore_mount_targets_require_explicit_complete_reuse')
-        if reuse and not targets: raise ValueError('restore_mount_targets_missing')
+        managed = bool(previous) and previous_parameters.get('ExistingMountTargetsPresent', 'false') == 'false'
+        validate_restore_targets(targets, subnets, reuse, managed)
     elif previous is None:
         if cfg.get('ExistingMountTargetsPresent', 'false') != 'false': raise ValueError('new_filesystem_requires_mount_targets')
         for filesystem in aws('efs', 'describe-file-systems')['FileSystems']:
@@ -92,10 +121,9 @@ def main():
         for name in names:
             arns = aws('ecs','list-tasks','--cluster',cluster,'--service-name',name,'--desired-status','RUNNING')['taskArns']
             if len(arns) != 1: raise ValueError('singleton_runtime_count_invalid')
-            task = aws('ecs','describe-tasks','--cluster',cluster,'--tasks',*arns)['tasks'][0]
             role = name.removeprefix('eng-console-').title()
-            if task['taskDefinitionArn'] != outputs[role + 'TaskDefinitionArn']: raise ValueError('running_task_definition_mismatch')
-            if any(c.get('imageDigest') != args.image.split('@')[1] for c in task['containers']): raise ValueError('running_image_digest_mismatch')
+            task = observed_task(aws('ecs','describe-tasks','--cluster',cluster,'--tasks',*arns), arns[0], outputs[role + 'TaskDefinitionArn'])
+            require_task_evidence(task, role.lower(), args.image.split('@')[1], 'RUNNING')
             running.append({'taskArn':task['taskArn'],'taskDefinitionArn':task['taskDefinitionArn'],'imageDigest':task['containers'][0]['imageDigest']})
         record['runningTasks'] = running
         probe = aws('ecs','run-task','--cluster',cluster,'--task-definition',outputs['ProbeTaskDefinitionArn'],'--launch-type','FARGATE','--platform-version','1.4.0','--network-configuration',json.dumps({'awsvpcConfiguration':{'subnets':cfg['PrivateSubnetIds'].split(','),'securityGroups':[cfg['TrustedSecurityGroupId']],'assignPublicIp':'DISABLED'}}))
@@ -103,13 +131,13 @@ def main():
         arn = probe['tasks'][0]['taskArn']; record['probeTaskArn'] = arn
         deadline = time.monotonic() + 2100
         while time.monotonic() < deadline:
-            task = aws('ecs','describe-tasks','--cluster',cluster,'--tasks',arn)['tasks'][0]
+            task = observed_task(aws('ecs','describe-tasks','--cluster',cluster,'--tasks',arn), arn, outputs['ProbeTaskDefinitionArn'])
             if task['lastStatus'] == 'STOPPED': break
             time.sleep(10)
         else:
             aws('ecs','stop-task','--cluster',cluster,'--task',arn,'--reason','Console deployment proof timed out')
             raise ValueError('private_probe_timeout')
-        if task['containers'][0].get('exitCode') != 0: raise ValueError('private_end_to_end_proof_failed')
+        require_task_evidence(task, 'probe', args.image.split('@')[1], 'STOPPED')
         proofs=[]
         for attempt in range(12):
             try: events = aws('logs','get-log-events','--log-group-name',outputs['ProbeLogGroupName'],'--log-stream-name','probe/probe/'+arn.rsplit('/',1)[1])['events']

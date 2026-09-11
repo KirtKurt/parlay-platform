@@ -85,3 +85,14 @@ test('revocation while upstream is pending prevents its response from being forw
   release();
   const response = await result; assert.equal(response.status, 401); assert.equal((await response.text()).includes('late output'), false);
 });
+
+test('32 simultaneous model requests cannot exceed one remaining quota reservation', async t => {
+  let calls = 0;
+  const { a, url } = await fixture(t, async () => { calls++; await new Promise(resolve => setTimeout(resolve, 25)); return Response.json({ ok: true }); });
+  fs.writeFileSync(path.join(a.directory, 'requests.json'), JSON.stringify({ count: 199 }));
+  const results = await Promise.all(Array.from({ length: 32 }, () => fetch(`${url}/broker/v1/responses`, { method: 'POST', headers: { authorization: `Bearer ${a.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: 'test-model', input: 'proof' }) })));
+  assert.equal(results.filter(r => r.status === 200).length, 1);
+  assert.equal(results.filter(r => r.status === 429).length, 31);
+  assert.equal(calls, 1);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(a.directory, 'requests.json'))).count, 200);
+});

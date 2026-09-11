@@ -61,6 +61,10 @@ export function createJobBroker({ root, openAIKey, model, upstream = fetch } = {
       catch { return send(401, { error: 'task_authentication_required' }); }
       if (body.model !== model || (body.tools || []).some(t => !['function', 'custom', 'local_shell'].includes(t.type))) return send(403, { error: 'model_or_tool_not_allowed' });
       const countPath = path.join(task.directory, 'requests.json');
+      // Reserve synchronously: there is no await between read/check/write, so
+      // concurrent handlers cannot interleave here. start-broker.mjs also holds
+      // the shared broker.lock for this server's lifetime, excluding a second
+      // process/container from writing counters on the same transport volume.
       let count = 0;
       try { count = JSON.parse(fs.readFileSync(countPath, 'utf8')).count; } catch (e) { if (e.code !== 'ENOENT') throw e; }
       if (!Number.isSafeInteger(count) || count < 0 || !Number.isSafeInteger(task.auth.maxRequests) || task.auth.maxRequests < 1 || task.auth.maxRequests > 200) return send(503, { error: 'job_quota_state_invalid' });
