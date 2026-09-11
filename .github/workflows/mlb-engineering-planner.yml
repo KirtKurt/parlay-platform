@@ -54,13 +54,15 @@ jobs:
         run: |
           mkdir -p runtime_reports/engineering_planner
           python - <<'PY'
-          from collections import Counter
           from datetime import datetime, timezone
           from pathlib import Path
           import json
           import subprocess
 
-          from engineering_agent.evidence import fundamentals_feature_pipeline_gap
+          from engineering_agent.evidence import (
+              fundamentals_capture_gap,
+              fundamentals_feature_pipeline_gap,
+          )
 
           root = Path('runtime_reports')
           patterns = (
@@ -98,18 +100,6 @@ jobs:
               'scripts/mlb_scoring_guard_status.py',
               'scripts/mlb_scoring_guard_post_persistence.py',
               'scripts/mlb_fundamentals_provenance_diagnostic.py',
-          )
-          fundamentals_expected_groups = (
-              'confirmed_probable_pitchers',
-              'starter_quality',
-              'offense_quality',
-              'starter_handedness_splits',
-              'bullpen_availability',
-              'confirmed_lineups',
-              'weather_roof',
-              'ballpark_factors',
-              'injuries_late_scratches',
-              'travel_rest',
           )
           focus_signals = {
               'data_capture': (
@@ -265,54 +255,24 @@ jobs:
               except Exception:
                   parsed_report = None
               if isinstance(parsed_report, dict):
-                  if parsed_report.get('reportType') == 'MLB_FUNDAMENTALS_PROVENANCE_READ_ONLY_DIAGNOSTIC':
-                      games = parsed_report.get('games') if isinstance(parsed_report.get('games'), list) else []
-                      group_status_counts = {
-                          group: Counter() for group in fundamentals_expected_groups
+                  capture_gap = fundamentals_capture_gap(parsed_report)
+                  if capture_gap is not None:
+                      capture = {
+                          'path': str(path),
+                          'observedEpoch': observed,
+                          'status': 'LIVE_FUNDAMENTALS_CAPTURE_INCOMPLETE',
+                          **capture_gap,
+                          'readOnly': True,
+                          'productionAuthorityChanged': False,
                       }
-                      incomplete_games = 0
-                      for game in games:
-                          if not isinstance(game, dict):
-                              continue
-                          statuses = {
-                              str(item.get('group')): str(item.get('status') or 'UNKNOWN')
-                              for item in (game.get('groups') or [])
-                              if isinstance(item, dict) and item.get('group')
-                          }
-                          incomplete = False
-                          for group in fundamentals_expected_groups:
-                              status = statuses.get(group, 'MISSING_FROM_DIAGNOSTIC_PROOF')
-                              group_status_counts[group][status] += 1
-                              if status != 'CONNECTED':
-                                  incomplete = True
-                          if incomplete:
-                              incomplete_games += 1
-                      game_count = int(parsed_report.get('gameCount') or len(games) or 0)
-                      if game_count > 0 and incomplete_games > 0:
-                          capture = {
-                              'path': str(path),
-                              'observedEpoch': observed,
-                              'status': 'LIVE_FUNDAMENTALS_CAPTURE_INCOMPLETE',
-                              'gameCount': game_count,
-                              'incompleteGameCount': incomplete_games,
-                              'contractSafeGameCount': int(parsed_report.get('contractSafeGameCount') or 0),
-                              'contractBlockedGameCount': int(parsed_report.get('contractBlockedGameCount') or 0),
-                              'automaticWagerAllowed': bool(parsed_report.get('automaticWagerAllowed')),
-                              'groupStatusCounts': {
-                                  group: dict(sorted(counts.items()))
-                                  for group, counts in group_status_counts.items()
-                              },
-                              'readOnly': True,
-                              'productionAuthorityChanged': False,
-                          }
-                          fundamentals_capture_hits.append(capture)
-                          focus_hits.append({
-                              'domain': 'data_capture',
-                              'path': str(path),
-                              'observedEpoch': observed,
-                              'matchedSignals': ['live_fundamentals_capture_incomplete'],
-                              'snippets': [json.dumps(capture, sort_keys=True)],
-                          })
+                      fundamentals_capture_hits.append(capture)
+                      focus_hits.append({
+                          'domain': 'data_capture',
+                          'path': str(path),
+                          'observedEpoch': observed,
+                          'matchedSignals': ['live_fundamentals_capture_incomplete'],
+                          'snippets': [json.dumps(capture, sort_keys=True)],
+                      })
 
                   gap = fundamentals_feature_pipeline_gap(parsed_report)
                   if gap is not None:
