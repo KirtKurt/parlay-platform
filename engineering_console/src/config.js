@@ -22,7 +22,8 @@ export function loadConfig(env = process.env) {
     'INQSI_ENGINEERING_ORIGIN',
     'INQSI_ENGINEERING_ALLOWED_SCOPES',
     'INQSI_ENGINEERING_REQUIRED_CHECKS',
-    'INQSI_ENGINEERING_PUBLICATION_POLICY'
+    'INQSI_ENGINEERING_PUBLICATION_POLICY',
+    'INQSI_ENGINEERING_BIND_ADDRESS'
   ];
   const missing = required.filter((name) => !String(env[name] || '').trim());
   if (missing.length) throw new Error(`Engineering console disabled: missing ${missing.join(', ')}`);
@@ -42,6 +43,9 @@ export function loadConfig(env = process.env) {
   if (!jwksUri.startsWith('https://') || !allowedOrigin.startsWith('https://')) {
     throw new Error('Engineering console disabled: JWKS URI and origin must use https');
   }
+
+  const bindAddress = String(env.INQSI_ENGINEERING_BIND_ADDRESS).trim();
+  if (!['127.0.0.1', '0.0.0.0'].includes(bindAddress)) throw new Error('Engineering console disabled: invalid bind address');
 
   const allowedScopes = [...new Set(env.INQSI_ENGINEERING_ALLOWED_SCOPES.split(',').map(normalizeScope))];
   if (!allowedScopes.length || allowedScopes.some((scope) => !isPublishableScope(scope))) throw new Error('Engineering console disabled: invalid publication scope policy');
@@ -66,6 +70,7 @@ export function loadConfig(env = process.env) {
     allowedOrigin,
     allowedScopes,
     requiredChecks,
+    bindAddress,
     maxConcurrentJobs,
     port: Number(env.PORT || 8787),
     maxInstructionBytes: Number(env.INQSI_ENGINEERING_MAX_INSTRUCTION_BYTES || 20000)
