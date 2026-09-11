@@ -16,10 +16,8 @@ _FUNDAMENTALS_RUNTIME_REPORT_TOKENS = (
     "mlb_fundamentals_provenance_diagnostic",
 )
 
-# Recent-main history remains a backwards-compatible signal when an evidence
-# packet predates the path-specific source-history receipt. Require both an
-# action verb and an MLB-fundamentals subject token so planner/documentation
-# commits alone do not look like an operational repair.
+# Recent-main history is backward-compatible fallback only for evidence packets
+# that predate path-specific operational source history.
 _REPAIR_ACTION_TOKENS = (
     " repair",
     " fix",
@@ -84,15 +82,17 @@ def _commit_lines(content: Any):
 
 
 def recent_fundamentals_repair_cutoff(evidence: str) -> float | None:
-    """Return the newest source/repair timestamp represented by the packet.
+    """Return the newest authoritative source-change time in the packet.
 
-    New packets include ``operational_source_history`` derived from full Git
-    history for the exact MLB fundamentals/scoring paths. This makes the cutoff
-    durable even when noisy automated main commits push the original repair out
-    of the short recent-history window. Older packets can still use a narrowly
-    classified recent-main repair subject.
+    New packets include ``operational_source_history`` from full Git history for
+    the exact MLB fundamentals/scoring paths. When present, that path-specific
+    history is the sole cutoff authority; a later commit subject cannot supersede
+    a runtime report unless relevant operational source actually changed. Older
+    packets without that receipt retain a narrowly classified recent-main fallback.
     """
-    latest: float | None = None
+    source_latest: float | None = None
+    recent_latest: float | None = None
+    source_history_present = False
     for line in evidence.splitlines():
         try:
             item = json.loads(line)
@@ -100,18 +100,21 @@ def recent_fundamentals_repair_cutoff(evidence: str) -> float | None:
             continue
         kind = item.get("kind")
         if kind == "operational_source_history" and item.get("topic") == "mlb_fundamentals_runtime":
+            source_history_present = True
             for _sha, epoch, _subject in _commit_lines(item.get("content")):
-                if latest is None or epoch > latest:
-                    latest = epoch
+                if source_latest is None or epoch > source_latest:
+                    source_latest = epoch
             continue
         if kind != "recent_main_history":
             continue
         for _sha, epoch, subject in _commit_lines(item.get("content")):
             if not _is_fundamentals_repair_subject(subject):
                 continue
-            if latest is None or epoch > latest:
-                latest = epoch
-    return latest
+            if recent_latest is None or epoch > recent_latest:
+                recent_latest = epoch
+    if source_history_present:
+        return source_latest
+    return recent_latest
 
 
 def _is_fundamentals_runtime_path(path: Any) -> bool:
