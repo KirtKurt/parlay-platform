@@ -1,4 +1,4 @@
-"""Deploy only the isolated Console and require a real private-VPC proof."""
+"""Deploy only the isolated Console and require real private-VPC/recovery proof."""
 import argparse
 import datetime
 import json
@@ -11,6 +11,8 @@ import time
 STACK = 'eng-console-runtime'
 TEMPLATE = 'engineering_console/deploy/template.yaml'
 OUT = Path('runtime_deploy')
+TRUSTED_TASK_ROLE_KEYS = ('ControllerTaskRoleArn', 'BrokerTaskRoleArn', 'PublisherTaskRoleArn')
+UUID = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', re.I)
 
 def aws(*args, allow_missing=False, text_output=False):
     result = subprocess.run(['aws', *args, '--output', 'json'], capture_output=True, text=True, env={**os.environ, 'AWS_PAGER': ''})
@@ -34,6 +36,11 @@ def validate_restore_targets(targets, subnets, reuse, managed):
         raise ValueError('restore_mount_targets_require_explicit_complete_reuse')
     if reuse and not targets: raise ValueError('restore_mount_targets_missing')
 
+def validate_trusted_task_roles(cfg):
+    roles = [cfg.get(name) for name in TRUSTED_TASK_ROLE_KEYS]
+    if any(not isinstance(role, str) or not role for role in roles) or len(set(roles)) != len(roles):
+        raise ValueError('trusted_task_roles_must_be_distinct')
+
 def observed_task(result, arn, definition):
     tasks = result.get('tasks') if isinstance(result, dict) else None
     if result.get('failures') or not isinstance(tasks, list) or len(tasks) != 1:
@@ -54,6 +61,30 @@ def require_task_evidence(task, name, image_digest, status):
         raise ValueError('private_end_to_end_proof_failed')
     return container
 
+def probe_log_values(group, stream):
+    try:
+        events = aws('logs', 'get-log-events', '--log-group-name', group, '--log-stream-name', stream)['events']
+    except RuntimeError:
+        return []
+    values = []
+    for event in events:
+        try: value = json.loads(event['message'])
+        except (KeyError, TypeError, ValueError): continue
+        if isinstance(value, dict): values.append(value)
+    return values
+
+def select_recovery_ready(values, source):
+    matches = [value for value in values if value.get('recoveryReady') is True and value.get('source') == source]
+    if len(matches) > 1: raise ValueError('recovery_probe_ready_ambiguous')
+    if not matches: return None
+    value = matches[0]
+    if not UUID.fullmatch(str(value.get('jobId') or '')) or not UUID.fullmatch(str(value.get('executionId') or '')) or not str(value.get('executionTask') or '').startswith('arn:aws'):
+        raise ValueError('recovery_probe_ready_invalid')
+    return value
+
+def require_single_execution_task(task_arns, expected):
+    if set(task_arns) != {expected}: raise ValueError('recovery_execution_task_not_unique')
+
 def preflight():
     raw = os.environ.get('ENG_CONSOLE_PARAMETERS_JSON', '')
     if not raw: raise ValueError('missing_protected_environment_ENG_CONSOLE_PARAMETERS_JSON')
@@ -68,6 +99,7 @@ def preflight():
     for key, value in cfg.items():
         if not isinstance(value, str): raise ValueError('parameters_must_be_strings')
         if key.endswith('Arn') and (not value.startswith('arn:aws') or value.split(':')[4] != identity['Account']): raise ValueError('cross_account_parameter:' + key)
+    validate_trusted_task_roles(cfg)
     subnets = cfg['PrivateSubnetIds'].split(',')
     if len(subnets) != 2 or len(set(subnets)) != 2: raise ValueError('two_private_subnets_required')
     rows = aws('ec2', 'describe-subnets', '--subnet-ids', *subnets)['Subnets']
@@ -109,6 +141,7 @@ def main():
         if not re.fullmatch(r'[0-9a-f]{40}', args.source or ''): raise ValueError('source_sha_required')
         pattern = re.escape(identity['Account']) + r'\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/eng-console-[a-z0-9._/-]+@sha256:[0-9a-f]{64}'
         if not re.fullmatch(pattern, args.image or ''): raise ValueError('verified_console_image_required')
+        image_digest = args.image.split('@')[1]
         record.update(source=args.source, image=args.image, previousOutputs=(previous or {}).get('Stacks', [{}])[0].get('Outputs', []), account=identity['Account'])
         parameters = [{'ParameterKey': k, 'ParameterValue': v} for k,v in {**cfg,'ImageUri':args.image,'SourceSha':args.source}.items()]
         parameter_file = OUT / 'parameters.json'; parameter_file.write_text(json.dumps(parameters))
@@ -123,13 +156,54 @@ def main():
             if len(arns) != 1: raise ValueError('singleton_runtime_count_invalid')
             role = name.removeprefix('eng-console-').title()
             task = observed_task(aws('ecs','describe-tasks','--cluster',cluster,'--tasks',*arns), arns[0], outputs[role + 'TaskDefinitionArn'])
-            require_task_evidence(task, role.lower(), args.image.split('@')[1], 'RUNNING')
-            running.append({'taskArn':task['taskArn'],'taskDefinitionArn':task['taskDefinitionArn'],'imageDigest':task['containers'][0]['imageDigest']})
+            require_task_evidence(task, role.lower(), image_digest, 'RUNNING')
+            running.append({'service':name,'taskArn':task['taskArn'],'taskDefinitionArn':task['taskDefinitionArn'],'imageDigest':task['containers'][0]['imageDigest']})
         record['runningTasks'] = running
+        controller_before = next(item for item in running if item['service'] == 'eng-console-controller')
+
         probe = aws('ecs','run-task','--cluster',cluster,'--task-definition',outputs['ProbeTaskDefinitionArn'],'--launch-type','FARGATE','--platform-version','1.4.0','--network-configuration',json.dumps({'awsvpcConfiguration':{'subnets':cfg['PrivateSubnetIds'].split(','),'securityGroups':[cfg['TrustedSecurityGroupId']],'assignPublicIp':'DISABLED'}}))
         if probe.get('failures') or len(probe.get('tasks',[])) != 1: raise ValueError('private_probe_launch_failed')
         arn = probe['tasks'][0]['taskArn']; record['probeTaskArn'] = arn
+        stream = 'probe/probe/' + arn.rsplit('/', 1)[1]
         deadline = time.monotonic() + 2100
+
+        recovery = None
+        while time.monotonic() < min(deadline, time.monotonic() + 600):
+            task = observed_task(aws('ecs','describe-tasks','--cluster',cluster,'--tasks',arn), arn, outputs['ProbeTaskDefinitionArn'])
+            if task['lastStatus'] == 'STOPPED':
+                require_task_evidence(task, 'probe', image_digest, 'STOPPED')
+                raise ValueError('probe_stopped_before_active_recovery_evidence')
+            recovery = select_recovery_ready(probe_log_values(outputs['ProbeLogGroupName'], stream), args.source)
+            if recovery: break
+            time.sleep(2)
+        if not recovery:
+            aws('ecs','stop-task','--cluster',cluster,'--task',arn,'--reason','Console recovery proof never observed an active coding task')
+            raise ValueError('active_recovery_evidence_missing')
+
+        execution_task = observed_task(
+            aws('ecs','describe-tasks','--cluster',cluster,'--tasks',recovery['executionTask']),
+            recovery['executionTask'], outputs['JobTaskDefinitionArn'])
+        if execution_task.get('startedBy') != recovery['executionId']:
+            raise ValueError('recovery_execution_started_by_mismatch')
+        require_task_evidence(execution_task, 'job', image_digest, 'RUNNING')
+
+        # Interrupt the controller while a real Codex task is active. The ECS
+        # service must replace the controller and recover the same durable job /
+        # execution without launching a duplicate coding task or publication.
+        aws('ecs','stop-task','--cluster',cluster,'--task',controller_before['taskArn'],'--reason','Engineering Console deployment recovery verification')
+        aws('ecs','wait','services-stable','--cluster',cluster,'--services','eng-console-controller')
+        replacement_arns = aws('ecs','list-tasks','--cluster',cluster,'--service-name','eng-console-controller','--desired-status','RUNNING')['taskArns']
+        if len(replacement_arns) != 1 or replacement_arns[0] == controller_before['taskArn']:
+            raise ValueError('controller_recovery_replacement_missing')
+        controller_after = observed_task(
+            aws('ecs','describe-tasks','--cluster',cluster,'--tasks',replacement_arns[0]),
+            replacement_arns[0], outputs['ControllerTaskDefinitionArn'])
+        require_task_evidence(controller_after, 'controller', image_digest, 'RUNNING')
+        record['controllerRecovery'] = {
+            'jobId': recovery['jobId'], 'executionId': recovery['executionId'], 'executionTask': recovery['executionTask'],
+            'controllerBefore': controller_before['taskArn'], 'controllerAfter': controller_after['taskArn']
+        }
+
         while time.monotonic() < deadline:
             task = observed_task(aws('ecs','describe-tasks','--cluster',cluster,'--tasks',arn), arn, outputs['ProbeTaskDefinitionArn'])
             if task['lastStatus'] == 'STOPPED': break
@@ -137,21 +211,23 @@ def main():
         else:
             aws('ecs','stop-task','--cluster',cluster,'--task',arn,'--reason','Console deployment proof timed out')
             raise ValueError('private_probe_timeout')
-        require_task_evidence(task, 'probe', args.image.split('@')[1], 'STOPPED')
-        proofs=[]
-        for attempt in range(12):
-            try: events = aws('logs','get-log-events','--log-group-name',outputs['ProbeLogGroupName'],'--log-stream-name','probe/probe/'+arn.rsplit('/',1)[1])['events']
-            except RuntimeError: events = []
-            proofs=[]
-            for event in events:
-                try: value=json.loads(event['message'])
-                except ValueError: continue
-                if isinstance(value,dict) and value.get('verified') is True and value.get('source') == args.source: proofs.append(value)
-            if proofs: break
-            time.sleep(5)
+        require_task_evidence(task, 'probe', image_digest, 'STOPPED')
+
+        values = probe_log_values(outputs['ProbeLogGroupName'], stream)
+        proofs = [value for value in values if value.get('verified') is True and value.get('source') == args.source]
         if len(proofs) != 1: raise ValueError('durable_proof_record_missing')
-        record.update(status='verified',proof=proofs[0],verifiedAt=datetime.datetime.now(datetime.timezone.utc).isoformat())
-        print(json.dumps({'status':'verified','source':args.source,'endpoint':outputs['ConsoleUrl'],'proof':proofs[0]}))
+        proof = proofs[0]
+        if proof.get('jobId') != recovery['jobId'] or proof.get('executionId') != recovery['executionId'] or proof.get('executionTask') != recovery['executionTask']:
+            raise ValueError('recovery_proof_execution_identity_changed')
+
+        execution_arns = []
+        for desired in ('RUNNING', 'STOPPED'):
+            observed = aws('ecs','list-tasks','--cluster',cluster,'--started-by',recovery['executionId'],'--desired-status',desired)
+            execution_arns.extend(observed.get('taskArns', []))
+        require_single_execution_task(execution_arns, recovery['executionTask'])
+
+        record.update(status='verified',proof=proof,verifiedAt=datetime.datetime.now(datetime.timezone.utc).isoformat())
+        print(json.dumps({'status':'verified','source':args.source,'endpoint':outputs['ConsoleUrl'],'proof':proof,'recovery':record['controllerRecovery']}))
     except Exception as error:
         record['reason'] = str(error) if isinstance(error,(ValueError,RuntimeError)) else type(error).__name__
         print('Console deployment blocked: ' + record['reason']); raise SystemExit(1)
