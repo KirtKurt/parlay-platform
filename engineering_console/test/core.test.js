@@ -37,11 +37,11 @@ test('accepts complete explicit security configuration', () => {
   assert.equal(config.bindAddress, '127.0.0.1');
 });
 
-test('rejects implicit or invalid bind addresses', () => {
+test('defaults bind to loopback and rejects unsafe values', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'inqsi-config-'));
-  const missing = completeConfig(root);
-  delete missing.INQSI_ENGINEERING_BIND_ADDRESS;
-  assert.throws(() => loadConfig(missing), /missing INQSI_ENGINEERING_BIND_ADDRESS/);
+  const loopback = completeConfig(root);
+  delete loopback.INQSI_ENGINEERING_BIND_ADDRESS;
+  assert.equal(loadConfig(loopback).bindAddress, '127.0.0.1');
   assert.throws(() => loadConfig(completeConfig(root, { INQSI_ENGINEERING_BIND_ADDRESS: '::' })), /invalid bind address/);
 });
 
