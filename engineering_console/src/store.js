@@ -20,6 +20,7 @@ export class JobStore {
     this.directory = path.resolve(directory);
     this.snapshots = new WeakMap();
     this.runtimeInstructions = new Map();
+    this.pendingInstructions = new Map();
     fs.mkdirSync(this.directory, { recursive: true, mode: 0o700 });
   }
 
@@ -30,9 +31,53 @@ export class JobStore {
     return target;
   }
 
-  rememberInstruction(id, instruction) {
+  rememberInstruction(id, instruction, revision = null) {
     if (!JOB_ID.test(String(id || '')) || typeof instruction !== 'string') throw new Error('invalid_runtime_instruction');
-    this.runtimeInstructions.set(id, instruction);
+    this.runtimeInstructions.set(id, { instruction, revision });
+  }
+
+  #runtimeInstruction(job) {
+    const cached = this.runtimeInstructions.get(job.id);
+    return cached?.revision === (job.instructionRevision ?? null) ? cached.instruction : undefined;
+  }
+
+  #observeInstruction(job) {
+    const pending = this.pendingInstructions.get(job.id);
+    if (pending) {
+      if (pending.revision === job.instructionRevision && ['queued', 'running'].includes(job.status)) {
+        this.rememberInstruction(job.id, pending.instruction, pending.revision);
+      }
+      this.pendingInstructions.delete(job.id);
+    }
+    if (!['queued', 'running'].includes(job.status) || this.runtimeInstructions.get(job.id)?.revision !== (job.instructionRevision ?? null)) this.runtimeInstructions.delete(job.id);
+  }
+
+  saveInstruction(job, instruction) {
+    const revision = crypto.randomUUID();
+    job.instruction = instruction;
+    job.instructionRevision = revision;
+    job.instructionRecoverable = sanitizeValue(instruction) === instruction;
+    // Do not replace a previously accepted prompt until this write is observed.
+    // The revision distinguishes even different prompts with identical redaction.
+    try { this.save(job); }
+    catch (error) {
+      if (error.code !== 'EWRITEUNKNOWN') throw error;
+      let committed;
+      try { committed = this.get(job.id); }
+      catch {
+        this.pendingInstructions.set(job.id, { instruction, revision });
+        throw Object.assign(error, { jobId: job.id, persistencePending: true });
+      }
+      if (committed?.instructionRevision !== revision) throw error;
+      for (const key of Object.keys(job)) if (!(key in committed)) delete job[key];
+      Object.assign(job, committed);
+      this.snapshots.set(job, this.snapshots.get(committed));
+    }
+    if (job.instructionRevision === revision && ['queued', 'running'].includes(job.status)) {
+      this.rememberInstruction(job.id, instruction, revision);
+      job.instruction = instruction;
+    }
+    return job;
   }
 
   create(input, owner, revision) {
@@ -58,15 +103,13 @@ export class JobStore {
       pullRequest: null,
       error: null
     };
-    this.rememberInstruction(job.id, job.instruction);
-    try { this.save(job); }
-    catch (error) { this.runtimeInstructions.delete(job.id); throw error; }
+    this.saveInstruction(job, job.instruction);
     return job;
   }
 
   #prepare(job) {
     const persistedJob = sanitizeValue(job);
-    const runtimeInstruction = this.runtimeInstructions.get(job.id);
+    const runtimeInstruction = this.#runtimeInstruction(job);
     if (runtimeInstruction !== undefined) {
       // The durable instruction remains redacted, but remember whether the exact
       // runtime prompt can be reconstructed from durable bytes after a restart.
@@ -98,8 +141,8 @@ export class JobStore {
 
   #applyCommitted(job, target) {
     const persisted = JSON.parse(fs.readFileSync(target, 'utf8'));
-    if (!['queued', 'running'].includes(persisted.status)) this.runtimeInstructions.delete(job.id);
-    const runtimeInstruction = this.runtimeInstructions.get(job.id);
+    this.#observeInstruction(persisted);
+    const runtimeInstruction = this.#runtimeInstruction(persisted);
     for (const key of Object.keys(job)) if (!(key in persisted)) delete job[key];
     Object.assign(job, persisted);
     if (runtimeInstruction !== undefined) job.instruction = runtimeInstruction;
@@ -168,7 +211,7 @@ export class JobStore {
     catch (error) { if (error.code === 'EINVAL') return null; throw error; }
     try {
       const job = JSON.parse(fs.readFileSync(target, 'utf8'));
-      if (!['queued', 'running'].includes(job.status)) this.runtimeInstructions.delete(job.id);
+      this.#observeInstruction(job);
       const durableSnapshot = structuredClone(job);
       if (typeof job.instructionRecoverable !== 'boolean') {
         job.instructionRecoverable = recoverablePersistedInstruction(job.instruction);
@@ -176,17 +219,22 @@ export class JobStore {
       this.snapshots.set(job, durableSnapshot);
       return job;
     }
-    catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+    catch (error) {
+      if (error.code === 'ENOENT') { this.pendingInstructions.delete(id); this.runtimeInstructions.delete(id); return null; }
+      throw error;
+    }
   }
 
   getForExecution(id) {
     const job = this.get(id);
-    if (job && this.runtimeInstructions.has(id)) job.instruction = this.runtimeInstructions.get(id);
+    const instruction = job && this.#runtimeInstruction(job);
+    if (job && instruction !== undefined) job.instruction = instruction;
     return job;
   }
 
   hasRuntimeInstruction(id) {
-    return this.runtimeInstructions.has(id);
+    const job = this.get(id);
+    return Boolean(job && this.#runtimeInstruction(job) !== undefined);
   }
 
   list(owner) {

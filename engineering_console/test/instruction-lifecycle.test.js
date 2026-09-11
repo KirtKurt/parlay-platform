@@ -41,7 +41,7 @@ test('fresh continuation explicitly repopulates only its own instruction', t => 
   const { store } = fixture(t); const job = store.create(input(), 'owner', revision);
   job.status = 'completed'; store.save(job); assert.equal(store.hasRuntimeInstruction(job.id), false);
   const continuation = store.get(job.id); continuation.instruction = 'A new harmless proof.';
-  store.rememberInstruction(job.id, continuation.instruction); continuation.status = 'queued'; store.save(continuation);
+  continuation.status = 'queued'; store.saveInstruction(continuation, continuation.instruction);
   assert.equal(store.getForExecution(job.id).instruction, continuation.instruction);
   assert.equal(store.hasRuntimeInstruction(job.id), true);
 });

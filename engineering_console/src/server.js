@@ -105,6 +105,9 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
         queue.cancel(id);
         if (publicationVisible) {
           const pending = store.owned(id, actor.id);
+          if (['merged', 'merge_conflict', 'cancelled'].includes(pending?.publicationState)) {
+            return send(202, { job: publicJob(pending) });
+          }
           // Accepting the durable cancellation decision is not proof that an
           // already-visible GitHub PR was closed rather than concurrently merged.
           // Keep the UI/state pending until the trusted publisher confirms the
@@ -127,10 +130,17 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
           catch { return send(409, { error: 'previous_execution_stop_unconfirmed' }); }
         }
         job.previousExecution = job.execution || job.previousExecution; job.execution = null;
-        job.instruction = String(body.instruction); store.rememberInstruction(id, job.instruction); job.status = 'queued'; job.cancelRequested = false; job.error = null; store.save(job); queue.enqueue(id); return send(202, { job: publicJob(job) });
+        job.status = 'queued'; job.cancelRequested = false; job.error = null;
+        store.saveInstruction(job, body.instruction); queue.enqueue(id); return send(202, { job: publicJob(job) });
       }
       return send(404, { error: 'not_found' });
-    } catch (error) { send(error.status || 500, { error: error.status ? error.message : 'internal_error' }); }
+    } catch (error) {
+      if (error.persistencePending && error.jobId) {
+        queue.reconcileLater(error.jobId);
+        return send(202, { job: { id: error.jobId, status: 'persistence_pending' }, error: 'persistence_outcome_pending_confirmation' });
+      }
+      send(error.status || 500, { error: error.status ? error.message : 'internal_error' });
+    }
   }).on('close', () => queue.close?.());
 }
 
