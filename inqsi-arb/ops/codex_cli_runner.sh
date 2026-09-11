@@ -123,10 +123,11 @@ fi
 validate_scope "${FINAL_CHANGED[@]}"
 
 # Restore repository authentication only after Codex has exited and the exact
-# candidate bytes have passed independent validation. Avoid `gh auth setup-git`:
-# hosted runners can contain credential-helper state that makes its unset step
-# fail. A short-lived local extraheader gives only the supervising wrapper's
-# push access, is never placed in the remote URL, and is removed immediately.
+# candidate bytes have passed independent validation. Avoid the GitHub CLI's
+# git-auth reconfiguration path because hosted runners can contain helper state
+# that makes its cleanup fail. A short-lived local extraheader gives only the
+# supervising wrapper's push access, is never placed in the remote URL, and is
+# removed immediately.
 cleanup_publish_auth() {
   git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
 }
