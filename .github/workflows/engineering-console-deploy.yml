@@ -61,7 +61,8 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
-          changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          merge_base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          changed="$(git diff --name-only "$merge_base" "$HEAD_SHA")"
           printf '%s\n' "$changed"
           if printf '%s\n' "$changed" | grep -Ev '^(engineering_console/|\.github/workflows/engineering-console-deploy\.yml$|frontend/app/api/engineering/|frontend/components/EngineeringConsole\.tsx$)' | grep -q .; then
             echo 'Unexpected non-Console file in deployment PR' >&2
