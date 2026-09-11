@@ -86,6 +86,7 @@ def test_valid_preview_bullpen_arrays_are_passive_identity_evidence_only() -> No
     assert report["fundamentalsCompletenessChanged"] is False
     assert report["productionAuthorityChanged"] is False
     game = report["games"][0]
+    assert game["feedObservedAtUtc"] == NOW.isoformat().replace("+00:00", "Z")
     assert game["home"]["bullpenPlayerIds"] == [102, 103, 104]
     assert game["away"]["bullpenPlayerIds"] == [202, 203, 204]
     assert game["home"]["subsetOfPitchers"] is True
@@ -136,6 +137,31 @@ def test_valid_roster_after_cutoff_is_not_pret45_evidence() -> None:
     assert report["bothBullpenIdentityValidCount"] == 1
     assert report["preT45BothBullpenIdentityValidCount"] == 0
     assert report["games"][0]["preT45"] is False
+    assert report["availableRelieverSemanticClaimCount"] == 0
+
+
+def test_slow_feed_crossing_cutoff_uses_receipt_time_not_run_start() -> None:
+    state = {"now": START - timedelta(minutes=46)}
+    schedule_game = _schedule_game()
+    live_feed = _feed()
+
+    def clock():
+        return state["now"]
+
+    def fetch(url: str, timeout: int):
+        assert timeout == 8
+        if "/schedule?" in url:
+            return {"dates": [{"date": "2026-09-11", "games": [schedule_game]}]}
+        state["now"] = START - timedelta(minutes=44)
+        return live_feed
+
+    report = SUBJECT.build_report(fetch_json=fetch, clock=clock)
+    game = report["games"][0]
+    assert report["createdAtUtc"] == (START - timedelta(minutes=46)).isoformat().replace("+00:00", "Z")
+    assert game["feedObservedAtUtc"] == (START - timedelta(minutes=44)).isoformat().replace("+00:00", "Z")
+    assert game["bothBullpenIdentityValid"] is True
+    assert game["preT45"] is False
+    assert report["preT45BothBullpenIdentityValidCount"] == 0
     assert report["availableRelieverSemanticClaimCount"] == 0
 
 
