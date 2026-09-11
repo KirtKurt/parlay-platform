@@ -2,10 +2,12 @@
 """Read-only MLB reliability calibration audit against immutable candidate artifacts.
 
 The audit never writes model, prediction, ledger, promotion, or authority state.
-Calibration is fitted only on earlier validation whole slates.  A reliability
-threshold is selected only on later validation whole slates.  The existing,
-already-reviewed prospective partition is evaluated only as development
-information and is explicitly not prospective qualification evidence.
+Calibration is fitted only on earlier validation whole slates.  Candidate
+regularization is chosen on a nested holdout inside that earlier window, with
+identity as the no-harm fallback.  A reliability threshold is selected only on
+later validation whole slates.  The existing, already-reviewed prospective
+partition is evaluated only as development information and is explicitly not
+prospective qualification evidence.
 """
 from __future__ import annotations
 
@@ -26,10 +28,11 @@ if str(ROOT / "scripts") not in sys.path:
 import mlb_ml_dual_model_v2 as dual
 import mlb_ml_walk_forward_v2 as walk_forward
 import mlb_reliability_calibration_v1 as calibration
+import mlb_reliability_calibration_selection_v1 as calibration_selection
 from mlb_challenger_benchmark import load_sources
 
 
-VERSION = "MLB-RELIABILITY-CALIBRATION-SHADOW-AUDIT-v1"
+VERSION = "MLB-RELIABILITY-CALIBRATION-SHADOW-AUDIT-v2-no-harm-nested-selection"
 
 
 def _score_reliability(rows: List[Dict[str, Any]], challenger: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -69,7 +72,7 @@ def audit(dataset: Dict[str, Any], challenger: Dict[str, Any], provenance: Dict[
 
     scored_validation = _score_reliability(validation, challenger)
     earlier, later, chronology = calibration.split_validation_slates(scored_validation)
-    calibrator = calibration.fit_regularized_logit(earlier)
+    calibrator, calibration_selection_proof = calibration_selection.select_no_harm_calibrator(earlier)
     calibrated_later = _apply_calibrator(later, calibrator)
     threshold = walk_forward.select_reliability_threshold(
         calibrated_later,
@@ -102,6 +105,14 @@ def audit(dataset: Dict[str, Any], challenger: Dict[str, Any], provenance: Dict[
         calibrated_prospective, selected_threshold
     )
 
+    later_validation_no_harm = bool(
+        calibrated_validation_metrics.get("calibrationError") is not None
+        and raw_validation_metrics.get("calibrationError") is not None
+        and calibrated_validation_metrics["calibrationError"] <= raw_validation_metrics["calibrationError"] + 1e-12
+        and calibrated_validation_metrics["brierScore"] <= raw_validation_metrics["brierScore"] + 1e-12
+        and calibrated_validation_metrics["logLoss"] <= raw_validation_metrics["logLoss"] + 1e-12
+    )
+
     return {
         "ok": True,
         "version": VERSION,
@@ -110,6 +121,7 @@ def audit(dataset: Dict[str, Any], challenger: Dict[str, Any], provenance: Dict[
         "sourceProvenance": provenance,
         "calibrationRule": calibration.CALIBRATION_RULE,
         "calibrator": calibrator.to_dict(),
+        "calibrationSelectionProof": calibration_selection_proof,
         "chronologyProof": chronology,
         "thresholdSelection": {
             **threshold,
@@ -118,6 +130,7 @@ def audit(dataset: Dict[str, Any], challenger: Dict[str, Any], provenance: Dict[
         "laterValidation": {
             "rawReliability": raw_validation_metrics,
             "calibratedReliability": calibrated_validation_metrics,
+            "noHarmAcrossCalibrationBrierAndLogLoss": later_validation_no_harm,
         },
         "reviewedProspectiveDevelopmentOnly": {
             "rawReliability": raw_prospective_metrics,
@@ -127,6 +140,7 @@ def audit(dataset: Dict[str, Any], challenger: Dict[str, Any], provenance: Dict[
             "isFutureQualificationEvidence": False,
             "reason": "existing prospective outcomes were already reviewed before this calibration challenger was created",
         },
+        "calibrationChallengerReadyForNewFutureShadow": later_validation_no_harm,
         "prospectiveQualificationEvidence": False,
         "promotionEligible": False,
         "productionAuthorityChanged": False,
@@ -136,8 +150,8 @@ def audit(dataset: Dict[str, Any], challenger: Dict[str, Any], provenance: Dict[
         "automaticPromotionEnabled": False,
         "automaticWagerAllowed": False,
         "nextRequiredEvidence": (
-            "after reviewed code approval, create a separately versioned shadow challenger and accumulate new "
-            "pre-outcome selections; do not reuse these reviewed prospective outcomes for promotion"
+            "only if later-validation no-harm proof passes, create a separately versioned shadow challenger and "
+            "accumulate new pre-outcome selections; never reuse these reviewed prospective outcomes for promotion"
         ),
     }
 
