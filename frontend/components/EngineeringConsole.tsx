@@ -26,7 +26,7 @@ export function EngineeringConsole() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selected, setSelected] = useState<Job | null>(null);
   const [instruction, setInstruction] = useState('');
-  const [scope, setScope] = useState('engineering_console');
+  const [scope, setScope] = useState('');
   const [message, setMessage] = useState('');
   const [authState, setAuthState] = useState<AuthState>('checking');
 
@@ -127,7 +127,7 @@ export function EngineeringConsole() {
             <textarea required value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Describe the engineering change and acceptance checks…" />
           </label>
           <label>Authorized paths (comma-separated)
-            <input required value={scope} onChange={(event) => setScope(event.target.value)} />
+            <input required value={scope} onChange={(event) => setScope(event.target.value)} placeholder="Choose an allowed scope explicitly" />
           </label>
           <div className="scope-card">
             <b>KirtKurt/parlay-platform</b>
