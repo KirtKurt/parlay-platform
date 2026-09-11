@@ -81,14 +81,17 @@ jobs:
               'mlb_trainer_runtime_error',
               'mlb_trainer_function_error',
           )
-          # Only source-honest accumulation/capture blockers are echoed into the
-          # full-packet focus summary. Reliability and calibration remain available
-          # from current runtime reports themselves, but are not inferred from field
-          # names, null diagnostics, or secondary gate summaries.
+          # Echo source-honest accumulation/capture blockers and only the measured
+          # (non-null) reliability-calibration miss into the full-packet summary.
+          # Generic/null calibration diagnostics remain in their source reports and
+          # cannot become task authority merely because a gate field exists.
           focus_signals = {
               'data_capture': (
                   'missing_t10_snapshots', 'coverage_mismatch', 'source_failure',
                   'capture failure', 'ingestion failure',
+              ),
+              'calibration': (
+                  'selected_reliability_calibration_too_high',
               ),
               'challenger_model': (
                   'insufficient_observed_starter', 'insufficient_observed_team_context',
@@ -196,8 +199,8 @@ jobs:
                   snippets = []
                   for signal in matched[:3]:
                       idx = lowered.find(signal)
-                      start = max(0, idx - 250)
-                      end = min(len(text), idx + len(signal) + 650)
+                      start = max(0, idx - 350)
+                      end = min(len(text), idx + len(signal) + 700)
                       snippets.append(text[start:end])
                   focus_hits.append({
                       'domain': domain,
