@@ -30,7 +30,6 @@ env:
   ARB_AEC_PAUSED: ${{ vars.ARB_AEC_PAUSED || 'false' }}
   ARB_CODE_AGENT_MODEL: 'codex-cli-default'
   ARB_CODE_AGENT_COMMAND: 'bash inqsi-arb/ops/codex_cli_runner.sh'
-  CODEX_HOME: ${{ runner.temp }}/inqsi-arb-codex
 
 jobs:
   inspect-decide-act:
@@ -53,14 +52,18 @@ jobs:
           python -m pip install --quiet "pytest>=8,<9" boto3
           npm install --global @openai/codex
           codex --version
+      - name: Configure ephemeral Codex home
+        run: |
+          set -euo pipefail
+          echo "CODEX_HOME=${RUNNER_TEMP}/inqsi-arb-codex" >> "$GITHUB_ENV"
+          mkdir -p "${RUNNER_TEMP}/inqsi-arb-codex"
+          chmod 700 "${RUNNER_TEMP}/inqsi-arb-codex"
       - name: Authenticate Codex CLI for this ephemeral runner
         env:
           OPENAI_API_KEY: ${{ secrets.Inqsi_ARB_Autonomous_Coding_Agent }}
         run: |
           set -euo pipefail
           test -n "${OPENAI_API_KEY:-}"
-          mkdir -p "$CODEX_HOME"
-          chmod 700 "$CODEX_HOME"
           printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key
           codex login status
       - name: Prove controller guardrails before acting
