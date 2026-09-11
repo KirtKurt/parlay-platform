@@ -4,11 +4,14 @@ from typing import Any
 
 
 def _nonnegative_int(value: Any) -> int | None:
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
         return None
     try:
         parsed = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        return None
+    # A fractional JSON number is not an integer count. int() alone truncates it.
+    if isinstance(value, float) and value != parsed:
         return None
     return parsed if parsed >= 0 else None
 
@@ -23,6 +26,8 @@ def fundamentals_feature_pipeline_gap(report: dict[str, Any]) -> dict[str, int] 
     promotion, or production authority.
     """
 
+    if not isinstance(report, dict):
+        return None
     summary = report.get("scoringSummary")
     if not isinstance(summary, dict):
         return None
@@ -32,7 +37,7 @@ def fundamentals_feature_pipeline_gap(report: dict[str, Any]) -> dict[str, int] 
     shadow_evaluated = _nonnegative_int(summary.get("fundamentalsShadowEvaluatedCount"))
     if official is None or inactive is None or shadow_evaluated is None:
         return None
-    if official <= 0 or inactive < official or shadow_evaluated != 0:
+    if official <= 0 or inactive != official or shadow_evaluated != 0:
         return None
 
     return {
