@@ -15,6 +15,10 @@ function validScope(scope, allowedScopes) {
   return allowedScopes.some((root) => value === root || value.startsWith(`${root}/`));
 }
 
+function validJobScopes(job, allowedScopes) {
+  return Array.isArray(job?.authorizedScope) && job.authorizedScope.length > 0 && job.authorizedScope.every((scope) => validScope(scope, allowedScopes));
+}
+
 export function createServer({ config = loadConfig(), authorizer, store, queue } = {}) {
   store ||= new JobStore(config.dataDir);
   authorizer ||= createAuthorizer(config);
@@ -27,6 +31,12 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
       recovered.status = 'cancelled';
       store.save(recovered);
     } else if (['queued', 'running'].includes(recovered.status)) {
+      if (!validJobScopes(recovered, config.allowedScopes)) {
+        recovered.status = 'blocked';
+        recovered.error = 'authorized_scope_no_longer_allowed';
+        store.save(recovered);
+        continue;
+      }
       recovered.status = 'queued';
       store.save(recovered);
       queue.enqueue(recovered.id);
@@ -50,7 +60,12 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
       if (request.method === 'GET' && !action) return send(200, { job: publicJob(job) });
       if (request.method === 'GET' && action === 'events') { response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' }); const push=()=>response.write(`data: ${JSON.stringify(publicJob(store.owned(id, actor.id)))}\n\n`); push(); const interval=setInterval(push, 2000); request.on('close',()=>clearInterval(interval)); return; }
       if (request.method === 'POST' && action === 'cancel') { queue.cancel(id); return send(202, { job: publicJob(store.owned(id, actor.id)) }); }
-      if (request.method === 'POST' && action === 'continue') { if (!['completed','failed','blocked','awaiting_approval'].includes(job.status)) return send(409, { error: 'job_not_continuable' }); if (!String(body.instruction || '').trim()) return send(400, { error: 'instruction_required' }); job.instruction = String(body.instruction); job.status = 'queued'; job.cancelRequested = false; job.error = null; store.save(job); queue.enqueue(id); return send(202, { job: publicJob(job) }); }
+      if (request.method === 'POST' && action === 'continue') {
+        if (!['completed','failed','blocked','awaiting_approval'].includes(job.status)) return send(409, { error: 'job_not_continuable' });
+        if (!validJobScopes(job, config.allowedScopes)) return send(409, { error: 'authorized_scope_no_longer_allowed' });
+        if (!String(body.instruction || '').trim()) return send(400, { error: 'instruction_required' });
+        job.instruction = String(body.instruction); job.status = 'queued'; job.cancelRequested = false; job.error = null; store.save(job); queue.enqueue(id); return send(202, { job: publicJob(job) });
+      }
       return send(404, { error: 'not_found' });
     } catch (error) { send(error.status || 500, { error: error.status ? error.message : 'internal_error' }); }
   });
