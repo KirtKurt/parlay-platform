@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { loadConfig } from './config.js';
 import { createAuthorizer } from './auth.js';
 import { JobStore } from './store.js';
-import { resolveRevision } from './git.js';
+import { refreshRepository, resolveRevision } from './git.js';
 import { DurableQueue } from './queue.js';
 import { createRunner } from './worker-runtime.js';
 import { publicJob } from './sanitize.js';
@@ -44,6 +44,10 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
       if (request.method === 'POST' && !id) {
         if (!String(body.instruction || '').trim()) return send(400, { error: 'instruction_required' });
         if (!Array.isArray(body.authorizedScope) || !body.authorizedScope.length || body.authorizedScope.some((scope) => !validScope(scope, config.allowedScopes))) return send(400, { error: 'valid_authorized_scope_required' });
+        if (!body.startingRevision || body.startingRevision === 'HEAD') {
+          try { await refreshRepository(config.repository); }
+          catch { return send(503, { error: 'repository_refresh_failed' }); }
+        }
         const revision = await resolveRevision(config.repository, body.startingRevision || 'HEAD'); const job = store.create(body, actor.id, revision); queue.enqueue(job.id); return send(202, { job: publicJob(job) });
       }
       const job = id && store.owned(id, actor.id); if (!job) return send(404, { error: 'job_not_found' });
