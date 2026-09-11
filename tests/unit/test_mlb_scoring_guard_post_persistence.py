@@ -313,9 +313,10 @@ def test_missing_canonical_lock_authority_remains_fail_closed() -> None:
     )
 
     assert result["guardPassed"] is True
-    assert result["summary"]["fundamentalsPostPersistenceProofInvalidCount"] == 0
+    assert result["summary"]["fundamentalsPostPersistenceProofInvalidCount"] == 1
     assert result["summary"]["fundamentalsPostPersistenceShadowEvaluatedCount"] == 0
     assert result["summary"]["fundamentalsShadowEvaluatedCount"] == 0
     game = result["games"][0]
     assert game["fundamentalsState"] == "NOT_ACTIVE"
-    assert game["fundamentalsPostPersistenceShadowReason"] == "snapshot_v2_invalid_or_not_lock_safe"
+    assert game["fundamentalsPostPersistenceProofValid"] is False
+    assert game["fundamentalsPostPersistenceErrors"]
