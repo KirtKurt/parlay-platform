@@ -2,7 +2,6 @@ import { Codex } from '@openai/codex-sdk';
 import { createWorkspace, collectChanges, git } from './git.js';
 import { sanitize } from './sanitize.js';
 import { withinAuthorizedScope, writePublicationRequest } from './publication.js';
-import path from 'node:path';
 
 export function createRunner(config, store, CodexClass = Codex) {
   return async (job, signal) => {
@@ -12,8 +11,7 @@ export function createRunner(config, store, CodexClass = Codex) {
       job.error = null;
       store.save(job);
 
-      if (job.branch) workspace = path.join(config.workspaceRoot, job.id);
-      else ({ workspace, branch: job.branch } = await createWorkspace(config, job));
+      ({ workspace, branch: job.branch } = await createWorkspace(config, job));
       store.save(job);
 
       const codex = new CodexClass();
