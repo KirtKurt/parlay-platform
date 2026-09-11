@@ -67,6 +67,45 @@ for _family in ("spreads", "totals"):
         notes="Fanatics NY default full-game MLB run-line/total family; periods, listed-pitcher variants and props excluded.",
     ))
 
+# Fanatics explicitly distinguishes two-way and three-way inning/grouped
+# moneylines. Keep those identities separate because a tied period voids the
+# two-way market but settles the Tie selection as the winner in a three-way
+# market. The specified full innings must be completed unless the home team is
+# ahead with one half-inning remaining. Spreads/totals/team totals remain
+# unreviewed and therefore fail closed.
+register(Rule(
+    book="fanatics",
+    sport="baseball",
+    market_family="period_winner_2way",
+    jurisdiction="ny",
+    reviewed=True,
+    version=REVIEW_DATE,
+    source=_SOURCE,
+    settlement_profile="fanatics_ny_baseball_period_2way_winner_v1",
+    overtime=False,
+    listed_pitcher=False,
+    participation_required=False,
+    shortened_game_policy="specified_full_innings_required_unless_home_team_ahead_with_half_inning_remaining",
+    push_policy="tied_period_void",
+    notes="Fanatics NY inning/grouped two-way moneyline only, including supported 3/5/7-inning groups; tied period voids. Three-way, spreads, totals and team totals use separate identities.",
+))
+register(Rule(
+    book="fanatics",
+    sport="baseball",
+    market_family="period_winner_3way",
+    jurisdiction="ny",
+    reviewed=True,
+    version=REVIEW_DATE,
+    source=_SOURCE,
+    settlement_profile="fanatics_ny_baseball_period_3way_winner_v1",
+    overtime=False,
+    listed_pitcher=False,
+    participation_required=False,
+    shortened_game_policy="specified_full_innings_required_unless_home_team_ahead_with_half_inning_remaining",
+    push_policy="tie_selection_wins",
+    notes="Fanatics NY inning/grouped three-way moneyline only, including supported 3/5/7-inning groups; Tie is a distinct winning selection when scores are level.",
+))
+
 _triplet(
     sport="americanfootball",
     profile="fanatics_ny_football_full_game_v1",
