@@ -3,7 +3,7 @@ import { JobStore } from './store.js';
 export function updateJobFromPublisher(dataDir, receipt) {
   const store = new JobStore(dataDir);
   const job = store.get(receipt.jobId);
-  if (!job) return;
+  if (!job || job.publicationState === 'merged') return;
   if (receipt.pullRequest) job.pullRequest = receipt.pullRequest;
   if (receipt.commit) job.commit = receipt.commit;
   if (receipt.mergeCommit) job.mergeCommit = receipt.mergeCommit;
