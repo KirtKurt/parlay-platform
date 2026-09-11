@@ -90,7 +90,7 @@ Resources:
             TableName: !Ref ArbAuditTable
         - DynamoDBCrudPolicy:
             TableName: !Ref ArbStateTable
-        - DynamoDBReadPolicy:
+        - DynamoDBCrudPolicy:
             TableName: !Ref ArbConnectionsTable
         - Statement:
             - Effect: Allow
@@ -106,6 +106,9 @@ Resources:
         Markets:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/markets, Method: GET}
+        Rules:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/rules, Method: GET}
         UI:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/ui, Method: GET}

@@ -14,7 +14,7 @@ from market_catalog import MARKET_FAMILY_KEYS, expand_market_families
 from market_discovery import discover_event_market_keys, discover_events, fetch_all_discovered_markets
 from position_store import get as get_position, list_for_user, put as put_position
 from provider import MARKET_FAMILIES, list_sports, scan_sport_payload
-from rules import registry_size
+from rules import registry_rows, registry_size
 from ui_page import HTML
 from validation import validate_events
 
@@ -68,7 +68,7 @@ def _maybe_broadcast(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         from websocket import broadcast
         return broadcast(payload)
-    except Exception as exc:  # push failure must never corrupt scan result
+    except Exception as exc:
         return {"sent": 0, "stale": 0, "error": type(exc).__name__}
 
 
@@ -114,6 +114,25 @@ def lambda_handler(event, context):
             "rules_registry_entries": registry_size(),
             "automatic_market_discovery": True,
             "websocket_push_configured": bool(os.environ.get("ARB_WEBSOCKET_MANAGEMENT_ENDPOINT")),
+        })
+
+    if method == "GET" and path == "/v1/arb/rules":
+        rows = registry_rows()
+        book_filter = query.get("book", "").strip().lower()
+        sport_filter = query.get("sport", "").strip().lower()
+        market_filter = query.get("market_family", "").strip().lower()
+        if book_filter:
+            rows = [r for r in rows if r.get("book") == book_filter]
+        if sport_filter:
+            rows = [r for r in rows if r.get("sport") == sport_filter]
+        if market_filter:
+            rows = [r for r in rows if r.get("market_family") == market_filter]
+        return response(200, {
+            "ok": True,
+            "version": VERSION,
+            "count": len(rows),
+            "rules": rows,
+            "policy": "Only reviewed exact-book rule combinations may qualify verified arbs; all others fail closed.",
         })
 
     if method == "GET" and path == "/v1/arb/catalog":
@@ -241,7 +260,6 @@ def lambda_handler(event, context):
                 audit_record("POSITION_CREATED", {"user_id": user_id, "position_id": position_id})
                 return response(201, {"ok": True, "position": position})
             if method == "POST" and position_id and path.endswith("/legs"):
-                # path parsing with /legs places id at parts[3]
                 position_id = parts[3]
                 pos = get_position(user_id, position_id)
                 if not pos:
