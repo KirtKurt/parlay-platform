@@ -1,0 +1,40 @@
+name: KS1 seven-day model validation
+on:
+  pull_request:
+    paths: ['ks1/features.py', 'ks1/retrain_recent.py', 'tests/ks1_recent/**', '.github/workflows/ks1-retrain-recent.yml']
+permissions:
+  contents: read
+concurrency:
+  group: ks1-retrain-recent-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  evaluate:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'agent/ks1-seven-day-starter'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: 'true'
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r ks1/training-requirements.txt 'pytest>=8,<9'
+      - run: python -m pytest -q tests/ks1 tests/ks1_phase2 tests/ks1_recent
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Rebuild retained features and compare on fixed later games
+        run: python -m ks1.retrain_recent --output /tmp/ks1-recent
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ks1-recent-${{ github.run_id }}
+          path: /tmp/ks1-recent/
+          if-no-files-found: error
+          retention-days: 90
