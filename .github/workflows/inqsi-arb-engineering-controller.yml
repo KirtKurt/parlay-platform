@@ -1,0 +1,97 @@
+name: Inqsi ARB Autonomous Engineering Controller
+
+on:
+  schedule:
+    - cron: '3,23,43 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: inqsi-arb-autonomous-engineering-controller
+  cancel-in-progress: false
+
+env:
+  ARB_AEC_MAX_ACTIONS: '1'
+  ARB_AEC_ALLOW_DISPATCH: 'true'
+  ARB_AEC_ALLOW_ISSUE: 'true'
+  ARB_AEC_PAUSED: ${{ vars.ARB_AEC_PAUSED || 'false' }}
+  ARB_CODE_AGENT_MODEL: ${{ vars.ARB_CODE_AGENT_MODEL }}
+  ARB_CODE_AGENT_COMMAND: ${{ vars.ARB_CODE_AGENT_COMMAND }}
+
+jobs:
+  inspect-decide-act:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install controller test runtime
+        run: python -m pip install --quiet "pytest>=8,<9" boto3
+      - name: Prove controller guardrails before acting
+        run: python -m pytest -q inqsi-arb/tests/test_engineering_controller.py
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Resolve isolated production endpoints
+        id: endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ArbApiUrl'].OutputValue" --output text)
+          SPORTSBOOK_URL=$(aws cloudformation describe-stacks --stack-name inqsi-arb-sportsbook-catalog-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='SportsbooksUrl'].OutputValue" --output text 2>/dev/null || true)
+          test -n "$API_URL" && test "$API_URL" != "None"
+          echo "api_url=${API_URL%/}" >> "$GITHUB_OUTPUT"
+          echo "sportsbook_url=$SPORTSBOOK_URL" >> "$GITHUB_OUTPUT"
+      - name: Inspect, prioritize and execute one bounded engineering action
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          python inqsi-arb/ops/engineering_controller.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --api-url '${{ steps.endpoints.outputs.api_url }}' \
+            --sportsbook-url '${{ steps.endpoints.outputs.sportsbook_url }}' \
+            --output arb-engineering-controller-report.json
+      - name: Upload immutable controller evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inqsi-arb-engineering-controller-${{ github.run_id }}
+          path: arb-engineering-controller-report.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Controller summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f arb-engineering-controller-report.json ]; then
+            python - <<'PY'
+          import json
+          with open('arb-engineering-controller-report.json', encoding='utf-8') as f:
+              r=json.load(f)
+          s=r.get('snapshot', {})
+          print('### Inqsi ARB Autonomous Engineering Controller')
+          print(f"- Controller: `{r.get('controller')}`")
+          print(f"- Main: `{s.get('main_sha')}`")
+          print(f"- Production healthy: `{s.get('production_ok')}`")
+          print(f"- Active sports: `{s.get('active_sports')}`")
+          print(f"- Sportsbooks observed: `{s.get('sportsbook_count')}`")
+          print(f"- Deploy conclusion: `{s.get('deploy_conclusion')}`")
+          print(f"- Latency proof conclusion: `{s.get('latency_conclusion')}`")
+          print(f"- Code agent configured: `{s.get('code_agent_configured')}`")
+          print(f"- Planned actions: `{len(r.get('actions', []))}`")
+          PY
+          fi
