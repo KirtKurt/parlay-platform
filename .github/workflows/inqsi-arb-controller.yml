@@ -60,7 +60,7 @@ jobs:
         run: |
           set -euo pipefail
           echo 'ARB production inspection failed. Dispatching one controlled redeploy of current main.'
-          gh workflow run inqsi-arb-deploy.yml -f force_deploy=true --ref main
+          gh workflow run inqsi-arb-repair.yml --ref main
       - name: Fail after repair dispatch
         if: steps.inspect.outcome == 'failure'
         run: |
