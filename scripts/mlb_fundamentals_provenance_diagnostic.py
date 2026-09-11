@@ -13,7 +13,7 @@ import collections
 import copy
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence
 
@@ -22,7 +22,7 @@ import mlb_fundamentals_snapshot_v2 as snapshot_contract
 import mlb_fundamentals_scoring_bridge_v1 as scoring_contract
 
 
-VERSION = "MLB-FUNDAMENTALS-PROVENANCE-BOUNDARY-DIAGNOSTIC-v1"
+VERSION = "MLB-FUNDAMENTALS-PROVENANCE-BOUNDARY-DIAGNOSTIC-v2-proof-bound"
 REPORT_TYPE = "MLB_FUNDAMENTALS_PROVENANCE_READ_ONLY_DIAGNOSTIC"
 
 
@@ -156,6 +156,93 @@ def diagnose_row(row: Mapping[str, Any], *, persisted_at: Any) -> Dict[str, Any]
     }
 
 
+def diagnose_prediction(
+    prediction: Mapping[str, Any],
+    proof: Optional[Mapping[str, Any]],
+    *,
+    observed_at: datetime,
+) -> Dict[str, Any]:
+    """Require the existing durable-write proof before assessing source chronology.
+
+    A scheduled cutoff is only a diagnostic deadline, never a recorded lock.
+    The lifecycle label describes only the selected PREGAME proof; it does not
+    establish whether a separate canonical LOCKED ledger record exists.
+    The existing snapshot/proof validators and persisted rows are unchanged.
+    """
+    if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+        raise ValueError("diagnostic observation requires a timezone")
+    observed = observed_at.astimezone(timezone.utc)
+    empty: Dict[str, Any] = {
+        "contractSafe": False,
+        "violations": [],
+        "predictionPersistedAtUtc": None,
+        "lockAtUtc": None,
+        "snapshot": None,
+        "groups": [],
+        "persistenceProofValid": False,
+        "persistenceProofErrors": [],
+        "awaitingRecordedLock": False,
+        "scheduledCutoffUtc": None,
+        "scheduledCutoffIsLockEvidence": False,
+        "lockDiagnosticScope": "SELECTED_PREGAME_PROOF_ONLY_NOT_CANONICAL_LOCK_LEDGER",
+        "diagnosticStage": "PERSISTENCE_PROOF_INVALID",
+    }
+    if proof is None:
+        errors = ["write_once_pregame_persistence_proof_missing"]
+        return {**empty, "violations": errors, "persistenceProofErrors": errors,
+                "diagnosticStage": "PERSISTENCE_PROOF_MISSING"}
+    try:
+        errors = list(post._proof_errors(prediction, proof, observed_at=observed))
+        for field in ("PK", "SK"):
+            if prediction.get(field) in (None, ""):
+                errors.append("post_persistence_live_" + field.lower() + "_missing")
+    except Exception as exc:
+        errors = ["persistence_proof_validation_unavailable:" + type(exc).__name__]
+    if errors:
+        errors = sorted(set(errors))
+        return {**empty, "violations": errors, "persistenceProofErrors": errors}
+
+    row = post._prediction_data(proof)
+    try:
+        diagnostic = diagnose_row(
+            row, persisted_at=proof.get("prediction_persisted_at_utc")
+        )
+    except Exception as exc:
+        return {**empty, "persistenceProofValid": True,
+                "violations": ["snapshot_diagnostic_unavailable:" + type(exc).__name__],
+                "diagnosticStage": "SNAPSHOT_DIAGNOSTIC_UNAVAILABLE"}
+    result = {**empty, **diagnostic, "persistenceProofValid": True,
+              "diagnosticStage": (
+                  "PROVENANCE_VALID" if diagnostic["contractSafe"]
+                  else "PROVENANCE_BLOCKED"
+              )}
+
+    # Only a genuinely absent lock, as the sole remaining violation, is a
+    # possible pre-cutoff wait. Malformed locks or other defects stay blocked.
+    if (result["contractSafe"] is False
+            and result["violations"] == ["lock_timestamp_missing_or_invalid"]
+            and scoring_contract._lock_at(row) in (None, "")):
+        snapshot = row.get("fundamentalsSnapshotV2") or {}
+        game = snapshot.get("game") or {}
+        if not isinstance(game, Mapping):
+            return result
+        commence = _parse(row.get("commenceTime") or row.get("commence_time"))
+        if (snapshot.get("snapshotRole") == "T_MINUS_45_FROZEN_PREGAME_FEATURE_INPUT"
+                and commence is not None
+                and _parse(game.get("commenceTimeUtc")) == commence):
+            try:
+                cutoff = commence - timedelta(minutes=45)
+            except OverflowError:
+                return result
+            result["scheduledCutoffUtc"] = cutoff.isoformat().replace("+00:00", "Z")
+            result["awaitingRecordedLock"] = observed < cutoff
+            result["diagnosticStage"] = (
+                "AWAITING_RECORDED_LOCK" if observed < cutoff
+                else "SELECTED_PROOF_LOCK_ABSENT_CUTOFF_PASSED"
+            )
+    return result
+
+
 def _identity(item: Mapping[str, Any]) -> str:
     row = post._prediction_data(item)
     return str(
@@ -167,32 +254,25 @@ def _identity(item: Mapping[str, Any]) -> str:
     )
 
 
-def build_live_report(*, slate_date: str, region: str, snapshots_table: str) -> Dict[str, Any]:
+def build_live_report(
+    *, slate_date: str, region: str, snapshots_table: str,
+    observed_at: Optional[datetime] = None,
+) -> Dict[str, Any]:
     resource = post.base.boto3.resource("dynamodb", region_name=region)
     table = resource.Table(snapshots_table)
     partition = f"GAME_WINNERS#mlb#{slate_date}"
     predictions = post.base._query_partition(table, partition, "GAME#")
     proofs = post.base._query_partition(table, partition, "PREGAME#GAME#")
 
+    observed = observed_at or datetime.now(timezone.utc)
+    if observed.tzinfo is None or observed.utcoffset() is None:
+        raise ValueError("diagnostic observation requires a timezone")
     games: list[Dict[str, Any]] = []
     counts: collections.Counter[str] = collections.Counter()
     for prediction in predictions:
         candidates = post._proof_candidates(post.base._object_tokens(prediction), proofs)
         proof = candidates[0] if candidates else None
-        if proof is None:
-            diagnostic = {
-                "contractSafe": False,
-                "violations": ["write_once_pregame_persistence_proof_missing"],
-                "predictionPersistedAtUtc": None,
-                "lockAtUtc": None,
-                "snapshot": None,
-                "groups": [],
-            }
-        else:
-            diagnostic = diagnose_row(
-                post._prediction_data(proof),
-                persisted_at=proof.get("prediction_persisted_at_utc"),
-            )
+        diagnostic = diagnose_prediction(prediction, proof, observed_at=observed)
         for reason in diagnostic.get("violations") or []:
             counts[str(reason)] += 1
         games.append(
@@ -204,12 +284,12 @@ def build_live_report(*, slate_date: str, region: str, snapshots_table: str) -> 
         )
 
     safe_count = sum(game.get("contractSafe") is True for game in games)
-    now = datetime.now(timezone.utc)
+    stages = collections.Counter(game["diagnosticStage"] for game in games)
     return {
         "ok": True,
         "version": VERSION,
         "reportType": REPORT_TYPE,
-        "createdAtUtc": now.isoformat().replace("+00:00", "Z"),
+        "createdAtUtc": observed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
         "slateDateEt": slate_date,
         "readOnly": True,
         "mutatedPersistence": False,
@@ -221,6 +301,11 @@ def build_live_report(*, slate_date: str, region: str, snapshots_table: str) -> 
         "gameCount": len(games),
         "contractSafeGameCount": safe_count,
         "contractBlockedGameCount": len(games) - safe_count,
+        "persistenceProofValidGameCount": sum(game["persistenceProofValid"] for game in games),
+        "persistenceProofInvalidGameCount": sum(not game["persistenceProofValid"] for game in games),
+        "awaitingRecordedLockGameCount": sum(game["awaitingRecordedLock"] for game in games),
+        "diagnosticStageCounts": dict(sorted(stages.items())),
+        "scheduledCutoffIsLockEvidence": False,
         "dominantViolations": [
             {"reason": reason, "gameCount": count}
             for reason, count in counts.most_common(12)
@@ -269,6 +354,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "contractSafeGameCount": report["contractSafeGameCount"],
                 "contractBlockedGameCount": report["contractBlockedGameCount"],
                 "dominantViolations": report["dominantViolations"],
+                "persistenceProofInvalidGameCount": report["persistenceProofInvalidGameCount"],
+                "awaitingRecordedLockGameCount": report["awaitingRecordedLockGameCount"],
+                "diagnosticStageCounts": report["diagnosticStageCounts"],
                 "output": args.output,
             },
             indent=2,
