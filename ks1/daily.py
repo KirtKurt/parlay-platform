@@ -18,6 +18,7 @@ import pyarrow.parquet as pq
 
 from ks1.features import Features, day, utc
 from ks1.inventory import encode
+from ks1.identity import reconcile_bbs
 from ks1.poisson import home_probability, predict_exported
 from ks1.publish import parquet_bytes
 from ks1.refresh import change_reason, fingerprint, observe
@@ -46,7 +47,7 @@ def name_key(name):
 class Crosswalk:
     """Only exact aliases learned from existing official IDs; never fuzzy guess."""
     def __init__(self, history, schedule):
-        self.aliases, self.bbs_ids, self.rows = {}, {}, []
+        self.aliases, self.bbs_ids, self.rows, self.game_rows = {}, {}, [], []
         for g in history:
             for t in g['teams'].values():
                 self.add(*team_identity(t))
@@ -61,44 +62,23 @@ class Crosswalk:
         ids = self.aliases.get(name_key(name), set())
         return next(iter(ids)) if len(ids) == 1 else None
 
-    def bind(self, bbs_id, official_id, name):
+    def bind(self, bbs_id, official_id, name, *, method='unique_exact_alias_and_game_start'):
         old = self.bbs_ids.get(str(bbs_id))
         if old and old != str(official_id):
             raise ValueError('conflicting BBS/MLB team crosswalk')
         if not old:
             self.bbs_ids[str(bbs_id)] = str(official_id)
             self.rows.append({'bbs_id': str(bbs_id), 'mlb_id': str(official_id), 'observed_name': name,
-                              'method': 'unique_exact_alias_and_game_start', 'confidence': 1.0})
+                              'method': method, 'confidence': 1.0})
 
 
 def bbs_assignments(payload, schedule, crosswalk, target_date):
-    data = payload.get('data')
-    if not isinstance(data, list):
-        raise ValueError('BBS matches require data array; scores are not match identities')
-    if len(data) >= 200:
-        raise ValueError('BBS result may be truncated; refuse partial catalogue')
-    ids, assigned = set(), {}
-    for event in data:
-        if not all(event.get(k) for k in ('id', 'kickoff_utc', 'home', 'away')):
-            raise ValueError('BBS match identity schema changed')
-        if str(day(event['kickoff_utc'])) != target_date:
-            continue
-        if event['sport'].lower() != 'baseball' or event['league'].lower() != 'mlb':
-            raise ValueError('non-MLB BBS event')
-        if event['id'] in ids:
-            raise ValueError('duplicate BBS match ID')
-        ids.add(event['id'])
-        sides = {s: crosswalk.resolve(event[s]['name']) for s in ('home', 'away')}
-        matches = [g for g in schedule if all(sides[s] == str(g['teams'][s]['team']['id']) for s in sides)
-                   and abs((utc(event['kickoff_utc'])-utc(g['gameDate'])).total_seconds()) <= 90]
-        if len(matches) != 1:
-            raise ValueError('ambiguous or unmatched BBS game identity: ' + str(event['id']))
-        pk = str(matches[0]['gamePk'])
-        if pk in assigned:
-            raise ValueError('multiple BBS IDs map to one official game')
-        assigned[pk] = event
-        for side in sides:
-            crosswalk.bind(event[side]['id'], sides[side], event[side]['name'])
+    assigned, evidence = reconcile_bbs(payload, schedule, crosswalk.resolve, target_date)
+    for record in evidence:
+        event = assigned[record['game_id']]
+        for side in ('home', 'away'):
+            crosswalk.bind(event[side]['id'], record[side+'_id'], event[side]['name'], method=record['method'])
+    crosswalk.game_rows = evidence
     return assigned
 
 
@@ -318,7 +298,7 @@ def predict(folder, output):
     odds_table = pa.Table.from_pylist(odds_rows, schema=pa.schema([(k, pa.string()) for k in ('event_id', 'as_of', 'payload_json')]))
     (output/'odds_cache.parquet').write_bytes(parquet_bytes(odds_table))
     (output/'lineup_cache.json').write_bytes(encode(inputs['feeds']))
-    (output/'crosswalk.json').write_bytes(encode({'teams': crosswalk.rows, 'fuzzy_matches': 0}))
+    (output/'crosswalk.json').write_bytes(encode({'teams': crosswalk.rows, 'games': crosswalk.game_rows, 'fuzzy_matches': 0}))
     report = {'system': 'KS1', 'phase': 5, 'date': target_date, 'as_of': as_of, 'model_version': model_version,
               'rows': len(frame), 'newly_scored': len(rows), 'preserved_pregame_rows': len(frozen_ids),
               'unchanged_rows': len(unchanged), 'unchanged_game_ids': unchanged, 'changes': changes,
@@ -327,6 +307,7 @@ def predict(folder, output):
               'confirmed_lineups': int((frame.lineup_status == 'confirmed').sum()),
               'projected_lineups': int((frame.lineup_status == 'projected').sum()),
               'official_games': len(schedule), 'bbs_matched_games': len(assignments), 'exclusions': exclusions,
+              'schedule_time_reconciliations': [r for r in crosswalk.game_rows if r['method'] != 'unique_exact_alias_and_game_start'],
               'with_both_starters': int((frame.home_starter_id.notna() & frame.away_starter_id.notna()).sum()),
               'with_market_home_prob': int(frame.market_home_prob.notna().sum()), 'with_market_total': int(frame.market_total.notna().sum()),
               'parquet_sha256': hashlib.sha256(body).hexdigest(), 'parquet_readback_verified': True,
