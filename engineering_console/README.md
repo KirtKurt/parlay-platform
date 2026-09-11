@@ -25,6 +25,7 @@ Records, sanitized instructions/logs/diffs/test output, thread IDs, cancellation
 - `INQSI_ENGINEERING_REPOSITORY` — absolute path to the authorized checkout
 - `INQSI_ENGINEERING_DATA_DIR` — absolute path on durable encrypted storage shared with the trusted publisher outbox/receipts
 - `INQSI_ENGINEERING_WORKSPACE_ROOT` — absolute path for isolated worktrees
+- `INQSI_ENGINEERING_WORKER_LOCK_DIR` — absolute durable lock directory shared by all trusted worker controllers; keep it outside coding-job mounts
 - `INQSI_ENGINEERING_ORIGIN` — trusted HTTPS console origin
 - `INQSI_ENGINEERING_ALLOWED_SCOPES` — for the initial controlled release, `engineering_console_publication_proof` or a narrower path below it
 - `INQSI_ENGINEERING_PUBLICATION_POLICY=proof-v1`
@@ -61,7 +62,7 @@ The browser must never receive Codex, GitHub, AWS, or deployment credentials.
 Run:
 
 ```bash
-npm install --ignore-scripts --no-audit --no-fund
+npm ci --ignore-scripts --no-audit --no-fund
 npm test
 for file in src/*.js test/*.js scripts/*.mjs; do node --check "$file"; done
 ```
@@ -69,3 +70,11 @@ for file in src/*.js test/*.js scripts/*.mjs; do node --check "$file"; done
 The repository frontend workflow also runs Engineering Console syntax/tests for Console changes before building the Next.js frontend.
 
 A green unit test or frontend build is readiness evidence only. Production operation is not established until the separate Console release path provisions private ingress, OIDC configuration, encrypted durable storage, server-side secret references, the worker runtime, the isolated publisher runtime (including its private lock mount), and post-deployment verification of a controlled real Codex job through PR publication, required CI, merge, and durable state recovery.
+
+## Shared-state restart requirements
+
+`npm start` acquires a nonblocking shared worker lock before starting the server or recovering jobs. A concurrent controller exits with status 75; it never serves health or requeues the existing controller's jobs. The supervisor must terminate the entire old container/task, including coding subprocesses, when its server exits. A production restart test on the actual EFS mount is still required; local process-lock tests alone do not prove remote filesystem behavior or orphan cleanup.
+
+JobStore writes hold a per-job shared kernel lock while comparing the caller's snapshot with the durable record. Disjoint field changes are preserved; conflicting transitions fail with `ESTALE` instead of replacing newer publication/cancellation state. Temporary files use UUIDs and exclusive creation, then fsync and atomic rename. Callers must update objects returned by that JobStore instance, and reread after a conflict. Do not retry by blindly replacing the current record. All trusted writers must run this version together; older writers do not honor these locks. Separate owners still require an OS filesystem/process boundary around coding jobs; advisory locks are consistency controls, not access controls.
+
+See [deployment checkpoint](deploy/repair-checkpoint-20260911.md) for the verified source and remaining release blockers.

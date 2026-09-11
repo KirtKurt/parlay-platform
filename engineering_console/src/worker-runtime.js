@@ -91,6 +91,9 @@ export function createRunner(config, store, CodexClass = Codex) {
       }
       store.save(job);
     } catch (error) {
+      // Another trusted process committed a conflicting transition. Preserve
+      // that durable state; never replace a publisher receipt with our stale job.
+      if (error?.code === 'ESTALE') return;
       job.status = signal.aborted || job.cancelRequested ? 'cancelled' : 'failed';
       job.error = sanitize(error?.message || error);
       store.save(job);
