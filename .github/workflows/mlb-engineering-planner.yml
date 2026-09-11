@@ -83,8 +83,9 @@ jobs:
           )
           focus_signals = {
               'reliability': (
-                  'functionerror', 'function error', 'scheduled failure', 'runtime error',
-                  'health failed', 'execution failure', '"timeout": true',
+                  '"functionerror": "', '"functionerror":"', 'function error',
+                  'scheduled failure', 'runtime error', 'health failed',
+                  'execution failure', '"timeout": true',
               ),
               'data_capture': (
                   'missing_t10_snapshots', 'coverage_mismatch', 'source_failure',
