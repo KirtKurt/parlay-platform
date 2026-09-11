@@ -5,6 +5,7 @@ import path from 'node:path';
 export const JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA = /^[0-9a-f]{40}$/i;
 const PASSING = new Set(['success', 'neutral', 'skipped']);
+const PROTECTED_PUBLICATION_ROOTS = ['.github', 'engineering_console', 'frontend/app/api/engineering'];
 const SECRET_PATTERNS = [
   /\bsk-(?:proj-)?[A-Za-z0-9_-]{12,}\b/,
   /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/,
@@ -39,6 +40,11 @@ export function withinAuthorizedScope(file, scopes) {
   });
 }
 
+export function isProtectedPublicationPath(file) {
+  const value = normalizeRepoPath(file);
+  return Boolean(value) && PROTECTED_PUBLICATION_ROOTS.some((root) => value === root || value.startsWith(`${root}/`));
+}
+
 export function evaluateRequiredChecks(checkRuns, requiredChecks) {
   if (!Array.isArray(requiredChecks) || !requiredChecks.length) return { state: 'failed', reason: 'required_checks_missing' };
   if (!Array.isArray(checkRuns)) return { state: 'pending', reason: 'check_runs_unavailable' };
@@ -66,6 +72,7 @@ export function validatePublicationManifest(manifest, patch) {
   if (!Array.isArray(manifest.authorizedScope) || !manifest.authorizedScope.length || manifest.authorizedScope.some((scope) => !normalizeRepoPath(scope))) throw new Error('invalid_publication_scope');
   if (!Array.isArray(manifest.changedFiles) || !manifest.changedFiles.length) throw new Error('publication_has_no_changes');
   if (manifest.changedFiles.some((file) => !withinAuthorizedScope(file, manifest.authorizedScope))) throw new Error('publication_scope_violation');
+  if (manifest.changedFiles.some(isProtectedPublicationPath)) throw new Error('publication_protected_path_violation');
   if (!Array.isArray(manifest.requiredChecks) || !manifest.requiredChecks.length || manifest.requiredChecks.some((name) => typeof name !== 'string' || !name.trim())) throw new Error('invalid_required_checks');
   if (sha256(patch) !== manifest.patchSha256) throw new Error('publication_patch_hash_mismatch');
   if (patchContainsCredential(patch)) throw new Error('publication_patch_secret_detected');
@@ -84,6 +91,7 @@ export function publicationDirectories(dataDir) {
 export function writePublicationRequest(config, job, patch) {
   if (!JOB_ID.test(job?.id || '')) throw new Error('invalid_job_id');
   if (!Array.isArray(job.changedFiles) || !job.changedFiles.length) return null;
+  if (job.changedFiles.some(isProtectedPublicationPath)) throw new Error('publication_protected_path_violation');
   if (patchContainsCredential(patch)) throw new Error('publication_patch_secret_detected');
 
   const dirs = publicationDirectories(config.dataDir);
