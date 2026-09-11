@@ -4,15 +4,19 @@ import numpy as np
 from mlb_research_sources_v1 import number
 from mlb_research_store_v1 import digest
 from mlb_research_provenance_v1 import implementation_manifest
+import mlb_research_feature_programs_v1 as programs
 
-VERSION = 'MLB-RESEARCH-MODELS-v1-market-offset-linear-tree-poisson'
+VERSION = 'MLB-RESEARCH-MODELS-v2-bounded-feature-programs'
 PROTOCOL = {'version': VERSION, 'minimumGames': 600, 'minimumSlates': 40,
             'freshTestMinimum': 100, 'newRowsAfterFailedTest': 100,
             'minimumFeatureCoverage': .8, 'wholeSlatePartitions': True,
             'holdoutFraction': .2, 'automaticPromotionEnabled': False,
             'maximumDevelopmentRows': 1200,
             'preferOriginalOnlyWhenMinimumGamesAndSlatesMet': True,
-            'configurations': [['linear', .1], ['linear', 1.], ['trees', 15], ['trees', 30], ['poisson', .1]]}
+            'configurations': [['linear', .1], ['linear', 1.], ['trees', 15], ['trees', 30], ['poisson', .1], ['adaptive_linear', 1.]],
+            'featureDiscovery': {'version': programs.VERSION, 'limits': programs.LIMITS,
+                                 'minimumWalkForwardBrierGain': .001, 'maximumAdaptiveFits': 4,
+                                 'arbitraryCodeExecution': False, 'servingAuthorityChanged': False}}
 
 # Cache identity and experiment evidence include executable research lineage.
 # Statistical gates and active/sealed prospective tests are not changed.
@@ -45,14 +49,35 @@ def metrics(rows, probabilities):
 
 
 def matrix(rows, model):
+    if model.get('kind') == 'adaptive_linear':
+        plan = model.get('featureProgram')
+        rows = programs.apply_rows(rows, plan)
+        generated = programs.python_source(plan)
+        if (model.get('generatedFeaturePython') != generated
+                or model.get('generatedFeatureSourceSha256') != programs.source_sha256(generated)
+                or model.get('features') != plan['baseFeatures']
+                or not isinstance(model.get('matrixFeatures'), list)
+                or not 0 < len(model['matrixFeatures']) <= programs.LIMITS['maximumBaseFeatures']+programs.LIMITS['maximumGeneratedFeatures']
+                or len(set(model['matrixFeatures'])) != len(model['matrixFeatures'])
+                or not set(model['matrixFeatures']).issubset(set(plan['baseFeatures']) | {r['name'] for r in plan['programs']})):
+            raise ValueError('adaptive feature source or input contract mismatch')
+    elif model.get('featureProgram') is not None or 'matrixFeatures' in model:
+        raise ValueError('generated feature matrix requires the adaptive model kind')
+    names = model.get('matrixFeatures', model['features'])
     return np.column_stack([np.ones(len(rows)), *[
         np.clip([(model['means'][k] if number(r['features'].get(k)) is None else float(r['features'][k]))
                  - model['means'][k] for r in rows], -10*model['scales'][k], 10*model['scales'][k])/model['scales'][k]
-        for k in model['features']]])
+        for k in names]])
 
 
 def fit(rows, kind, parameter):
     model = {'kind': kind, 'parameter': parameter, 'features': [], 'means': {}, 'scales': {}}
+    if kind == 'adaptive_linear':
+        plan = programs.discover(rows)
+        generated = programs.python_source(plan)
+        model.update(featureProgram=plan, generatedFeaturePython=generated,
+                     generatedFeatureSourceSha256=programs.source_sha256(generated))
+        rows = programs.apply_rows(rows, plan)
     names = sorted({k for r in rows for k in r['features'] if k != 'marketHomeProbability'})
     for key in names:
         vals = [number(r['features'].get(key)) for r in rows]
@@ -60,6 +85,11 @@ def fit(rows, kind, parameter):
         if len(observed)/len(rows) >= .8 and np.std(observed) > 1e-9:
             model['features'].append(key)
             model['means'][key], model['scales'][key] = float(np.mean(observed)), float(np.std(observed))
+    if kind == 'adaptive_linear':
+        # Raw dependency names remain the runtime's coverage contract; learned
+        # matrix columns additionally contain the frozen generated features.
+        model['matrixFeatures'] = list(model['features'])
+        model['features'] = list(model['featureProgram']['baseFeatures'])
     x = matrix(rows, model)
     y = np.asarray([r['homeWon'] for r in rows])
     if set(y) != {0, 1}:
@@ -184,17 +214,37 @@ def research(rows):
     candidates, failures = [], []
     for kind, parameter in PROTOCOL['configurations']:
         try:
-            scored, actual = [], []
+            scored, actual, feature_evidence = [], [], []
             for first, last in zip(partitions, partitions[1:]):
                 fitted = fit(group(0,first), kind, parameter)
                 validation = group(first,last)
+                if fitted.get('featureProgram'):
+                    feature_evidence.append({'trainingLastSlate': dates[first-1],
+                        'validationFirstSlate': dates[first], 'validationLastSlate': dates[last-1],
+                        'plan': fitted['featureProgram'], 'sourceSha256': fitted['generatedFeatureSourceSha256']})
                 scored.extend(predict(validation, fitted).tolist()); actual.extend(validation)
-            candidates.append({'kind':kind, 'parameter':parameter, 'validation':metrics(actual,scored)})
+            candidates.append({'kind':kind, 'parameter':parameter, 'validation':metrics(actual,scored),
+                               'featureDiscoveryFolds':feature_evidence})
         except ValueError as exc:
             failures.append({'kind':kind,'parameter':parameter,'reason':str(exc)})
     if not candidates:
         raise ValueError('all research model fits failed')
-    chosen = min(candidates, key=lambda c:(c['validation']['brier'],c['validation']['logLoss'],c['kind'],c['parameter']))
+    legacy = [c for c in candidates if c['kind'] != 'adaptive_linear']
+    if not legacy:
+        raise ValueError('legacy research comparisons required before adaptive selection')
+    baseline = min(legacy, key=lambda c:(c['validation']['brier'],c['validation']['logLoss'],c['kind'],c['parameter']))
+    gain = PROTOCOL['featureDiscovery']['minimumWalkForwardBrierGain']
+    for candidate in candidates:
+        if candidate['kind'] == 'adaptive_linear':
+            candidate['eligibleForHoldoutSelection'] = (
+                candidate['validation']['brier'] <= baseline['validation']['brier']-gain
+                and candidate['validation']['logLoss'] < baseline['validation']['logLoss'])
+            candidate['minimumRequiredBrierGain'] = gain
+            candidate['legacyComparison'] = {'kind':baseline['kind'], 'parameter':baseline['parameter'],
+                                             'validation':baseline['validation']}
+    eligible = [c for c in candidates if c['kind'] != 'adaptive_linear' or c['eligibleForHoldoutSelection']]
+    chosen = min(eligible, key=lambda c:(c['validation']['brier'],c['validation']['logLoss'],
+                                        c['kind']=='adaptive_linear',c['kind'],c['parameter']))
     model = fit(group(0,partitions[-1]), chosen['kind'], chosen['parameter'])
     holdout = group(partitions[-1],len(dates))
     comp = comparison(holdout,predict(holdout,model))

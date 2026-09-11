@@ -110,7 +110,10 @@ def test_real_protocol_binds_source_without_weakening_any_promotion_threshold():
     assert models.PROTOCOL['minimumFeatureCoverage'] == .8
     assert models.PROTOCOL['automaticPromotionEnabled'] is False
     assert models.PROTOCOL['wholeSlatePartitions'] is True
-    assert models.PROTOCOL['configurations'] == [['linear', .1], ['linear', 1.], ['trees', 15], ['trees', 30], ['poisson', .1]]
+    assert models.PROTOCOL['configurations'] == [['linear', .1], ['linear', 1.], ['trees', 15], ['trees', 30], ['poisson', .1], ['adaptive_linear', 1.]]
+    assert models.PROTOCOL['featureDiscovery']['minimumWalkForwardBrierGain'] == .001
+    assert models.PROTOCOL['featureDiscovery']['maximumAdaptiveFits'] == 4
+    assert models.PROTOCOL['featureDiscovery']['arbitraryCodeExecution'] is False
 
 
 def test_runtime_keeps_active_prospective_test_ahead_of_experiment_lookup():
@@ -201,3 +204,11 @@ def test_new_source_identity_does_not_reopen_or_override_frozen_test(test, monke
         assert result['status'] == 'SEALED_RESEARCH_TEST_FAILED_WAITING_FOR_NEW_DATA'
     else:
         assert result['status'] == test['status']
+
+
+def test_new_mlb_module_is_automatically_included_in_implementation_identity(source_tree):
+    before = provenance.implementation_manifest(source_tree)
+    (source_tree / 'mlb_research_new_signal.py').write_text('NEW_SIGNAL = 1\n')
+    after = provenance.implementation_manifest(source_tree)
+    assert before['sha256'] != after['sha256']
+    assert 'mlb_research_new_signal.py' in after['files']
