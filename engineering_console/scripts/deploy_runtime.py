@@ -166,9 +166,10 @@ def main():
         arn = probe['tasks'][0]['taskArn']; record['probeTaskArn'] = arn
         stream = 'probe/probe/' + arn.rsplit('/', 1)[1]
         deadline = time.monotonic() + 2100
+        ready_deadline = min(deadline, time.monotonic() + 600)
 
         recovery = None
-        while time.monotonic() < min(deadline, time.monotonic() + 600):
+        while time.monotonic() < ready_deadline:
             task = observed_task(aws('ecs','describe-tasks','--cluster',cluster,'--tasks',arn), arn, outputs['ProbeTaskDefinitionArn'])
             if task['lastStatus'] == 'STOPPED':
                 require_task_evidence(task, 'probe', image_digest, 'STOPPED')
