@@ -16,7 +16,24 @@ from ks1.features import ET, utc
 from ks1.inventory import Reader, RESEARCH, encode
 from ks1.platt import compare, identity, metrics, ordered, raw_model_version, refit, temperature_identity
 from ks1.platt_inputs import capture, dataset
+from ks1.team_audit import build as team_pick_audit
 from src.temperature_calibrator import fit_from_ledger
+
+
+def attach_team_pick_audit(report, source, rows, output):
+    """Derived official-lock audit only. Never a prediction or calibration write."""
+    audit = team_pick_audit(rows, source.get('locked') or [])
+    report['pick_summary'] = audit['pick_summary']
+    report['team_pick_audit'] = {
+        'kind': audit['kind'],
+        'authority_changed': False,
+        'teams': audit['teams'],
+        'graded_games_identified': len(audit['games']),
+        'unidentified_count': audit['unidentified_count'],
+    }
+    output.mkdir(parents=True, exist_ok=True)
+    (output/'team_pick_audit.json').write_bytes(encode(audit))
+    return report
 
 
 def due_date(as_of, checkpoint=None):
@@ -160,6 +177,7 @@ def execute(source, output, *, s3=None, bucket=None, checkpoint=None, clock=None
               'official_metrics': ledger['official_metrics'], 'comparison': compare(rows, source['as_of']),
               'write_keys': [prefix+'graded_ledger.json', prefix+'calibration_state.json'] if publish else [],
               'prediction_writes': 0, 'provider_calls': 0, 'trained_LightGBM': False}
+    attach_team_pick_audit(report, source, rows, output)
     (output/'report.json').write_bytes(encode(report))
     return report
 
@@ -196,6 +214,7 @@ def _execute_catchup(source, output, *, s3, bucket, checkpoint, clock=None):
               'calibration_status': 'deferred_to_next_nightly', 'calibration_fitted': False,
               'prediction_writes': 0, 'provider_calls': 0, 'trained_LightGBM': False, 'write_keys': []}
     if not new_grades:
+        attach_team_pick_audit(report, source, rows, output)
         (output/'report.json').write_bytes(encode(report))
         return report
     if publish:
@@ -217,6 +236,7 @@ def _execute_catchup(source, output, *, s3, bucket, checkpoint, clock=None):
     report.update(status='completed_catchup', published=publish, catchup_revision=revision,
                   ledger_readback_verified=publish,
                   write_keys=[prefix+'graded_ledger.json', prefix+'calibration_state.json'] if publish else [])
+    attach_team_pick_audit(report, source, rows, output)
     (output/'report.json').write_bytes(encode(report))
     return report
 
