@@ -1,0 +1,73 @@
+name: Sunset MLB AUTO only
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sunset-mlb-auto-only.yml'
+  workflow_dispatch:
+    inputs:
+      confirm_mlb_auto_only:
+        description: 'Stop MLB AUTO and its dedicated repair controller; retain data and all other engines'
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-auto-only-sunset
+  cancel-in-progress: false
+
+jobs:
+  stop-and-verify:
+    if: github.repository == 'KirtKurt/parlay-platform' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.confirm_mlb_auto_only == true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact shutdown source without retained Git credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind shutdown implementation to the inspected source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo 'da84d000c1aa3461fa08cdb00edfcb2dcbfc7d1916e735c0db711b92a9c4a1a4  ops/mlb_auto_sunset_only.py' | sha256sum --check --strict
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Compile and test isolated shutdown guards before AWS credentials
+        run: |
+          python -m py_compile ops/mlb_auto_sunset_only.py
+          python ops/mlb_auto_sunset_only.py --self-test
+          python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Configure existing AWS connection
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Stop only MLB AUTO and its dedicated repair controller, drain, and verify
+        env:
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: python ops/mlb_auto_sunset_only.py --stop-authorized-mlb-auto-only
+
+      - name: Retain sanitized shutdown and isolation evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-auto-only-sunset-${{ github.run_id }}-${{ github.run_attempt }}
+          path: sunset-evidence/
+          if-no-files-found: warn
+          retention-days: 30
