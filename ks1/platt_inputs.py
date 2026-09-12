@@ -3,7 +3,7 @@
 No lock, grade ledger, audit record, provider endpoint, or AWS state is written.
 """
 from collections import defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
 import hashlib
 import io
 import json
@@ -19,9 +19,16 @@ from ks1.platt import identity, raw_model_version, temperature_identity
 PREFIX = 'mlb/ks1/predictions-v1/'
 
 
-def read_locked_predictions(s3, bucket, as_of):
+def read_locked_predictions(s3, bucket, as_of, *, target_date=None):
+    # Coverage needs only today's versions; existing grading callers retain the
+    # full-history scan and exactly the same admission rules.
+    prefix = PREFIX
+    if target_date is not None:
+        if date.fromisoformat(target_date).isoformat() != target_date:
+            raise ValueError('invalid prediction date')
+        prefix += 'date='+target_date+'/'
     versions, deleted = defaultdict(list), set()
-    for page in s3.get_paginator('list_object_versions').paginate(Bucket=bucket, Prefix=PREFIX):
+    for page in s3.get_paginator('list_object_versions').paginate(Bucket=bucket, Prefix=prefix):
         deleted.update(v['Key'] for v in page.get('DeleteMarkers', []) if v.get('IsLatest'))
         for v in page.get('Versions', []):
             if re.fullmatch(re.escape(PREFIX)+r'date=\d{4}-\d{2}-\d{2}/predictions.parquet', v['Key']):

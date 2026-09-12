@@ -63,6 +63,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 90
       - name: Refresh KS1 lineups, starters and changed games using the existing hourly trigger
+        id: daily
         # A failed nightly check must remain red, but must not suppress today's
         # independent pregame refresh. Do not bypass a failed source refresh.
         if: ${{ !cancelled() && steps.research.outcome == 'success' }}
@@ -73,6 +74,11 @@ jobs:
           python -m ks1.live_inputs --output /tmp/ks1-daily-inputs
           python -m ks1.platt --inputs /tmp/ks1-daily-inputs/calibration_inputs.json --output /tmp/ks1-calibration
           python -m ks1.daily --inputs /tmp/ks1-daily-inputs --output /tmp/ks1-daily --publish
+      - name: Audit T-10 coverage from immutable stored versions
+        if: ${{ !cancelled() && steps.daily.outcome == 'success' }}
+        continue-on-error: true
+        timeout-minutes: 5
+        run: python -m ks1.coverage --inputs /tmp/ks1-daily-inputs --output /tmp/ks1-daily
       - uses: actions/upload-artifact@v4
         if: always()
         with:
