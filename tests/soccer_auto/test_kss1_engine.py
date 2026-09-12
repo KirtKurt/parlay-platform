@@ -115,9 +115,27 @@ class EngineTests(unittest.TestCase):
         self.assertFalse(prediction["automatic_prediction_allowed"])
         self.assertTrue(prediction["has_xg"])
         self.assertEqual(prediction["mapping"]["status"], "mapped")
+        for key in ("1x2_published", "double_chance_published", "ou25_published", "btts_published"):
+            self.assertNotEqual(prediction["markets"][key], "ABSTAIN")
         graded = grade_lock(prediction, 2, 1)
         self.assertEqual(graded["actual"]["1x2"], "home")
-        self.assertIn(graded["graded"]["1x2"], {"hit", "miss", "abstain"})
+        self.assertIn(graded["graded"]["1x2"], {"hit", "miss"})
+
+    def test_odds_only_shadow_book_still_picks(self):
+        prediction = predict_match(
+            {
+                "odds_event_id": "evt-3",
+                "sport_key": "soccer_epl",
+                "home_team": "Arsenal",
+                "away_team": "Chelsea",
+                "commence_time": "2026-09-12T16:00:00Z",
+                "observed_at": "2026-09-12T15:00:00Z",
+                "market_1x2": {"home": 0.52, "draw": 0.25, "away": 0.23},
+            }
+        )
+        self.assertNotEqual(prediction["mapping"]["status"], "mapped")
+        self.assertNotEqual(prediction["markets"]["1x2_published"], "ABSTAIN")
+        self.assertNotEqual(prediction["markets"]["double_chance_published"], "ABSTAIN")
 
     def test_quarantine_cup_does_not_publish(self):
         prediction = predict_match(

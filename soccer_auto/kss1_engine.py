@@ -107,17 +107,12 @@ def predict_match(payload: dict[str, Any]) -> dict[str, Any]:
     )
     grid = score_matrix(lam, mu)
     grid = blend_with_market(grid, payload.get("market_1x2"))
-    markets = apply_abstain(markets_from_grid(grid))
-    if not mapping["goals_model_eligible"]:
-        markets["ou25_published"] = "ABSTAIN"
-        markets["btts_published"] = "ABSTAIN"
-        if mapping["tier"] == "Q":
-            markets["1x2_published"] = "ABSTAIN"
-            markets["double_chance_published"] = "ABSTAIN"
-    if mapping["status"] != "mapped":
-        markets["ou25_published"] = "ABSTAIN"
-        markets["btts_published"] = "ABSTAIN"
-    if observation["action"] != "public_eligible":
+    markets = apply_abstain(markets_from_grid(grid), min_1x2=0.40, min_other=0.51)
+    # Quarantined cups stay off. Missing BBD does not blank a shadow book.
+    if mapping.get("tier") == "Q" or mapping.get("goals_model_eligible") is False:
+        for key in ("1x2_published", "double_chance_published", "ou25_published", "btts_published"):
+            markets[key] = "ABSTAIN"
+    if observation.get("action") == "reject":
         for key in ("1x2_published", "double_chance_published", "ou25_published", "btts_published"):
             markets[key] = "ABSTAIN"
     return {
