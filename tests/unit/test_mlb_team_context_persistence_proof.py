@@ -433,7 +433,9 @@ def test_malformed_provenance_returns_validation_diagnostics(block, field, valid
     assert any('source_provenance_invalid' in error for error in result['errors'])
 
 
-def test_new_snapshot_retains_observations_through_game_writer(monkeypatch):
+@pytest.mark.parametrize('stats', [None, {'plateAppearances': 0}, {},
+                                      {'plateAppearances': 10, 'ops': '.8'}])
+def test_new_snapshot_retains_observations_through_game_writer(monkeypatch, stats):
     import mlb_fundamentals_snapshot_v2 as snapshots
     import mlb_fundamentals_scoring_bridge_v1 as bridge
     import mlb_game_winner_engine as engine
@@ -441,6 +443,9 @@ def test_new_snapshot_retains_observations_through_game_writer(monkeypatch):
 
     row = _row()['data']
     context = row.pop('advanced_context')
+    if stats is not None:
+        from mlb_batter_observations_v1 import season_observation
+        context['confirmed_lineups']['home_lineup_season_batting'][0] = season_observation(101, 1, stats)
     row.update(slate_date='2026-09-11', gameId=PK,
                predictionSourcePullAt='2026-09-11T18:00:00+00:00',
                predictedWinner='Home', winProbability=.61)
@@ -475,6 +480,11 @@ def test_new_snapshot_retains_observations_through_game_writer(monkeypatch):
     monkeypatch.setattr(engine, '_pregame_snapshot_item', lambda row, **kwargs: {})
     monkeypatch.setattr(engine, '_put_pregame_snapshot', lambda item: {})
     assert engine._store_prediction(row)['ok'] is True
+    persisted_sample = table.items[0]['data']['passiveTeamContext']['confirmed_lineups']['home_lineup_season_batting'][0]
+    assert set(SUBJECT.BATTING_FIELDS) <= persisted_sample.keys()
+    for key, value in row['passiveTeamContext']['confirmed_lineups']['home_lineup_season_batting'][0].items():
+        if value is None:
+            assert key in persisted_sample and persisted_sample[key] is None
     report = SUBJECT.persisted_observations(table, '2026-09-11')
     assert report['gamesWithValidPassiveBatterObservations'] == 1
     assert report['gamesWithValidPassiveBullpenRosters'] == 1
@@ -551,3 +561,31 @@ def test_roster_only_requires_snapshot_fingerprint_even_without_team_dataset():
     row['data']['fundamentalsSnapshotV2']['fingerprint'] = 'corrupt'
     with pytest.raises(RuntimeError, match='invalid persisted companion snapshot'):
         SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+
+
+@pytest.mark.parametrize('field,value,error', [
+    ('officialGamePk', '123456', 'game_identity_mismatch'),
+    ('officialGamePk', None, 'game_identity_mismatch'),
+    ('commenceTimeUtc', '2026-09-11T21:00:00+00:00', 'game_start_mismatch'),
+    ('commenceTimeUtc', None, 'game_start_mismatch'),
+])
+def test_valid_companion_must_belong_to_same_game_and_start(field, value, error):
+    import mlb_fundamentals_snapshot_v2 as snapshots
+    row = _row()
+    snap = snapshots.build(row['data'])
+    snap['game'][field] = value
+    snap['fingerprint'] = snapshots.fingerprint_for_snapshot(snap)
+    assert snapshots.validate(snap) == []
+    row['data']['fundamentalsSnapshotV2'] = snap
+    row['data']['passiveTeamContext'] = row['data'].pop('advanced_context')
+    with pytest.raises(RuntimeError, match=error):
+        SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+
+
+def test_null_preservation_is_scoped_to_passive_envelope():
+    import inqsi_pull_history as history
+    payload = {'unrelated': {'missing': None},
+               'passiveTeamContext': {'confirmed_lineups': {'samples': [{'ops': None}]}}}
+    result = history.ddb_safe(payload)
+    assert result['unrelated'] == {}
+    assert result['passiveTeamContext']['confirmed_lineups']['samples'] == [{'ops': None}]

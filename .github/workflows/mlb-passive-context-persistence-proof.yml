@@ -2,10 +2,10 @@ name: MLB Passive Context Persistence Proof
 on:
   pull_request:
     branches: [main]
-    paths: ['hello_world/mlb_fundamentals_snapshot_v2.py','hello_world/mlb_fundamentals_scoring_bridge_v1.py','hello_world/mlb_statsapi_team_context.py','scripts/verify_mlb_team_context.py','tests/unit/test_mlb_team_context_persistence_proof.py','.github/workflows/mlb-passive-context-persistence-proof.yml']
+    paths: ['hello_world/inqsi_pull_history.py','hello_world/mlb_fundamentals_snapshot_v2.py','hello_world/mlb_fundamentals_scoring_bridge_v1.py','hello_world/mlb_statsapi_team_context.py','scripts/verify_mlb_team_context.py','tests/unit/test_mlb_team_context_persistence_proof.py','.github/workflows/mlb-passive-context-persistence-proof.yml']
   push:
     branches: [main]
-    paths: ['hello_world/mlb_fundamentals_snapshot_v2.py','hello_world/mlb_fundamentals_scoring_bridge_v1.py','hello_world/mlb_statsapi_team_context.py','scripts/verify_mlb_team_context.py','tests/unit/test_mlb_team_context_persistence_proof.py','.github/workflows/mlb-passive-context-persistence-proof.yml']
+    paths: ['hello_world/inqsi_pull_history.py','hello_world/mlb_fundamentals_snapshot_v2.py','hello_world/mlb_fundamentals_scoring_bridge_v1.py','hello_world/mlb_statsapi_team_context.py','scripts/verify_mlb_team_context.py','tests/unit/test_mlb_team_context_persistence_proof.py','.github/workflows/mlb-passive-context-persistence-proof.yml']
   workflow_dispatch:
   schedule:
     - cron: '47 * * * *'

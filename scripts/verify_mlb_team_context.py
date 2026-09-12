@@ -181,6 +181,14 @@ def persisted_observations(table,day):
             _passive_context(row)
             errors=snapshots.validate(row.get('fundamentalsSnapshotV2'))
             if errors:raise RuntimeError('invalid persisted companion snapshot: '+','.join(errors))
+            game=row['fundamentalsSnapshotV2'].get('game')
+            official=_official(row.get('officialGamePk') if row.get('officialGamePk') is not None else row.get('official_game_pk'))
+            start=_time(row.get('commenceTime') or row.get('commence_time'))
+            if (not isinstance(game,dict) or official is None
+                    or _official(game.get('officialGamePk'))!=official):
+                raise RuntimeError('invalid persisted companion snapshot: game_identity_mismatch')
+            if start is None or _time(game.get('commenceTimeUtc'))!=start:
+                raise RuntimeError('invalid persisted companion snapshot: game_start_mismatch')
         snap=row.get('fundamentalsSnapshotV2') or {};groups=snap.get('groups') or {}
         line,roster=passive_lineup_observation(row),passive_bullpen_roster_observation(row)
         if line['present'] and not line['valid']:raise RuntimeError('invalid persisted passive batter observation: '+','.join(line['errors']))
