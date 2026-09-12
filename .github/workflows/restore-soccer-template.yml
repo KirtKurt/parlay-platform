@@ -1,0 +1,49 @@
+name: Restore Soccer SAM Template
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: restore-soccer-template
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore full template and wire KSS1 freeze handler
+        run: |
+          set -euo pipefail
+          git checkout 5b8cc65ed6378e00e206c0657309fd228c21f8f3 -- soccer-auto-template.yaml
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("soccer-auto-template.yaml")
+          text = path.read_text()
+          if "Handler: soccer_auto.inference.freeze_handler" in text:
+              text = text.replace(
+                  "Handler: soccer_auto.inference.freeze_handler",
+                  "Handler: soccer_auto.kss1_runtime.freeze_handler",
+                  1,
+              )
+          path.write_text(text)
+          assert "AWSTemplateFormatVersion" in text
+          assert "SoccerFreezeFunction" in text
+          assert "soccer_auto.kss1_runtime.freeze_handler" in text
+          assert len(text) > 40000, len(text)
+          print("restored_bytes", len(text))
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add soccer-auto-template.yaml
+          if git diff --cached --quiet; then
+            echo "template already restored"
+            exit 0
+          fi
+          git commit -m "fix(soccer_auto): restore SAM template and wire KSS1 freeze handler"
+          git push origin HEAD
