@@ -92,8 +92,21 @@ def _normalized_batter_samples(observations):
         result.append(sample)
     return result
 
+def _passive_context(row):
+    # New rows preserve the original source observations separately from scoring
+    # context. Never replace malformed persisted evidence with a legacy fallback.
+    if 'passiveTeamContext' in row:
+        context = row['passiveTeamContext']
+        if not isinstance(context, dict):
+            raise RuntimeError('invalid persisted passive team context')
+        for key in ('confirmed_lineups', 'bullpen_fatigue'):
+            if key in context and not isinstance(context[key], dict):
+                raise RuntimeError('invalid persisted passive team block: '+key)
+        return context
+    return row.get('advanced_context') or row.get('advancedContext') or {}
+
 def passive_lineup_observation(row):
-    ctx=row.get('advanced_context') or row.get('advancedContext') or {}; line=ctx.get('confirmed_lineups') if isinstance(ctx,dict) else None;line=line if isinstance(line,dict) else {}
+    ctx=_passive_context(row); line=ctx.get('confirmed_lineups') if isinstance(ctx,dict) else None;line=line if isinstance(line,dict) else {}
     prov=line.get('sourceProvenance');prov=prov if isinstance(prov,dict) else {}
     arrays=any(line.get(s+'_'+k) is not None for s in ('home','away') for k in ('batting_order','lineup_season_batting'))
     stats_marker=('lineupSeasonBattingVersion' in line or line.get('algorithmVersion')==source.VERSION
@@ -129,7 +142,7 @@ def passive_lineup_observation(row):
     out['errors']=sorted(set(err));out['valid']=not out['errors'];return out
 
 def passive_bullpen_roster_observation(row):
-    ctx=row.get('advanced_context') or row.get('advancedContext') or {}; bp=ctx.get('bullpen_fatigue') if isinstance(ctx,dict) else None;bp=bp if isinstance(bp,dict) else {}
+    ctx=_passive_context(row); bp=ctx.get('bullpen_fatigue') if isinstance(ctx,dict) else None;bp=bp if isinstance(bp,dict) else {}
     markers=('home_bullpen_roster_player_ids','away_bullpen_roster_player_ids','bullpenRosterObservationStatus','bullpenRosterSourceProvenance','home_available_relievers','away_available_relievers','home_unavailable_relievers','away_unavailable_relievers')
     present=any(k in bp and bp.get(k) is not None for k in markers)
     out={'present':present,'valid':False,'errors':[],'availabilityClaimed':False,'retrievedAtUtc':None,'preT45':None,'identitySets':{'home':[],'away':[]}}
@@ -163,7 +176,20 @@ def persisted_observations(table,day):
         if not cursor:break
     evidence=[]
     for stored in rows:
-        row=stored.get('data') or stored;snap=row.get('fundamentalsSnapshotV2') or {};groups=snap.get('groups') or {}
+        row=stored.get('data') or stored
+        if 'passiveTeamContext' in row:
+            _passive_context(row)
+            errors=snapshots.validate(row.get('fundamentalsSnapshotV2'))
+            if errors:raise RuntimeError('invalid persisted companion snapshot: '+','.join(errors))
+            game=row['fundamentalsSnapshotV2'].get('game')
+            official=_official(row.get('officialGamePk') if row.get('officialGamePk') is not None else row.get('official_game_pk'))
+            start=_time(row.get('commenceTime') or row.get('commence_time'))
+            if (not isinstance(game,dict) or official is None
+                    or _official(game.get('officialGamePk'))!=official):
+                raise RuntimeError('invalid persisted companion snapshot: game_identity_mismatch')
+            if start is None or _time(game.get('commenceTimeUtc'))!=start:
+                raise RuntimeError('invalid persisted companion snapshot: game_start_mismatch')
+        snap=row.get('fundamentalsSnapshotV2') or {};groups=snap.get('groups') or {}
         line,roster=passive_lineup_observation(row),passive_bullpen_roster_observation(row)
         if line['present'] and not line['valid']:raise RuntimeError('invalid persisted passive batter observation: '+','.join(line['errors']))
         if roster['present'] and not roster['valid']:raise RuntimeError('invalid persisted passive bullpen roster observation: '+','.join(roster['errors']))

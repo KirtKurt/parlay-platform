@@ -431,3 +431,161 @@ def test_malformed_provenance_returns_validation_diagnostics(block, field, valid
     result = getattr(SUBJECT, validator)(row['data'])
     assert result['present'] and not result['valid']
     assert any('source_provenance_invalid' in error for error in result['errors'])
+
+
+@pytest.mark.parametrize('stats', [None, {'plateAppearances': 0}, {},
+                                      {'plateAppearances': 10, 'ops': '.8'}])
+def test_new_snapshot_retains_observations_through_game_writer(monkeypatch, stats):
+    import mlb_fundamentals_snapshot_v2 as snapshots
+    import mlb_fundamentals_scoring_bridge_v1 as bridge
+    import mlb_game_winner_engine as engine
+    import mlb_three_api_prediction_overlay as overlay
+
+    row = _row()['data']
+    context = row.pop('advanced_context')
+    if stats is not None:
+        from mlb_batter_observations_v1 import season_observation
+        context['confirmed_lineups']['home_lineup_season_batting'][0] = season_observation(101, 1, stats)
+    row.update(slate_date='2026-09-11', gameId=PK,
+               predictionSourcePullAt='2026-09-11T18:00:00+00:00',
+               predictedWinner='Home', winProbability=.61)
+    calls = []
+    def observe(_row):
+        calls.append(True)
+        return copy.deepcopy(context)
+    monkeypatch.setattr(snapshots, '_context_for_row', observe)
+    bridge.install_snapshot_determinism(snapshots)
+    expected_snapshot = snapshots.build(copy.deepcopy(row))
+    calls.clear()
+    original_row = copy.deepcopy(row)
+    original_overlay_context = overlay._context_from_row(row)
+    snapshots.enhance_row(row)
+    assert len(calls) == 1
+    assert row['fundamentalsSnapshotV2'] == expected_snapshot
+    assert row['passiveTeamContext'] == context
+    assert overlay._context_from_row(row) == original_overlay_context
+    for key, value in original_row.items():
+        assert row[key] == value
+    assert 'advanced_context' not in row
+    context['confirmed_lineups']['home_batting_order'][0] = 999
+    assert row['passiveTeamContext']['confirmed_lineups']['home_batting_order'][0] != 999
+
+    class Writer(Table):
+        def put_item(self, *, Item):
+            self.items.append(copy.deepcopy(Item))
+    table = Writer([])
+    monkeypatch.setattr(engine.history, 'PULLS', table)
+    # Isolate serialization; existing public-authority tests cover these gates.
+    monkeypatch.setattr(engine, '_public_prelock_markers', lambda row: {})
+    monkeypatch.setattr(engine, '_pregame_snapshot_item', lambda row, **kwargs: {})
+    monkeypatch.setattr(engine, '_put_pregame_snapshot', lambda item: {})
+    assert engine._store_prediction(row)['ok'] is True
+    persisted_sample = table.items[0]['data']['passiveTeamContext']['confirmed_lineups']['home_lineup_season_batting'][0]
+    assert set(SUBJECT.BATTING_FIELDS) <= persisted_sample.keys()
+    for key, value in row['passiveTeamContext']['confirmed_lineups']['home_lineup_season_batting'][0].items():
+        if value is None:
+            assert key in persisted_sample and persisted_sample[key] is None
+    report = SUBJECT.persisted_observations(table, '2026-09-11')
+    assert report['gamesWithValidPassiveBatterObservations'] == 1
+    assert report['gamesWithValidPassiveBullpenRosters'] == 1
+    assert report['passiveRosterAvailabilityClaimCount'] == 0
+
+
+def test_existing_snapshot_never_fetches_or_backfills_passive_context(monkeypatch):
+    import mlb_fundamentals_snapshot_v2 as snapshots
+    row = _row()['data']
+    row['fundamentalsSnapshotV2'] = snapshots.build(row)
+    original_snapshot = copy.deepcopy(row['fundamentalsSnapshotV2'])
+    row.pop('advanced_context')
+    def forbidden(*args, **kwargs):
+        raise AssertionError('must not fetch or rebuild existing evidence')
+    monkeypatch.setattr(snapshots, '_context_for_row', forbidden)
+    snapshots.enhance_row(row)
+    assert 'passiveTeamContext' not in row
+    assert row['fundamentalsSnapshotV2'] == original_snapshot
+    row['passiveTeamContext'] = {'existing': 'immutable observation'}
+    snapshots.enhance_row(row)
+    assert row['passiveTeamContext'] == {'existing': 'immutable observation'}
+
+
+@pytest.mark.parametrize('value', [None, [], 'malformed'])
+def test_malformed_passive_envelope_cannot_fall_back_to_valid_legacy_context(value):
+    row = _row()
+    row['data']['passiveTeamContext'] = value
+    with pytest.raises(RuntimeError, match='invalid persisted passive team context'):
+        SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+
+
+def test_empty_passive_envelope_does_not_claim_legacy_observations():
+    import mlb_fundamentals_snapshot_v2 as snapshots
+    row = _row()
+    row['data']['fundamentalsSnapshotV2'] = snapshots.build(row['data'])
+    row['data']['passiveTeamContext'] = {}
+    result = SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+    assert result['gamesWithValidPassiveBatterObservations'] == 0
+    assert result['gamesWithValidPassiveBullpenRosters'] == 0
+
+
+@pytest.mark.parametrize('block', ['confirmed_lineups', 'bullpen_fatigue'])
+@pytest.mark.parametrize('value', [None, [], 'malformed'])
+def test_named_passive_block_must_be_a_dictionary(block, value):
+    row = _row()
+    row['data']['passiveTeamContext'] = copy.deepcopy(row['data']['advanced_context'])
+    row['data']['passiveTeamContext'][block] = value
+    with pytest.raises(RuntimeError, match='invalid persisted passive team block'):
+        SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+
+
+@pytest.mark.parametrize('snapshot', [None, {}, [], 'malformed'])
+@pytest.mark.parametrize('roster_only', [False, True])
+def test_passive_envelope_requires_valid_companion_snapshot(snapshot, roster_only):
+    row = _row()
+    context = row['data'].pop('advanced_context')
+    if roster_only:
+        context.pop('confirmed_lineups')
+    row['data']['passiveTeamContext'] = context
+    row['data']['fundamentalsSnapshotV2'] = snapshot
+    with pytest.raises(RuntimeError, match='invalid persisted companion snapshot'):
+        SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+
+
+def test_roster_only_requires_snapshot_fingerprint_even_without_team_dataset():
+    import mlb_fundamentals_snapshot_v2 as snapshots
+    row = _row()
+    context = row['data'].pop('advanced_context')
+    row['data']['passiveTeamContext'] = {'bullpen_fatigue': context['bullpen_fatigue']}
+    row['data']['fundamentalsSnapshotV2'] = snapshots.build(row['data'], context={})
+    result = SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+    assert result['teamSnapshotRows'] == 0
+    assert result['gamesWithValidPassiveBullpenRosters'] == 1
+    row['data']['fundamentalsSnapshotV2']['fingerprint'] = 'corrupt'
+    with pytest.raises(RuntimeError, match='invalid persisted companion snapshot'):
+        SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+
+
+@pytest.mark.parametrize('field,value,error', [
+    ('officialGamePk', '123456', 'game_identity_mismatch'),
+    ('officialGamePk', None, 'game_identity_mismatch'),
+    ('commenceTimeUtc', '2026-09-11T21:00:00+00:00', 'game_start_mismatch'),
+    ('commenceTimeUtc', None, 'game_start_mismatch'),
+])
+def test_valid_companion_must_belong_to_same_game_and_start(field, value, error):
+    import mlb_fundamentals_snapshot_v2 as snapshots
+    row = _row()
+    snap = snapshots.build(row['data'])
+    snap['game'][field] = value
+    snap['fingerprint'] = snapshots.fingerprint_for_snapshot(snap)
+    assert snapshots.validate(snap) == []
+    row['data']['fundamentalsSnapshotV2'] = snap
+    row['data']['passiveTeamContext'] = row['data'].pop('advanced_context')
+    with pytest.raises(RuntimeError, match=error):
+        SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+
+
+def test_null_preservation_is_scoped_to_passive_envelope():
+    import inqsi_pull_history as history
+    payload = {'unrelated': {'missing': None},
+               'passiveTeamContext': {'confirmed_lineups': {'samples': [{'ops': None}]}}}
+    result = history.ddb_safe(payload)
+    assert result['unrelated'] == {}
+    assert result['passiveTeamContext']['confirmed_lineups']['samples'] == [{'ops': None}]

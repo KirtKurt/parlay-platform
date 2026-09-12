@@ -234,10 +234,13 @@ def install_snapshot_determinism(snapshot_v2_module: Any) -> Any:
     original_build = snapshot_v2_module.build
 
     def deterministic_build(
-        row: Dict[str, Any], *, captured_at_utc: Optional[str] = None
+        row: Dict[str, Any], *, captured_at_utc: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         captured_at = captured_at_utc or deterministic_capture_time(row)
-        return original_build(row, captured_at_utc=captured_at)
+        if context is None:
+            return original_build(row, captured_at_utc=captured_at)
+        return original_build(row, captured_at_utc=captured_at, context=context)
 
     snapshot_v2_module.build = deterministic_build
     snapshot_v2_module.MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_VERSION = (

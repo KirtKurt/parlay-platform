@@ -377,9 +377,12 @@ def _context_for_row(row: Dict[str, Any]) -> Dict[str, Any]:
         return {"snapshotBuildError": f"{type(exc).__name__}:{str(exc)[:240]}"}
 
 
-def build(row: Dict[str, Any], *, captured_at_utc: Optional[str] = None) -> Dict[str, Any]:
+def build(
+    row: Dict[str, Any], *, captured_at_utc: Optional[str] = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     captured_at = captured_at_utc or _utc_now()
-    context = _context_for_row(row)
+    context = _context_for_row(row) if context is None else context
     groups = {
         output_name: _group(row, context, output_name, context_name, values)
         for output_name, context_name, values in GROUP_SPECS
@@ -697,7 +700,17 @@ def enhance_row(row: Dict[str, Any]) -> Dict[str, Any]:
         )
         _apply_training_status(row, existing)
         return row
-    snapshot = build(row)
+    # Fetch once. Preserve the unprojected observations outside the signed
+    # scoring snapshot; summary values, eligibility and fingerprints stay intact.
+    context = _context_for_row(row)
+    snapshot = build(row, context=context)
+    passive = {
+        key: copy.deepcopy(context[key])
+        for key in ("confirmed_lineups", "bullpen_fatigue")
+        if isinstance(context.get(key), dict)
+    }
+    if passive:
+        row["passiveTeamContext"] = passive
     row["fundamentalsSnapshotV2"] = snapshot
     row["fundamentalsSnapshotV2Ref"] = _snapshot_ref(snapshot)
     # Temporary compatibility alias for already-written consumers. New code
