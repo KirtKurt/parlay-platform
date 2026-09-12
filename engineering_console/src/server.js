@@ -125,7 +125,10 @@ export function createServer({ config = loadConfig(), authorizer, store, queue }
           try { await stopExecution(config, job, store); }
           catch { return send(409, { error: 'previous_execution_stop_unconfirmed' }); }
         }
-        job.previousExecution = job.execution || job.previousExecution; job.execution = null;
+        // An unlaunched retry has no new session or patch; keep the last
+        // execution checkpoint available for the next continuation.
+        if (job.execution && !job.execution.launchRejectedAt) job.previousExecution = job.execution;
+        job.execution = null;
         job.status = 'queued'; job.cancelRequested = false; job.error = null;
         store.saveInstruction(job, body.instruction); queue.enqueue(id); return send(202, { job: publicJob(job) });
       }
