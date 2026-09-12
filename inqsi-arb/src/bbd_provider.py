@@ -117,7 +117,7 @@ def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int
             return int(exc.code), dict(exc.headers.items()), {}
         detail = raw.decode("utf-8", "replace")[:500]
         raise BBDError(f"BBD_HTTP_{exc.code}: {detail}") from exc
-    except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+    except (URLError, TimeoutError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise BBDError(f"BBD_REQUEST_FAILED: {type(exc).__name__}") from exc
 
 
