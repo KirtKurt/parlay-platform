@@ -7,8 +7,10 @@ odds data. Callers can fail closed when a particular context field is required.
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+import re
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
@@ -69,10 +71,11 @@ def base_url() -> str:
 
 
 def _validated_base_url() -> str:
-    """Require an unambiguous HTTPS destination before attaching credentials."""
+    """Reject unsafe configuration before constructing an authenticated request."""
     url = base_url()
     try:
         parsed = urlsplit(url)
+        port = parsed.port  # Validate malformed and out-of-range ports.
         if (
             parsed.scheme != "https"
             or not parsed.hostname
@@ -81,14 +84,49 @@ def _validated_base_url() -> str:
             or "?" in url
             or "#" in url
             or "\\" in url
-            or any(character.isspace() or ord(character) < 32 or ord(character) == 127 for character in url)
+            or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in url)
+            or port == 0
         ):
-            raise ValueError("invalid destination")
-        # Accessing port also validates malformed and out-of-range ports.
-        parsed.port
-    except ValueError:
-        raise BBDError("BBD_BASE_URL_INVALID") from None
+            raise ValueError("unsafe base URL")
+        # Validate the literal authority urllib will use. Reject encoded hosts
+        # rather than decoding to a different destination; IDNs must use ASCII
+        # punycode. DNS lookup is deliberately not part of this syntax check.
+        host = parsed.hostname
+        if not parsed.netloc.isascii() or "%" in parsed.netloc:
+            raise ValueError("invalid authority")
+        if parsed.netloc.startswith("["):
+            if not re.fullmatch(r"\[[0-9A-Fa-f:.]+\](?::[0-9]+)?", parsed.netloc):
+                raise ValueError("invalid IPv6 authority")
+            ipaddress.IPv6Address(host)
+        else:
+            if not re.fullmatch(r"[A-Za-z0-9.-]+(?::[0-9]+)?", parsed.netloc):
+                raise ValueError("invalid DNS authority")
+            if re.fullmatch(r"[0-9.]+", host):
+                ipaddress.IPv4Address(host)
+            else:
+                dns_name = host[:-1] if host.endswith(".") else host
+                if len(dns_name) > 253 or any(
+                    not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+                    for label in dns_name.split(".")
+                ):
+                    raise ValueError("invalid DNS hostname")
+    except ValueError as exc:
+        raise BBDError("BBD_BASE_URL_INVALID") from exc
     return url
+
+
+def _unique_json_object(pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
+    """Reject ambiguous provider fields at every nesting level."""
+    result: Dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise BBDError("BBD_RESPONSE_JSON_INVALID")
+        result[key] = value
+    return result
+
+
+def _reject_json_constant(value: str) -> Any:
+    raise BBDError("BBD_RESPONSE_JSON_INVALID")
 
 
 def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int = 20,
@@ -109,7 +147,11 @@ def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int
     try:
         with build_opener(_RejectRedirects()).open(request, timeout=timeout) as response:
             raw = response.read()
-            payload = json.loads(raw.decode("utf-8")) if raw else {}
+            payload = json.loads(
+                raw.decode("utf-8"),
+                object_pairs_hook=_unique_json_object,
+                parse_constant=_reject_json_constant,
+            ) if raw else {}
             return int(response.status), dict(response.headers.items()), payload
     except HTTPError as exc:
         raw = exc.read()
@@ -117,7 +159,7 @@ def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int
             return int(exc.code), dict(exc.headers.items()), {}
         detail = raw.decode("utf-8", "replace")[:500]
         raise BBDError(f"BBD_HTTP_{exc.code}: {detail}") from exc
-    except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+    except (URLError, TimeoutError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise BBDError(f"BBD_REQUEST_FAILED: {type(exc).__name__}") from exc
 
 

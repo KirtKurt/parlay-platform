@@ -13,11 +13,13 @@ import pytest
 from ks1 import daily
 from ks1.inventory import encode
 from ks1.live_inputs import ProviderFailure, lineup_feeds
-from ks1.refresh import observe
+from ks1.refresh import observe, pregame_status
 from ks1.publish import parquet_bytes
 
 DATE = '2026-09-10'
 AT = DATE+'T10:00:00+00:00'
+WARMUP = {'abstractGameCode': 'L', 'abstractGameState': 'Live', 'codedGameState': 'P',
+          'detailedState': 'Warmup', 'statusCode': 'PW', 'startTimeTBD': False}
 
 
 def envelope(payload, at=AT):
@@ -286,6 +288,89 @@ def test_frozen_rows_do_not_change_or_rescore_after_cutoff(capture):
     change_feed(folder, lambda p: p['gameData']['probablePitchers'].update(home={'id': 9999}))
     second, report, _ = daily.predict(folder, output)
     assert first.equals(second) and calls == [2] and report['preserved_pregame_rows'] == 2
+
+
+@pytest.mark.parametrize('mutation', [
+    {'codedGameState': 'I'}, {'statusCode': 'I'}, {'detailedState': 'In Progress'},
+    {'codedGameState': 'T', 'statusCode': 'T', 'detailedState': 'Suspended'},
+    {'abstractGameState': 'Final'}, {'statusCode': None},
+])
+def test_only_exact_warmup_tuple_is_additionally_pregame(mutation):
+    assert pregame_status(WARMUP)
+    assert not pregame_status(dict(WARMUP, **mutation))
+
+
+def test_warmup_refreshes_and_collects_feed_only_before_existing_cutoff(capture):
+    folder, output, calls, games = capture
+    first, _, out = daily.predict(folder, output)
+    at = DATE+'T19:42:00+00:00'
+    advance(folder, out, at)
+    official = json.loads((folder/'official.json').read_bytes())['payload']
+    game = official['dates'][0]['games'][0]; game['status'] = dict(WARMUP)
+    (folder/'official.json').write_bytes(encode(envelope(official, at)))
+    change_feed(folder, lambda p: p['gameData'].update(status=dict(WARMUP)))
+    seal(folder, at)
+    second, report, out = daily.predict(folder, output)
+    assert second['game_id'].to_pylist() == ['1', '2']
+    assert report['removed_game_ids'] == [] and report['preserved_pregame_rows'] == 0
+    assert second.to_pylist()[0]['lineup_status'] == 'confirmed'
+    assert second.to_pylist()[0]['lineup_source_status'] == 'verified_pregame_feed'
+    requested = []
+    def requester(provider, base, path, params):
+        requested.append(path)
+        return envelope(feed(game), at)
+    collected = lineup_feeds(DATE, [game], requester=requester,
+                             now=datetime.fromisoformat(at))
+    assert set(collected['games']) == {'1'} and len(requested) == 1
+    assert lineup_feeds(DATE, [game], requester=requester,
+                        now=datetime.fromisoformat(DATE+'T19:50:01+00:00')) == {'games': {}}
+    assert len(requested) == 1
+    before_calls = list(calls)
+    advance(folder, out, DATE+'T19:51:00+00:00')
+    change_feed(folder, lambda p: p['gameData']['probablePitchers'].update(home={'id': 9999}))
+    third, report, _ = daily.predict(folder, output)
+    assert third.equals(second) and calls == before_calls
+    assert report['preserved_pregame_rows'] == 2
+
+
+@pytest.mark.parametrize('transition', ['Live', 'Final', 'earlier_start'])
+def test_early_ineligible_transition_cannot_erase_a_published_pick(capture, transition):
+    folder, output, calls, _ = capture
+    first, _, out = daily.predict(folder, output)
+    original_bytes = (out/'predictions.parquet').read_bytes()
+    at = DATE+'T19:42:00+00:00'  # Eight minutes before the stored T-10.
+    advance(folder, out, at)
+    official = json.loads((folder/'official.json').read_bytes())['payload']
+    game = official['dates'][0]['games'][0]
+    if transition == 'earlier_start':
+        game['gameDate'] = DATE+'T19:49:00Z'
+        bbs = json.loads((folder/'bbs.json').read_bytes())['payload']
+        bbs['data'][0]['kickoff_utc'] = game['gameDate']
+        (folder/'bbs.json').write_bytes(encode(envelope(bbs, at)))
+    else:
+        game['status'].update(abstractGameState=transition, detailedState=transition)
+    (folder/'official.json').write_bytes(encode(envelope(official, at))); seal(folder, at)
+    with pytest.raises(ValueError, match='unexpected published prediction removal: 1'):
+        daily.predict(folder, output)
+    assert (out/'predictions.parquet').read_bytes() == original_bytes
+    # The failed attempt cannot invent a lock or overwrite history. A later
+    # capture can preserve the original bytes using the existing stored T-10.
+    advance(folder, out, DATE+'T19:51:00+00:00')
+    after, report, _ = daily.predict(folder, output)
+    assert after.equals(first) and report['preserved_pregame_rows'] == 2
+
+
+@pytest.mark.parametrize('reason', ['Postponed', 'Cancelled'])
+def test_explicit_pre_cutoff_withdrawal_remains_possible(capture, reason):
+    folder, output, _, _ = capture
+    _, _, out = daily.predict(folder, output); advance(folder, out)
+    official = json.loads((folder/'official.json').read_bytes())['payload']
+    official['dates'][0]['games'][0]['status']['detailedState'] = reason
+    (folder/'official.json').write_bytes(encode(envelope(official, DATE+'T10:01:00+00:00')))
+    seal(folder, DATE+'T10:01:00+00:00')
+    table, report, _ = daily.predict(folder, output)
+    assert table['game_id'].to_pylist() == ['2']
+    assert report['withdrawn_games'] == [{'date': DATE, 'game_id': '1', 'reason': reason}]
 
 
 def test_stale_previous_and_unbound_cache_fail_before_inference(capture):

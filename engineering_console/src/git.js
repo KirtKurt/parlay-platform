@@ -6,7 +6,7 @@ import path from 'node:path';
 const exec = promisify(execFile);
 
 async function runGit(cwd, args, { trim = true } = {}) {
-  const { stdout } = await exec('git', args, { cwd, maxBuffer: 20 * 1024 * 1024 });
+  const { stdout } = await exec('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args], { cwd, maxBuffer: 20 * 1024 * 1024 });
   return trim ? stdout.trim() : stdout;
 }
 
@@ -76,7 +76,7 @@ function parseNameStatusZ(output) {
 
 async function untrackedPatch(workspace, file) {
   try {
-    const { stdout } = await exec('git', ['diff', '--no-index', '--binary', '--', '/dev/null', file], {
+    const { stdout } = await exec('git', ['-c', 'core.fsmonitor=false', 'diff', '--no-ext-diff', '--no-textconv', '--no-index', '--binary', '--full-index', '--', '/dev/null', file], {
       cwd: workspace,
       maxBuffer: 20 * 1024 * 1024
     });
@@ -93,7 +93,7 @@ export async function collectChanges(workspace, baseRevision = 'HEAD') {
   const untracked = untrackedRaw.split('\0').filter(Boolean);
   const changedFiles = [...new Set([...parseNameStatusZ(trackedStatus), ...untracked])].sort();
 
-  let diff = await runGit(workspace, ['diff', '--binary', '--no-ext-diff', baseRevision, '--'], { trim: false });
+  let diff = await runGit(workspace, ['diff', '--binary', '--full-index', '--no-ext-diff', '--no-textconv', baseRevision, '--'], { trim: false });
   for (const file of untracked) diff += await untrackedPatch(workspace, file);
 
   return { changedFiles, diff };

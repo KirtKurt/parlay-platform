@@ -12,6 +12,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 CONTROLLER_VERSION = "INQSI-ARB-AEC-v2"
+# Cover generation/build (120m), two PR CI waits (40m), two dispatch
+# discoveries (6m), validation (25m), deployment (50m), and overhead.
+# The workflow reserves another 30m for setup, cleanup and retained evidence.
+CODE_AGENT_TIMEOUT_SECONDS = 270 * 60
 USER_AGENT = "inqsi-arb-autonomous-engineering-controller/2.0"
 ALLOWED_PATH_PREFIXES = (
     "inqsi-arb/",
@@ -305,7 +309,7 @@ class EngineeringController:
         env["ARB_AEC_MAIN_SHA"] = snapshot.main_sha
         env["ARB_AEC_ALLOWED_PATHS"] = ",".join(ALLOWED_PATH_PREFIXES)
         env["ARB_AEC_TASK"] = action.reason
-        completed = subprocess.run(command, shell=True, env=env, timeout=900, check=False)
+        completed = subprocess.run(command, shell=True, env=env, timeout=CODE_AGENT_TIMEOUT_SECONDS, check=False)
         return {
             "action": asdict(action),
             "status": "completed" if completed.returncode == 0 else "failed",

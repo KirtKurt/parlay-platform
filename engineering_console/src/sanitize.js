@@ -8,7 +8,8 @@ export function redact(value) {
     .replace(SECRET, '$1=[REDACTED]')
     .replace(BEARER, '$1[REDACTED]')
     .replace(OPENAI_KEY, '[REDACTED_OPENAI_KEY]')
-    .replace(GITHUB_KEY, '[REDACTED_GITHUB_KEY]');
+    .replace(GITHUB_KEY, '[REDACTED_GITHUB_KEY]')
+    .replace(/ecj_[0-9a-f-]{36}_[0-9a-f]{64}/g, '[REDACTED_JOB_CAPABILITY]');
 }
 
 export function sanitize(value) {

@@ -13,6 +13,22 @@ def mapping(value):
     return value if isinstance(value, dict) else {}
 
 
+def pregame_status(value):
+    """MLB Warmup is coded P/PW even though its abstract category is Live.
+
+    The exact tuple is documented by MLB's /api/v1/gameStatus catalogue and
+    retained in production run 34653093544. Callers still enforce T-10.
+    In-progress, suspended, final and unknown Live states are never admitted.
+    """
+    status = mapping(value)
+    if status.get('abstractGameState') == 'Preview':
+        return status.get('detailedState') not in ('Postponed', 'Cancelled')
+    return (status.get('abstractGameState') == 'Live'
+            and status.get('codedGameState') == 'P'
+            and status.get('statusCode') == 'PW'
+            and status.get('detailedState') == 'Warmup')
+
+
 def player_id(value):
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
@@ -63,8 +79,7 @@ def observe(game, entry, as_of):
             boxes = payload.get('liveData', {}).get('boxscore', {}).get('teams', {})
             valid = (timely and data.get('game', {}).get('pk') == game['gamePk']
                      and utc(data.get('datetime', {}).get('dateTime')) == utc(game['gameDate'])
-                     and data.get('status', {}).get('abstractGameState') == 'Preview'
-                     and data.get('status', {}).get('detailedState') not in ('Postponed', 'Cancelled')
+                     and pregame_status(data.get('status'))
                      and all(boxes.get(s, {}).get('team', {}).get('id') == game['teams'][s]['team']['id'] for s in SIDES))
         except (KeyError, ValueError, TypeError, AttributeError):
             valid = False

@@ -1,0 +1,148 @@
+name: Engineering Console Deploy
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'engineering_console/**'
+      - '.github/workflows/engineering-console-deploy.yml'
+      - '.github/workflows/engineering-console-runtime-validate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eng-console-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      source: ${{ steps.source.outputs.sha }}
+      image_id: ${{ steps.image.outputs.id }}
+      archive_sha: ${{ steps.image.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - id: source
+        run: printf 'sha=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Validate exact Console source
+        run: |
+          npm ci --prefix engineering_console --ignore-scripts --no-audit --no-fund
+          npm test --prefix engineering_console
+          for file in engineering_console/src/*.js engineering_console/scripts/*.mjs; do node --check "$file"; done
+          sh -n engineering_console/scripts/container-entrypoint.sh
+          python3 -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint engineering_console/deploy/template.yaml
+          python3 -m py_compile engineering_console/scripts/deploy_runtime.py
+          python3 -m unittest discover -s engineering_console/test -p 'test_*.py'
+      - name: Verify Console-only PR scope
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed=$(git diff --name-only "$(git merge-base "$BASE" "$HEAD")" "$HEAD")
+          if printf '%s\n' "$changed" | grep -Ev '^(engineering_console/|\.github/workflows/engineering-console-(deploy|runtime-validate)\.yml$)' | grep -q .; then
+            echo 'Unexpected non-Console changes' >&2
+            exit 1
+          fi
+      - name: Build, inspect and preserve the tested image
+        id: image
+        env:
+          SOURCE: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          docker build --pull --label "org.opencontainers.image.revision=$SOURCE" -t "eng-console-runtime:$SOURCE" engineering_console
+          docker run --rm --entrypoint node "eng-console-runtime:$SOURCE" -e 'if (process.versions.node.split(".")[0] !== "24" || process.getuid() !== 10001) process.exit(1)'
+          docker run --rm --entrypoint node "eng-console-runtime:$SOURCE" --input-type=module -e 'await import("@openai/codex-sdk"); await import("jose")'
+          docker run --rm --read-only --entrypoint node "eng-console-runtime:$SOURCE" --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync("/job/probe", "ok"); fs.writeFileSync("/tmp/probe", "ok"); try { fs.writeFileSync("/app/unexpected", "bad"); process.exit(1); } catch (error) { if (!["EACCES", "EROFS"].includes(error.code)) throw error; }'
+          docker image inspect "eng-console-runtime:$SOURCE" --format 'id={{.Id}}' >> "$GITHUB_OUTPUT"
+          docker save "eng-console-runtime:$SOURCE" -o runtime-image.tar
+          printf 'sha=%s\n' "$(sha256sum runtime-image.tar | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: eng-console-image-${{ github.run_id }}
+          path: runtime-image.tar
+          retention-days: 2
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: engineering-console-production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      ENG_CONSOLE_PARAMETERS_JSON: ${{ vars.ENG_CONSOLE_PARAMETERS_JSON }}
+      ECR_REPOSITORY: ${{ vars.ENG_CONSOLE_ECR_REPOSITORY }}
+      SOURCE: ${{ needs.validate.outputs.source }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.validate.outputs.source }}
+          persist-credentials: false
+      - name: Require the approved external configuration
+        env:
+          ROLE: ${{ vars.ENG_CONSOLE_DEPLOY_ROLE_ARN }}
+        run: |
+          test -n "$ROLE" || { echo 'Missing ENG_CONSOLE_DEPLOY_ROLE_ARN'; exit 1; }
+          test -n "$ENG_CONSOLE_PARAMETERS_JSON" || { echo 'Missing ENG_CONSOLE_PARAMETERS_JSON'; exit 1; }
+          printf '%s' "$ECR_REPOSITORY" | grep -Eq '^eng-console-[a-z0-9._/-]+$'
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+        with:
+          role-to-assume: ${{ vars.ENG_CONSOLE_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Check isolated AWS configuration before mutation
+        run: python3 engineering_console/scripts/deploy_runtime.py --preflight-only
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: eng-console-image-${{ github.run_id }}
+      - name: Publish only the image that passed validation
+        id: release
+        env:
+          EXPECTED_ARCHIVE_SHA: ${{ needs.validate.outputs.archive_sha }}
+          EXPECTED_IMAGE_ID: ${{ needs.validate.outputs.image_id }}
+        run: |
+          set -euo pipefail
+          printf '%s  runtime-image.tar\n' "$EXPECTED_ARCHIVE_SHA" | sha256sum -c -
+          docker load -i runtime-image.tar
+          test "$(docker image inspect "eng-console-runtime:$SOURCE" --format '{{.Id}}')" = "$EXPECTED_IMAGE_ID"
+          test "$(docker image inspect "$EXPECTED_IMAGE_ID" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$SOURCE"
+          account=$(aws sts get-caller-identity --query Account --output text)
+          registry="$account.dkr.ecr.$AWS_REGION.amazonaws.com"
+          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null
+          aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
+          tag="$SOURCE-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker tag "$EXPECTED_IMAGE_ID" "$registry/$ECR_REPOSITORY:$tag"
+          docker push "$registry/$ECR_REPOSITORY:$tag"
+          digest=$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$tag" --query 'imageDetails[0].imageDigest' --output text)
+          printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'
+          printf 'uri=%s/%s@%s\n' "$registry" "$ECR_REPOSITORY" "$digest" >> "$GITHUB_OUTPUT"
+      - name: Deploy and require authenticated end-to-end proof
+        env:
+          IMAGE_URI: ${{ steps.release.outputs.uri }}
+        run: python3 engineering_console/scripts/deploy_runtime.py --image "$IMAGE_URI" --source "$SOURCE"
+      - name: Preserve deployment and rollback evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: eng-console-deployment-${{ github.run_id }}
+          path: |
+            runtime_deploy/deployment-record.json
+            runtime_deploy/previous-deployment.json
+            runtime_deploy/previous-template.yaml
+          if-no-files-found: warn
+          retention-days: 30

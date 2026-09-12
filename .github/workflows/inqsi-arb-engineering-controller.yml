@@ -10,7 +10,11 @@ on:
       - 'inqsi-arb/ops/engineering_controller.py'
       - 'inqsi-arb/ops/codex_cli_runner.sh'
       - 'inqsi-arb/tests/test_engineering_controller.py'
+      - 'inqsi-arb/tests/test_codex_cli_runner_contract.py'
       - 'inqsi-arb/ARB_ENGINEERING_CONTROLLER.md'
+      - 'arb_supervisor/**'
+      - '.github/workflows/arb-supervisor-validate.yml'
+      - '.github/workflows/inqsi-arb-deploy.yml'
       - '.github/workflows/inqsi-arb-engineering-controller.yml'
 
 permissions:
@@ -28,13 +32,16 @@ env:
   ARB_AEC_ALLOW_DISPATCH: 'true'
   ARB_AEC_ALLOW_ISSUE: 'true'
   ARB_AEC_PAUSED: ${{ vars.ARB_AEC_PAUSED || 'false' }}
+  ARB_AEC_AUTO_PROMOTE: ${{ vars.ARB_AEC_AUTO_PROMOTE || 'false' }}
+  ARB_AEC_AUTO_DEPLOY: ${{ vars.ARB_AEC_AUTO_DEPLOY || 'false' }}
   ARB_CODE_AGENT_MODEL: 'codex-cli-default'
   ARB_CODE_AGENT_COMMAND: 'bash inqsi-arb/ops/codex_cli_runner.sh'
 
 jobs:
   inspect-decide-act:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # 270m wrapper budget plus setup, credential cleanup and evidence upload.
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
         with:
@@ -88,8 +95,10 @@ jobs:
           printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key
           codex login status >/dev/null 2>&1
           echo 'Codex API-key authentication configured'
-      - name: Prove controller guardrails before acting
-        run: python -m pytest -q inqsi-arb/tests/test_engineering_controller.py
+      - name: Prove controller and trusted supervisor guardrails before acting
+        run: |
+          python -m pytest -q inqsi-arb/tests/test_engineering_controller.py inqsi-arb/tests/test_codex_cli_runner_contract.py
+          python -m pytest -q arb_supervisor/test_validate_candidate.py arb_supervisor/test_promote.py
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -151,6 +160,8 @@ jobs:
           print(f"- Deploy conclusion: `{s.get('deploy_conclusion')}`")
           print(f"- Latency proof conclusion: `{s.get('latency_conclusion')}`")
           print(f"- Code agent configured: `{s.get('code_agent_configured')}`")
+          print(f"- Auto promote: `{__import__('os').environ.get('ARB_AEC_AUTO_PROMOTE')}`")
+          print(f"- Auto deploy: `{__import__('os').environ.get('ARB_AEC_AUTO_DEPLOY')}`")
           print(f"- Planned actions: `{len(r.get('actions', []))}`")
           PY
           fi

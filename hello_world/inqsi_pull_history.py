@@ -84,7 +84,10 @@ def _ddb_safe(x: Any, *, preserve_nulls: bool = False) -> Any:
             == "MLB-FUNDAMENTALS-SNAPSHOT-v2-immutable-source-provenance"
         )
         out = {
-            k: _ddb_safe(v, preserve_nulls=preserve_nested_nulls)
+            # Null sample metrics are evidence of unavailability, not absent keys.
+            k: _ddb_safe(v, preserve_nulls=(
+                preserve_nested_nulls or k == "passiveTeamContext"
+            ))
             for k, v in x.items()
             if preserve_nested_nulls or v is not None
         }

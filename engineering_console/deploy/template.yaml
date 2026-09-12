@@ -1,0 +1,1084 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Isolated Engineering Console: separate Fargate coding tasks, credential
+  broker, controller and publisher.'
+Parameters:
+  ImageUri:
+    Type: String
+    AllowedPattern: ^\d{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/eng-console-[a-z0-9._/-]+@sha256:[0-9a-f]{64}$
+  SourceSha:
+    Type: String
+    AllowedPattern: ^[0-9a-f]{40}$
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  TrustedSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  JobSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  LoadBalancerSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  EfsSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  ControllerExecutionRoleArn:
+    Type: String
+    AllowedPattern: ^arn:aws[a-z-]*:iam::\d{12}:role/.+$
+  BrokerExecutionRoleArn:
+    Type: String
+    AllowedPattern: ^arn:aws[a-z-]*:iam::\d{12}:role/.+$
+  PublisherExecutionRoleArn:
+    Type: String
+    AllowedPattern: ^arn:aws[a-z-]*:iam::\d{12}:role/.+$
+  JobExecutionRoleArn:
+    Type: String
+    AllowedPattern: ^arn:aws[a-z-]*:iam::\d{12}:role/.+$
+  ProbeExecutionRoleArn:
+    Type: String
+    AllowedPattern: ^arn:aws[a-z-]*:iam::\d{12}:role/.+$
+  ControllerTaskRoleArn:
+    Type: String
+    AllowedPattern: ^arn:aws[a-z-]*:iam::\d{12}:role/.+$
+  BrokerTaskRoleArn:
+    Type: String
+    AllowedPattern: ^arn:aws[a-z-]*:iam::\d{12}:role/.+$
+  PublisherTaskRoleArn:
+    Type: String
+    AllowedPattern: ^arn:aws[a-z-]*:iam::\d{12}:role/.+$
+  OpenAISecretArn:
+    Type: String
+    AllowedPattern: ^arn:aws[a-z-]*:secretsmanager:[^:]+:\d{12}:secret:.+$
+  GitHubAppSecretArn:
+    Type: String
+    AllowedPattern: ^arn:aws[a-z-]*:secretsmanager:[^:]+:\d{12}:secret:.+$
+  BrowserOidcSecretArn:
+    Type: String
+    AllowedPattern: ^arn:aws[a-z-]*:secretsmanager:[^:]+:\d{12}:secret:.+$
+  ProbeOidcSecretArn:
+    Type: String
+    AllowedPattern: ^arn:aws[a-z-]*:secretsmanager:[^:]+:\d{12}:secret:.+$
+  ConsoleDomainName:
+    Type: String
+    MinLength: 1
+  HostedZoneId:
+    Type: String
+    MinLength: 1
+  CertificateArn:
+    Type: String
+    MinLength: 1
+  OidcAudience:
+    Type: String
+    MinLength: 1
+  AdminClaim:
+    Type: String
+    MinLength: 1
+  OidcClientId:
+    Type: String
+    MinLength: 1
+  Model:
+    Type: String
+    MinLength: 1
+  OidcIssuer:
+    Type: String
+    AllowedPattern: ^https://.+$
+  JwksUri:
+    Type: String
+    AllowedPattern: ^https://.+$
+  ExistingFileSystemId:
+    Type: String
+    Default: ''
+    AllowedPattern: ^$|^fs-[0-9a-f]{8,40}$
+  ExistingMountTargetsPresent:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+    - 'true'
+    - 'false'
+Conditions:
+  CreateFileSystem:
+    Fn::Equals:
+    - Ref: ExistingFileSystemId
+    - ''
+  CreateMountTargets:
+    Fn::Equals:
+    - Ref: ExistingMountTargetsPresent
+    - 'false'
+  ReuseMountTargets:
+    Fn::Not:
+    - Condition: CreateMountTargets
+Resources:
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: eng-console-runtime
+      ClusterSettings:
+      - Name: containerInsights
+        Value: enabled
+  FileSystem:
+    Type: AWS::EFS::FileSystem
+    Condition: CreateFileSystem
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Encrypted: true
+      BackupPolicy:
+        Status: ENABLED
+      FileSystemTags:
+      - Key: Name
+        Value: eng-console-state
+      FileSystemPolicy:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Deny
+          Principal: '*'
+          Action: elasticfilesystem:*
+          Resource: '*'
+          Condition:
+            Bool:
+              aws:SecureTransport: 'false'
+        - Effect: Allow
+          Principal:
+            AWS:
+            - Ref: ControllerTaskRoleArn
+            - Ref: BrokerTaskRoleArn
+            - Ref: PublisherTaskRoleArn
+          Action:
+          - elasticfilesystem:ClientMount
+          - elasticfilesystem:ClientWrite
+          Resource: '*'
+  MountTarget0:
+    Type: AWS::EFS::MountTarget
+    Condition: CreateMountTargets
+    Properties:
+      FileSystemId:
+        Fn::If:
+        - CreateFileSystem
+        - Ref: FileSystem
+        - Ref: ExistingFileSystemId
+      SubnetId:
+        Fn::Select:
+        - 0
+        - Ref: PrivateSubnetIds
+      SecurityGroups:
+      - Ref: EfsSecurityGroupId
+  MountTarget1:
+    Type: AWS::EFS::MountTarget
+    Condition: CreateMountTargets
+    Properties:
+      FileSystemId:
+        Fn::If:
+        - CreateFileSystem
+        - Ref: FileSystem
+        - Ref: ExistingFileSystemId
+      SubnetId:
+        Fn::Select:
+        - 1
+        - Ref: PrivateSubnetIds
+      SecurityGroups:
+      - Ref: EfsSecurityGroupId
+  DataAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId:
+        Fn::If:
+        - CreateFileSystem
+        - Ref: FileSystem
+        - Ref: ExistingFileSystemId
+      PosixUser:
+        Uid: '10001'
+        Gid: '10001'
+      RootDirectory:
+        Path: /control
+        CreationInfo:
+          OwnerUid: '10001'
+          OwnerGid: '10001'
+          Permissions: '0700'
+      AccessPointTags:
+      - Key: Name
+        Value: eng-console-data
+  TransportAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId:
+        Fn::If:
+        - CreateFileSystem
+        - Ref: FileSystem
+        - Ref: ExistingFileSystemId
+      PosixUser:
+        Uid: '10001'
+        Gid: '10001'
+      RootDirectory:
+        Path: /transport
+        CreationInfo:
+          OwnerUid: '10001'
+          OwnerGid: '10001'
+          Permissions: '0700'
+      AccessPointTags:
+      - Key: Name
+        Value: eng-console-transport
+  ControllerLockAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId:
+        Fn::If:
+        - CreateFileSystem
+        - Ref: FileSystem
+        - Ref: ExistingFileSystemId
+      PosixUser:
+        Uid: '10001'
+        Gid: '10001'
+      RootDirectory:
+        Path: /locks/controller
+        CreationInfo:
+          OwnerUid: '10001'
+          OwnerGid: '10001'
+          Permissions: '0700'
+      AccessPointTags:
+      - Key: Name
+        Value: eng-console-controllerlock
+  PublisherLockAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId:
+        Fn::If:
+        - CreateFileSystem
+        - Ref: FileSystem
+        - Ref: ExistingFileSystemId
+      PosixUser:
+        Uid: '10001'
+        Gid: '10001'
+      RootDirectory:
+        Path: /locks/publisher
+        CreationInfo:
+          OwnerUid: '10001'
+          OwnerGid: '10001'
+          Permissions: '0700'
+      AccessPointTags:
+      - Key: Name
+        Value: eng-console-publisherlock
+  BrokerLockAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId:
+        Fn::If:
+        - CreateFileSystem
+        - Ref: FileSystem
+        - Ref: ExistingFileSystemId
+      PosixUser:
+        Uid: '10001'
+        Gid: '10001'
+      RootDirectory:
+        Path: /locks/broker
+        CreationInfo:
+          OwnerUid: '10001'
+          OwnerGid: '10001'
+          Permissions: '0700'
+      AccessPointTags:
+      - Key: Name
+        Value: eng-console-brokerlock
+  ControllerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RetentionInDays: 30
+  BrokerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RetentionInDays: 30
+  PublisherLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RetentionInDays: 30
+  JobLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RetentionInDays: 30
+  ProbeLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RetentionInDays: 30
+  JobTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: eng-console-job
+      RequiresCompatibilities:
+      - FARGATE
+      NetworkMode: awsvpc
+      RuntimePlatform:
+        OperatingSystemFamily: LINUX
+        CpuArchitecture: X86_64
+      Cpu: '1024'
+      Memory: '2048'
+      ExecutionRoleArn:
+        Ref: JobExecutionRoleArn
+      Volumes:
+      - Name: scratch
+      - Name: job
+      ContainerDefinitions:
+      - Name: job
+        Image:
+          Ref: ImageUri
+        Essential: true
+        User: 10001:10001
+        ReadonlyRootFilesystem: true
+        StopTimeout: 120
+        Environment:
+        - Name: INQSI_ENGINEERING_SOURCE_SHA
+          Value:
+            Ref: SourceSha
+        - Name: AWS_DEFAULT_REGION
+          Value:
+            Ref: AWS::Region
+        MountPoints:
+        - SourceVolume: job
+          ContainerPath: /job
+        - SourceVolume: scratch
+          ContainerPath: /tmp
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: JobLogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: job
+        EntryPoint:
+        - /usr/bin/tini
+        - --
+        Command:
+        - node
+        - /app/scripts/isolated-job.mjs
+  ControllerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: eng-console-controller
+      RequiresCompatibilities:
+      - FARGATE
+      NetworkMode: awsvpc
+      RuntimePlatform:
+        OperatingSystemFamily: LINUX
+        CpuArchitecture: X86_64
+      Cpu: '1024'
+      Memory: '2048'
+      ExecutionRoleArn:
+        Ref: ControllerExecutionRoleArn
+      Volumes:
+      - Name: scratch
+      - Name: data
+        EFSVolumeConfiguration:
+          FilesystemId:
+            Fn::If:
+            - CreateFileSystem
+            - Ref: FileSystem
+            - Ref: ExistingFileSystemId
+          TransitEncryption: ENABLED
+          AuthorizationConfig:
+            AccessPointId:
+              Ref: DataAccessPoint
+            IAM: ENABLED
+      - Name: transport
+        EFSVolumeConfiguration:
+          FilesystemId:
+            Fn::If:
+            - CreateFileSystem
+            - Ref: FileSystem
+            - Ref: ExistingFileSystemId
+          TransitEncryption: ENABLED
+          AuthorizationConfig:
+            AccessPointId:
+              Ref: TransportAccessPoint
+            IAM: ENABLED
+      - Name: lock
+        EFSVolumeConfiguration:
+          FilesystemId:
+            Fn::If:
+            - CreateFileSystem
+            - Ref: FileSystem
+            - Ref: ExistingFileSystemId
+          TransitEncryption: ENABLED
+          AuthorizationConfig:
+            AccessPointId:
+              Ref: ControllerLockAccessPoint
+            IAM: ENABLED
+      ContainerDefinitions:
+      - Name: controller
+        Image:
+          Ref: ImageUri
+        Essential: true
+        User: 10001:10001
+        ReadonlyRootFilesystem: true
+        StopTimeout: 120
+        Environment:
+        - Name: INQSI_ENGINEERING_SOURCE_SHA
+          Value:
+            Ref: SourceSha
+        - Name: AWS_DEFAULT_REGION
+          Value:
+            Ref: AWS::Region
+        - Name: INQSI_ENGINEERING_PUBLICATION_POLICY
+          Value: proof-v1
+        - Name: INQSI_ENGINEERING_ALLOWED_SCOPES
+          Value: engineering_console_publication_proof
+        - Name: INQSI_ENGINEERING_REQUIRED_CHECKS
+          Value: engineering-console-publication-proof
+        - Name: GITHUB_REPOSITORY
+          Value: KirtKurt/parlay-platform
+        - Name: INQSI_ENGINEERING_ROLE
+          Value: worker
+        - Name: INQSI_ENGINEERING_BIND_ADDRESS
+          Value: 0.0.0.0
+        - Name: INQSI_ENGINEERING_REPOSITORY
+          Value: /srv/control/repository
+        - Name: INQSI_ENGINEERING_DATA_DIR
+          Value: /srv/control/data
+        - Name: INQSI_ENGINEERING_WORKSPACE_ROOT
+          Value: /srv/control/workspaces
+        - Name: INQSI_ENGINEERING_WORKER_LOCK_DIR
+          Value: /srv/controller-lock
+        - Name: INQSI_ENGINEERING_TRANSPORT_DIR
+          Value: /srv/transport
+        - Name: INQSI_ENGINEERING_BROKER_URL
+          Value:
+            Fn::Sub: https://${ConsoleDomainName}
+        - Name: INQSI_ENGINEERING_ECS_CLUSTER
+          Value:
+            Ref: Cluster
+        - Name: INQSI_ENGINEERING_JOB_TASK_DEFINITION
+          Value:
+            Ref: JobTaskDefinition
+        - Name: INQSI_ENGINEERING_JOB_IMAGE
+          Value:
+            Ref: ImageUri
+        - Name: INQSI_ENGINEERING_JOB_SECURITY_GROUP
+          Value:
+            Ref: JobSecurityGroupId
+        - Name: INQSI_ENGINEERING_JOB_SUBNETS
+          Value:
+            Fn::Join:
+            - ','
+            - Ref: PrivateSubnetIds
+        - Name: INQSI_ENGINEERING_MODEL
+          Value:
+            Ref: Model
+        - Name: INQSI_ENGINEERING_OIDC_ISSUER
+          Value:
+            Ref: OidcIssuer
+        - Name: INQSI_ENGINEERING_OIDC_AUDIENCE
+          Value:
+            Ref: OidcAudience
+        - Name: INQSI_ENGINEERING_JWKS_URI
+          Value:
+            Ref: JwksUri
+        - Name: INQSI_ENGINEERING_ADMIN_CLAIM
+          Value:
+            Ref: AdminClaim
+        - Name: INQSI_ENGINEERING_ORIGIN
+          Value:
+            Fn::Sub: https://${ConsoleDomainName}
+        - Name: INQSI_ENGINEERING_BROWSER_AUTH
+          Value: 'true'
+        - Name: INQSI_ENGINEERING_OIDC_CLIENT_ID
+          Value:
+            Ref: OidcClientId
+        MountPoints:
+        - SourceVolume: data
+          ContainerPath: /srv/control
+        - SourceVolume: transport
+          ContainerPath: /srv/transport
+        - SourceVolume: lock
+          ContainerPath: /srv/controller-lock
+        - SourceVolume: scratch
+          ContainerPath: /tmp
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: ControllerLogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: controller
+        Secrets:
+        - Name: INQSI_ENGINEERING_OIDC_CLIENT_SECRET
+          ValueFrom:
+            Fn::Sub: '${BrowserOidcSecretArn}:clientSecret::'
+        - Name: INQSI_ENGINEERING_SESSION_KEY
+          ValueFrom:
+            Fn::Sub: '${BrowserOidcSecretArn}:sessionKey::'
+        PortMappings:
+        - ContainerPort: 8787
+          Protocol: tcp
+      TaskRoleArn:
+        Ref: ControllerTaskRoleArn
+  BrokerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: eng-console-broker
+      RequiresCompatibilities:
+      - FARGATE
+      NetworkMode: awsvpc
+      RuntimePlatform:
+        OperatingSystemFamily: LINUX
+        CpuArchitecture: X86_64
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn:
+        Ref: BrokerExecutionRoleArn
+      Volumes:
+      - Name: scratch
+      - Name: transport
+        EFSVolumeConfiguration:
+          FilesystemId:
+            Fn::If:
+            - CreateFileSystem
+            - Ref: FileSystem
+            - Ref: ExistingFileSystemId
+          TransitEncryption: ENABLED
+          AuthorizationConfig:
+            AccessPointId:
+              Ref: TransportAccessPoint
+            IAM: ENABLED
+      - Name: lock
+        EFSVolumeConfiguration:
+          FilesystemId:
+            Fn::If:
+            - CreateFileSystem
+            - Ref: FileSystem
+            - Ref: ExistingFileSystemId
+          TransitEncryption: ENABLED
+          AuthorizationConfig:
+            AccessPointId:
+              Ref: BrokerLockAccessPoint
+            IAM: ENABLED
+      ContainerDefinitions:
+      - Name: broker
+        Image:
+          Ref: ImageUri
+        Essential: true
+        User: 10001:10001
+        ReadonlyRootFilesystem: true
+        StopTimeout: 120
+        Environment:
+        - Name: INQSI_ENGINEERING_SOURCE_SHA
+          Value:
+            Ref: SourceSha
+        - Name: AWS_DEFAULT_REGION
+          Value:
+            Ref: AWS::Region
+        - Name: INQSI_ENGINEERING_ROLE
+          Value: broker
+        - Name: INQSI_ENGINEERING_TRANSPORT_DIR
+          Value: /srv/transport
+        - Name: INQSI_ENGINEERING_BROKER_LOCK_DIR
+          Value: /srv/broker-lock
+        - Name: INQSI_ENGINEERING_MODEL
+          Value:
+            Ref: Model
+        MountPoints:
+        - SourceVolume: transport
+          ContainerPath: /srv/transport
+        - SourceVolume: lock
+          ContainerPath: /srv/broker-lock
+        - SourceVolume: scratch
+          ContainerPath: /tmp
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: BrokerLogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: broker
+        Secrets:
+        - Name: OPENAI_API_KEY
+          ValueFrom:
+            Ref: OpenAISecretArn
+        PortMappings:
+        - ContainerPort: 8790
+          Protocol: tcp
+      TaskRoleArn:
+        Ref: BrokerTaskRoleArn
+  PublisherTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: eng-console-publisher
+      RequiresCompatibilities:
+      - FARGATE
+      NetworkMode: awsvpc
+      RuntimePlatform:
+        OperatingSystemFamily: LINUX
+        CpuArchitecture: X86_64
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn:
+        Ref: PublisherExecutionRoleArn
+      Volumes:
+      - Name: scratch
+      - Name: data
+        EFSVolumeConfiguration:
+          FilesystemId:
+            Fn::If:
+            - CreateFileSystem
+            - Ref: FileSystem
+            - Ref: ExistingFileSystemId
+          TransitEncryption: ENABLED
+          AuthorizationConfig:
+            AccessPointId:
+              Ref: DataAccessPoint
+            IAM: ENABLED
+      - Name: lock
+        EFSVolumeConfiguration:
+          FilesystemId:
+            Fn::If:
+            - CreateFileSystem
+            - Ref: FileSystem
+            - Ref: ExistingFileSystemId
+          TransitEncryption: ENABLED
+          AuthorizationConfig:
+            AccessPointId:
+              Ref: PublisherLockAccessPoint
+            IAM: ENABLED
+      ContainerDefinitions:
+      - Name: publisher
+        Image:
+          Ref: ImageUri
+        Essential: true
+        User: 10001:10001
+        ReadonlyRootFilesystem: true
+        StopTimeout: 120
+        Environment:
+        - Name: INQSI_ENGINEERING_SOURCE_SHA
+          Value:
+            Ref: SourceSha
+        - Name: AWS_DEFAULT_REGION
+          Value:
+            Ref: AWS::Region
+        - Name: INQSI_ENGINEERING_PUBLICATION_POLICY
+          Value: proof-v1
+        - Name: INQSI_ENGINEERING_ALLOWED_SCOPES
+          Value: engineering_console_publication_proof
+        - Name: INQSI_ENGINEERING_REQUIRED_CHECKS
+          Value: engineering-console-publication-proof
+        - Name: GITHUB_REPOSITORY
+          Value: KirtKurt/parlay-platform
+        - Name: INQSI_ENGINEERING_ROLE
+          Value: publisher
+        - Name: INQSI_ENGINEERING_DATA_DIR
+          Value: /srv/control/data
+        - Name: INQSI_ENGINEERING_PUBLISHER_LOCK_DIR
+          Value: /srv/publisher-lock
+        - Name: INQSI_ENGINEERING_GITHUB_APP_SECRET_ARN
+          Value:
+            Ref: GitHubAppSecretArn
+        MountPoints:
+        - SourceVolume: data
+          ContainerPath: /srv/control
+        - SourceVolume: lock
+          ContainerPath: /srv/publisher-lock
+        - SourceVolume: scratch
+          ContainerPath: /tmp
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: PublisherLogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: publisher
+      TaskRoleArn:
+        Ref: PublisherTaskRoleArn
+  ProbeTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: eng-console-probe
+      RequiresCompatibilities:
+      - FARGATE
+      NetworkMode: awsvpc
+      RuntimePlatform:
+        OperatingSystemFamily: LINUX
+        CpuArchitecture: X86_64
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn:
+        Ref: ProbeExecutionRoleArn
+      Volumes:
+      - Name: scratch
+      ContainerDefinitions:
+      - Name: probe
+        Image:
+          Ref: ImageUri
+        Essential: true
+        User: 10001:10001
+        ReadonlyRootFilesystem: true
+        StopTimeout: 120
+        Environment:
+        - Name: INQSI_ENGINEERING_SOURCE_SHA
+          Value:
+            Ref: SourceSha
+        - Name: AWS_DEFAULT_REGION
+          Value:
+            Ref: AWS::Region
+        - Name: INQSI_ENGINEERING_CONSOLE_URL
+          Value:
+            Fn::Sub: https://${ConsoleDomainName}
+        - Name: INQSI_ENGINEERING_OIDC_ISSUER
+          Value:
+            Ref: OidcIssuer
+        - Name: INQSI_ENGINEERING_OIDC_AUDIENCE
+          Value:
+            Ref: OidcAudience
+        MountPoints:
+        - SourceVolume: scratch
+          ContainerPath: /tmp
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: ProbeLogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: probe
+        EntryPoint:
+        - /usr/bin/tini
+        - --
+        Command:
+        - node
+        - /app/scripts/verify-live.mjs
+        Secrets:
+        - Name: ENG_CONSOLE_PROBE_CLIENT_ID
+          ValueFrom:
+            Fn::Sub: '${ProbeOidcSecretArn}:clientId::'
+        - Name: ENG_CONSOLE_PROBE_CLIENT_SECRET
+          ValueFrom:
+            Fn::Sub: '${ProbeOidcSecretArn}:clientSecret::'
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: eng-console-private
+      Scheme: internal
+      Type: application
+      Subnets:
+        Ref: PrivateSubnetIds
+      SecurityGroups:
+      - Ref: LoadBalancerSecurityGroupId
+  ControllerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId:
+        Ref: VpcId
+      Port: 8787
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /healthz
+      Matcher:
+        HttpCode: '200'
+  BrokerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId:
+        Ref: VpcId
+      Port: 8790
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /healthz
+      Matcher:
+        HttpCode: '200'
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn:
+        Ref: LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+      - CertificateArn:
+          Ref: CertificateArn
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn:
+          Ref: ControllerTargetGroup
+  BrokerListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn:
+        Ref: HttpsListener
+      Priority: 10
+      Conditions:
+      - Field: path-pattern
+        Values:
+        - /broker/*
+      Actions:
+      - Type: forward
+        TargetGroupArn:
+          Ref: BrokerTargetGroup
+  ControllerService:
+    Type: AWS::ECS::Service
+    Condition: CreateMountTargets
+    DependsOn:
+    - MountTarget0
+    - MountTarget1
+    - HttpsListener
+    - BrokerListenerRule
+    Properties:
+      ServiceName: eng-console-controller
+      HealthCheckGracePeriodSeconds: 300
+      Cluster:
+        Ref: Cluster
+      DesiredCount: 1
+      LaunchType: FARGATE
+      PlatformVersion: 1.4.0
+      TaskDefinition:
+        Ref: ControllerTaskDefinition
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            Ref: PrivateSubnetIds
+          SecurityGroups:
+          - Ref: TrustedSecurityGroupId
+      LoadBalancers:
+      - ContainerName: controller
+        ContainerPort: 8787
+        TargetGroupArn:
+          Ref: ControllerTargetGroup
+  ControllerServiceExistingTargets:
+    Type: AWS::ECS::Service
+    Condition: ReuseMountTargets
+    DependsOn:
+    - HttpsListener
+    - BrokerListenerRule
+    Properties:
+      ServiceName: eng-console-controller
+      HealthCheckGracePeriodSeconds: 300
+      Cluster:
+        Ref: Cluster
+      DesiredCount: 1
+      LaunchType: FARGATE
+      PlatformVersion: 1.4.0
+      TaskDefinition:
+        Ref: ControllerTaskDefinition
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            Ref: PrivateSubnetIds
+          SecurityGroups:
+          - Ref: TrustedSecurityGroupId
+      LoadBalancers:
+      - ContainerName: controller
+        ContainerPort: 8787
+        TargetGroupArn:
+          Ref: ControllerTargetGroup
+  BrokerService:
+    Type: AWS::ECS::Service
+    Condition: CreateMountTargets
+    DependsOn:
+    - MountTarget0
+    - MountTarget1
+    - HttpsListener
+    - BrokerListenerRule
+    Properties:
+      ServiceName: eng-console-broker
+      Cluster:
+        Ref: Cluster
+      DesiredCount: 1
+      LaunchType: FARGATE
+      PlatformVersion: 1.4.0
+      TaskDefinition:
+        Ref: BrokerTaskDefinition
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            Ref: PrivateSubnetIds
+          SecurityGroups:
+          - Ref: TrustedSecurityGroupId
+      LoadBalancers:
+      - ContainerName: broker
+        ContainerPort: 8790
+        TargetGroupArn:
+          Ref: BrokerTargetGroup
+  BrokerServiceExistingTargets:
+    Type: AWS::ECS::Service
+    Condition: ReuseMountTargets
+    DependsOn:
+    - HttpsListener
+    - BrokerListenerRule
+    Properties:
+      ServiceName: eng-console-broker
+      Cluster:
+        Ref: Cluster
+      DesiredCount: 1
+      LaunchType: FARGATE
+      PlatformVersion: 1.4.0
+      TaskDefinition:
+        Ref: BrokerTaskDefinition
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            Ref: PrivateSubnetIds
+          SecurityGroups:
+          - Ref: TrustedSecurityGroupId
+      LoadBalancers:
+      - ContainerName: broker
+        ContainerPort: 8790
+        TargetGroupArn:
+          Ref: BrokerTargetGroup
+  PublisherService:
+    Type: AWS::ECS::Service
+    Condition: CreateMountTargets
+    DependsOn:
+    - MountTarget0
+    - MountTarget1
+    - HttpsListener
+    - BrokerListenerRule
+    Properties:
+      ServiceName: eng-console-publisher
+      Cluster:
+        Ref: Cluster
+      DesiredCount: 1
+      LaunchType: FARGATE
+      PlatformVersion: 1.4.0
+      TaskDefinition:
+        Ref: PublisherTaskDefinition
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            Ref: PrivateSubnetIds
+          SecurityGroups:
+          - Ref: TrustedSecurityGroupId
+  PublisherServiceExistingTargets:
+    Type: AWS::ECS::Service
+    Condition: ReuseMountTargets
+    DependsOn:
+    - HttpsListener
+    - BrokerListenerRule
+    Properties:
+      ServiceName: eng-console-publisher
+      Cluster:
+        Ref: Cluster
+      DesiredCount: 1
+      LaunchType: FARGATE
+      PlatformVersion: 1.4.0
+      TaskDefinition:
+        Ref: PublisherTaskDefinition
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            Ref: PrivateSubnetIds
+          SecurityGroups:
+          - Ref: TrustedSecurityGroupId
+  ConsoleRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId:
+        Ref: HostedZoneId
+      Name:
+        Ref: ConsoleDomainName
+      Type: A
+      AliasTarget:
+        DNSName:
+          Fn::GetAtt:
+          - LoadBalancer
+          - DNSName
+        HostedZoneId:
+          Fn::GetAtt:
+          - LoadBalancer
+          - CanonicalHostedZoneID
+Outputs:
+  RuntimeStateVersion:
+    Value: isolated-console-v3
+  ConsoleUrl:
+    Value:
+      Fn::Sub: https://${ConsoleDomainName}
+  FileSystemId:
+    Value:
+      Fn::If:
+      - CreateFileSystem
+      - Ref: FileSystem
+      - Ref: ExistingFileSystemId
+  ClusterName:
+    Value:
+      Ref: Cluster
+  ImageUri:
+    Value:
+      Ref: ImageUri
+  SourceSha:
+    Value:
+      Ref: SourceSha
+  ControllerTaskDefinitionArn:
+    Value:
+      Ref: ControllerTaskDefinition
+  ControllerLogGroupName:
+    Value:
+      Ref: ControllerLogGroup
+  BrokerTaskDefinitionArn:
+    Value:
+      Ref: BrokerTaskDefinition
+  BrokerLogGroupName:
+    Value:
+      Ref: BrokerLogGroup
+  PublisherTaskDefinitionArn:
+    Value:
+      Ref: PublisherTaskDefinition
+  PublisherLogGroupName:
+    Value:
+      Ref: PublisherLogGroup
+  JobTaskDefinitionArn:
+    Value:
+      Ref: JobTaskDefinition
+  JobLogGroupName:
+    Value:
+      Ref: JobLogGroup
+  ProbeTaskDefinitionArn:
+    Value:
+      Ref: ProbeTaskDefinition
+  ProbeLogGroupName:
+    Value:
+      Ref: ProbeLogGroup
