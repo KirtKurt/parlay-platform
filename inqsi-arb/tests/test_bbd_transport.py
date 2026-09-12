@@ -20,14 +20,14 @@ def transport(monkeypatch):
     calls = []
     responses = []
 
-    def install(code, location=None):
+    def install(code, location=None, body=b'{"data": []}'):
         class OfflineHTTPS(HTTPSHandler):
             def https_open(self, request):
                 calls.append(request)
                 headers = Message()
                 if location is not None:
                     headers["Location"] = location
-                response = addinfourl(io.BytesIO(b'{"data": []}'), headers, request.full_url, code)
+                response = addinfourl(io.BytesIO(body), headers, request.full_url, code)
                 response.msg = "offline fixture"
                 responses.append(response)
                 return response
@@ -59,6 +59,31 @@ def test_redirects_fail_closed_without_second_request(transport, code, location,
     assert responses[0].closed
     assert "offline-test-token" not in str(result)
     if operation != "health":
+        assert result[operation] == []
+
+
+@pytest.mark.parametrize("body", [
+    b'{"data": [{"id": "\xff"}]}',
+    b'{"data": []}\xc3',
+    b'{"data": [',
+    b'<html>upstream error</html>',
+])
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+def test_invalid_response_body_fails_closed(transport, body, operation):
+    install, calls, responses = transport
+    install(200, body=body)
+
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_REQUEST_FAILED"
+    assert len(calls) == 1
+    assert responses[0].closed
+    assert "offline-test-token" not in str(result)
+    assert "upstream error" not in str(result)
+    if operation == "health":
+        assert result["sports_count"] is None
+    else:
         assert result[operation] == []
 
 
