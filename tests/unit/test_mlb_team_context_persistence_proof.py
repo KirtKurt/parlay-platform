@@ -175,7 +175,7 @@ def _unpost(row, side):
 
 def _live(row):
     context = row['data']['advanced_context']
-    return {'officialGamePk': int(PK),
+    return {'officialGamePk': int(PK), 'gameDate': row['data']['commenceTime'],
             'lineup': copy.deepcopy(context.get('confirmed_lineups') or {}),
             'bullpen': copy.deepcopy(context.get('bullpen_fatigue') or {})}
 
@@ -264,14 +264,19 @@ def test_paginated_reads_are_consistent_and_preserve_every_game():
     assert table.calls == 2 and result['storedGameRows'] == 1
 
 
-def test_live_command_retains_fresh_inconclusive_diagnostic_and_fails(monkeypatch, tmp_path):
+@pytest.mark.parametrize('mode', ['missing', 'malformed_lineup', 'malformed_bullpen', 'proven'])
+def test_live_command_retains_fresh_inconclusive_diagnostic_and_fails(monkeypatch, tmp_path, mode):
     import boto3
     import json
     from datetime import datetime, timezone
-    class Clock:
+    class Clock(datetime):
         @staticmethod
         def now(tz): return datetime(2026, 9, 11, 18, tzinfo=timezone.utc)
-    live = _live(_row()); stored = _row(); stored['data']['advanced_context'] = {}
+    live = _live(_row()); stored = _row()
+    if mode == 'missing': stored['data']['advanced_context'] = {}
+    elif mode == 'malformed_lineup': stored['data']['advanced_context']['confirmed_lineups']['sourceProvenance'] = 'corrupt'
+    elif mode == 'malformed_bullpen': stored['data']['advanced_context']['bullpen_fatigue']['bullpenRosterSourceProvenance'] = ['corrupt']
+    for side in ('home', 'away'): live['bullpen'][side+'_reliever_usage_1d_3d_5d'] = {}
     class Resource:
         def Table(self, name):
             assert name == 'parlay_platform_snapshots'
@@ -287,12 +292,19 @@ def test_live_command_retains_fresh_inconclusive_diagnostic_and_fails(monkeypatc
     monkeypatch.setattr(boto3, 'resource', lambda _: Resource())
     monkeypatch.setenv('PROOF_SOURCE_SHA', 'f'*40)
     (tmp_path/'runtime_reports').mkdir()
-    with pytest.raises(RuntimeError, match='proof inconclusive'):
+    if mode == 'proven':
         SUBJECT.main()
+    else:
+        with pytest.raises(RuntimeError, match='proof inconclusive'):
+            SUBJECT.main()
     report = json.loads((tmp_path/'runtime_reports/mlb_team_context_live_proof_latest.json').read_text())
     assert report['sourceSha'] == 'f'*40
-    assert report['persistenceCorrelation']['status'] == 'INCONCLUSIVE'
-    assert report['persistedCollectorEvidence']['gamesWithPassiveBatterObservations'] == 0
+    assert report['persistenceCorrelation']['status'] == ('PROVEN' if mode == 'proven' else 'INCONCLUSIVE')
+    if mode == 'missing':
+        assert report['persistedCollectorEvidence']['gamesWithPassiveBatterObservations'] == 0
+    elif mode != 'proven':
+        assert report['persistedCollectorEvidence']['status'] == 'INVALID'
+        assert 'source_provenance_invalid' in report['persistedCollectorEvidence']['errors'][0]
 
 
 def test_live_workflow_pins_main_event_and_removes_stale_evidence():
@@ -330,3 +342,92 @@ def test_roster_membership_change_remains_inconclusive():
     live['bullpen']['home_bullpen_roster_player_ids'][0] = 999
     stored = SUBJECT.persisted_observations(Table([row]), '2026-09-11')
     assert SUBJECT.correlate_persistence([live], stored)['status'] == 'INCONCLUSIVE'
+
+
+def test_other_provider_connected_lineup_is_not_statsapi_passive_evidence():
+    import mlb_bbd_pro_context as bbd
+    row = _row()
+    row['data']['advanced_context'] = bbd.merge_into_advanced_context({}, {
+        'sourceStatus': 'CONNECTED', 'categories': {
+            'confirmed_lineups': [{'signals': {'values': [{'confirmed': True}]}}]}})
+    assert row['data']['advanced_context']['confirmed_lineups']['source_status'] == 'CONNECTED'
+    result = SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+    assert result['gamesWithPassiveBatterObservations'] == 0
+    assert result['gamesWithPassiveBullpenRosters'] == 0
+
+
+def test_statsapi_connected_status_cannot_hide_total_array_loss():
+    row = _row(); line = row['data']['advanced_context']['confirmed_lineups']
+    for side in ('home', 'away'):
+        for suffix in ('batting_order', 'lineup_season_batting', 'lineup_confirmed'):
+            line.pop(side+'_'+suffix)
+    with pytest.raises(RuntimeError, match='batting_order_invalid'):
+        SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+
+
+@pytest.mark.parametrize('field,value', [('plateAppearances', Decimal(101)), ('ops', Decimal('.9')),
+                                       ('obp', Decimal('.34')), ('slg', Decimal('.5'))])
+def test_individually_valid_but_changed_batter_sample_is_not_proven(field, value):
+    row = _row(); live = _live(row)
+    row['data']['advanced_context']['confirmed_lineups']['home_lineup_season_batting'][0][field] = value
+    stored = SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+    assert stored['gamesWithValidPassiveBatterObservations'] == 1
+    result = SUBJECT.correlate_persistence([live], stored)
+    assert result['status'] == 'INCONCLUSIVE'
+    assert any('batter_samples_not_persisted' in error for error in result['errors'])
+
+
+def test_consistently_changed_sample_metadata_is_not_proven():
+    row = _row(); live = _live(row)
+    row['data']['advanced_context']['confirmed_lineups']['home_lineup_season_batting'][0].update(
+        plateAppearances=Decimal(0), ops=None, obp=None, slg=None,
+        rateObservationCount=Decimal(0), sampleStatus='NO_PLATE_APPEARANCES')
+    stored = SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+    assert SUBJECT.correlate_persistence([live], stored)['status'] == 'INCONCLUSIVE'
+
+
+def test_live_float_samples_equal_dynamodb_decimal_readback():
+    row = _row(); live = _live(row)
+    for side in ('home', 'away'):
+        for sample in live['lineup'][side+'_lineup_season_batting']:
+            for field in ('ops', 'obp', 'slg'):
+                sample[field] = float(sample[field])
+    stored = SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+    assert SUBJECT.correlate_persistence([live], stored)['status'] == 'PROVEN'
+
+
+@pytest.mark.parametrize('field', ['ops', 'obp', 'slg', 'plateAppearances', 'sampleStatus', 'rateObservationCount'])
+def test_missing_sample_fields_fail_closed(field):
+    row = _row()
+    del row['data']['advanced_context']['confirmed_lineups']['home_lineup_season_batting'][0][field]
+    with pytest.raises(RuntimeError, match='fields_missing'):
+        SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+
+
+def test_corrupted_persisted_start_cannot_make_late_receipts_valid():
+    row = _row(); live = _live(row)
+    row['data']['commenceTime'] = '2026-09-11T22:00:00Z'
+    context = row['data']['advanced_context']
+    for prov in (context['confirmed_lineups']['sourceProvenance'], context['bullpen_fatigue']['bullpenRosterSourceProvenance']):
+        prov['retrievedAtUtc'] = prov['sourceEffectiveAtUtc'] = '2026-09-11T19:30:00Z'
+    stored = SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+    result = SUBJECT.correlate_persistence([live], stored)
+    assert result['status'] == 'INCONCLUSIVE'
+    assert any('commence_time_mismatch' in error for error in result['errors'])
+
+
+def test_equivalent_official_start_timezone_is_accepted():
+    row = _row(); live = _live(row); live['gameDate'] = '2026-09-11T16:00:00-04:00'
+    stored = SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+    assert SUBJECT.correlate_persistence([live], stored)['status'] == 'PROVEN'
+
+
+@pytest.mark.parametrize('value', ['corrupt', ['corrupt'], 1])
+@pytest.mark.parametrize('block,field,validator', [
+    ('confirmed_lineups', 'sourceProvenance', 'passive_lineup_observation'),
+    ('bullpen_fatigue', 'bullpenRosterSourceProvenance', 'passive_bullpen_roster_observation')])
+def test_malformed_provenance_returns_validation_diagnostics(block, field, validator, value):
+    row = _row(); row['data']['advanced_context'][block][field] = value
+    result = getattr(SUBJECT, validator)(row['data'])
+    assert result['present'] and not result['valid']
+    assert any('source_provenance_invalid' in error for error in result['errors'])
