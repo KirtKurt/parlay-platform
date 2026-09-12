@@ -139,6 +139,12 @@ test('definitive zero-task rejection leaves the failed job continuable without t
   assert.equal(store.get(job.id).error, 'isolated_job_launch_rejected');
   assert.ok(store.get(job.id).execution.launchRejectedAt); assert.ok(store.get(job.id).execution.stoppedAt);
   assert.equal(fs.existsSync(path.join(transport.directory, 'input.json')), false);
+  // Simulate a crash after the rejection marker/cleanup but before the outer
+  // runner persisted failed. A replacement must not call ECS even once.
+  const recovered = store.get(job.id); recovered.status = 'running'; store.save(recovered);
+  const replacement = new EcsCodex({ config, store, job: recovered, workspace: path.join(config.workspaceRoot, job.id), callAws: async () => assert.fail('terminal rejection must not contact ECS') });
+  await createRunner(config, store, class { constructor() { return replacement; } })(recovered, new AbortController().signal);
+  assert.equal(store.get(job.id).status, 'failed'); assert.equal(store.get(job.id).error, 'isolated_job_launch_rejected');
   const queued = [], base = await listen(t, config, store, { enqueue(id) { queued.push(id); } });
   const response = await fetch(`${base}/v1/engineering/${job.id}/continue`, { method: 'POST', body: JSON.stringify({ instruction: 'Retry when capacity is available' }) });
   assert.equal(response.status, 202); assert.equal(store.get(job.id).execution, null); assert.deepEqual(queued, [job.id]);

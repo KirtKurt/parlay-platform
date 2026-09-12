@@ -174,6 +174,12 @@ export class EcsCodex {
   }
   async *run(prompt, threadId, options, signal) {
     const { config, job, store, callAws } = this;
+    if (job.execution?.launchRejectedAt) {
+      // This outcome may be durable while the outer runner still says running.
+      // Recovery must finish failure/cleanup, never reuse this launch identity.
+      removeTerminalInput(config, job.execution);
+      throw new Error('isolated_job_launch_rejected');
+    }
     for (const key of ['cluster', 'jobTaskDefinition', 'jobImage', 'jobSecurityGroup', 'brokerUrl', 'transportDir', 'model']) if (!config[key]) throw new Error(`isolated_runner_missing_${key}`);
     if (!/^https:\/\//.test(config.brokerUrl) || !Array.isArray(config.jobSubnets) || config.jobSubnets.length < 2) throw new Error('isolated_runner_network_invalid');
     if (job.execution && (signal.aborted || job.cancelRequested || store.get?.(job.id)?.cancelRequested)) {
