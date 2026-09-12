@@ -185,3 +185,41 @@ def test_valid_https_base_urls_preserve_endpoint(transport, monkeypatch, base_ur
     assert result["ok"] is True
     assert calls[0].full_url == base_url.rstrip("/") + "/v1/matches"
     assert calls[0].get_header("Authorization") == "Bearer offline-test-token"
+
+
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+@pytest.mark.parametrize("authority", [
+    "%00", ".", "%2e", "%62bd.invalid", "bbd%ZZ.invalid",
+    "bad..invalid", "-bad.invalid", "bad-.invalid", "bad_name.invalid",
+    "a" * 64 + ".invalid", ".".join(["a" * 63] * 4),
+    "999.1.1.1", "127.1", "127.0.0.01", "bbd.invalid:",
+    "[::1]garbage", "[fe80::1%25eth0]", "é.invalid", "\udcff.invalid",
+])
+def test_malformed_authority_rejected_before_authenticated_request(
+    monkeypatch, transport, authority, operation,
+):
+    monkeypatch.setenv("BBD_BASE_URL", "https://" + authority)
+
+    def unexpected_request(*args, **kwargs):
+        pytest.fail("Malformed authority must be rejected before constructing a request")
+
+    monkeypatch.setattr(bbd_provider, "Request", unexpected_request)
+    result = getattr(bbd_provider, operation)()
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_BASE_URL_INVALID"
+    assert "offline-test-token" not in str(result)
+    if operation != "health":
+        assert result[operation] == []
+
+
+@pytest.mark.parametrize("base_url", [
+    "https://127.0.0.1:8443/context", "https://[::1]:8443/context",
+    "https://[2001:db8::1]", "https://bbd.invalid.",
+    "https://xn--bcher-kva.invalid", "https://BBD.INVALID:443/context",
+])
+def test_valid_host_syntax_preserves_destination(monkeypatch, transport, base_url):
+    install, calls, _ = transport
+    monkeypatch.setenv("BBD_BASE_URL", base_url)
+    install(200)
+    assert bbd_provider.sports()["ok"] is True
+    assert calls[0].full_url == base_url + "/v1/sports"

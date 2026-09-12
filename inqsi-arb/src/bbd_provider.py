@@ -7,8 +7,10 @@ odds data. Callers can fail closed when a particular context field is required.
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+import re
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
@@ -86,6 +88,28 @@ def _validated_base_url() -> str:
             or port == 0
         ):
             raise ValueError("unsafe base URL")
+        # Validate the literal authority urllib will use. Reject encoded hosts
+        # rather than decoding to a different destination; IDNs must use ASCII
+        # punycode. DNS lookup is deliberately not part of this syntax check.
+        host = parsed.hostname
+        if not parsed.netloc.isascii() or "%" in parsed.netloc:
+            raise ValueError("invalid authority")
+        if parsed.netloc.startswith("["):
+            if not re.fullmatch(r"\[[0-9A-Fa-f:.]+\](?::[0-9]+)?", parsed.netloc):
+                raise ValueError("invalid IPv6 authority")
+            ipaddress.IPv6Address(host)
+        else:
+            if not re.fullmatch(r"[A-Za-z0-9.-]+(?::[0-9]+)?", parsed.netloc):
+                raise ValueError("invalid DNS authority")
+            if re.fullmatch(r"[0-9.]+", host):
+                ipaddress.IPv4Address(host)
+            else:
+                dns_name = host[:-1] if host.endswith(".") else host
+                if len(dns_name) > 253 or any(
+                    not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+                    for label in dns_name.split(".")
+                ):
+                    raise ValueError("invalid DNS hostname")
     except ValueError as exc:
         raise BBDError("BBD_BASE_URL_INVALID") from exc
     return url
