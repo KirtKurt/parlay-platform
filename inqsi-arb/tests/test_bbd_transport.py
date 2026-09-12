@@ -100,3 +100,45 @@ def test_direct_request_preserves_auth_and_query_contract(transport):
     assert calls[0].get_header("Authorization") == "Bearer offline-test-token"
     assert calls[0].get_header("Accept") == "application/json"
     assert responses[0].closed
+
+
+@pytest.mark.parametrize("base_url", [
+    "http://bbd.invalid", "ftp://bbd.invalid", "//bbd.invalid", "https:///missing-host",
+    "https://user:password@bbd.invalid", "https://user@bbd.invalid",
+    "https://bbd.invalid?token=secret", "https://bbd.invalid#fragment",
+    "https://bbd.invalid?", "https://bbd.invalid#",
+    "https://bbd.invalid:bad", "https://bbd.invalid:65536", "https://bbd.invalid:0",
+    "https://[broken", " https://bbd.invalid", "https://bbd.invalid\n",
+    "https://bbd.invalid/with space", "https://bbd.invalid/\x01",
+    "https://bbd.invalid/\x7f", "https://bbd.invalid\\other",
+])
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+def test_unsafe_base_url_fails_before_transport(monkeypatch, transport, base_url, operation):
+    monkeypatch.setenv("BBD_BASE_URL", base_url)
+
+    def unexpected_opener(*args):
+        pytest.fail("Unsafe base URL must be rejected before opening transport")
+
+    monkeypatch.setattr(bbd_provider, "build_opener", unexpected_opener)
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_BASE_URL_INVALID"
+    assert "offline-test-token" not in str(result)
+    if operation != "health":
+        assert result[operation] == []
+
+
+@pytest.mark.parametrize("base_url", [
+    "https://bbd.invalid", "https://bbd.invalid/", "https://bbd.invalid:8443/context/",
+])
+def test_valid_https_base_urls_preserve_endpoint(transport, monkeypatch, base_url):
+    install, calls, _ = transport
+    install(200)
+    monkeypatch.setenv("BBD_BASE_URL", base_url)
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is True
+    assert calls[0].full_url == base_url.rstrip("/") + "/v1/matches"
+    assert calls[0].get_header("Authorization") == "Bearer offline-test-token"

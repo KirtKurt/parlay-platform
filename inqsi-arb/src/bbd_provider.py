@@ -12,7 +12,7 @@ import os
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 DEFAULT_BASE_URL = "https://api.bigballsdata.com"
@@ -68,12 +68,35 @@ def base_url() -> str:
     return (os.environ.get("BBD_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
 
 
+def _validated_base_url() -> str:
+    """Reject unsafe configuration before constructing an authenticated request."""
+    url = base_url()
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port  # Validate malformed and out-of-range ports.
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or "?" in url
+            or "#" in url
+            or "\\" in url
+            or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in url)
+            or port == 0
+        ):
+            raise ValueError("unsafe base URL")
+    except ValueError as exc:
+        raise BBDError("BBD_BASE_URL_INVALID") from exc
+    return url
+
+
 def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int = 20,
              optional: bool = False) -> Tuple[int, Dict[str, str], Any]:
     key = api_key()
     if not key:
         raise BBDError("BBD_API_KEY_NOT_CONFIGURED")
-    url = f"{base_url()}{path}"
+    url = f"{_validated_base_url()}{path}"
     if params:
         clean = {k: v for k, v in params.items() if v is not None and str(v) != ""}
         if clean:
