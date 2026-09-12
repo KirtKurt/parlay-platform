@@ -20,6 +20,17 @@ def isolate_bbd_credentials(monkeypatch):
     None, "invalid", {}, {"error": "access denied"}, {"data": None},
     {"data": {"items": "invalid"}}, [None],
     {"data": [{"id": "valid"}, "invalid"]},
+    {"data": [], "events": [{"id": "hidden"}]},
+    {"events": [{"id": "hidden"}], "data": []},
+    {"data": [{"id": "visible"}], "results": []},
+    {"data": None, "sports": []},
+    {"data": [], "matches": "invalid"},
+    {"data": [], "sports": []},
+    {"data": {"events": [], "items": [{"id": "hidden"}]}},
+    {"data": {"items": [{"id": "hidden"}], "events": []}},
+    {"data": {"sports": None, "items": []}},
+    {"data": {"matches": [], "results": "invalid"}},
+    {"data": {"events": [], "items": []}},
 ])
 def test_malformed_collections_fail_closed(monkeypatch, operation, payload):
     monkeypatch.setenv("ARB_BBD_ENABLED", "true")
@@ -47,6 +58,28 @@ def test_recognized_empty_collections_remain_valid(monkeypatch, operation, paylo
 
     assert result["ok"] is True
     assert result["sports_count" if operation == "health" else "count"] == 0
+
+
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+@pytest.mark.parametrize("outer", ["data", "sports", "matches", "events", "results"])
+@pytest.mark.parametrize("inner", [None, "sports", "matches", "events", "results", "items"])
+def test_unambiguous_envelopes_preserve_rows_and_metadata(monkeypatch, operation, outer, inner):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    rows = [{"id": "fixture-event", "status": "scheduled"}]
+    value = rows if inner is None else {inner: rows, "meta": {"count": 1}, "error": None}
+    payload = {outer: value, "meta": {"count": 1}, "error": None}
+    monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (200, {}, payload))
+
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is True
+    assert result["sports_count" if operation == "health" else "count"] == 1
+    if operation == "events":
+        assert result["events"][0]["bbd_event_id"] == "fixture-event"
+        assert result["events"][0]["raw"] == rows[0]
+    elif operation == "sports":
+        assert result["sports"] == rows
 
 
 @pytest.mark.parametrize("status", [401, 403, 404])
