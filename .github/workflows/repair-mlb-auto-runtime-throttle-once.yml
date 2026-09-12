@@ -1,0 +1,132 @@
+name: Repair MLB Auto runtime throttle once
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repair-mlb-auto-runtime-throttle-once
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  LLM_STACK: parlay-platform-mlb-auto-llm
+  PROD_STACK: parlay-platform-mlb-auto-prod
+  LLM_LOGICAL: MLBAutoLLMFunction
+  PROD_LOGICAL: AutoFunction
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Resolve functions and repair runtime gates
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          LLM=$(aws cloudformation describe-stack-resource --stack-name "$LLM_STACK" --logical-resource-id "$LLM_LOGICAL" --query StackResourceDetail.PhysicalResourceId --output text)
+          PROD=$(aws cloudformation describe-stack-resource --stack-name "$PROD_STACK" --logical-resource-id "$PROD_LOGICAL" --query StackResourceDetail.PhysicalResourceId --output text)
+          echo "llm_function=$LLM"
+          echo "prod_function=$PROD"
+          test -n "$LLM" && test "$LLM" != None
+          test -n "$PROD" && test "$PROD" != None
+
+          echo '--- concurrency before ---'
+          aws lambda get-function-concurrency --function-name "$LLM" --output json || echo '{"ReservedConcurrentExecutions":null}'
+          aws lambda get-function-concurrency --function-name "$PROD" --output json || echo '{"ReservedConcurrentExecutions":null}'
+
+          LLM_RESERVED=$(aws lambda get-function-concurrency --function-name "$LLM" --query ReservedConcurrentExecutions --output text || true)
+          echo "llm_reserved=$LLM_RESERVED"
+          if [ "$LLM_RESERVED" = "0" ]; then
+            echo 'Removing reserved-concurrency kill switch on MLB AUTO LLM'
+            aws lambda delete-function-concurrency --function-name "$LLM"
+          fi
+
+          if [ -n "${ODDS_API_KEY:-}" ]; then
+            python - <<'PY'
+          import json, os, subprocess
+          fn = subprocess.check_output([
+              'aws','lambda','get-function-configuration',
+              '--function-name', os.environ['PROD_FN'],
+              '--query','Environment.Variables','--output','json'
+          ], text=True)
+          env = json.loads(fn or '{}') or {}
+          key = os.environ['ODDS_API_KEY']
+          if env.get('ODDS_API_KEY') != key:
+              env['ODDS_API_KEY'] = key
+              payload = json.dumps({'Variables': env})
+              subprocess.check_call([
+                  'aws','lambda','update-function-configuration',
+                  '--function-name', os.environ['PROD_FN'],
+                  '--environment', payload,
+              ])
+              print('prod_odds_key_updated=true')
+          else:
+              print('prod_odds_key_already_current=true')
+          print('odds_key_present=true')
+          PY
+          else
+            echo 'odds_key_present=false'
+          fi
+        env:
+          PROD_FN: placeholder
+      - name: Bind resolved names then retry status invokes
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          LLM=$(aws cloudformation describe-stack-resource --stack-name "$LLM_STACK" --logical-resource-id "$LLM_LOGICAL" --query StackResourceDetail.PhysicalResourceId --output text)
+          PROD=$(aws cloudformation describe-stack-resource --stack-name "$PROD_STACK" --logical-resource-id "$PROD_LOGICAL" --query StackResourceDetail.PhysicalResourceId --output text)
+          echo '--- concurrency after ---'
+          aws lambda get-function-concurrency --function-name "$LLM" --output json || echo '{"ReservedConcurrentExecutions":null}'
+          aws lambda get-function-configuration --function-name "$LLM" --query '{State:State,LastUpdateStatus:LastUpdateStatus,Reserved:ReservedConcurrentExecutions}' --output json
+          aws lambda get-function-configuration --function-name "$PROD" --query '{State:State,LastUpdateStatus:LastUpdateStatus}' --output json
+
+          invoke_ok=0
+          for attempt in 1 2 3 4 5; do
+            if aws lambda invoke --function-name "$LLM" --cli-binary-format raw-in-base64-out \
+              --payload '{"rawPath":"/v1/mlb-auto/status","requestContext":{"http":{"method":"GET"}},"queryStringParameters":{"date":"2026-09-12"}}' \
+              /tmp/llm-status.json >/tmp/llm-meta.json; then
+              echo "llm_invoke_attempt=$attempt ok"
+              python - <<'PY'
+          import json
+          meta=json.load(open('/tmp/llm-meta.json'))
+          body=json.load(open('/tmp/llm-status.json'))
+          print('llm_status_code', meta.get('StatusCode'), 'function_error', meta.get('FunctionError'))
+          if isinstance(body, dict):
+              print('llm_keys', sorted(body)[:30])
+              print('llm_scheduled', body.get('scheduledGames') or body.get('scheduled_games'))
+              print('llm_picks', body.get('pickCount') or body.get('publishedPicks'))
+              print('llm_card', body.get('cardPublished'))
+          PY
+              invoke_ok=1
+              break
+            fi
+            echo "llm_invoke_attempt=$attempt failed; sleep"
+            sleep $((attempt * 3))
+          done
+          aws lambda invoke --function-name "$PROD" --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"STATUS"}' /tmp/prod-status.json >/tmp/prod-meta.json || true
+          python - <<'PY'
+          import json
+          try:
+              status=json.load(open('/tmp/prod-status.json'))
+          except Exception as exc:
+              print('prod_status_unreadable', type(exc).__name__); raise SystemExit(0)
+          print('prod_ok', status.get('ok'))
+          print('prod_today_predictions', status.get('today_prediction_count'))
+          print('prod_today_locked', status.get('today_locked_count'))
+          print('prod_mode', status.get('prediction_mode'))
+          ctrl=status.get('controller') or {}
+          print('prod_last_ingest_ok', ctrl.get('last_ingest_ok'))
+          print('prod_last_ingest_error', ctrl.get('last_ingest_error'))
+          PY
+          test "$invoke_ok" = 1
