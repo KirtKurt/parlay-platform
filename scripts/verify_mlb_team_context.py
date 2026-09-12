@@ -99,6 +99,9 @@ def _passive_context(row):
         context = row['passiveTeamContext']
         if not isinstance(context, dict):
             raise RuntimeError('invalid persisted passive team context')
+        for key in ('confirmed_lineups', 'bullpen_fatigue'):
+            if key in context and not isinstance(context[key], dict):
+                raise RuntimeError('invalid persisted passive team block: '+key)
         return context
     return row.get('advanced_context') or row.get('advancedContext') or {}
 
@@ -173,7 +176,12 @@ def persisted_observations(table,day):
         if not cursor:break
     evidence=[]
     for stored in rows:
-        row=stored.get('data') or stored;snap=row.get('fundamentalsSnapshotV2') or {};groups=snap.get('groups') or {}
+        row=stored.get('data') or stored
+        if 'passiveTeamContext' in row:
+            _passive_context(row)
+            errors=snapshots.validate(row.get('fundamentalsSnapshotV2'))
+            if errors:raise RuntimeError('invalid persisted companion snapshot: '+','.join(errors))
+        snap=row.get('fundamentalsSnapshotV2') or {};groups=snap.get('groups') or {}
         line,roster=passive_lineup_observation(row),passive_bullpen_roster_observation(row)
         if line['present'] and not line['valid']:raise RuntimeError('invalid persisted passive batter observation: '+','.join(line['errors']))
         if roster['present'] and not roster['valid']:raise RuntimeError('invalid persisted passive bullpen roster observation: '+','.join(roster['errors']))

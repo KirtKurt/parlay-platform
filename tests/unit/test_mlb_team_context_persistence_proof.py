@@ -507,8 +507,47 @@ def test_malformed_passive_envelope_cannot_fall_back_to_valid_legacy_context(val
 
 
 def test_empty_passive_envelope_does_not_claim_legacy_observations():
+    import mlb_fundamentals_snapshot_v2 as snapshots
     row = _row()
+    row['data']['fundamentalsSnapshotV2'] = snapshots.build(row['data'])
     row['data']['passiveTeamContext'] = {}
     result = SUBJECT.persisted_observations(Table([row]), '2026-09-11')
     assert result['gamesWithValidPassiveBatterObservations'] == 0
     assert result['gamesWithValidPassiveBullpenRosters'] == 0
+
+
+@pytest.mark.parametrize('block', ['confirmed_lineups', 'bullpen_fatigue'])
+@pytest.mark.parametrize('value', [None, [], 'malformed'])
+def test_named_passive_block_must_be_a_dictionary(block, value):
+    row = _row()
+    row['data']['passiveTeamContext'] = copy.deepcopy(row['data']['advanced_context'])
+    row['data']['passiveTeamContext'][block] = value
+    with pytest.raises(RuntimeError, match='invalid persisted passive team block'):
+        SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+
+
+@pytest.mark.parametrize('snapshot', [None, {}, [], 'malformed'])
+@pytest.mark.parametrize('roster_only', [False, True])
+def test_passive_envelope_requires_valid_companion_snapshot(snapshot, roster_only):
+    row = _row()
+    context = row['data'].pop('advanced_context')
+    if roster_only:
+        context.pop('confirmed_lineups')
+    row['data']['passiveTeamContext'] = context
+    row['data']['fundamentalsSnapshotV2'] = snapshot
+    with pytest.raises(RuntimeError, match='invalid persisted companion snapshot'):
+        SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+
+
+def test_roster_only_requires_snapshot_fingerprint_even_without_team_dataset():
+    import mlb_fundamentals_snapshot_v2 as snapshots
+    row = _row()
+    context = row['data'].pop('advanced_context')
+    row['data']['passiveTeamContext'] = {'bullpen_fatigue': context['bullpen_fatigue']}
+    row['data']['fundamentalsSnapshotV2'] = snapshots.build(row['data'], context={})
+    result = SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+    assert result['teamSnapshotRows'] == 0
+    assert result['gamesWithValidPassiveBullpenRosters'] == 1
+    row['data']['fundamentalsSnapshotV2']['fingerprint'] = 'corrupt'
+    with pytest.raises(RuntimeError, match='invalid persisted companion snapshot'):
+        SUBJECT.persisted_observations(Table([row]), '2026-09-11')
