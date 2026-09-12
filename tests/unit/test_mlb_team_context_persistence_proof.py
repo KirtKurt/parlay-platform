@@ -301,3 +301,32 @@ def test_live_workflow_pins_main_event_and_removes_stale_evidence():
     assert "with: {ref: '${{ github.sha }}'}" in workflow
     assert 'PROOF_SOURCE_SHA: ${{ github.sha }}' in workflow
     assert workflow.index('rm -f runtime_reports/') < workflow.index('python scripts/verify_mlb_team_context.py --persisted')
+    live = workflow.split('  live-read:', 1)[1]
+    assert live.index('rm -f runtime_reports/') < live.index('actions/setup-python@v5')
+    assert "steps.clean.outcome == 'success' && steps.proof.outcome != 'skipped'" in live
+
+
+@pytest.mark.parametrize('side', ['home', 'away'])
+@pytest.mark.parametrize('marker', [None, False, 'true', 1])
+def test_observed_lineup_requires_explicit_confirmation(side, marker):
+    row = _row()
+    row['data']['advanced_context']['confirmed_lineups'][side+'_lineup_confirmed'] = marker
+    with pytest.raises(RuntimeError, match='lineup_confirmation_invalid'):
+        SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+
+
+@pytest.mark.parametrize('block', ['lineup', 'bullpen'])
+def test_correlation_respects_lineup_order_but_not_roster_order(block):
+    row = _row(); live = _live(row)
+    field = 'home_batting_order' if block == 'lineup' else 'home_bullpen_roster_player_ids'
+    live[block][field].reverse()
+    stored = SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+    result = SUBJECT.correlate_persistence([live], stored)
+    assert result['status'] == ('INCONCLUSIVE' if block == 'lineup' else 'PROVEN')
+
+
+def test_roster_membership_change_remains_inconclusive():
+    row = _row(); live = _live(row)
+    live['bullpen']['home_bullpen_roster_player_ids'][0] = 999
+    stored = SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+    assert SUBJECT.correlate_persistence([live], stored)['status'] == 'INCONCLUSIVE'

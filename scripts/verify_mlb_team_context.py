@@ -87,6 +87,7 @@ def passive_lineup_observation(row):
     for side in ('home','away'):
         order,obs=line.get(side+'_batting_order'),line.get(side+'_lineup_season_batting')
         if not _lineup_side_present(line,side) and line.get('source_status')=='PARTIAL':continue
+        if line.get(side+'_lineup_confirmed') is not True:err.append(side+'_lineup_confirmation_invalid')
         if not isinstance(order,list) or len(order)!=9:err.append(side+'_batting_order_invalid');continue
         ids=[_id(v) for v in order]
         if any(v is None for v in ids) or len(set(ids))!=9:err.append(side+'_batting_order_identity_invalid');continue
@@ -182,7 +183,9 @@ def correlate_persistence(live_rows, persisted):
                 for side in sides:
                     expected=payload.get(side+('_batting_order' if block=='lineup' else '_bullpen_roster_player_ids'))
                     actual=state.get('identitySets',{}).get(side)
-                    if not expected or expected!=actual:reasons.append(side+'_observation_not_persisted')
+                    same=(set(expected)==set(actual) if block=='bullpen' and expected and actual
+                          else expected==actual)
+                    if not expected or not same:reasons.append(side+'_observation_not_persisted')
             match={'officialGamePk':str(pk),'block':block,'observedSides':sides,
                    'storedPK':(stored or {}).get('storedPK'),'storedSK':(stored or {}).get('storedSK'),
                    'status':'INCONCLUSIVE' if reasons else 'PROVEN','reasons':reasons}
