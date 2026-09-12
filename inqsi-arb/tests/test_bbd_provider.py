@@ -49,6 +49,41 @@ def test_recognized_empty_collections_remain_valid(monkeypatch, operation, paylo
     assert result["sports_count" if operation == "health" else "count"] == 0
 
 
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+@pytest.mark.parametrize("payload", [
+    {"data": [], "events": [{"id": "hidden"}]},
+    {"data": [{"id": "hidden"}], "events": []},
+    {"data": [], "sports": []},
+    {"data": None, "events": []},
+    {"data": [], "events": "invalid"},
+    {"data": {"items": [], "events": [{"id": "hidden"}]}},
+    {"data": {"items": [], "sports": []}},
+    {"data": {"items": [], "events": None}},
+    {"data": {"events": [], "sports": "invalid"}},
+])
+def test_ambiguous_collection_envelopes_fail_closed(monkeypatch, operation, payload):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (200, {}, payload))
+
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_COLLECTION_SCHEMA_INVALID"
+    if operation == "health":
+        assert result["sports_count"] is None
+    else:
+        assert result[operation] == []
+
+
+@pytest.mark.parametrize("key", ["data", "sports", "matches", "events", "results"])
+@pytest.mark.parametrize("nested", [None, "sports", "matches", "events", "results", "items"])
+def test_single_collection_preserves_rows_and_allows_metadata(key, nested):
+    rows = [{"id": "one"}, {"id": "two"}]
+    value = rows if nested is None else {nested: rows, "total": 2}
+    assert bbd_provider._items({key: value, "request_id": "fixture"}) == rows
+
+
 @pytest.mark.parametrize("status", [401, 403, 404])
 def test_health_preserves_access_failure_reason(monkeypatch, status):
     monkeypatch.setenv("ARB_BBD_ENABLED", "true")
