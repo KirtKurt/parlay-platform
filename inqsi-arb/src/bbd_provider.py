@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import math
 import os
 import re
 from dataclasses import dataclass, asdict
@@ -129,6 +130,14 @@ def _reject_json_constant(value: str) -> Any:
     raise BBDError("BBD_RESPONSE_JSON_INVALID")
 
 
+def _finite_json_float(value: str) -> float:
+    """Do not let valid JSON number syntax overflow into nonfinite context."""
+    number = float(value)
+    if not math.isfinite(number):
+        raise BBDError("BBD_RESPONSE_JSON_INVALID")
+    return number
+
+
 def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int = 20,
              optional: bool = False) -> Tuple[int, Dict[str, str], Any]:
     key = api_key()
@@ -151,6 +160,7 @@ def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int
                 raw.decode("utf-8"),
                 object_pairs_hook=_unique_json_object,
                 parse_constant=_reject_json_constant,
+                parse_float=_finite_json_float,
             ) if raw else {}
             return int(response.status), dict(response.headers.items()), payload
     except HTTPError as exc:
