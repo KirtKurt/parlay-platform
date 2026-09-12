@@ -1,4 +1,5 @@
 from copy import deepcopy
+from datetime import timezone
 import hashlib
 import io
 import json
@@ -9,6 +10,7 @@ import pyarrow.parquet as pq
 import pytest
 import yaml
 
+from ks1 import coverage
 from ks1.coverage import build, measure
 from ks1.features import utc
 from ks1.platt_inputs import PREFIX, read_locked_predictions
@@ -16,6 +18,16 @@ from ks1.platt_inputs import PREFIX, read_locked_predictions
 DATE = '2026-09-11'
 KEY = PREFIX+'date='+DATE+'/predictions.parquet'
 NOW = DATE+'T23:55:00Z'
+
+
+@pytest.fixture(autouse=True)
+def audit_clock(monkeypatch):
+    class Clock:
+        @staticmethod
+        def now(tz):
+            assert tz is timezone.utc
+            return utc(NOW)
+    monkeypatch.setattr(coverage, 'datetime', Clock)
 
 
 def game(pk, start, *, state='Scheduled'):
@@ -293,3 +305,35 @@ def test_hourly_telemetry_failure_is_isolated_and_artifact_upload_is_uncondition
     assert audit['continue-on-error'] == 'true' and int(audit['timeout-minutes']) <= 5
     assert steps.index(publish) < steps.index(audit) < steps.index(upload)
     assert upload['if'] == 'always()'
+
+
+@pytest.mark.parametrize('stored_at,valid', [
+    (DATE+'T19:49:30Z', True),
+    (DATE+'T19:50:00Z', True),
+    (DATE+'T19:50:01Z', False),
+])
+def test_audit_detects_cutoff_crossed_since_capture(tmp_path, stored_at, valid):
+    captured_at = DATE+'T19:49:00Z'
+    retained = row(1, captured_at)
+    inputs, output = setup_artifact(tmp_path, [retained],
+                                   [game(1, retained['commence_time'])], now=captured_at)
+    result = build(inputs, output, s3=VersionedS3([version([retained], 'v1', stored_at)]))
+    assert utc(result['as_of']) == utc(NOW)  # Default runtime clock, not capture.
+    assert result['capture_as_of'] == captured_at
+    assert result['cutoff_reached_games'] == 1
+    assert result['future_before_t10_game_ids'] == []
+    assert result['valid_locked_game_ids'] == (['1'] if valid else [])
+    assert result['missing_locked_game_ids'] == ([] if valid else ['1'])
+    assert result['lock_coverage_rate'] == (1.0 if valid else 0.0)
+
+
+def test_explicit_audit_time_keeps_not_yet_due_game_future(tmp_path):
+    retained = row(1, DATE+'T19:40:00Z')
+    inputs, output = setup_artifact(tmp_path, [retained],
+                                   [game(1, retained['commence_time'])], now=retained['as_of'])
+    result = build(inputs, output, audit_as_of=DATE+'T19:49:00Z',
+                   s3=VersionedS3([version([retained], 'v1', DATE+'T19:45:00Z')]))
+    assert result['as_of'] == DATE+'T19:49:00Z'
+    assert result['capture_as_of'] == retained['as_of']
+    assert result['future_before_t10_game_ids'] == ['1']
+    assert result['cutoff_reached_games'] == 0

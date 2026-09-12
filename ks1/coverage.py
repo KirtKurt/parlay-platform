@@ -5,7 +5,7 @@ by that row's own T-10. The current schedule determines which games are due.
 Missing locks are reported, never backfilled or converted into predictions.
 """
 import argparse
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 import json
 from pathlib import Path
 import re
@@ -80,18 +80,21 @@ def measure(schedule, prediction_rows, target_date, as_of, locked_predictions=()
     }
 
 
-def build(inputs, output, *, s3=None):
+def build(inputs, output, *, s3=None, audit_as_of=None):
     report_dir = output
     result = {'status': 'unavailable', 'production_authority_changed': False,
               'backfilled_after_cutoff': False, 'aws_writes': 0}
     try:
         manifest = json.loads((inputs/'capture.json').read_bytes())
-        target_date, as_of = manifest['date'], manifest['as_of']
+        target_date, capture_as_of = manifest['date'], manifest['as_of']
+        # Publication can cross T-10 after input capture. Audit eligibility at
+        # execution time while leaving retained row timestamps untouched.
+        as_of = audit_as_of or datetime.now(timezone.utc).isoformat()
         # Validate the date before constructing a local path or S3 prefix.
         if date.fromisoformat(target_date).isoformat() != target_date:
             raise ValueError('invalid prediction date')
         report_dir = output / ('date='+target_date)
-        result.update(target_date=target_date, as_of=as_of)
+        result.update(target_date=target_date, as_of=as_of, capture_as_of=capture_as_of)
         official = json.loads((inputs/'official.json').read_bytes())['payload']
         schedule = [g for d in official.get('dates', []) for g in d.get('games', [])]
         rows = pq.ParquetFile(report_dir/'predictions.parquet').read().to_pylist()
@@ -100,6 +103,7 @@ def build(inputs, output, *, s3=None):
             s3 = boto3.client('s3')
         locked, inventory = read_locked_predictions(s3, manifest['bucket'], as_of, target_date=target_date)
         result = measure(schedule, rows, target_date, as_of, locked)
+        result['capture_as_of'] = capture_as_of
         result['storage_inventory'] = inventory
     except Exception as exc:
         # Keep missing evidence visibly unavailable; never fabricate zero or
