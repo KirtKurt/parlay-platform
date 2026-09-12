@@ -126,3 +126,41 @@ def test_events_preserve_bbd_identity_and_no_prices(monkeypatch):
     assert row["source"] == "big_balls_data"
     assert "price" not in row
     assert result["request_id"] == "req-1"
+
+
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+@pytest.mark.parametrize("payload", [
+    {"data": [], "events": [{"id": "hidden"}]},
+    {"events": [{"id": "hidden"}], "data": []},
+    {"data": [], "results": []},
+    {"data": None, "sports": []},
+    {"data": [], "events": {"error": "denied"}},
+    {"data": {"items": [], "events": [{"id": "hidden"}]}},
+    {"data": {"events": [{"id": "hidden"}], "items": []}},
+    {"data": {"items": [], "sports": []}},
+    {"data": {"sports": None, "items": []}},
+    {"data": {"items": [], "events": {"error": "denied"}}},
+])
+def test_competing_collection_fields_fail_closed(monkeypatch, operation, payload):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (200, {}, payload))
+
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_COLLECTION_SCHEMA_INVALID"
+    if operation == "health":
+        assert result["sports_count"] is None
+    else:
+        assert result[operation] == []
+
+
+@pytest.mark.parametrize("outer", ["data", "sports", "matches", "events", "results"])
+@pytest.mark.parametrize("nested", [None, "sports", "matches", "events", "results", "items"])
+def test_single_collection_envelopes_preserve_rows_and_metadata(outer, nested):
+    rows = [{"id": "one"}, {"id": "two"}]
+    value = rows if nested is None else {nested: rows, "meta": {"total": 2}, "error": None}
+    payload = {outer: value, "meta": {"total": 2}, "error": None}
+
+    assert bbd_provider._items(payload) == rows
