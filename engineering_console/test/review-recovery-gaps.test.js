@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { JobStore } from '../src/store.js';
 import { createServer } from '../src/server.js';
 import { createRunner } from '../src/worker-runtime.js';
@@ -114,4 +115,33 @@ test('ECS execution checks cancellation before retrying a missing task ARN', asy
   for await (const event of codex.run('proof', null, {}, new AbortController().signal)) assert.fail(event.type);
   assert.equal(operations.includes('run-task'), false);
   assert.ok(job.execution.stoppedAt);
+});
+
+test('definitive zero-task rejection leaves the failed job continuable without task discovery', async t => {
+  const { root, config, store, job } = fixture(t);
+  const previous = { id: crypto.randomUUID(), stoppedAt: new Date().toISOString() }; job.previousExecution = previous;
+  config.repository = path.join(root, 'repo'); config.workspaceRoot = path.join(root, 'workspaces'); fs.mkdirSync(config.repository);
+  const git = (...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], { cwd: config.repository, encoding: 'utf8' }).trim();
+  git('init', '-b', 'main'); git('commit', '--allow-empty', '-m', 'base'); job.startingRevision = git('rev-parse', 'HEAD');
+  const taskDefinitionArn = 'arn:aws:ecs:us-east-1:111111111111:task-definition/eng-console-job:1', image = `111111111111.dkr.ecr.us-east-1.amazonaws.com/eng-console-runtime@sha256:${'a'.repeat(64)}`;
+  const transport = createTaskTransport(config.transportDir, {});
+  job.execution = { id: transport.id, taskDefinitionArn, image, taskArn: null, requestedAt: new Date().toISOString() }; store.save(job);
+  Object.assign(config, { jobTaskDefinition: taskDefinitionArn, jobImage: image, jobSecurityGroup: 'sg', brokerUrl: 'https://console.example', model: 'test', jobSubnets: ['a', 'b'] });
+  const definition = { taskDefinitionArn, family: 'eng-console-job', networkMode: 'awsvpc', requiresCompatibilities: ['FARGATE'], containerDefinitions: [{ name: 'job', image, readonlyRootFilesystem: true, user: '10001:10001', command: ['node', '/app/scripts/isolated-job.mjs'], entryPoint: ['/usr/bin/tini', '--'] }] };
+  const operations = [];
+  const codex = new EcsCodex({ config, store, job, workspace: path.join(config.workspaceRoot, job.id), callAws: async (_, operation) => {
+    operations.push(operation);
+    if (operation === 'describe-task-definition') return definition;
+    assert.equal(operation, 'run-task'); return { tasks: [], failures: [{ reason: 'RESOURCE:FARGATE' }] };
+  } });
+  await createRunner(config, store, class { constructor() { return codex; } })(job, new AbortController().signal);
+  assert.equal(store.get(job.id).status, 'failed');
+  assert.equal(store.get(job.id).error, 'isolated_job_launch_rejected');
+  assert.ok(store.get(job.id).execution.launchRejectedAt); assert.ok(store.get(job.id).execution.stoppedAt);
+  assert.equal(fs.existsSync(path.join(transport.directory, 'input.json')), false);
+  const queued = [], base = await listen(t, config, store, { enqueue(id) { queued.push(id); } });
+  const response = await fetch(`${base}/v1/engineering/${job.id}/continue`, { method: 'POST', body: JSON.stringify({ instruction: 'Retry when capacity is available' }) });
+  assert.equal(response.status, 202); assert.equal(store.get(job.id).execution, null); assert.deepEqual(queued, [job.id]);
+  assert.deepEqual(store.get(job.id).previousExecution, previous);
+  assert.deepEqual(operations, ['describe-task-definition', 'run-task']);
 });

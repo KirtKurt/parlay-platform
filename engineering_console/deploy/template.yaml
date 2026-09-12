@@ -828,6 +828,7 @@ Resources:
     - BrokerListenerRule
     Properties:
       ServiceName: eng-console-controller
+      HealthCheckGracePeriodSeconds: 300
       Cluster:
         Ref: Cluster
       DesiredCount: 1
@@ -861,6 +862,7 @@ Resources:
     - BrokerListenerRule
     Properties:
       ServiceName: eng-console-controller
+      HealthCheckGracePeriodSeconds: 300
       Cluster:
         Ref: Cluster
       DesiredCount: 1

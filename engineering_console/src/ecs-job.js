@@ -42,6 +42,41 @@ export function validateReturnedPatch(patch, changedFiles) {
   if (!files.length || new Set(files).size !== files.length || JSON.stringify(files.sort()) !== JSON.stringify([...changedFiles].sort())) throw new Error('returned_patch_manifest_mismatch');
 }
 
+export async function materializeResult(workspace, baseRevision, patchPath, previousPatches = []) {
+  // Build the desired cumulative tree in a temporary index, then apply only
+  // the delta from the last verified materialization. Never reset the worktree.
+  if (await git(workspace, ['rev-parse', 'HEAD']) !== baseRevision ||
+      await git(workspace, ['ls-files', '--others', '--exclude-standard'])) throw new Error('controller_workspace_requires_reconciliation');
+  try { await git(workspace, ['diff', '--quiet']); }
+  catch { throw new Error('controller_workspace_requires_reconciliation'); }
+  const current = await git(workspace, ['write-tree']);
+  const scratch = fs.mkdtempSync(path.join(path.dirname(patchPath), 'materialize-'));
+  try {
+    const treeForPatch = async file => {
+      const env = { ...process.env, GIT_INDEX_FILE: path.join(scratch, crypto.randomUUID() + '.index') };
+      const run = args => exec('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args], { cwd: workspace, env, maxBuffer: 20 * 1024 * 1024 });
+      await run(['read-tree', baseRevision]);
+      if (fs.statSync(file).size) await run(['apply', '--cached', file]);
+      return (await run(['write-tree'])).stdout.trim();
+    };
+    const desired = await treeForPatch(patchPath);
+    if (current === desired) return;
+    let known = current === await git(workspace, ['rev-parse', `${baseRevision}^{tree}`]);
+    for (const previous of previousPatches.filter(Boolean)) {
+      if (known) break;
+      const file = path.join(scratch, crypto.randomUUID() + '.patch'); fs.writeFileSync(file, previous, { mode: 0o600 });
+      try { known = current === await treeForPatch(file); } catch { /* Try other durable evidence. */ }
+    }
+    if (!known) throw new Error('controller_workspace_requires_reconciliation');
+    const delta = await git(workspace, ['diff', '--binary', '--full-index', '--no-ext-diff', '--no-textconv', '--no-renames', current, desired, '--']);
+    const files = (await git(workspace, ['diff', '--name-only', '--no-renames', current, desired, '--'])).split('\n');
+    validateReturnedPatch(delta, files);
+    const deltaPath = path.join(scratch, 'delta.patch'); fs.writeFileSync(deltaPath, delta + '\n', { mode: 0o600 });
+    await git(workspace, ['apply', '--check', '--index', deltaPath]);
+    await git(workspace, ['apply', '--index', deltaPath]);
+  } finally { fs.rmSync(scratch, { recursive: true, force: true }); }
+}
+
 export function recordedRuntime(execution) {
   if (!/^arn:[^:]+:ecs:[^:]+:\d{12}:task-definition\/eng-console-[^:]+:\d+$/.test(execution?.taskDefinitionArn || '') ||
       !/@sha256:[0-9a-f]{64}$/.test(execution?.image || '')) throw new Error('execution_runtime_identity_missing');
@@ -200,6 +235,14 @@ export class EcsCodex {
           } else await new Promise(resolve => setTimeout(resolve, this.pollMs));
         }
       }
+      if (Array.isArray(result.tasks) && result.tasks.length === 0 && result.failures?.length) {
+        // A definitive zero-task response has no remote execution to stop.
+        // Record that outcome before cleanup so continuation stays available.
+        job.execution.launchRejectedAt = job.execution.stoppedAt = new Date().toISOString();
+        await persistJob(store, job);
+        removeTerminalInput(config, job.execution);
+        throw new Error('isolated_job_launch_rejected');
+      }
       if (result.failures?.length || result.tasks?.length !== 1 || !result.tasks[0].taskArn) throw new Error('isolated_job_launch_failed');
       job.execution.taskArn = result.tasks[0].taskArn;
       await persistJob(store, job);
@@ -231,11 +274,11 @@ export class EcsCodex {
           const output = readResult();
           if (task.containers?.length !== 1 || task.containers[0].exitCode !== 0 || !output || output.completed !== true || !Array.isArray(output.events) || !output.events.some(e => e.type === 'turn.completed') || output.events.some(e => e.type === 'turn.failed')) throw new Error('isolated_job_failed_or_checkpoint_only');
           const patch = String(output.diff || '');
+          const patchPath = path.join(directory, 'verified.patch');
           if (patch) {
             const manifest = { version: 1, jobId: job.id, repository: 'KirtKurt/parlay-platform', branch: `inqsi/publish-${job.id}`, startingRevision: job.startingRevision, authorizedScope: job.authorizedScope, changedFiles: output.changedFiles, requiredChecks: config.requiredChecks, patchSha256: crypto.createHash('sha256').update(patch).digest('hex') };
             validatePublisherRequest(manifest, patch, loadPublicationPolicy({ INQSI_ENGINEERING_PUBLICATION_POLICY: 'proof-v1', INQSI_ENGINEERING_ALLOWED_SCOPES: config.allowedScopes.join(','), INQSI_ENGINEERING_REQUIRED_CHECKS: config.requiredChecks.join(',') }));
             validateReturnedPatch(patch, output.changedFiles);
-            const patchPath = path.join(directory, 'verified.patch');
             fs.writeFileSync(patchPath, patch, { mode: 0o600 });
             const stat = await exec('git', ['apply', '--numstat', '-z', patchPath], { cwd: this.workspace });
             const actual = stat.stdout.split('\0').filter(Boolean).map(line => {
@@ -244,15 +287,16 @@ export class EcsCodex {
               return match[1];
             }).sort();
             if (JSON.stringify(actual) !== JSON.stringify([...output.changedFiles].sort())) throw new Error('returned_patch_actual_manifest_mismatch');
-            // A controller may have crashed after applying this immutable result.
-            // Reconciliation must not apply the same patch twice.
-            const current = await git(this.workspace, ['diff', '--binary', '--full-index', '--no-ext-diff', '--no-textconv', job.startingRevision, '--']);
-            if (current.trim() !== patch.trim()) {
-              if (current) throw new Error('controller_workspace_requires_reconciliation');
-              await git(this.workspace, ['apply', '--check', patchPath]);
-              await git(this.workspace, ['apply', '--index', patchPath]);
-            }
+          } else {
+            if (!Array.isArray(output.changedFiles) || output.changedFiles.length) throw new Error('returned_patch_manifest_mismatch');
+            fs.writeFileSync(patchPath, '', { mode: 0o600 });
           }
+          const previousPatches = [job.diff];
+          if (job.previousExecution) {
+            try { previousPatches.push(fs.readFileSync(path.join(transportDirectory(config.transportDir, job.previousExecution.id), 'verified.patch'), 'utf8')); }
+            catch (error) { if (error.code !== 'ENOENT') throw error; }
+          }
+          await materializeResult(this.workspace, job.startingRevision, patchPath, previousPatches);
           if (output.threadId) yield { type: 'thread.started', thread_id: output.threadId };
           for (const event of pendingEvents(output)) yield event;
           // Recovery may already have persisted every checkpoint event. A fresh
