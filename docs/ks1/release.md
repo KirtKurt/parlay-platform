@@ -28,11 +28,11 @@ sports' production authority changes are needed.
    report `published=true` with successful S3 readback, the expected KS1 date
    prefix and the correct serving references. Each new eligible game's
    original probability must be saved before its T-10 cutoff.
-4. At the next 01:00 Eastern run, completed games with original KS1 lock evidence
+4. At the next 03:00 Eastern run, completed games with original KS1 lock evidence
    become graded rows. Pending games wait for verified final results. The ledger
    is committed and read back before either mapping is fitted.
 
-The hourly cron is at minute 17. DST and the 01:00 Eastern delayed-run catch-up
+The hourly cron is at minute 17. DST and the 03:00 Eastern delayed-run catch-up
 are handled inside `ks1/nightly.py`. See `refresh-recovery.md` for the proposed
 KS1-only dispatch watchdog, source-freshness gate, and activation boundary.
 The unchanged Phase 1 main workflow may also rebuild its game table from
@@ -56,3 +56,12 @@ python -m ks1.nightly --inputs /path/to/retained/capture.json --output /tmp/ks1-
 
 See `calibration.md` for the parameter, ledger and retry contracts and
 `phase4.md` / `phase5.md` for the existing prediction/refresh contracts.
+
+## Nightly audit timing
+
+The nightly gate is 03:00 America/New_York. The existing hourly runner
+performs it on the first eligible tick after that time, following fresh result
+ingestion; it is not an exact-minute scheduling guarantee. Later finals still
+receive hourly catch-up grades. Prediction date partitions and stored lock
+identities are unchanged; the cumulative checkpoint date is its processing
+date, not a reassignment of games to that date.

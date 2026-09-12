@@ -5,7 +5,7 @@ on:
     paths: ['ks1/**', 'src/temperature_calibrator.py', 'tests/ks1_phase4/**', 'tests/ks1_phase5/**', 'tests/ks1_calibration/**', 'data/models/platt.json', 'data/models/temperature.json', '.github/workflows/mlb-research-ingestion.yml', '.github/workflows/ks1-refresh-watchdog.yml']
   schedule:
     # Run once per hour away from GitHub's congested top-of-hour queue.
-    # Calibration fits after 01:00 America/New_York; later ticks catch up grades.
+    # Calibration fits after 03:00 America/New_York; later ticks catch up grades.
     - cron: '17 * * * *'
   push:
     branches: [main]
