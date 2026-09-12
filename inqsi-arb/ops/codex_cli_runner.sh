@@ -65,9 +65,9 @@ env \
 # repository differences from the controller-selected base as candidate output.
 mapfile -t CHANGED < <(
   {
-    git diff --name-only "$BASE_SHA"...HEAD
-    git diff --name-only
-    git diff --name-only --cached
+    git diff --no-renames --name-only "$BASE_SHA"...HEAD
+    git diff --no-renames --name-only
+    git diff --no-renames --name-only --cached
     git ls-files --others --exclude-standard
   } | sed '/^$/d' | sort -u
 )
@@ -111,8 +111,8 @@ fi
 
 mapfile -t FINAL_CHANGED < <(
   {
-    git diff --name-only
-    git diff --name-only --cached
+    git diff --no-renames --name-only
+    git diff --no-renames --name-only --cached
     git ls-files --others --exclude-standard
   } | sed '/^$/d' | sort -u
 )
@@ -145,6 +145,7 @@ if git diff --cached --quiet; then
 fi
 
 git commit -m "ARB AEC: autonomous Codex increment"
+PUBLISHED_SHA="$(git rev-parse HEAD)"
 git push --set-upstream origin "$BRANCH"
 cleanup_publish_auth
 trap - EXIT
@@ -159,3 +160,30 @@ PR_URL=$(gh pr create \
   --body "Autonomous bounded Inqsi ARB engineering increment. Codex CLI was denied repository publication credentials and restricted to ARB-scoped paths. The supervising wrapper independently normalized the candidate, validated scope, reran the complete ARB test suite and available SAM validation/build, then committed and pushed these exact validated bytes before requesting this draft PR. No merge or deployment was performed by the coding worker.")
 
 echo "draft_pr=$PR_URL"
+
+# Autonomous promotion is owned by a trusted supervisor module that lives
+# outside Codex's write allowlist. High-risk proposals (controller/ops/IaC/
+# workflow/supervisor changes) intentionally remain draft for human review.
+if [[ "${ARB_AEC_AUTO_PROMOTE:-false}" == "true" ]]; then
+  if python -m arb_supervisor.validate_candidate \
+      --repo . \
+      --branch "$BRANCH" \
+      --candidate-sha "$PUBLISHED_SHA" \
+      --base-sha "$BASE_SHA"; then
+    PR_NUMBER="${PR_URL##*/}"
+    PROMOTE_ARGS=(
+      --repo-dir .
+      --repository "$GITHUB_REPOSITORY"
+      --pr-number "$PR_NUMBER"
+      --branch "$BRANCH"
+      --head-sha "$PUBLISHED_SHA"
+      --base-sha "$BASE_SHA"
+    )
+    if [[ "${ARB_AEC_AUTO_DEPLOY:-false}" == "true" ]]; then
+      PROMOTE_ARGS+=(--auto-deploy)
+    fi
+    python -m arb_supervisor.promote "${PROMOTE_ARGS[@]}"
+  else
+    echo "candidate is not eligible for unattended promotion; leaving draft PR open"
+  fi
+fi

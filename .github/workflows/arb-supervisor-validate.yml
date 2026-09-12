@@ -1,0 +1,148 @@
+name: Inqsi ARB Supervisor Validation
+run-name: ARB supervisor ${{ inputs.candidate_sha || github.sha }} ${{ inputs.dispatch_nonce }}
+
+on:
+  pull_request:
+    paths:
+      - 'arb_supervisor/**'
+      - '.github/workflows/arb-supervisor-validate.yml'
+      - '.github/workflows/inqsi-arb-engineering-controller.yml'
+      - '.github/workflows/inqsi-arb-deploy.yml'
+      - 'inqsi-arb/ops/codex_cli_runner.sh'
+      - 'inqsi-arb/tests/test_codex_cli_runner_contract.py'
+  workflow_dispatch:
+    inputs:
+      dispatch_nonce:
+        description: Unique supervisor dispatch receipt
+        required: true
+        type: string
+      candidate_sha:
+        description: Exact autonomous ARB candidate commit to validate
+        required: true
+        type: string
+      candidate_branch:
+        description: Exact AEC branch containing the candidate
+        required: true
+        type: string
+      base_sha:
+        description: Controller-selected base commit; candidate must be its direct child
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arb-supervisor-validate-${{ inputs.candidate_sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  supervisor-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install contract runtime
+        run: python -m pip install --quiet "pytest>=8,<9"
+      - name: Test trusted supervisor and Codex publication boundary
+        run: |
+          python -m pytest -q arb_supervisor/test_validate_candidate.py arb_supervisor/test_promote.py
+          python -m pytest -q inqsi-arb/tests/test_codex_cli_runner_contract.py inqsi-arb/tests/test_engineering_controller.py
+      - name: Verify supervisor remains outside Codex write scope
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          runner=Path('inqsi-arb/ops/codex_cli_runner.sh').read_text()
+          scope=runner.split('STRICT WRITE SCOPE:',1)[1].split('Do not modify',1)[0]
+          assert 'arb_supervisor/' not in scope
+          assert '.github/workflows/arb-supervisor-validate.yml' not in scope
+          print('trusted supervisor is outside Codex write scope')
+          PY
+
+  validate-exact-candidate:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      # Policy, pytest hooks, tests and build metadata come from the immutable
+      # trusted workflow revision. Candidate files are data in another checkout.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Bind candidate and immutable trusted base
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
+          BASE_SHA: ${{ inputs.base_sha }}
+          DISPATCH_NONCE: ${{ inputs.dispatch_nonce }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$DISPATCH_NONCE" =~ ^[0-9a-f]{32}$ ]]
+          [[ "$CANDIDATE_BRANCH" =~ ^agent/inqsi-arb-aec-[0-9]+$ ]]
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
+          git -C candidate fetch --no-tags origin "refs/heads/$CANDIDATE_BRANCH:refs/remotes/origin/$CANDIDATE_BRANCH"
+          test "$(git -C candidate rev-parse refs/remotes/origin/$CANDIDATE_BRANCH)" = "$CANDIDATE_SHA"
+          git merge-base --is-ancestor "$BASE_SHA" HEAD
+          test -z "$(git diff --no-renames --name-only "$BASE_SHA" HEAD -- inqsi-arb '.github/workflows/inqsi-arb-*' arb_supervisor .github/workflows/arb-supervisor-validate.yml)"
+      - name: Install trusted validation runtime
+        run: python -m pip install --quiet "pytest>=8,<9" boto3
+      - name: Enforce trusted non-executable candidate policy
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
+          BASE_SHA: ${{ inputs.base_sha }}
+        run: |
+          python -m arb_supervisor.validate_candidate \
+            --repo candidate --branch "$CANDIDATE_BRANCH" \
+            --candidate-sha "$CANDIDATE_SHA" --base-sha "$BASE_SHA"
+      - name: Run trusted supervisor and complete ARB regression suite
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+        run: |
+          python -m pytest -q arb_supervisor/test_validate_candidate.py arb_supervisor/test_promote.py
+          python -m pytest -q inqsi-arb/tests
+      - uses: aws-actions/setup-sam@v2
+      - name: Validate unchanged trusted runtime without deployment credentials
+        run: |
+          git diff --exit-code HEAD -- inqsi-arb arb_supervisor
+          test -z "$(git ls-files --others --exclude-standard -- inqsi-arb/src)"
+          sam validate --lint --template-file inqsi-arb/template.yaml
+          sam build --no-cached --template-file inqsi-arb/template.yaml
+          git diff --exit-code HEAD -- inqsi-arb arb_supervisor
+          python - <<'PYCODE'
+          from pathlib import Path
+          files = [p for p in Path('.aws-sam/build').rglob('*') if p.is_file()]
+          assert files and not any(p.is_symlink() for p in files)
+          assert sum(p.stat().st_size for p in files) <= 200 * 1024 * 1024
+          PYCODE
+      - name: Prove no deployment credentials are present
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${AWS_ACCESS_KEY_ID:-}"
+          test -z "${AWS_SECRET_ACCESS_KEY:-}"
+          test -z "${AWS_SESSION_TOKEN:-}"
+          test -z "${OPENAI_API_KEY:-}"
+          echo 'trusted non-executable ARB candidate validation passed'
