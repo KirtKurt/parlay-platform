@@ -13,7 +13,7 @@ from ks1.inventory import encode
 from tests.ks1_calibration.test_calibration import rows
 from tests.ks1_phase4.test_daily import MemoryS3
 
-NOW = '2026-09-11T05:00:00+00:00'  # 01:00 EDT
+NOW = '2026-09-11T07:00:00+00:00'  # 03:00 EDT
 
 
 class Store(MemoryS3):
@@ -62,12 +62,15 @@ def checkpoint(store, at=NOW):
 
 
 @pytest.mark.parametrize('at,due', [
-    ('2026-09-11T04:59:00Z', None), ('2026-09-11T05:00:00Z', '2026-09-11'),
-    ('2026-09-11T09:00:00Z', '2026-09-11'),  # delayed job catches up
-    ('2026-12-11T05:59:00Z', None), ('2026-12-11T06:00:00Z', '2026-12-11'),
-    ('2026-11-01T05:00:00Z', '2026-11-01'), ('2026-11-01T06:00:00Z', '2026-11-01'),
+    ('2026-09-11T06:59:00Z', None), ('2026-09-11T07:00:00Z', '2026-09-11'),
+    ('2026-09-11T11:00:00Z', '2026-09-11'),  # delayed job catches up
+    ('2026-12-11T07:59:00Z', None), ('2026-12-11T08:00:00Z', '2026-12-11'),
+    ('2026-11-01T05:00:00Z', None), ('2026-11-01T06:00:00Z', None),
+    ('2026-11-01T07:59:59Z', None), ('2026-11-01T08:00:00Z', '2026-11-01'),
+    ('2026-03-08T06:59:59Z', None), ('2026-03-08T07:00:00Z', '2026-03-08'),
+    ('2026-09-11T05:00:00Z', None), ('2026-09-11T06:00:00Z', None),
 ])
-def test_0100_eastern_due_with_dst_and_delayed_runs(at, due):
+def test_0300_eastern_due_with_dst_and_delayed_runs(at, due):
     assert nightly.due_date(at) == due
     if due:
         assert nightly.due_date(at, {'state': {'night_date': due}}) is None
@@ -141,7 +144,7 @@ def test_next_night_retains_grades_and_parameters_without_today_predictions(main
     store = Store()
     run(source(), tmp_path, store)
     old = checkpoint(store)
-    tomorrow = '2026-09-12T05:00:00+00:00'
+    tomorrow = '2026-09-12T07:00:00+00:00'
     report = run(source(0, tomorrow), tmp_path, store, old)
     new = checkpoint(store, tomorrow)
     assert new['ledger']['rows'] == old['ledger']['rows']
@@ -152,7 +155,7 @@ def test_next_night_retains_grades_and_parameters_without_today_predictions(main
     store.objects[PREFIX+'date=2026-09-12/temperature.json'] = encode(platt.temperature_identity())
     store.objects[PREFIX+'date=2026-09-12/platt.json'] = encode(platt.identity())
     monkeypatch.setattr(platt_inputs, 'read_locked_predictions', lambda *a: ([], {}))
-    captured = platt_inputs.capture(store, 'test', '2026-09-12T06:00:00Z', {'games': []}, [])
+    captured = platt_inputs.capture(store, 'test', '2026-09-12T08:00:00Z', {'games': []}, [])
     assert captured['temperature_model'] == new['state']['temperature_model']
     assert captured['platt_model'] == new['state']['platt_model']
     assert len(captured['committed_ledger']['rows']) == 35
@@ -163,14 +166,14 @@ def test_minimum_30_and_corrections_do_not_rewrite_grades(main_job, tmp_path):
     run(source(29), tmp_path, store)
     old = checkpoint(store)
     assert old['state']['temperature_model']['T'] == 1 and old['state']['temperature_model']['n'] == 0
-    changed = source(35, '2026-09-12T05:00:00+00:00')
+    changed = source(35, '2026-09-12T07:00:00+00:00')
     changed['finals']['0']['home_score'] = 9
     before = deepcopy(store.objects)
     with pytest.raises(ValueError, match='observation changed'):
         run(changed, tmp_path, store, old)
     assert store.objects == before
-    run(source(35, '2026-09-12T05:00:00+00:00'), tmp_path, store, old)
-    new = checkpoint(store, '2026-09-12T05:00:00Z')
+    run(source(35, '2026-09-12T07:00:00+00:00'), tmp_path, store, old)
+    new = checkpoint(store, '2026-09-12T07:00:00Z')
     assert new['state']['temperature_model']['n'] == 35 and new['state']['temperature_model']['T'] > 1
     assert new['ledger']['rows'][:29] == old['ledger']['rows']
 
@@ -218,24 +221,24 @@ def test_workflow_refreshes_finals_before_nightly_and_does_not_block_daily_on_gr
 
 def fresh_prior():
     return {'coverageComplete': True, 'games': [],
-            'receipt': {'retrievedAtUtc': '2026-09-11T05:00:10Z'},
-            'updatedAtUtc': '2026-09-11T05:00:30Z'}
+            'receipt': {'retrievedAtUtc': '2026-09-11T07:00:10Z'},
+            'updatedAtUtc': '2026-09-11T07:00:30Z'}
 
 
 def test_fresh_complete_results_allow_an_empty_real_slate():
-    nightly.require_fresh_finals(fresh_prior(), NOW, '2026-09-11T05:01:00Z')
+    nightly.require_fresh_finals(fresh_prior(), NOW, '2026-09-11T07:01:00Z')
 
 
 @pytest.mark.parametrize('change', [
     {'coverageComplete': False}, {'coverageComplete': 'true'},
-    {'updatedAtUtc': '2026-09-11T04:59:00Z'},  # LEASE_BUSY/stale cache
+    {'updatedAtUtc': '2026-09-11T06:59:00Z'},  # LEASE_BUSY/stale cache
     {'receipt': {'retrievedAtUtc': '2026-09-10T01:00:00Z'}},
     {'receipt': {}}, {'updatedAtUtc': None},
-    {'updatedAtUtc': '2026-09-11T05:02:00Z'},  # future source
+    {'updatedAtUtc': '2026-09-11T07:02:00Z'},  # future source
 ])
 def test_stale_incomplete_missing_or_future_results_cannot_seal_the_night(change):
     with pytest.raises(ValueError, match='incomplete|stale|future'):
-        nightly.require_fresh_finals(dict(fresh_prior(), **change), NOW, '2026-09-11T05:01:00Z')
+        nightly.require_fresh_finals(dict(fresh_prior(), **change), NOW, '2026-09-11T07:01:00Z')
 
 
 def test_due_nightly_cli_fails_before_capture_or_writes_on_stale_finals(main_job, tmp_path, monkeypatch):
@@ -246,7 +249,7 @@ def test_due_nightly_cli_fails_before_capture_or_writes_on_stale_finals(main_job
     class Clock:
         @staticmethod
         def now(tz):
-            return datetime.fromisoformat('2026-09-11T05:01:00+00:00')
+            return datetime.fromisoformat('2026-09-11T07:01:00+00:00')
 
     prior = fresh_prior()
     prior['receipt']['retrievedAtUtc'] = '2026-09-10T01:00:00Z'
@@ -275,7 +278,7 @@ def test_due_nightly_cli_fails_before_capture_or_writes_on_stale_finals(main_job
 
 def test_publish_requires_source_refresh_start():
     with pytest.raises(ValueError, match='requires the source refresh start'):
-        nightly.require_fresh_finals(fresh_prior(), None, '2026-09-11T05:01:00Z')
+        nightly.require_fresh_finals(fresh_prior(), None, '2026-09-11T07:01:00Z')
 
 
 def test_late_finals_append_once_preserve_originals_and_never_refit(main_job, tmp_path, monkeypatch):
@@ -290,10 +293,10 @@ def test_late_finals_append_once_preserve_originals_and_never_refit(main_job, tm
     originals = deepcopy(store.objects)
     monkeypatch.setattr(nightly, 'fit_from_ledger', lambda *a, **k: pytest.fail('catch-up fitted temperature'))
     monkeypatch.setattr(nightly, 'refit', lambda *a, **k: pytest.fail('catch-up fitted Platt'))
-    pending = run(dict(partial, as_of='2026-09-11T05:30:00Z'), tmp_path, store, old)
+    pending = run(dict(partial, as_of='2026-09-11T07:30:00Z'), tmp_path, store, old)
     assert pending['status'] == 'no_new_final_grades'
     assert len(pending['admission']['excluded']) == 2 and store.objects == originals
-    at = '2026-09-11T06:00:00Z'
+    at = '2026-09-11T08:00:00Z'
     report = run(source(4, at), tmp_path, store, old)
     new = checkpoint(store, at)
     assert report['status'] == 'completed_catchup' and report['new_grades'] == 2
@@ -309,7 +312,7 @@ def test_late_finals_append_once_preserve_originals_and_never_refit(main_job, tm
         [r['home_win'] for r in new['ledger']['rows']], [r['p_home'] for r in new['ledger']['rows']])
     before = deepcopy(store.objects)
     writes = list(store.writes)
-    repeat = run(source(4, '2026-09-11T07:00:00Z'), tmp_path, store, new)
+    repeat = run(source(4, '2026-09-11T09:00:00Z'), tmp_path, store, new)
     assert repeat['status'] == 'no_new_final_grades' and repeat['published'] is False
     assert repeat['new_grades'] == 0 and repeat['write_keys'] == []
     assert store.objects == before and store.writes == writes
@@ -319,11 +322,11 @@ def test_crossing_30_in_catchup_waits_until_next_night_to_fit(main_job, tmp_path
     store = Store()
     run(source(29), tmp_path, store)
     old = checkpoint(store)
-    run(source(35, '2026-09-11T06:00:00Z'), tmp_path, store, old)
-    caught_up = checkpoint(store, '2026-09-11T06:00:00Z')
+    run(source(35, '2026-09-11T08:00:00Z'), tmp_path, store, old)
+    caught_up = checkpoint(store, '2026-09-11T08:00:00Z')
     assert caught_up['state']['temperature_model'] == old['state']['temperature_model']
     assert caught_up['state']['temperature_model']['n'] == 0
-    tomorrow = '2026-09-12T05:00:00Z'
+    tomorrow = '2026-09-12T07:00:00Z'
     run(source(0, tomorrow), tmp_path, store, caught_up)
     fitted = checkpoint(store, tomorrow)
     assert fitted['state']['temperature_model']['n'] == 35
@@ -344,18 +347,18 @@ def test_interrupted_catchup_resumes_immutable_ledger_then_catches_later_finals(
     run(source(2), tmp_path, store)
     old = checkpoint(store)
     with pytest.raises(RuntimeError, match='catchup-state-write-failed'):
-        run(source(4, '2026-09-11T06:00:00Z'), tmp_path, store, old)
-    assert checkpoint(store, '2026-09-11T06:00:00Z') == old
+        run(source(4, '2026-09-11T08:00:00Z'), tmp_path, store, old)
+    assert checkpoint(store, '2026-09-11T08:00:00Z') == old
     saved_key = checkpoint_prefix('2026-09-11', 1)+'graded_ledger.json'
     saved_bytes = store.objects[saved_key]
     # Six finals now exist, but finish the original four-row transaction first.
-    report = run(source(6, '2026-09-11T07:00:00Z'), tmp_path, store, old)
+    report = run(source(6, '2026-09-11T09:00:00Z'), tmp_path, store, old)
     assert report['ledger_rows'] == 4 and report['new_grades'] == 2
     assert store.objects[saved_key] == saved_bytes
-    first = checkpoint(store, '2026-09-11T07:00:00Z')
-    report = run(source(6, '2026-09-11T08:00:00Z'), tmp_path, store, first)
+    first = checkpoint(store, '2026-09-11T09:00:00Z')
+    report = run(source(6, '2026-09-11T10:00:00Z'), tmp_path, store, first)
     assert report['ledger_rows'] == 6 and report['catchup_revision'] == 2
-    latest = checkpoint(store, '2026-09-11T08:00:00Z')
+    latest = checkpoint(store, '2026-09-11T10:00:00Z')
     assert latest['ledger']['rows'][:4] == first['ledger']['rows']
     assert latest['state']['temperature_model'] == old['state']['temperature_model']
     assert len(store.writes) == 6
@@ -366,7 +369,7 @@ def test_catchup_rejects_corrections_and_excludes_unverified_new_grades(main_job
     store = Store()
     run(source(2), tmp_path, store)
     old = checkpoint(store)
-    inputs = source(3, '2026-09-11T06:00:00Z')
+    inputs = source(3, '2026-09-11T08:00:00Z')
     before = deepcopy(store.objects)
     if change == 'p_home':
         inputs['locked'][0]['row']['p_home'] = .2
@@ -375,7 +378,7 @@ def test_catchup_rejects_corrections_and_excludes_unverified_new_grades(main_job
     elif change == 'missing_lock':
         inputs['locked'][2]['evidence']['version_id'] = None
     else:
-        inputs['finals']['2']['observed_at'] = '2026-09-11T07:00:00Z'
+        inputs['finals']['2']['observed_at'] = '2026-09-11T09:00:00Z'
     if change == 'future_final':
         report = run(inputs, tmp_path, store, old)
         assert report['status'] == 'no_new_final_grades'
@@ -396,8 +399,8 @@ def test_catchup_readback_failure_never_exposes_new_checkpoint(main_job, tmp_pat
     run(source(2), tmp_path, store)
     old = checkpoint(store)
     with pytest.raises(ValueError, match='readback mismatch'):
-        run(source(4, '2026-09-11T06:00:00Z'), tmp_path, store, old)
-    assert checkpoint(store, '2026-09-11T06:00:00Z') == old
+        run(source(4, '2026-09-11T08:00:00Z'), tmp_path, store, old)
+    assert checkpoint(store, '2026-09-11T08:00:00Z') == old
     assert not any('catchup=' in k and k.endswith('calibration_state.json') for k in store.objects)
 
 
@@ -405,7 +408,7 @@ def test_catchup_readback_failure_never_exposes_new_checkpoint(main_job, tmp_pat
 def test_latest_catchup_checkpoint_fails_closed(main_job, tmp_path, damage):
     store = Store()
     run(source(2), tmp_path, store)
-    run(source(4, '2026-09-11T06:00:00Z'), tmp_path, store, checkpoint(store))
+    run(source(4, '2026-09-11T08:00:00Z'), tmp_path, store, checkpoint(store))
     prefix = checkpoint_prefix('2026-09-11', 1)
     key = prefix+'calibration_state.json'
     state = json.loads(store.objects[key])
@@ -416,19 +419,19 @@ def test_latest_catchup_checkpoint_fails_closed(main_job, tmp_path, damage):
     elif damage == 'revision':
         state['catchup_revision'] = 2
     else:
-        state['completed_at'] = '2026-09-11T08:00:00Z'
+        state['completed_at'] = '2026-09-11T10:00:00Z'
     store.objects[key] = encode(state)
     with pytest.raises(ValueError, match='missing or changed|escaped|invalid or future'):
-        checkpoint(store, '2026-09-11T06:00:00Z')
+        checkpoint(store, '2026-09-11T08:00:00Z')
 
 
 def test_daily_capture_reads_catchup_ledger_but_keeps_nightly_models(main_job, tmp_path, monkeypatch):
     store = Store()
     run(source(2), tmp_path, store)
     old = checkpoint(store)
-    run(source(4, '2026-09-11T06:00:00Z'), tmp_path, store, old)
+    run(source(4, '2026-09-11T08:00:00Z'), tmp_path, store, old)
     monkeypatch.setattr(platt_inputs, 'read_locked_predictions', lambda *a: ([], {}))
-    captured = platt_inputs.capture(store, 'test', '2026-09-11T07:00:00Z', {'games': []}, [])
+    captured = platt_inputs.capture(store, 'test', '2026-09-11T09:00:00Z', {'games': []}, [])
     assert len(captured['committed_ledger']['rows']) == 4
     assert captured['temperature_model'] == old['state']['temperature_model']
     assert captured['platt_model'] == old['state']['platt_model']
@@ -441,14 +444,14 @@ def test_completed_nightly_cli_still_checks_fresh_finals(main_job, tmp_path, mon
     store = Store()
     run(source(2), tmp_path, store)
     old = checkpoint(store)
-    at = '2026-09-11T06:01:00+00:00'
+    at = '2026-09-11T08:01:00+00:00'
     class Clock:
         @staticmethod
         def now(tz):
             return utc(at)
     prior = {'coverageComplete': True, 'games': [],
-             'receipt': {'retrievedAtUtc': '2026-09-11T05:00:10Z' if stale else '2026-09-11T06:00:10Z'},
-             'updatedAtUtc': '2026-09-11T06:00:30Z'}
+             'receipt': {'retrievedAtUtc': '2026-09-11T07:00:10Z' if stale else '2026-09-11T08:00:10Z'},
+             'updatedAtUtc': '2026-09-11T08:00:30Z'}
     class ReadOnly:
         def __init__(self, *args): self.receipts = []
         def read(self, key): return {'artifact': {}}
@@ -461,7 +464,7 @@ def test_completed_nightly_cli_still_checks_fresh_finals(main_job, tmp_path, mon
     monkeypatch.setattr(nightly, 'Reader', ReadOnly)
     monkeypatch.setattr(sources, 'aws_clients', lambda *a: (None, store, 'test'))
     monkeypatch.setattr(nightly, 'capture', captured)
-    monkeypatch.setattr(sys, 'argv', ['nightly', '--publish', '--sources-not-before', '2026-09-11T06:00:00Z',
+    monkeypatch.setattr(sys, 'argv', ['nightly', '--publish', '--sources-not-before', '2026-09-11T08:00:00Z',
                                     '--output', str(tmp_path)])
     if stale:
         with pytest.raises(ValueError, match='stale'):
@@ -474,18 +477,18 @@ def test_completed_nightly_cli_still_checks_fresh_finals(main_job, tmp_path, mon
         assert json.loads((tmp_path/'report.json').read_text())['status'] == 'completed_catchup'
 
 
-def test_catchup_keeps_main_only_guard_and_pre_0100_gate(main_job, tmp_path, monkeypatch):
+def test_catchup_keeps_main_only_guard_and_pre_0300_gate(main_job, tmp_path, monkeypatch):
     store = Store()
     run(source(2), tmp_path, store)
     old = checkpoint(store)
     original = deepcopy(store.objects)
     monkeypatch.setenv('GITHUB_REF', 'refs/pull/999/merge')
     with pytest.raises(ValueError, match='existing main'):
-        run(source(4, '2026-09-11T06:00:00Z'), tmp_path, store, old)
+        run(source(4, '2026-09-11T08:00:00Z'), tmp_path, store, old)
     monkeypatch.setenv('GITHUB_REF', 'refs/heads/main')
     with pytest.raises(ValueError, match='verification'):
-        run(dict(source(4, '2026-09-11T06:00:00Z'), verification_only=True), tmp_path, store, old)
-    result = run(source(4, '2026-09-12T04:59:00Z'), tmp_path, store, old)
+        run(dict(source(4, '2026-09-11T08:00:00Z'), verification_only=True), tmp_path, store, old)
+    result = run(source(4, '2026-09-12T06:59:00Z'), tmp_path, store, old)
     assert result['published'] is False and store.objects == original
 
 
@@ -494,7 +497,7 @@ def test_local_catchup_is_preview_only(main_job, tmp_path):
     run(source(2), tmp_path, store)
     old = checkpoint(store)
     original = deepcopy(store.objects)
-    inputs = source(4, '2026-09-11T06:00:00Z')
+    inputs = source(4, '2026-09-11T08:00:00Z')
     report = nightly.execute(inputs, tmp_path/'preview', checkpoint=old,
                              clock=lambda: utc(inputs['as_of'])+timedelta(seconds=30))
     assert report['status'] == 'completed_catchup' and report['published'] is False
