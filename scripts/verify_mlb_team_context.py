@@ -1,5 +1,5 @@
 """Read-only current pregame source proof; never backfills a locked snapshot."""
-import argparse,json,re,sys,time
+import argparse,json,os,re,sys,time
 from datetime import datetime,timezone,timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -13,7 +13,7 @@ HEX64=re.compile(r'^[0-9a-f]{64}$')
 def _time(v):
     try:
         d=datetime.fromisoformat(str(v).replace('Z','+00:00'))
-        if d.tzinfo is None:d=d.replace(tzinfo=timezone.utc)
+        if d.tzinfo is None or d.utcoffset() is None:return None
         return d.astimezone(timezone.utc)
     except Exception:return None
 
@@ -25,7 +25,7 @@ def _id(v):
 
 def _official(v):
     if (n:=_id(v)) is not None:return n
-    if isinstance(v,str) and v.isdigit() and not v.startswith('0'):
+    if isinstance(v,str) and re.fullmatch(r'[1-9][0-9]*',v):
         n=int(v);return n if n>0 else None
     return None
 
@@ -68,19 +68,25 @@ def _sample(item,side,errors):
     if item.get('sampleStatus')!=expected_status:errors.append(side+'_passive_batter_sample_status_invalid')
     if pa in (None,0) and any(v is not None for v in vals.values()):errors.append(side+'_passive_batter_rate_without_sample')
 
+def _lineup_side_present(line, side):
+    return (line.get(side+'_batting_order') is not None
+            or line.get(side+'_lineup_season_batting') is not None
+            or line.get(side+'_lineup_confirmed') is True)
+
 def passive_lineup_observation(row):
     ctx=row.get('advanced_context') or row.get('advancedContext') or {}; line=ctx.get('confirmed_lineups') if isinstance(ctx,dict) else None;line=line if isinstance(line,dict) else {}
-    present=any(line.get(k) is not None for k in ('home_lineup_season_batting','away_lineup_season_batting','home_batting_order','away_batting_order')) or any(line.get(k) is True for k in ('home_lineup_confirmed','away_lineup_confirmed'))
+    present=line.get('source_status')=='CONNECTED' or any(_lineup_side_present(line,s) for s in ('home','away'))
     out={'present':present,'valid':False,'errors':[],'homeBatterCount':0,'awayBatterCount':0,'retrievedAtUtc':None,'preT45':None,'identitySets':{'home':[],'away':[]}}
     if not present:return out
     err=[];official=_official(row.get('officialGamePk') if row.get('officialGamePk') is not None else row.get('official_game_pk')); commence=_time(row.get('commenceTime') or row.get('commence_time'))
     if official is None:err.append('passive_batting_official_game_pk_invalid')
     if commence is None:err.append('passive_batting_commence_time_invalid')
-    if _id(line.get('game_pk')) not in (None,official):err.append('passive_batting_game_identity_mismatch')
+    if _id(line.get('game_pk')) is None or _id(line.get('game_pk'))!=official:err.append('passive_batting_game_identity_mismatch')
     if line.get('lineupSeasonBattingVersion')!=source.BATTING_OBSERVATION_VERSION:err.append('passive_batting_version_mismatch')
     r,_=_receipt(line.get('sourceProvenance'),official,commence,'passive_batting',err) if official else (None,None);out['retrievedAtUtc']=(line.get('sourceProvenance') or {}).get('retrievedAtUtc');out['preT45']=bool(r and commence and r<commence-timedelta(minutes=45))
     for side in ('home','away'):
         order,obs=line.get(side+'_batting_order'),line.get(side+'_lineup_season_batting')
+        if not _lineup_side_present(line,side) and line.get('source_status')=='PARTIAL':continue
         if not isinstance(order,list) or len(order)!=9:err.append(side+'_batting_order_invalid');continue
         ids=[_id(v) for v in order]
         if any(v is None for v in ids) or len(set(ids))!=9:err.append(side+'_batting_order_identity_invalid');continue
@@ -142,8 +148,50 @@ def persisted_observations(table,day):
             errors=snapshots.validate(snap)
             if errors:raise RuntimeError('invalid persisted team snapshot: '+','.join(errors))
         lv=groups.get('confirmed_lineups',{}).get('values') or {};bv=groups.get('bullpen_availability',{}).get('values') or {}
-        evidence.append({'officialGamePk':str(row.get('officialGamePk')),'snapshotFingerprint':snap.get('fingerprint'),'teamSnapshot':team_snapshot,'bothLineups':all(lv.get(s+'Confirmed') is True for s in ('home','away')) if team_snapshot else False,'bothWorkloads':all(bv.get(s+'Usage1d3d5d') is not None for s in ('home','away')) if team_snapshot else False,'passiveLineupObservation':line,'passiveBullpenRosterObservation':roster})
+        official=_official(row.get('officialGamePk') if row.get('officialGamePk') is not None else row.get('official_game_pk'))
+        evidence.append({'officialGamePk':str(official) if official is not None else None,'storedPK':stored.get('PK'),'storedSK':stored.get('SK'),'snapshotFingerprint':snap.get('fingerprint'),'teamSnapshot':team_snapshot,'bothLineups':all(lv.get(s+'Confirmed') is True for s in ('home','away')) if team_snapshot else False,'bothWorkloads':all(bv.get(s+'Usage1d3d5d') is not None for s in ('home','away')) if team_snapshot else False,'passiveLineupObservation':line,'passiveBullpenRosterObservation':roster})
     return {'storedGameRows':len(rows),'teamSnapshotRows':sum(r['teamSnapshot'] for r in evidence),'gamesWithBothLineups':sum(r['bothLineups'] for r in evidence),'gamesWithBothWorkloads':sum(r['bothWorkloads'] for r in evidence),'gamesWithPassiveBatterObservations':sum(r['passiveLineupObservation']['present'] for r in evidence),'gamesWithValidPassiveBatterObservations':sum(r['passiveLineupObservation']['valid'] for r in evidence),'gamesWithPassiveBullpenRosters':sum(r['passiveBullpenRosterObservation']['present'] for r in evidence),'gamesWithValidPassiveBullpenRosters':sum(r['passiveBullpenRosterObservation']['valid'] for r in evidence),'passiveRosterAvailabilityClaimCount':sum(r['passiveBullpenRosterObservation']['availabilityClaimed'] for r in evidence),'readOnly':True,'rows':evidence}
+
+def correlate_persistence(live_rows, persisted):
+    """Credit only exact-game, observed-side matches; absence cannot prove storage."""
+    stored_by_game={}; errors=[]; matches=[]; live_ids=set()
+    for row in persisted['rows']:
+        pk=_official(row.get('officialGamePk'))
+        if pk is None:
+            errors.append('persisted_game_identity_invalid');continue
+        if pk in stored_by_game:errors.append(f'duplicate_persisted_game:{pk}')
+        stored_by_game[pk]=row
+    for live in live_rows:
+        pk=_official(live.get('officialGamePk'))
+        if pk is None:
+            errors.append('live_game_identity_invalid');continue
+        if pk in live_ids:errors.append(f'duplicate_live_game:{pk}')
+        live_ids.add(pk)
+        for block,field in (('lineup','passiveLineupObservation'),('bullpen','passiveBullpenRosterObservation')):
+            payload=live[block]
+            sides=[s for s in ('home','away') if (
+                _lineup_side_present(payload,s) if block=='lineup'
+                else payload.get(s+'_bullpen_roster_player_ids') is not None)]
+            if not sides:continue
+            stored=stored_by_game.get(pk)
+            state=(stored or {}).get(field) or {}
+            reasons=[]
+            if stored is None:reasons.append('missing_game_row')
+            elif not state.get('valid'):reasons.append('missing_valid_persisted_block')
+            else:
+                for side in sides:
+                    expected=payload.get(side+('_batting_order' if block=='lineup' else '_bullpen_roster_player_ids'))
+                    actual=state.get('identitySets',{}).get(side)
+                    if not expected or expected!=actual:reasons.append(side+'_observation_not_persisted')
+            match={'officialGamePk':str(pk),'block':block,'observedSides':sides,
+                   'storedPK':(stored or {}).get('storedPK'),'storedSK':(stored or {}).get('storedSK'),
+                   'status':'INCONCLUSIVE' if reasons else 'PROVEN','reasons':reasons}
+            matches.append(match)
+            errors.extend(f'{pk}:{block}:{reason}' for reason in reasons)
+    if not matches:errors.append('no_live_passive_observations')
+    return {'status':'INCONCLUSIVE' if errors else 'PROVEN',
+            'observedBlocks':len(matches),'matchedBlocks':sum(m['status']=='PROVEN' for m in matches),
+            'errors':sorted(set(errors)),'matches':matches,'readOnly':True}
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--persisted',action='store_true');a=p.parse_args();now=datetime.now(timezone.utc);day=now.astimezone(ZoneInfo('America/New_York')).date().isoformat();schedule=advanced._statsapi_schedule(day);history=advanced._statsapi_schedule_history(day)
@@ -156,7 +204,12 @@ def main():
     report={'readOnly':True,'createdAtUtc':datetime.now(timezone.utc).isoformat(),'version':source.VERSION,'elapsedSeconds':round(time.monotonic()-started,3),'eligibleGames':len(rows),'gamesWithBothLineups':sum(all(r['lineup'].get(s+'_lineup_confirmed') is True for s in ('home','away')) for r in rows),'gamesWithBothWorkloads':sum(all(r['bullpen'].get(s+'_reliever_usage_1d_3d_5d') is not None for s in ('home','away')) for r in rows),'rows':rows}
     if a.persisted:
         import boto3;report['persistedCollectorEvidence']=persisted_observations(boto3.resource('dynamodb').Table('parlay_platform_snapshots'),day)
+        report['persistenceCorrelation']=correlate_persistence(rows,report['persistedCollectorEvidence'])
+    report['sourceSha']=os.environ.get('PROOF_SOURCE_SHA')
+    report['workflowRunId']=os.environ.get('GITHUB_RUN_ID')
+    report['workflowRunAttempt']=os.environ.get('GITHUB_RUN_ATTEMPT')
     out=ROOT/'runtime_reports/mlb_team_context_live_proof_latest.json';out.write_text(json.dumps(report,indent=2,default=str)+'\n');print(json.dumps({k:v for k,v in report.items() if k!='rows'},default=str))
+    if a.persisted and report['persistenceCorrelation']['status']!='PROVEN':raise RuntimeError('passive persistence proof inconclusive: '+','.join(report['persistenceCorrelation']['errors']))
     if rows and not report['gamesWithBothWorkloads']:raise RuntimeError('no complete observed relief workload')
     if report['elapsedSeconds']>90:raise RuntimeError('supplemental source proof exceeds 90 second slate budget')
 if __name__=='__main__':main()

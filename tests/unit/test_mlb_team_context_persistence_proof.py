@@ -38,9 +38,266 @@ def test_cross_role_opponent_identity_overlap_fails_closed():
 def test_unposted_lineup_remains_normal_absence():
     r=_row();l=r['data']['advanced_context']['confirmed_lineups']
     for k in ('home_lineup_season_batting','away_lineup_season_batting','home_batting_order','away_batting_order'):l[k]=None
-    l['home_lineup_confirmed']=False;l['away_lineup_confirmed']=False
+    l['home_lineup_confirmed']=False;l['away_lineup_confirmed']=False;l['source_status']='PARTIAL'
     s=SUBJECT.passive_lineup_observation(r['data']);assert s['present'] is False and s['errors']==[]
 @pytest.mark.parametrize('bad',['101',101.0,Decimal('101.5')])
 def test_player_identity_remains_strict(bad):
     r=_row();l=r['data']['advanced_context']['confirmed_lineups'];l['home_batting_order'][0]=bad;l['home_lineup_season_batting'][0]['playerId']=bad
     with pytest.raises(RuntimeError,match='identity'):SUBJECT.persisted_observations(Table([r]),'2026-09-11')
+
+
+# Retained negative coverage from the original persistence proof (#819).
+GAME_PK = int(PK)
+
+def test_persisted_passive_observations_accept_decimal_ddb_identities_without_authority_change():
+    row = _row(); row["data"]["officialGamePk"] = Decimal(GAME_PK)
+    report = SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+    assert report["readOnly"] is True
+    assert report["gamesWithValidPassiveBatterObservations"] == 1
+    assert report["gamesWithValidPassiveBullpenRosters"] == 1
+    assert report["passiveRosterAvailabilityClaimCount"] == 0
+    assert report["rows"][0]["passiveLineupObservation"]["preT45"] is True
+    assert report["rows"][0]["passiveBullpenRosterObservation"]["preT45"] is True
+
+
+def test_passive_batter_order_mismatch_fails_closed():
+    row = _row()
+    row["data"]["advanced_context"]["confirmed_lineups"]["home_lineup_season_batting"][0]["playerId"] = Decimal(999)
+    with pytest.raises(RuntimeError, match="passive_batter_order_mismatch"):
+        SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+
+
+def test_passive_batter_observation_at_or_after_t45_fails_closed():
+    row = _row()
+    row["data"]["advanced_context"]["confirmed_lineups"]["sourceProvenance"]["retrievedAtUtc"] = "2026-09-11T19:15:00+00:00"
+    with pytest.raises(RuntimeError, match="passive_batting_not_pre_t45"):
+        SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+
+
+@pytest.mark.parametrize("field,value", [
+    ("home_available_relievers", []),
+    ("away_available_relievers", [401]),
+    ("home_unavailable_relievers", []),
+    ("away_unavailable_relievers", [402]),
+])
+def test_passive_bullpen_roster_never_makes_available_or_unavailable_claim(field, value):
+    row = _row()
+    row["data"]["advanced_context"]["bullpen_fatigue"][field] = value
+    with pytest.raises(RuntimeError, match="passive_roster_must_not_claim_reliever_availability"):
+        SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+
+
+def test_absent_passive_observations_are_reported_as_absent_not_fabricated():
+    row = _row(); row["data"]["advanced_context"] = {}
+    report = SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+    assert report["gamesWithPassiveBatterObservations"] == 0
+    assert report["gamesWithPassiveBullpenRosters"] == 0
+
+
+def test_version_marker_with_unposted_lineups_is_normal_absence():
+    row = _row(); lineup = row["data"]["advanced_context"]["confirmed_lineups"]
+    lineup["home_lineup_season_batting"] = None; lineup["away_lineup_season_batting"] = None
+    lineup["home_batting_order"] = None; lineup["away_batting_order"] = None
+    lineup["source_status"] = "PARTIAL"
+    lineup["home_lineup_confirmed"] = None; lineup["away_lineup_confirmed"] = None
+    state = SUBJECT.passive_lineup_observation(row["data"])
+    assert state["present"] is False and state["errors"] == []
+
+
+@pytest.mark.parametrize("value", [None, "", "not-a-time"])
+def test_present_passive_batter_observation_requires_parseable_game_start(value):
+    row = _row(); row["data"]["commenceTime"] = value
+    with pytest.raises(RuntimeError, match="passive_batting_commence_time_invalid"):
+        SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+
+
+def test_passive_lineup_must_belong_to_same_exact_official_game_and_feed():
+    row = _row(); lineup = row["data"]["advanced_context"]["confirmed_lineups"]
+    lineup["game_pk"] = Decimal(GAME_PK + 1)
+    with pytest.raises(RuntimeError, match="passive_batting_game_identity_mismatch"):
+        SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+
+
+def test_feed_endpoint_requires_exact_scheme_host_and_path():
+    for endpoint in (
+        f"http://statsapi.mlb.com/api/v1.1/game/{GAME_PK}/feed/live",
+        f"https://example.invalid/api/v1.1/game/{GAME_PK}/feed/live",
+        FEED + "/corrupt",
+        FEED + "?extra=1",
+    ):
+        row = _row(); row["data"]["advanced_context"]["confirmed_lineups"]["sourceProvenance"]["endpoint"] = endpoint
+        with pytest.raises(RuntimeError, match="passive_batting_endpoint_identity_mismatch"):
+            SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+
+
+@pytest.mark.parametrize("invalid", ["101", 101.0, Decimal("101.5"), Decimal("9007199254740992.5")])
+def test_persisted_player_ids_do_not_accept_string_float_or_fractional_decimal(invalid):
+    row = _row(); lineup = row["data"]["advanced_context"]["confirmed_lineups"]
+    lineup["home_batting_order"][0] = invalid; lineup["home_lineup_season_batting"][0]["playerId"] = invalid
+    with pytest.raises(RuntimeError, match="batting_order_identity_invalid|passive_batter_identity_or_slot_invalid"):
+        SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+
+
+@pytest.mark.parametrize("field,value,error", [
+    ("plateAppearances", None, "sample_status_invalid"),
+    ("ops", Decimal("9.0"), "ops_invalid"),
+    ("rateObservationCount", Decimal(2), "rate_observation_count_invalid"),
+    ("sampleStatus", "SAMPLE_UNAVAILABLE", "sample_status_invalid"),
+])
+def test_passive_batter_season_observation_fields_are_validated(field, value, error):
+    row = _row(); item = row["data"]["advanced_context"]["confirmed_lineups"]["home_lineup_season_batting"][0]
+    item[field] = value
+    with pytest.raises(RuntimeError, match=error):
+        SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+
+
+def test_players_cannot_be_duplicated_across_opposing_lineups():
+    row = _row(); lineup = row["data"]["advanced_context"]["confirmed_lineups"]
+    lineup["away_batting_order"] = copy.deepcopy(lineup["home_batting_order"])
+    lineup["away_lineup_season_batting"] = copy.deepcopy(lineup["home_lineup_season_batting"])
+    with pytest.raises(RuntimeError, match="cross_team_identity_overlap"):
+        SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+
+
+def test_players_cannot_be_duplicated_across_opposing_bullpens():
+    row = _row(); bullpen = row["data"]["advanced_context"]["bullpen_fatigue"]
+    bullpen["away_bullpen_roster_player_ids"] = copy.deepcopy(bullpen["home_bullpen_roster_player_ids"])
+    with pytest.raises(RuntimeError, match="cross_team_identity_overlap"):
+        SUBJECT.persisted_observations(Table([row]), "2026-09-11")
+
+
+def _unpost(row, side):
+    line = row['data']['advanced_context']['confirmed_lineups']
+    line['source_status'] = 'PARTIAL'
+    for suffix in ('batting_order', 'lineup_season_batting', 'lineup_confirmed'):
+        line[side+'_'+suffix] = None
+
+
+def _live(row):
+    context = row['data']['advanced_context']
+    return {'officialGamePk': int(PK),
+            'lineup': copy.deepcopy(context.get('confirmed_lineups') or {}),
+            'bullpen': copy.deepcopy(context.get('bullpen_fatigue') or {})}
+
+
+@pytest.mark.parametrize('side', ['home', 'away'])
+def test_partial_lineup_accepts_each_independently_observed_side(side):
+    row = _row(); _unpost(row, side)
+    before = copy.deepcopy(row)
+    report = SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+    state = report['rows'][0]['passiveLineupObservation']
+    assert state['valid'] and state[side+'BatterCount'] == 0
+    assert state[('away' if side == 'home' else 'home')+'BatterCount'] == 9
+    assert row == before
+    assert SUBJECT.correlate_persistence([_live(row)], report)['status'] == 'PROVEN'
+
+
+@pytest.mark.parametrize('side', ['home', 'away'])
+def test_connected_lineup_cannot_omit_a_side(side):
+    row = _row(); _unpost(row, side)
+    row['data']['advanced_context']['confirmed_lineups']['source_status'] = 'CONNECTED'
+    with pytest.raises(RuntimeError, match='batting_order_invalid'):
+        SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+
+
+@pytest.mark.parametrize('block,receipt', [('confirmed_lineups', 'sourceProvenance'),
+                                         ('bullpen_fatigue', 'bullpenRosterSourceProvenance')])
+@pytest.mark.parametrize('field', ['retrievedAtUtc', 'sourceEffectiveAtUtc'])
+@pytest.mark.parametrize('value', ['2026-09-11T18:00:00', '2026-09-11'])
+def test_source_receipts_require_explicit_timezones(block, receipt, field, value):
+    row = _row()
+    row['data']['advanced_context'][block][receipt][field] = value
+    with pytest.raises(RuntimeError, match='at_invalid'):
+        SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+
+
+@pytest.mark.parametrize('value', [None, '824631', Decimal('824631.5'), True])
+def test_lineup_game_identity_cannot_bypass_validation(value):
+    row = _row(); row['data']['advanced_context']['confirmed_lineups']['game_pk'] = value
+    with pytest.raises(RuntimeError, match='game_identity_mismatch'):
+        SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+
+
+def test_exact_game_correlation_retains_row_keys_without_mutation():
+    row = _row(); before = copy.deepcopy(row)
+    report = SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+    result = SUBJECT.correlate_persistence([_live(row)], report)
+    assert result['status'] == 'PROVEN' and result['matchedBlocks'] == 2
+    assert all(m['storedPK'] == row['PK'] and m['storedSK'] == row['SK'] for m in result['matches'])
+    assert row == before
+
+
+@pytest.mark.parametrize('kind', ['no_rows', 'no_blocks', 'other_game', 'duplicate_game', 'wrong_side'])
+def test_missing_or_ambiguous_persistence_is_inconclusive(kind):
+    live = _live(_row()); row = _row()
+    if kind == 'no_blocks': row['data']['advanced_context'] = {}
+    if kind == 'wrong_side': _unpost(row, 'away')
+    report = SUBJECT.persisted_observations(Table([row]), '2026-09-11')
+    if kind == 'no_rows': report['rows'] = []
+    if kind == 'other_game': live['officialGamePk'] += 1
+    if kind == 'duplicate_game': report['rows'] *= 2
+    assert SUBJECT.correlate_persistence([live], report)['status'] == 'INCONCLUSIVE'
+
+
+def test_no_live_observations_do_not_prove_persistence():
+    report = SUBJECT.persisted_observations(Table([_row()]), '2026-09-11')
+    for rows in ([], [{'officialGamePk': int(PK), 'lineup': {}, 'bullpen': {}}]):
+        result = SUBJECT.correlate_persistence(rows, report)
+        assert result['status'] == 'INCONCLUSIVE'
+        assert result['observedBlocks'] == 0
+
+
+def test_paginated_reads_are_consistent_and_preserve_every_game():
+    row = _row()
+    class Pages:
+        calls = 0
+        def query(self, **kwargs):
+            assert kwargs['ConsistentRead'] is True
+            self.calls += 1
+            if self.calls == 1:
+                assert 'ExclusiveStartKey' not in kwargs
+                return {'Items': [], 'LastEvaluatedKey': {'PK': row['PK'], 'SK': 'GAME#before'}}
+            assert kwargs['ExclusiveStartKey']['SK'] == 'GAME#before'
+            return {'Items': [copy.deepcopy(row)]}
+    table = Pages()
+    result = SUBJECT.persisted_observations(table, '2026-09-11')
+    assert table.calls == 2 and result['storedGameRows'] == 1
+
+
+def test_live_command_retains_fresh_inconclusive_diagnostic_and_fails(monkeypatch, tmp_path):
+    import boto3
+    import json
+    from datetime import datetime, timezone
+    class Clock:
+        @staticmethod
+        def now(tz): return datetime(2026, 9, 11, 18, tzinfo=timezone.utc)
+    live = _live(_row()); stored = _row(); stored['data']['advanced_context'] = {}
+    class Resource:
+        def Table(self, name):
+            assert name == 'parlay_platform_snapshots'
+            return Table([stored])
+    monkeypatch.setattr(SUBJECT, 'datetime', Clock)
+    monkeypatch.setattr(SUBJECT, 'ROOT', tmp_path)
+    monkeypatch.setattr(SUBJECT.sys, 'argv', ['proof', '--persisted'])
+    monkeypatch.setattr(SUBJECT.advanced, '_statsapi_schedule', lambda _: {'ok': True})
+    monkeypatch.setattr(SUBJECT.advanced, '_statsapi_schedule_history', lambda _: {'ok': True})
+    monkeypatch.setattr(SUBJECT.advanced, '_schedule_games', lambda _: [
+        {'gamePk': int(PK), 'gameDate': '2026-09-11T20:00:00Z', 'status': {'abstractGameState': 'Preview'}}])
+    monkeypatch.setattr(SUBJECT.source, 'observe', lambda *args: (live['lineup'], live['bullpen']))
+    monkeypatch.setattr(boto3, 'resource', lambda _: Resource())
+    monkeypatch.setenv('PROOF_SOURCE_SHA', 'f'*40)
+    (tmp_path/'runtime_reports').mkdir()
+    with pytest.raises(RuntimeError, match='proof inconclusive'):
+        SUBJECT.main()
+    report = json.loads((tmp_path/'runtime_reports/mlb_team_context_live_proof_latest.json').read_text())
+    assert report['sourceSha'] == 'f'*40
+    assert report['persistenceCorrelation']['status'] == 'INCONCLUSIVE'
+    assert report['persistedCollectorEvidence']['gamesWithPassiveBatterObservations'] == 0
+
+
+def test_live_workflow_pins_main_event_and_removes_stale_evidence():
+    workflow = (ROOT/'.github/workflows/mlb-passive-context-persistence-proof.yml').read_text()
+    assert "github.ref == 'refs/heads/main'" in workflow
+    assert "with: {ref: '${{ github.sha }}'}" in workflow
+    assert 'PROOF_SOURCE_SHA: ${{ github.sha }}' in workflow
+    assert workflow.index('rm -f runtime_reports/') < workflow.index('python scripts/verify_mlb_team_context.py --persisted')
