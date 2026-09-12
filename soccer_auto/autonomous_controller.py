@@ -1,1 +1,412 @@
-placeholder
+"""Fail-closed orchestration and health authority for soccer_auto."""
+from __future__ import annotations
+
+import math
+import os
+from datetime import datetime, timedelta
+from typing import Any, Mapping
+
+import boto3
+from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
+
+from .canonical import iso_utc
+from .health import prediction_and_training_health
+from .llm_analyst import latest_validated_analysis
+from .odds_api import provider_safety_config
+from .settlement import settlement_conflict_blocks_training
+from .storage import SoccerStore, ddb_safe, now_utc, plain
+
+
+MAX_CONSECUTIVE_FAILURES = int(os.getenv("SOCCER_AUTO_MAX_CONSECUTIVE_FAILURES", "3"))
+
+COMPONENT_LIVENESS: Mapping[str, tuple[str, int]] = {
+    "inventory": ("SOCCER_AUTO_INVENTORY_FUNCTION", 45),
+    "dispatch": ("SOCCER_AUTO_DISPATCH_FUNCTION", 10),
+    "freeze": ("SOCCER_AUTO_FREEZE_FUNCTION", 10),
+    "settlement": ("SOCCER_AUTO_SETTLEMENT_FUNCTION", 20),
+    "trainer": ("SOCCER_AUTO_TRAINER_FUNCTION", 780),
+    "llm_analyst": ("SOCCER_AUTO_LLM_ANALYST_FUNCTION", 130),
+    "historical": ("SOCCER_AUTO_HISTORICAL_FUNCTION", 130),
+}
+ADVISORY_COMPONENTS = frozenset({"llm_analyst", "historical"})
+
+
+def _bounded_count(table: Any, limit: int = 1000) -> int:
+    response = table.scan(Select="COUNT", Limit=limit)
+    return int(response.get("Count") or 0)
+
+
+def _latest_quota(store: SoccerStore) -> dict[str, Any] | None:
+    response = store.ops.query(
+        KeyConditionExpression=Key("PK").eq("QUOTA"),
+        ScanIndexForward=False,
+        Limit=1,
+        ConsistentRead=True,
+    )
+    rows = response.get("Items", [])
+    return plain(rows[0]) if rows else None
+
+
+def _queue_health(store: SoccerStore) -> dict[str, int]:
+    queue_urls = {
+        "collection": store.collection_queue_url,
+        "dead_letter": os.environ.get("SOCCER_AUTO_COLLECTION_DLQ_URL", ""),
+    }
+    result = {}
+    for name, url in queue_urls.items():
+        if not url:
+            result[name] = 0
+            continue
+        response = store.sqs.get_queue_attributes(
+            QueueUrl=url,
+            AttributeNames=[
+                "ApproximateNumberOfMessages",
+                "ApproximateNumberOfMessagesNotVisible",
+                "ApproximateNumberOfMessagesDelayed",
+            ],
+        )
+        attributes = response.get("Attributes") or {}
+        result[name] = sum(
+            int(attributes.get(attribute) or 0)
+            for attribute in (
+                "ApproximateNumberOfMessages",
+                "ApproximateNumberOfMessagesNotVisible",
+                "ApproximateNumberOfMessagesDelayed",
+            )
+        )
+    return result
+
+
+def _settlement_conflict_state(store: SoccerStore) -> dict[str, Any]:
+    response = store.ops.query(
+        KeyConditionExpression=Key("PK").eq("SETTLEMENT_CONFLICT"),
+        ConsistentRead=True,
+        Limit=1000,
+        ScanIndexForward=False,
+    )
+    rows = [plain(row) for row in response.get("Items") or []]
+    blocking_rows = [row for row in rows if settlement_conflict_blocks_training(row)]
+    blocking_events = {
+        str(row.get("event_key") or "")
+        for row in blocking_rows
+        if row.get("event_key")
+    }
+    reason_counts: dict[str, int] = {}
+    reasons_by_event: dict[str, set[str]] = {}
+    for row in blocking_rows:
+        event_key = str(row.get("event_key") or "UNKNOWN_EVENT")
+        reason = str(row.get("reason") or "SETTLEMENT_EVIDENCE_CONFLICT")
+        reasons_by_event.setdefault(event_key, set()).add(reason)
+    for reasons in reasons_by_event.values():
+        for reason in reasons:
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+    return {
+        "count": len(blocking_events),
+        "count_is_lower_bound": bool(response.get("LastEvaluatedKey")),
+        "reason_counts": reason_counts,
+        "latest_observed_at": max(
+            (str(row.get("observed_at") or "") for row in blocking_rows),
+            default=None,
+        ),
+        "training_labels_quarantined": len(blocking_events),
+        "records_examined": len(rows),
+        "blocking_records_examined": len(blocking_rows),
+        "ignored_nonblocking_records": len(rows) - len(blocking_rows),
+        "latest_record_observed_at": max(
+            (str(row.get("observed_at") or "") for row in rows),
+            default=None,
+        ),
+    }
+
+
+def _model_state(store: SoccerStore) -> dict[str, Any]:
+    rows = store.model_items()
+    champion = next((row for row in rows if row.get("SK") == "CHAMPION"), None)
+    challengers = [row for row in rows if row.get("authority_state") == "PROSPECTIVE_SHADOW"]
+    return {
+        "champion_digest": champion.get("model_digest") if champion else None,
+        "automatic_prediction_allowed": bool(champion and champion.get("automatic_prediction_allowed")),
+        "prospective_challengers": len(challengers),
+        "challenger_digests": [row.get("model_digest") for row in challengers],
+    }
+
+
+def _llm_state(store: SoccerStore, observed: datetime) -> dict[str, Any]:
+    attempt = plain(
+        store.ops.get_item(
+            Key={"PK": "LLM_ANALYSIS", "SK": "LAST_ATTEMPT"},
+            ConsistentRead=True,
+        ).get("Item")
+        or {}
+    )
+    row = latest_validated_analysis(store, observed)
+    if row is None:
+        return {
+            "configured": bool(os.getenv("SOCCER_AUTO_LLM_MODEL_ID")),
+            "analyses": 0,
+            "fresh": False,
+            "last_attempt": attempt or None,
+        }
+    return {
+        "configured": bool(os.getenv("SOCCER_AUTO_LLM_MODEL_ID")),
+        "analyses": 1,
+        "fresh": True,
+        "analysis_digest": row.get("analysis_digest"),
+        "attempt_id": row.get("attempt_id"),
+        "attempt_started_at": row.get("attempt_started_at"),
+        "validated_trials": len(row.get("recommended_trials") or []),
+        "created_at": row.get("created_at"),
+        "expires_at": row.get("expires_at"),
+        "model_id": row.get("model_id"),
+        "analysis_origin": row.get("analysis_origin"),
+        "last_attempt": attempt or None,
+    }
+
+
+def _metric_sum(cloudwatch: Any, *, function_name: str, metric_name: str, observed: datetime, lookback_minutes: int) -> tuple[float, str | None]:
+    duration_seconds = lookback_minutes * 60
+    period = max(60, int(math.ceil(duration_seconds / 1440.0 / 60.0) * 60))
+    response = cloudwatch.get_metric_statistics(
+        Namespace="AWS/Lambda",
+        MetricName=metric_name,
+        Dimensions=[{"Name": "FunctionName", "Value": function_name}],
+        StartTime=observed - timedelta(minutes=lookback_minutes),
+        EndTime=observed,
+        Period=period,
+        Statistics=["Sum"],
+    )
+    points = response.get("Datapoints") or []
+    total = sum(float(point.get("Sum") or 0.0) for point in points)
+    timestamps = [
+        point.get("Timestamp")
+        for point in points
+        if point.get("Timestamp") and float(point.get("Sum") or 0.0) > 0.0
+    ]
+    latest = max(timestamps).isoformat() if timestamps else None
+    return total, latest
+
+
+def _conditional_failure(exc: ClientError) -> bool:
+    return (exc.response.get("Error") or {}).get("Code") == "ConditionalCheckFailedException"
+
+
+def _persist_state_if_newer(store: SoccerStore, state: Mapping[str, Any]) -> dict[str, Any]:
+    try:
+        store.ops.put_item(
+            Item=ddb_safe(state),
+            ConditionExpression=(
+                "attribute_not_exists(updated_at_epoch_ms) OR "
+                "updated_at_epoch_ms < :updated_at_epoch_ms"
+            ),
+            ExpressionAttributeValues={
+                ":updated_at_epoch_ms": int(state["updated_at_epoch_ms"]),
+            },
+        )
+        return plain(state)
+    except ClientError as exc:
+        if not _conditional_failure(exc):
+            raise
+    current = store.ops.get_item(
+        Key={"PK": "AUTONOMY", "SK": "STATE"},
+        ConsistentRead=True,
+    ).get("Item")
+    if not current:
+        raise RuntimeError("newer autonomy state was not readable after CAS rejection")
+    return plain(current)
+
+
+def component_liveness(cloudwatch: Any, observed: datetime) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for component, (environment_key, lookback_minutes) in COMPONENT_LIVENESS.items():
+        if component == "historical" and os.getenv("SOCCER_AUTO_HISTORICAL_BACKFILL_ENABLED", "true").strip().lower() != "true":
+            result[component] = {
+                "healthy": True,
+                "reason": "DISABLED_BY_EXPLICIT_KILL_SWITCH",
+                "lookback_minutes": lookback_minutes,
+            }
+            continue
+        function_name = os.getenv(environment_key, "").strip()
+        if not function_name:
+            result[component] = {
+                "healthy": False,
+                "reason": "FUNCTION_NAME_NOT_CONFIGURED",
+                "lookback_minutes": lookback_minutes,
+            }
+            continue
+        try:
+            invocations, latest = _metric_sum(
+                cloudwatch,
+                function_name=function_name,
+                metric_name="Invocations",
+                observed=observed,
+                lookback_minutes=lookback_minutes,
+            )
+            errors, latest_error = _metric_sum(
+                cloudwatch,
+                function_name=function_name,
+                metric_name="Errors",
+                observed=observed,
+                lookback_minutes=lookback_minutes,
+            )
+            if invocations < 1:
+                reason = "NO_RECENT_INVOCATION"
+            elif errors > 0 and (not latest or not latest_error or latest_error >= latest):
+                reason = "RECENT_LAMBDA_ERRORS"
+            elif errors > 0:
+                reason = "RECOVERED_AFTER_ERROR"
+            else:
+                reason = "HEALTHY"
+            result[component] = {
+                "healthy": reason in {"HEALTHY", "RECOVERED_AFTER_ERROR"},
+                "reason": reason,
+                "function_name": function_name,
+                "lookback_minutes": lookback_minutes,
+                "invocations": int(invocations),
+                "errors": int(errors),
+                "latest_metric_bucket_at": latest,
+                "latest_error_metric_bucket_at": latest_error,
+            }
+        except Exception as exc:
+            result[component] = {
+                "healthy": False,
+                "reason": "METRIC_READ_FAILED",
+                "function_name": function_name,
+                "lookback_minutes": lookback_minutes,
+                "error": str(exc)[:500],
+            }
+    return result
+
+
+def authority_state(
+    *,
+    model: Mapping[str, Any],
+    counts: Mapping[str, int],
+    consecutive_failures: int,
+    liveness_failed: bool,
+    validated_llm_missing: bool,
+    operational_failure: bool = False,
+) -> tuple[str, str]:
+    if liveness_failed:
+        return "DEGRADED", "SCHEDULED_COMPONENT_LIVENESS_FAILED"
+    if operational_failure:
+        return "DEGRADED", "OPERATIONAL_INTEGRITY_FAILURE"
+    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+        return "DEGRADED", "FAILURE_CIRCUIT_BREAKER"
+    if model.get("automatic_prediction_allowed"):
+        return "AUTHORITATIVE", "CHAMPION_PROMOTED_BY_PROSPECTIVE_GATES"
+    if counts.get("settlements"):
+        return "SHADOW_LEARNING", "ACCUMULATING_OR_EVALUATING_TRAINING_EVIDENCE"
+    return "COLLECTING", "AWAITING_IMMUTABLE_SETTLED_LABELS"
+
+
+def run_cycle() -> dict[str, Any]:
+    store = SoccerStore()
+    observed = now_utc()
+    previous = store.ops.get_item(Key={"PK": "AUTONOMY", "SK": "STATE"}, ConsistentRead=True).get("Item") or {}
+    actions: dict[str, Any] = {}
+    failures: list[str] = []
+    warnings: list[str] = []
+    actions["catalog"] = {
+        "scheduled": True,
+        "invoked_by_controller": False,
+        "registry_empty": not bool(store.list_competitions()),
+    }
+    liveness = component_liveness(boto3.client("cloudwatch"), observed)
+    for action in COMPONENT_LIVENESS:
+        actions[action] = {
+            "scheduled": True,
+            "invoked_by_controller": False,
+            "liveness": liveness[action],
+        }
+        if not liveness[action]["healthy"]:
+            issue = f"component_liveness:{action}:{liveness[action]['reason']}"
+            (warnings if action in ADVISORY_COMPONENTS else failures).append(issue)
+    queues = _queue_health(store)
+    if queues.get("dead_letter", 0) > 0:
+        failures.append("collection_dead_letter_queue_not_empty")
+    settlement_conflict_state = _settlement_conflict_state(store)
+    settlement_conflicts = int(settlement_conflict_state["count"])
+    if settlement_conflicts:
+        warnings.append("settlement_conflicts:training_labels_quarantined")
+    llm = _llm_state(store, observed)
+    validated_llm_missing = bool(llm["configured"] and not llm["fresh"])
+    if validated_llm_missing:
+        last_attempt = llm.get("last_attempt") or {}
+        if last_attempt.get("status") == "DEFERRED_QUOTA":
+            warnings.append("llm_analyst:daily_token_quota_deferred")
+        else:
+            warnings.append("llm_analyst:fresh_validated_analysis_missing")
+    evidence_health = prediction_and_training_health(store, observed=observed)
+    if evidence_health.get("scan_truncated"):
+        failures.append("evidence_health:bounded_scan_truncated")
+    if int(evidence_health.get("integrity_failures") or 0) > 0:
+        failures.append("evidence_health:integrity_failures")
+    if int(evidence_health.get("availability_warnings") or 0) > 0:
+        warnings.append("evidence_health:availability_warnings")
+    consecutive_failures = int(previous.get("consecutive_failures") or 0) + 1 if failures else 0
+    counts = {
+        "competitions": len(store.list_competitions()),
+        "events": _bounded_count(store.events),
+        "snapshot_slots": _bounded_count(store.slots),
+        "locks": _bounded_count(store.locks),
+        "settlements": int((evidence_health.get("training") or {}).get("validated_final_score_rows") or 0),
+        "settlement_table_items": _bounded_count(store.settlements),
+        "admissibility_certificates": int((evidence_health.get("training") or {}).get("admissibility_certificates") or 0),
+        "training_rows_ready": int((evidence_health.get("training") or {}).get("training_rows_ready") or 0),
+        "predictions": _bounded_count(store.predictions),
+        "models": _bounded_count(store.models),
+    }
+    model = _model_state(store)
+    liveness_failed = any(
+        not row["healthy"]
+        for component, row in liveness.items()
+        if component not in ADVISORY_COMPONENTS
+    )
+    all_liveness_complete = all(row["healthy"] for row in liveness.values())
+    authority, reason = authority_state(
+        model=model,
+        counts=counts,
+        consecutive_failures=consecutive_failures,
+        liveness_failed=liveness_failed,
+        validated_llm_missing=validated_llm_missing,
+        operational_failure=bool(failures),
+    )
+    observed_at = iso_utc(observed)
+    state = {
+        "PK": "AUTONOMY",
+        "SK": "STATE",
+        "entity_type": "SOCCER_AUTONOMY_STATE",
+        "ok": True,
+        "system": "soccer_auto",
+        "authority": authority,
+        "reason": reason,
+        "promotion_blocked": bool(failures),
+        "automatic_prediction_allowed": model["automatic_prediction_allowed"] and not failures,
+        "consecutive_failures": consecutive_failures,
+        "failures": failures,
+        "operational_warnings": warnings,
+        "actions": actions,
+        "component_liveness": liveness,
+        "component_liveness_complete": not liveness_failed,
+        "all_component_liveness_complete": all_liveness_complete,
+        "queues": queues,
+        "settlement_conflicts": settlement_conflicts,
+        "settlement_conflict_state": settlement_conflict_state,
+        "counts": counts,
+        "counts_are_lower_bounds_at": 1000,
+        "model": model,
+        "llm_analyst": llm,
+        "prediction_and_training_health": evidence_health,
+        "latest_quota": _latest_quota(store),
+        "shared_provider_safety": provider_safety_config(),
+        "distributed_rate_limit_state": store.rate_limit_status(),
+        "provider_429_telemetry": store.provider_429_status(observed_at=observed),
+        "updated_at": observed_at,
+        "updated_at_epoch_ms": int(observed.timestamp() * 1000),
+    }
+    return _persist_state_if_newer(store, state)
+
+
+def controller_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, Any]:
+    return run_cycle()
