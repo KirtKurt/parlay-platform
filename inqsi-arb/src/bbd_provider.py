@@ -112,11 +112,14 @@ def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int
             payload = json.loads(raw.decode("utf-8")) if raw else {}
             return int(response.status), dict(response.headers.items()), payload
     except HTTPError as exc:
-        raw = exc.read()
-        if optional and exc.code in {401, 403, 404}:
-            return int(exc.code), dict(exc.headers.items()), {}
-        detail = raw.decode("utf-8", "replace")[:500]
-        raise BBDError(f"BBD_HTTP_{exc.code}: {detail}") from exc
+        # Error bodies are untrusted and may echo authentication material.
+        # Status alone is sufficient evidence; always release the response.
+        try:
+            if optional and exc.code in {401, 403, 404}:
+                return int(exc.code), dict(exc.headers.items()), {}
+            raise BBDError(f"BBD_HTTP_{exc.code}") from exc
+        finally:
+            exc.close()
     except (URLError, TimeoutError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise BBDError(f"BBD_REQUEST_FAILED: {type(exc).__name__}") from exc
 
