@@ -314,6 +314,8 @@ def validate(value: dict[str, Any], *, decision_history: dict[str, Any] | None =
             continue
         if any(path.startswith(prefix) for prefix in POLICY["allowed_prefixes"]):
             allowed.append(path)
+    if not allowed:
+        raise ValueError("likelyFiles must contain at least one allowed path after policy normalization")
     value["likelyFiles"] = allowed
     value["noDirectProductionDeploy"] = True
     value["noMainBranchWrite"] = True

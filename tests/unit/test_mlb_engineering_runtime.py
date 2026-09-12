@@ -374,3 +374,88 @@ def test_781_distinct_valid_task_keeps_all_five_authority_restrictions(monkeypat
         assert accepted[key] is True
     ledger = json.loads(kwargs["attempts_path"].read_text())
     assert len(ledger) == 1 and ledger[0]["accepted"] is True
+
+
+@pytest.mark.parametrize("file_fields", [
+    pytest.param({}, id="missing"),
+    pytest.param({"likelyFiles": None}, id="null"),
+    pytest.param({"likelyFiles": []}, id="empty"),
+    pytest.param({"likelyFiles": ["", "  "]}, id="blank"),
+    pytest.param({"likelyFiles": ["template.yaml"]}, id="forbidden-exact"),
+    pytest.param({"likelyFiles": ["engineering_agent/credentials.py"]}, id="forbidden-fragment"),
+    pytest.param({"likelyFiles": ["tennis_auto_llm/runtime.py", "soccer_auto_llm/runtime.py", "arb/runtime.py"]}, id="other-sports"),
+    pytest.param({"likelyFiles": [".github/workflows/mlb-engineering-planner.yml"]}, id="workflow-only"),
+])
+def test_817_rejects_proposal_without_allowed_files_after_normalization(file_fields):
+    from engineering_agent.planner import validate
+
+    proposed = _acceptance_task("Summarize residual bins", "Read-only numeric summaries.")
+    proposed.pop("likelyFiles")
+    proposed.update(file_fields)
+    with pytest.raises(ValueError, match="likelyFiles must contain at least one allowed path after policy normalization"):
+        validate(proposed, decision_history={"decisions": []})
+
+
+def test_817_mixed_proposal_keeps_allowed_mlb_paths_and_authority_restrictions():
+    from engineering_agent.planner import validate
+
+    proposed = _acceptance_task("Summarize residual bins", "Read-only numeric summaries.")
+    proposed["likelyFiles"] = [
+        " hello_world/mlb_metric_diagnostics.py ",
+        "template.yaml",
+        "engineering_agent/credentials.py",
+        "tennis_auto_llm/runtime.py",
+        "soccer_auto_llm/runtime.py",
+        "arb/runtime.py",
+        ".github/workflows/mlb-engineering-planner.yml",
+        "tests/unit/test_mlb_engineering_runtime.py",
+    ]
+    accepted = validate(proposed, decision_history={"decisions": []})
+    assert accepted["likelyFiles"] == [
+        "hello_world/mlb_metric_diagnostics.py",
+        "tests/unit/test_mlb_engineering_runtime.py",
+    ]
+    for key in ("noDirectProductionDeploy", "noMainBranchWrite", "noModelPromotion", "noSecretMutation", "noOtherSportChange"):
+        assert accepted[key] is True
+
+
+def test_817_normalization_rejection_is_recorded_then_distinct_task_is_accepted(monkeypatch, tmp_path):
+    rejected = _acceptance_task("Inspect membership counts", "Read-only sample summaries.")
+    rejected["likelyFiles"] = ["outside_allowlist/metrics.py"]
+    eligible = _acceptance_task("Summarize residual bins", "Read-only numeric summaries.")
+    runtime, kwargs, prompts = _offline_cycle(
+        monkeypatch, tmp_path, [_acceptance_response(t) for t in (rejected, eligible)],
+    )
+    accepted = runtime.run(**kwargs)
+    assert accepted["title"] == eligible["title"]
+    assert accepted["plannerAttempt"] == len(prompts) == 2
+    ledger = json.loads(kwargs["attempts_path"].read_text())
+    assert len(ledger) == 2
+    assert "after policy normalization" in ledger[0]["rejected"]
+    assert "accepted" not in ledger[0] and ledger[1]["accepted"] is True
+    assert json.loads(kwargs["output_path"].read_text())["title"] == eligible["title"]
+
+
+def test_817_normalization_rejections_cannot_exceed_six_attempts_or_publish(monkeypatch, tmp_path):
+    # Distinct, unclassified titles reach the real normalizer on every attempt;
+    # neither duplicate-title nor focus-domain rejection supplies this proof.
+    proposals = [
+        _acceptance_task(title, "Read-only numeric summaries.")
+        for title in ("Alpha bins", "Bravo totals", "Charlie counts", "Delta samples", "Echo buckets", "Foxtrot values")
+    ]
+    for proposed in proposals:
+        proposed["likelyFiles"] = ["outside_allowlist/metrics.py"]
+    runtime, kwargs, prompts = _offline_cycle(
+        monkeypatch, tmp_path, [_acceptance_response(t) for t in proposals],
+    )
+    kwargs["max_attempts"] = 999
+    with pytest.raises(RuntimeError, match="no acceptable planner task after 6 bounded attempts"):
+        runtime.run(**kwargs)
+    ledger = json.loads(kwargs["attempts_path"].read_text())
+    assert len(prompts) == len(ledger) == 6
+    assert [attempt["attempt"] for attempt in ledger] == list(range(1, 7))
+    assert all(attempt["attemptBudget"] == 6 for attempt in ledger)
+    assert all("after policy normalization" in attempt["rejected"] for attempt in ledger)
+    assert all("accepted" not in attempt for attempt in ledger)
+    assert not kwargs["output_path"].exists()
+    assert not kwargs["response_path"].exists()
