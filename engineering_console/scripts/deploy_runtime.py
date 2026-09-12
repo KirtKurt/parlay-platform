@@ -13,6 +13,115 @@ TEMPLATE = 'engineering_console/deploy/template.yaml'
 OUT = Path('runtime_deploy')
 TRUSTED_TASK_ROLE_KEYS = ('ControllerTaskRoleArn', 'BrokerTaskRoleArn', 'PublisherTaskRoleArn')
 UUID = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', re.I)
+STATE_VERSION = 'isolated-console-v3'
+SERVICES = ['eng-console-controller', 'eng-console-broker', 'eng-console-publisher']
+
+def stack_outputs(stack):
+    return {v['OutputKey']: v['OutputValue'] for v in stack.get('Outputs', [])}
+
+def snapshot_previous(previous):
+    if not previous: return None
+    stack = previous['Stacks'][0]
+    outputs = stack_outputs(stack)
+    if outputs.get('RuntimeStateVersion') != STATE_VERSION:
+        raise ValueError('previous_runtime_state_not_rollback_compatible')
+    if stack.get('StackStatus') not in ['CREATE_COMPLETE', 'UPDATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE']:
+        raise ValueError('previous_stack_not_stable')
+    if outputs.get('ClusterName') != STACK or not re.fullmatch(r'[0-9a-f]{40}', outputs.get('SourceSha', '')) or not re.search(r'@sha256:[0-9a-f]{64}$', outputs.get('ImageUri', '')):
+        raise ValueError('previous_runtime_identity_missing')
+    parameters = stack.get('Parameters', [])
+    if not parameters or any(not isinstance(p.get('ParameterValue'), str) or p['ParameterValue'] == '****' for p in parameters):
+        raise ValueError('previous_parameters_unavailable')
+    response = aws('ecs', 'describe-services', '--cluster', STACK, '--services', *SERVICES)
+    services = response.get('services', [])
+    if response.get('failures') or len(services) != len(SERVICES) or {s.get('serviceName') for s in services} != set(SERVICES):
+        raise ValueError('previous_services_unverified')
+    counts = {s['serviceName']: s.get('desiredCount') for s in services}
+    if any(type(n) is not int or n not in [0, 1] for n in counts.values()):
+        raise ValueError('previous_service_count_invalid')
+    template = aws('cloudformation', 'get-template', '--stack-name', STACK, '--template-stage', 'Original')['TemplateBody']
+    if not isinstance(template, (str, dict)) or not template: raise ValueError('previous_template_unavailable')
+    template_file = OUT / 'previous-template.yaml'
+    template_file.write_text(template if isinstance(template, str) else json.dumps(template))
+    snapshot = {'outputs': outputs, 'parameters': parameters, 'desiredCounts': counts, 'templateFile': str(template_file)}
+    (OUT / 'previous-deployment.json').write_text(json.dumps(snapshot, indent=2) + '\n')
+    return snapshot
+
+def console_tasks():
+    arns = set()
+    for status in ['RUNNING', 'STOPPED']:
+        response = aws('ecs', 'list-tasks', '--cluster', STACK, '--desired-status', status)
+        if not isinstance(response.get('taskArns'), list): raise ValueError('rollback_inventory_incomplete')
+        arns.update(response['taskArns'])
+    tasks = []
+    ordered = sorted(arns)
+    for start in range(0, len(ordered), 100):
+        batch = ordered[start:start + 100]
+        response = aws('ecs', 'describe-tasks', '--cluster', STACK, '--tasks', *batch)
+        rows = response.get('tasks', [])
+        if response.get('failures') or len(rows) != len(batch) or {t.get('taskArn') for t in rows} != set(batch):
+            raise ValueError('rollback_inventory_incomplete')
+        tasks.extend(rows)
+    return tasks
+
+def quiesce_candidate():
+    # Stop admission and both other shared-state writers before stopping jobs.
+    # The fixed cluster and exact families exclude every non-Console workload.
+    for name in SERVICES:
+        aws('ecs', 'update-service', '--cluster', STACK, '--service', name, '--desired-count', '0')
+    aws('ecs', 'wait', 'services-stable', '--cluster', STACK, '--services', *SERVICES)
+    stopped, empty = set(), 0
+    for attempt in range(30):
+        active = [t for t in console_tasks() if t.get('lastStatus') != 'STOPPED']
+        if not active:
+            empty += 1
+            if empty == 2: return sorted(stopped)
+        else:
+            empty = 0
+            for task in active:
+                if not re.fullmatch(r'arn:[^:]+:ecs:[^:]+:\d{12}:task-definition/eng-console-(controller|broker|publisher|job|probe):\d+', task.get('taskDefinitionArn', '')):
+                    raise ValueError('rollback_cluster_contains_unknown_task')
+                aws('ecs', 'stop-task', '--cluster', STACK, '--task', task['taskArn'], '--reason', 'Console candidate failed live verification')
+                stopped.add(task['taskArn'])
+            aws('ecs', 'wait', 'tasks-stopped', '--cluster', STACK, '--tasks', *[t['taskArn'] for t in active])
+        time.sleep(2)
+    raise ValueError('candidate_stop_unconfirmed')
+
+def rollback_candidate(snapshot, record):
+    evidence = record['rollback'] = {'status': 'stopping_candidate'}
+    # Persist each boundary, including failed/partial rollback, for operators.
+    def save(): (OUT / 'deployment-record.json').write_text(json.dumps(record, indent=2) + '\n')
+    save()
+    try:
+        evidence['stoppedTasks'] = quiesce_candidate()
+        evidence['status'] = 'candidate_stopped'; save()
+        if snapshot is None:
+            evidence['status'] = 'stopped_no_previous_deployment'; save(); return
+        aws('cloudformation', 'deploy', '--stack-name', STACK, '--template-file', snapshot['templateFile'],
+            '--parameter-overrides', *[p['ParameterKey'] + '=' + p['ParameterValue'] for p in snapshot['parameters']],
+            '--no-fail-on-empty-changeset', text_output=True)
+        outputs = stack_outputs(aws('cloudformation', 'describe-stacks', '--stack-name', STACK)['Stacks'][0])
+        for key in ['ImageUri', 'SourceSha', 'FileSystemId', 'ClusterName', 'RuntimeStateVersion']:
+            if not outputs.get(key) or outputs[key] != snapshot['outputs'].get(key): raise ValueError('rollback_identity_mismatch:' + key)
+        for name, count in snapshot['desiredCounts'].items():
+            aws('ecs', 'update-service', '--cluster', STACK, '--service', name, '--desired-count', str(count))
+        aws('ecs', 'wait', 'services-stable', '--cluster', STACK, '--services', *SERVICES)
+        running = []
+        for name, count in snapshot['desiredCounts'].items():
+            arns = aws('ecs', 'list-tasks', '--cluster', STACK, '--service-name', name, '--desired-status', 'RUNNING')['taskArns']
+            if len(arns) != count: raise ValueError('rollback_service_count_mismatch')
+            for arn in arns:
+                role = name.removeprefix('eng-console-')
+                task = observed_task(aws('ecs', 'describe-tasks', '--cluster', STACK, '--tasks', arn), arn, outputs[role.title() + 'TaskDefinitionArn'])
+                require_task_evidence(task, role, outputs['ImageUri'].split('@')[1], 'RUNNING')
+                running.append(task['taskArn'])
+        evidence.update(status='restored', outputs=outputs, runningTasks=running); save()
+    except Exception as error:
+        evidence.update(status='failed', reason=str(error) if isinstance(error, (ValueError, RuntimeError)) else type(error).__name__)
+        # Restoration can partially start services; quiesce them on any failure.
+        try: evidence['stoppedAfterFailure'] = quiesce_candidate()
+        except Exception: evidence['stopAfterFailure'] = 'unconfirmed'
+        save()
 
 def aws(*args, allow_missing=False, text_output=False):
     result = subprocess.run(['aws', *args, '--output', 'json'], capture_output=True, text=True, env={**os.environ, 'AWS_PAGER': ''})
@@ -195,8 +304,11 @@ def main():
     parser = argparse.ArgumentParser(); parser.add_argument('--preflight-only', action='store_true'); parser.add_argument('--image'); parser.add_argument('--source'); args = parser.parse_args()
     OUT.mkdir(exist_ok=True)
     record = {'status': 'blocked', 'stack': STACK, 'startedAt': datetime.datetime.now(datetime.timezone.utc).isoformat()}
+    deployed = False
+    snapshot = None
     try:
         cfg, identity, previous = preflight()
+        snapshot = snapshot_previous(previous)
         if args.preflight_only:
             print('Isolated Console configuration preflight passed'); return
         if not re.fullmatch(r'[0-9a-f]{40}', args.source or ''): raise ValueError('source_sha_required')
@@ -206,6 +318,7 @@ def main():
         parameters = [{'ParameterKey': k, 'ParameterValue': v} for k,v in {**cfg,'ImageUri':args.image,'SourceSha':args.source}.items()]
         parameter_file = OUT / 'parameters.json'; parameter_file.write_text(json.dumps(parameters))
         aws('cloudformation', 'deploy', '--stack-name', STACK, '--template-file', TEMPLATE, '--parameter-overrides', *[p['ParameterKey'] + '=' + p['ParameterValue'] for p in parameters], '--no-fail-on-empty-changeset', text_output=True)
+        deployed = True
         stack = aws('cloudformation', 'describe-stacks', '--stack-name', STACK)['Stacks'][0]
         outputs = {v['OutputKey']:v['OutputValue'] for v in stack['Outputs']}; record['outputs'] = outputs
         cluster = outputs['ClusterName']; names = ['eng-console-controller','eng-console-broker','eng-console-publisher']
@@ -258,6 +371,7 @@ def main():
         print(json.dumps({'status':'verified','source':args.source,'endpoint':outputs['ConsoleUrl'],'proof':proofs[0]}))
     except Exception as error:
         record['reason'] = str(error) if isinstance(error,(ValueError,RuntimeError)) else type(error).__name__
+        if deployed: rollback_candidate(snapshot, record)
         print('Console deployment blocked: ' + record['reason']); raise SystemExit(1)
     finally:
         if not args.preflight_only: (OUT/'deployment-record.json').write_text(json.dumps(record,indent=2)+'\n')

@@ -48,6 +48,7 @@ class DeploymentBoundaryTest(unittest.TestCase):
                 stack.enter_context(patch.object(deploy, 'aws', side_effect=fake))
                 stack.enter_context(patch.object(deploy, 'probe_events', return_value=([marker, proof] if ready else [proof])))
                 replacement = stack.enter_context(patch.object(deploy, 'restart_controller', return_value=restart))
+                rollback = stack.enter_context(patch.object(deploy, 'rollback_candidate'))
                 stack.enter_context(patch.object(deploy, 'verify_single_execution', return_value=[marker['executionTask']]))
                 stack.enter_context(patch.object(deploy.time, 'sleep'))
                 stack.enter_context(patch('sys.argv', ['deploy', '--image', image, '--source', source]))
@@ -58,6 +59,7 @@ class DeploymentBoundaryTest(unittest.TestCase):
                 record = json.loads((Path(directory) / 'deployment-record.json').read_text())
                 self.assertEqual(record['status'], 'verified' if ready else 'blocked')
                 self.assertEqual(replacement.call_count, 1 if ready else 0)
+                self.assertEqual(rollback.call_count, 0 if ready else 1)
                 if ready:
                     self.assertEqual(record['controllerRestart'], restart)
                     self.assertEqual(record['runningTasks'][0]['taskArn'], 'task/replacement')

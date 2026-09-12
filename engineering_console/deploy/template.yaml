@@ -1030,6 +1030,8 @@ Resources:
           - LoadBalancer
           - CanonicalHostedZoneID
 Outputs:
+  RuntimeStateVersion:
+    Value: isolated-console-v3
   ConsoleUrl:
     Value:
       Fn::Sub: https://${ConsoleDomainName}

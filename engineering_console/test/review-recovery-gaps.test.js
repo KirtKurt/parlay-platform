@@ -69,7 +69,7 @@ test('replacement controller records the exact recovered execution and checkpoin
   assert.deepEqual(queued, [job.id]);
 });
 
-test('cancelled worker discovers and stops an execution whose RunTask response was lost', async t => {
+test('cancelled worker discovers an already stopped execution whose RunTask response was lost', async t => {
   const { config, store, job } = fixture(t);
   const transport = createTaskTransport(config.transportDir, { instruction: 'password=private', archive: 'large input' });
   fs.writeFileSync(path.join(transport.directory, 'checkpoint.json'), '{}');
@@ -78,14 +78,14 @@ test('cancelled worker discovers and stops an execution whose RunTask response w
   const operations = [];
   const callAws = async (_, operation, args) => {
     operations.push(operation);
-    if (operation === 'list-tasks') { assert.equal(args.startedBy, transport.id); return { taskArns: ['task/recovered'] }; }
+    if (operation === 'list-tasks') { assert.equal(args.startedBy, undefined); return { taskArns: args.desiredStatus === 'STOPPED' ? ['task/recovered'] : [] }; }
     if (operation === 'stop-task') return {};
     assert.equal(operation, 'describe-tasks');
-    return { tasks: [{ taskArn: 'task/recovered', lastStatus: 'STOPPED' }] };
+    return { tasks: [{ taskArn: 'task/recovered', startedBy: transport.id, taskDefinitionArn: job.execution.taskDefinitionArn, lastStatus: 'STOPPED' }] };
   };
   const run = createRunner(config, store, null, { executionStop: (cfg, candidate, db) => stopExecution(cfg, candidate, db, callAws, { pollMs: 1 }) });
   await run(job, new AbortController().signal);
-  assert.deepEqual(operations, ['list-tasks', 'stop-task', 'describe-tasks']);
+  assert.deepEqual(operations, ['list-tasks', 'list-tasks', 'describe-tasks']);
   assert.equal(store.get(job.id).status, 'cancelled');
   assert.equal(fs.existsSync(path.join(transport.directory, 'input.json')), false);
   assert.equal(fs.existsSync(path.join(transport.directory, 'checkpoint.json')), true);
@@ -94,9 +94,10 @@ test('cancelled worker discovers and stops an execution whose RunTask response w
 test('ECS execution checks cancellation before retrying a missing task ARN', async t => {
   const { config, store, job } = fixture(t);
   const transport = createTaskTransport(config.transportDir, {});
-  job.execution = { id: transport.id, taskArn: null, requestedAt: new Date().toISOString() }; store.save(job);
-  Object.assign(config, { jobTaskDefinition: 'definition', jobImage: 'image', jobSecurityGroup: 'sg', brokerUrl: 'https://console.example', model: 'test', jobSubnets: ['a', 'b'] });
-  const definition = { family: 'eng-console-job', networkMode: 'awsvpc', requiresCompatibilities: ['FARGATE'], containerDefinitions: [{ name: 'job', image: 'image', readonlyRootFilesystem: true, user: '10001:10001', command: ['node', '/app/scripts/isolated-job.mjs'], entryPoint: ['/usr/bin/tini', '--'] }] };
+  const taskDefinitionArn = 'arn:aws:ecs:us-east-1:111111111111:task-definition/eng-console-job:1', image = `111111111111.dkr.ecr.us-east-1.amazonaws.com/eng-console-runtime@sha256:${'a'.repeat(64)}`;
+  job.execution = { id: transport.id, taskDefinitionArn, image, taskArn: null, requestedAt: new Date().toISOString() }; store.save(job);
+  Object.assign(config, { jobTaskDefinition: taskDefinitionArn, jobImage: image, jobSecurityGroup: 'sg', brokerUrl: 'https://console.example', model: 'test', jobSubnets: ['a', 'b'] });
+  const definition = { taskDefinitionArn, family: 'eng-console-job', networkMode: 'awsvpc', requiresCompatibilities: ['FARGATE'], containerDefinitions: [{ name: 'job', image, readonlyRootFilesystem: true, user: '10001:10001', command: ['node', '/app/scripts/isolated-job.mjs'], entryPoint: ['/usr/bin/tini', '--'] }] };
   const operations = [];
   const callAws = async (_, operation) => {
     operations.push(operation);
@@ -107,7 +108,7 @@ test('ECS execution checks cancellation before retrying a missing task ARN', asy
     if (operation === 'list-tasks') return { taskArns: ['task/recovered'] };
     if (operation === 'stop-task') return {};
     assert.equal(operation, 'describe-tasks');
-    return { tasks: [{ taskArn: 'task/recovered', lastStatus: 'STOPPED' }] };
+    return { tasks: [{ taskArn: 'task/recovered', startedBy: transport.id, taskDefinitionArn: job.execution.taskDefinitionArn, lastStatus: 'STOPPED' }] };
   };
   const codex = new EcsCodex({ config, store, job, callAws, workspace: '', pollMs: 1 });
   for await (const event of codex.run('proof', null, {}, new AbortController().signal)) assert.fail(event.type);

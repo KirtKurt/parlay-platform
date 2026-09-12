@@ -74,7 +74,7 @@ function temporary(t) { const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cons
 test('cancellation expires the capability and waits for confirmed STOPPED', async t => {
   const root = temporary(t); const transport = createTaskTransport(root, {});
   const job = { execution: { id: transport.id, taskArn: 'task/1' } }; let describes = 0, saves = 0;
-  const aws = async (_, operation) => operation === 'stop-task' ? {} : { tasks: [{ taskArn: 'task/1', lastStatus: ++describes === 2 ? 'STOPPED' : 'STOPPING' }] };
+  const aws = async (_, operation) => operation === 'stop-task' ? {} : { tasks: [{ taskArn: 'task/1', startedBy: transport.id, lastStatus: ++describes === 2 ? 'STOPPED' : 'STOPPING' }] };
   await stopExecution({ transportDir: root, cluster: 'test' }, job, { save: () => saves++ }, aws, { pollMs: 1, attempts: 3 });
   assert.equal(describes, 2); assert.equal(saves, 1); assert.ok(job.execution.stoppedAt);
   assert.throws(() => authenticateTask(root, `Bearer ${transport.token}`));
@@ -100,19 +100,20 @@ test('remote task recovery uses the durable task identity and applies an approve
   const output = { completed: true, events: [{ type: 'turn.completed' }], changedFiles: [file], diff: patch, threadId: crypto.randomUUID() };
   atomicTransportWrite(path.join(transport.directory, 'result.json'), JSON.stringify(output), { immutable: true });
   const image = `111111111111.dkr.ecr.us-east-1.amazonaws.com/eng-console-runtime@sha256:${'a'.repeat(64)}`;
-  const definition = { family: 'eng-console-job', networkMode: 'awsvpc', requiresCompatibilities: ['FARGATE'], containerDefinitions: [{ name: 'job', image, readonlyRootFilesystem: true, user: '10001:10001', command: ['node', '/app/scripts/isolated-job.mjs'], entryPoint: ['/usr/bin/tini', '--'] }] };
-  const job = { id: crypto.randomUUID(), startingRevision, authorizedScope: ['engineering_console_publication_proof'], execution: { id: transport.id, taskArn: null, requestedAt: new Date().toISOString() } };
-  const cfg = { cluster: 'eng-console-runtime', jobTaskDefinition: 'definition', jobImage: image, jobSecurityGroup: 'sg-test', brokerUrl: 'https://console.example', transportDir, model: 'test-model', jobSubnets: ['a', 'b'], allowedScopes: job.authorizedScope, requiredChecks: ['engineering-console-publication-proof'] };
+  const taskDefinitionArn = 'arn:aws:ecs:us-east-1:111111111111:task-definition/eng-console-job:1';
+  const definition = { taskDefinitionArn, family: 'eng-console-job', networkMode: 'awsvpc', requiresCompatibilities: ['FARGATE'], containerDefinitions: [{ name: 'job', image, readonlyRootFilesystem: true, user: '10001:10001', command: ['node', '/app/scripts/isolated-job.mjs'], entryPoint: ['/usr/bin/tini', '--'] }] };
+  const job = { id: crypto.randomUUID(), startingRevision, authorizedScope: ['engineering_console_publication_proof'], execution: { id: transport.id, taskDefinitionArn, image, taskArn: null, requestedAt: new Date().toISOString() } };
+  const cfg = { cluster: 'eng-console-runtime', jobTaskDefinition: taskDefinitionArn.replace(':1', ':2'), jobImage: image.replace('sha256:a', 'sha256:b'), jobSecurityGroup: 'sg-test', brokerUrl: 'https://console.example', transportDir, model: 'test-model', jobSubnets: ['a', 'b'], allowedScopes: job.authorizedScope, requiredChecks: ['engineering-console-publication-proof'] };
   let launches = 0;
   const callAws = async (_, operation, input) => {
-    if (operation === 'describe-task-definition') return definition;
+    if (operation === 'describe-task-definition') { assert.equal(input.taskDefinition, taskDefinitionArn); return definition; }
     if (operation === 'run-task') {
       assert.equal(input.clientToken, transport.id); assert.equal(input.startedBy, transport.id);
       if (++launches === 1) throw new Error('response lost after AWS accepted the task');
       return { tasks: [{ taskArn: 'task/durable' }] };
     }
     assert.equal(operation, 'describe-tasks'); assert.deepEqual(input.tasks, ['task/durable']);
-    return { tasks: [{ taskArn: 'task/durable', lastStatus: 'STOPPED', containers: [{ exitCode: 0 }] }] };
+    return { tasks: [{ taskArn: 'task/durable', startedBy: transport.id, taskDefinitionArn, lastStatus: 'STOPPED', containers: [{ name: 'job', imageDigest: image.split('@')[1], exitCode: 0 }] }] };
   };
   const run = new EcsCodex({ config: cfg, job, workspace, store: { save() {} }, callAws, pollMs: 1 });
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -125,7 +126,7 @@ test('remote task recovery uses the durable task identity and applies an approve
   assert.equal(fs.existsSync(path.join(transport.directory, 'input.json')), false);
   assert.equal(fs.existsSync(path.join(transport.directory, 'result.json')), true);
   const uncertain = createTaskTransport(transportDir, {});
-  job.execution = { id: uncertain.id, taskArn: null, requestedAt: new Date().toISOString() };
+  job.execution = { id: uncertain.id, taskDefinitionArn, image, taskArn: null, requestedAt: new Date().toISOString() };
   run.callAws = async (_, operation) => {
     if (operation === 'describe-task-definition') return definition;
     throw new Error('AWS unavailable');

@@ -140,6 +140,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: eng-console-deployment-${{ github.run_id }}
-          path: runtime_deploy/deployment-record.json
+          path: |
+            runtime_deploy/deployment-record.json
+            runtime_deploy/previous-deployment.json
+            runtime_deploy/previous-template.yaml
           if-no-files-found: warn
           retention-days: 30
