@@ -37,6 +37,45 @@ def test_malformed_collections_fail_closed(monkeypatch, operation, payload):
 
 
 @pytest.mark.parametrize("operation", ["health", "sports", "events"])
+@pytest.mark.parametrize("payload", [
+    {"data": [], "events": [{"id": "hidden"}]},
+    {"events": [{"id": "hidden"}], "data": []},
+    {"data": None, "results": []},
+    {"data": [], "sports": "invalid"},
+    {"matches": [], "events": []},
+    {"data": {"items": [], "events": [{"id": "hidden"}]}},
+    {"data": {"events": [{"id": "hidden"}], "items": []}},
+    {"data": {"sports": None, "items": []}},
+    {"data": {"matches": [], "results": []}},
+])
+def test_competing_collection_envelopes_fail_closed(monkeypatch, operation, payload):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (200, {}, payload))
+
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_COLLECTION_SCHEMA_INVALID"
+    if operation == "health":
+        assert result["sports_count"] is None
+    else:
+        assert result[operation] == []
+
+
+@pytest.mark.parametrize("key", ["data", "sports", "matches", "events", "results"])
+@pytest.mark.parametrize("rows", [[], [{"id": "context-1"}]])
+def test_single_collection_envelopes_preserve_rows_and_metadata(key, rows):
+    assert bbd_provider._items({key: rows, "pagination": {"next": None}}) == rows
+
+
+@pytest.mark.parametrize("key", ["sports", "matches", "events", "results", "items"])
+@pytest.mark.parametrize("rows", [[], [{"id": "context-1"}]])
+def test_single_nested_collection_envelopes_preserve_rows_and_metadata(key, rows):
+    assert bbd_provider._items({"data": {key: rows, "total": len(rows)}}) == rows
+
+
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
 @pytest.mark.parametrize("payload", [[], {"data": []}, {"data": {"items": []}}])
 def test_recognized_empty_collections_remain_valid(monkeypatch, operation, payload):
     monkeypatch.setenv("ARB_BBD_ENABLED", "true")

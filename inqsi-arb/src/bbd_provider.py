@@ -174,17 +174,20 @@ def _items(payload: Any) -> List[Dict[str, Any]]:
     # Provider error envelopes must not masquerade as successful empty data.
     if payload.get("error") is not None:
         raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
-    for key in ("data", "sports", "matches", "events", "results"):
-        value = payload.get(key)
-        if isinstance(value, list):
-            return _items(value)
-        if isinstance(value, dict):
-            if value.get("error") is not None:
-                raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
-            for nested in ("sports", "matches", "events", "results", "items"):
-                rows = value.get(nested)
-                if isinstance(rows, list):
-                    return _items(rows)
+    keys = [key for key in ("data", "sports", "matches", "events", "results") if key in payload]
+    # Never choose between competing envelopes, even if one is empty or
+    # malformed. Their precedence is not established by live provider proof.
+    if len(keys) != 1:
+        raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
+    value = payload[keys[0]]
+    if isinstance(value, list):
+        return _items(value)
+    if isinstance(value, dict):
+        if value.get("error") is not None:
+            raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
+        nested_keys = [key for key in ("sports", "matches", "events", "results", "items") if key in value]
+        if len(nested_keys) == 1 and isinstance(value[nested_keys[0]], list):
+            return _items(value[nested_keys[0]])
     raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
 
 
