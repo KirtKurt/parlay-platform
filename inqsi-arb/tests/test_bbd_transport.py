@@ -89,6 +89,47 @@ def test_invalid_response_body_fails_closed(transport, body, operation):
         assert result[operation] == []
 
 
+@pytest.mark.parametrize("body", [
+    b'{"data": [], "data": [{"id": "hidden"}]}',
+    b'{"data": [{"id": "first", "id": "second"}]}',
+    b'{"data": [{"status": "scheduled", "status": "finished"}]}',
+    b'{"data": [{"id": "first", "\\u0069d": "second"}]}',
+    b'{"data": [{"home": {"id": "first", "id": "second"}}]}',
+    b'{"data": [{"id": NaN}]}',
+    b'{"data": [{"start_time": Infinity}]}',
+    b'{"data": [{"start_time": -Infinity}]}',
+])
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+def test_ambiguous_or_nonstandard_json_fails_closed(transport, body, operation):
+    install, calls, responses = transport
+    install(200, body=body)
+
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_RESPONSE_JSON_INVALID"
+    assert len(calls) == 1
+    assert responses[0].closed
+    assert "offline-test-token" not in str(result)
+    if operation == "health":
+        assert result["sports_count"] is None
+    else:
+        assert result[operation] == []
+
+
+def test_valid_json_preserves_separate_objects_and_string_constants(transport):
+    install, _, responses = transport
+    install(200, body=b'{"data": [{"id": "one", "status": "NaN"}, '
+                      b'{"id": "two", "status": "Infinity"}]}')
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is True
+    assert [event["bbd_event_id"] for event in result["events"]] == ["one", "two"]
+    assert [event["status"] for event in result["events"]] == ["NaN", "Infinity"]
+    assert responses[0].closed
+
+
 def test_direct_request_preserves_auth_and_query_contract(transport):
     install, calls, responses = transport
     install(200)

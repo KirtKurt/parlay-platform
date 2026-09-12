@@ -91,6 +91,20 @@ def _validated_base_url() -> str:
     return url
 
 
+def _unique_json_object(pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
+    """Reject ambiguous provider fields at every nesting level."""
+    result: Dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise BBDError("BBD_RESPONSE_JSON_INVALID")
+        result[key] = value
+    return result
+
+
+def _reject_json_constant(value: str) -> Any:
+    raise BBDError("BBD_RESPONSE_JSON_INVALID")
+
+
 def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int = 20,
              optional: bool = False) -> Tuple[int, Dict[str, str], Any]:
     key = api_key()
@@ -109,7 +123,11 @@ def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int
     try:
         with build_opener(_RejectRedirects()).open(request, timeout=timeout) as response:
             raw = response.read()
-            payload = json.loads(raw.decode("utf-8")) if raw else {}
+            payload = json.loads(
+                raw.decode("utf-8"),
+                object_pairs_hook=_unique_json_object,
+                parse_constant=_reject_json_constant,
+            ) if raw else {}
             return int(response.status), dict(response.headers.items()), payload
     except HTTPError as exc:
         raw = exc.read()
