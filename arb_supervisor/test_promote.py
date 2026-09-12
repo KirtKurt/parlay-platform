@@ -190,7 +190,7 @@ def test_main_preserves_merge_race_failure_without_deploying(monkeypatch):
     monkeypatch.setattr(promote, 'dispatch_validation', lambda *a: {'id': 123})
     ready = good_pr()
     ready['draft'] = False
-    responses = iter([good_pr(), good_pr(), ready])
+    responses = iter([good_pr(), good_pr(), ready, ready])
     monkeypatch.setattr(promote, 'pr_info', lambda *a: next(responses))
     monkeypatch.setattr(promote, 'mark_ready', lambda *a: None)
     monkeypatch.setattr(promote, 'merge_exact', lambda *a: 'd' * 40)
@@ -223,3 +223,98 @@ def test_actions_approval_stops_without_polling_or_dispatch(monkeypatch):
     monkeypatch.setattr(promote.time, 'sleep', lambda *_: pytest.fail('Approval is not a queue delay'))
     with pytest.raises(promote.PromotionError, match='PR_ACTIONS_APPROVAL_REQUIRED'):
         promote.wait_for_pr_ci('owner/repo', 831, 'a' * 40)
+
+
+def prepare_ready_ci(monkeypatch, outcome='success', drift=None):
+    """Exercise the real CI poller against a ready_for_review workflow lifecycle."""
+    prepare_main(monkeypatch)
+    clock = [0]
+    state = {'ready': False, 'merged': False, 'deployed': False}
+    monkeypatch.setattr(promote.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(promote.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+
+    def read_pr(*args):
+        row = good_pr()
+        row['draft'] = not state['ready']
+        if drift and clock[0] >= 30:
+            if drift == 'sha':
+                row['head']['sha'] = 'c' * 40
+            elif drift == 'author':
+                row['user']['login'] = 'other'
+            else:
+                row['state'] = 'closed'
+        return row
+
+    def api(repo, endpoint):
+        if endpoint.startswith('actions/runs?'):
+            runs = [ci_run()]
+            if state['ready']:
+                # This workflow is created by ready_for_review and ultimately
+                # skips for ARB branches; its queued state must still be awaited.
+                ready_run = {**ci_run(), 'id': 456, 'workflow_id': 567,
+                             'path': '.github/workflows/engineering-console-publication-proof.yml'}
+                if outcome in ('action_required', 'failure'):
+                    ready_run.update(conclusion=outcome)
+                elif clock[0] < 30 or outcome == 'pending':
+                    ready_run.update(status='queued' if clock[0] < 10 else 'in_progress', conclusion=None)
+                else:
+                    ready_run.update(conclusion='skipped')
+                runs.append(ready_run)
+            return {'workflow_runs': runs, 'total_count': len(runs)}
+        assert endpoint == 'actions/runs/234/jobs?per_page=100'
+        return {'jobs': [{'name': 'test-build', 'status': 'completed', 'conclusion': 'success'}], 'total_count': 1}
+
+    def merge(*args):
+        assert state['ready'] and clock[0] >= 30
+        state['merged'] = True
+        return 'd' * 40
+
+    def deploy(*args):
+        assert state['merged']
+        state['deployed'] = True
+        return {'id': 789}
+
+    monkeypatch.setattr(promote, 'api', api)
+    monkeypatch.setattr(promote, 'pr_info', read_pr)
+    monkeypatch.setattr(promote, 'dispatch_validation', lambda *a: {'id': 123})
+    monkeypatch.setattr(promote, 'mark_ready', lambda *a: state.update(ready=True))
+    monkeypatch.setattr(promote, 'merge_exact', merge)
+    monkeypatch.setattr(promote, 'verify_merge_parent', lambda *a: None)
+    monkeypatch.setattr(promote, 'dispatch_deploy', deploy)
+    return clock, state
+
+
+def test_ready_transition_waits_for_new_ci_before_merge(monkeypatch):
+    clock, state = prepare_ready_ci(monkeypatch)
+    assert promote.main() == 0
+    assert clock[0] == 30
+    assert state == {'ready': True, 'merged': True, 'deployed': True}
+
+
+@pytest.mark.parametrize('outcome,reason', [
+    ('action_required', 'PR_ACTIONS_APPROVAL_REQUIRED'),
+    ('failure', 'PR_CI_NOT_GREEN'),
+])
+def test_ready_transition_keeps_approval_and_failure_gates(monkeypatch, outcome, reason):
+    clock, state = prepare_ready_ci(monkeypatch, outcome)
+    with pytest.raises(promote.PromotionError, match=reason):
+        promote.main()
+    assert clock[0] == 0
+    assert state == {'ready': True, 'merged': False, 'deployed': False}
+
+
+def test_ready_transition_ci_timeout_never_merges_or_deploys(monkeypatch):
+    clock, state = prepare_ready_ci(monkeypatch, 'pending')
+    monkeypatch.setattr(promote, 'PR_CI_TIMEOUT', 20)
+    with pytest.raises(promote.PromotionError, match='PR_CI_TIMEOUT'):
+        promote.main()
+    assert clock[0] == 20
+    assert state == {'ready': True, 'merged': False, 'deployed': False}
+
+
+@pytest.mark.parametrize('drift', ['sha', 'author', 'closed'])
+def test_ready_ci_wait_rechecks_pr_identity_before_merge(monkeypatch, drift):
+    _, state = prepare_ready_ci(monkeypatch, drift=drift)
+    with pytest.raises(promote.PromotionError, match='PR_IDENTITY_MISMATCH'):
+        promote.main()
+    assert state == {'ready': True, 'merged': False, 'deployed': False}

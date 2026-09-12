@@ -1,6 +1,11 @@
 import importlib.util
 import sys
+import re
+import subprocess
 from pathlib import Path
+from types import SimpleNamespace
+
+from arb_supervisor import promote
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = ROOT / "ops" / "engineering_controller.py"
@@ -120,3 +125,30 @@ def test_changed_paths_must_all_be_safe():
     assert mod.changed_paths_are_safe(["inqsi-arb/a.py", ".github/workflows/inqsi-arb-x.yml"])
     assert not mod.changed_paths_are_safe(["inqsi-arb/a.py", "soccer/a.py"])
     assert not mod.changed_paths_are_safe([])
+
+
+def test_controller_allows_full_generation_and_two_ci_waits(monkeypatch):
+    # Preserve the former 120-minute generation/build allowance, then allow
+    # both PR CI waits, both dispatch discoveries, validation and deployment.
+    elapsed = (120 * 60 + 2 * promote.PR_CI_TIMEOUT
+               + 2 * promote.DISCOVERY_TIMEOUT + promote.VALIDATION_TIMEOUT
+               + promote.DEPLOYMENT_TIMEOUT + 15 * 60)
+    monkeypatch.setenv('ARB_CODE_AGENT_COMMAND', 'offline-fixture')
+    c = controller(monkeypatch)
+    c.code_agent_configured = True
+
+    def slow_healthy_run(command, **kwargs):
+        if kwargs['timeout'] < elapsed:
+            raise subprocess.TimeoutExpired(command, kwargs['timeout'])
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(mod.subprocess, 'run', slow_healthy_run)
+    result = c._run_code_agent(mod.Action('code-agent', 'offline timing regression'), make_snapshot())
+    assert result['status'] == 'completed'
+
+
+def test_workflow_leaves_setup_and_evidence_time_outside_wrapper_budget():
+    workflow = (ROOT.parent / '.github/workflows/inqsi-arb-engineering-controller.yml').read_text()
+    job_minutes = int(re.search(r'timeout-minutes:\s*(\d+)', workflow).group(1))
+    assert job_minutes * 60 >= mod.CODE_AGENT_TIMEOUT_SECONDS + 30 * 60
+    assert job_minutes <= 360

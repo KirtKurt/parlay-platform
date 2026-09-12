@@ -304,7 +304,13 @@ def main() -> int:
     if ready.get("draft") is True:
         raise PromotionError("PR_STILL_DRAFT")
 
-    require_pr_ci(args.repository, args.pr_number, args.head_sha)
+    # ready_for_review can start new PR workflows for the same candidate SHA.
+    # Await their ordinary CI; an approval requirement still fails immediately.
+    wait_for_pr_ci(args.repository, args.pr_number, args.head_sha)
+    ready = pr_info(args.repository, args.pr_number)
+    verify_pr(ready, branch=args.branch, head_sha=args.head_sha, require_draft=False, repository=args.repository)
+    if ready.get("draft") is True:
+        raise PromotionError("PR_STILL_DRAFT")
     checked_main = ensure_no_relevant_main_advance(repo_dir, args.base_sha)
     merge_sha = merge_exact(args.repository, args.pr_number, args.head_sha)
     verify_merge_parent(args.repository, merge_sha, checked_main, args.head_sha)
