@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { createInstallationTokenProvider } from '../src/github-app-token.js';
 import {
   JOB_ID,
   evaluateRequiredChecks,
@@ -17,7 +18,7 @@ import { JobStore } from '../src/store.js';
 import { sanitize } from '../src/sanitize.js';
 import { loadPublicationPolicy, validatePublisherRequest, validatePullRequestIdentity, PROOF_WORKFLOW } from '../src/publication-policy.js';
 import { assertMainAncestor, validatePublicationHistory, validateMergedPublication } from '../src/publication-git-guard.js';
-import { beginPublicationMerge, publicationDecision } from '../src/publication-decision.js';
+import { beginPublicationMerge, publicationDecision, cancelPublication } from '../src/publication-decision.js';
 
 const exec = promisify(execFile);
 
@@ -30,7 +31,7 @@ function required(name) {
 const policy = loadPublicationPolicy();
 const repository = policy.repository;
 const dataDir = required('INQSI_ENGINEERING_DATA_DIR');
-const token = required('GH_TOKEN');
+const getToken = createInstallationTokenProvider();
 const [owner] = repository.split('/');
 const dirs = publicationDirectories(dataDir);
 
@@ -56,6 +57,7 @@ async function git(cwd, args, env = process.env, allowFailure = false) {
 }
 
 async function withAskPass(fn) {
+  const token = await getToken();
   const authDir = fs.mkdtempSync(path.join(os.tmpdir(), 'inqsi-publish-auth-'));
   const askPass = path.join(authDir, 'askpass.sh');
   fs.writeFileSync(askPass, '#!/bin/sh\ncase "$1" in\n  *Username*) printf "%s\\n" "x-access-token" ;;\n  *) printf "%s\\n" "$GH_TOKEN" ;;\nesac\n', { mode: 0o700 });
@@ -67,6 +69,7 @@ async function withAskPass(fn) {
 }
 
 async function github(endpoint, init = {}) {
+  const token = await getToken();
   const response = await fetch(`https://api.github.com/repos/${repository}${endpoint}`, {
     ...init,
     signal: AbortSignal.timeout(30000),
@@ -247,6 +250,7 @@ async function processClaim(claimDir) {
       // already accepted cancellation is a terminal reconciliation condition and
       // must not be hidden by pending/failed required checks.
       const priorDecision = publicationDecision(dataDir, manifest.jobId);
+      if (cancelled()) cancelPublication(dataDir, manifest.jobId);
       try {
         beginPublicationMerge(dataDir, manifest.jobId);
       } catch (error) {

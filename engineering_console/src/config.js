@@ -35,6 +35,8 @@ export function loadConfig(env = process.env) {
   let jwksUri;
   let allowedOrigin;
   try {
+    const issuer = new URL(env.INQSI_ENGINEERING_OIDC_ISSUER);
+    if (issuer.protocol !== 'https:' || issuer.username || issuer.password || issuer.hash || issuer.search) throw new Error();
     jwksUri = new URL(env.INQSI_ENGINEERING_JWKS_URI).toString();
     allowedOrigin = new URL(env.INQSI_ENGINEERING_ORIGIN).origin;
   } catch {
@@ -73,6 +75,18 @@ export function loadConfig(env = process.env) {
     bindAddress,
     maxConcurrentJobs,
     port: Number(env.PORT || 8787),
-    maxInstructionBytes: Number(env.INQSI_ENGINEERING_MAX_INSTRUCTION_BYTES || 20000)
+    maxInstructionBytes: Number(env.INQSI_ENGINEERING_MAX_INSTRUCTION_BYTES || 20000),
+    cluster: env.INQSI_ENGINEERING_ECS_CLUSTER,
+    jobTaskDefinition: env.INQSI_ENGINEERING_JOB_TASK_DEFINITION,
+    jobImage: env.INQSI_ENGINEERING_JOB_IMAGE,
+    jobSecurityGroup: env.INQSI_ENGINEERING_JOB_SECURITY_GROUP,
+    jobSubnets: String(env.INQSI_ENGINEERING_JOB_SUBNETS || '').split(',').filter(Boolean),
+    brokerUrl: env.INQSI_ENGINEERING_BROKER_URL,
+    transportDir: env.INQSI_ENGINEERING_TRANSPORT_DIR,
+    model: env.INQSI_ENGINEERING_MODEL,
+    browserAuthEnabled: env.INQSI_ENGINEERING_BROWSER_AUTH === 'true',
+    oidcClientId: env.INQSI_ENGINEERING_OIDC_CLIENT_ID,
+    oidcClientSecret: env.INQSI_ENGINEERING_OIDC_CLIENT_SECRET,
+    sessionKey: env.INQSI_ENGINEERING_SESSION_KEY
   };
 }

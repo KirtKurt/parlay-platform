@@ -6,7 +6,7 @@ import path from 'node:path';
 import { validatePullRequestIdentity, PROOF_ROOT } from '../src/publication-policy.js';
 import { writePublicationReceipt, readPublicationReceipt } from '../src/publication.js';
 import { updateJobFromPublisher } from '../src/publisher-job-state.js';
-import { cancelPublication, beginPublicationMerge, publicationDecision } from '../src/publication-decision.js';
+import { cancelPublication, beginPublicationMerge, publicationDecision, arbitrateVerifiedMerge } from '../src/publication-decision.js';
 import { JobStore } from '../src/store.js';
 
 const id = '11111111-1111-4111-8111-111111111111';
@@ -123,6 +123,31 @@ test('lost merge response recovery is not mislabeled as an external merge', () =
   const mergeRequest = source.indexOf("await github(`/pulls/${pr.number}/merge`");
   const lostResponse = source.indexOf('if (latest.merged_at) return await finishMerged(latest)', mergeRequest);
   assert.ok(requestCommit >= 0 && mergeRequest > requestCommit && lostResponse > mergeRequest);
+});
+
+test('verified external merge respects the first durable cancellation decision', (t) => {
+  const dir = temporary(t);
+  assert.equal(cancelPublication(dir, id), true);
+  assert.equal(arbitrateVerifiedMerge(dir, id), 'merge_conflict');
+});
+
+test('verified merge arbitration closes the cancellation race before receipt writes', (t) => {
+  const dir = temporary(t);
+  assert.equal(arbitrateVerifiedMerge(dir, id), 'merged');
+  assert.equal(cancelPublication(dir, id), false);
+});
+
+test('unconfirmed cancellation retains a pending state and its confirmation error', (t) => {
+  const dir = temporary(t);
+  const store = new JobStore(dir);
+  const job = store.create({ instruction: 'proof', authorizedScope: [PROOF_ROOT] }, 'owner', 'a'.repeat(40));
+  cancelPublication(dir, job.id);
+  updateJobFromPublisher(dir, { jobId: job.id, state: 'publisher_failed', reason: 'github_request_failed:503' });
+  assert.equal(store.get(job.id).status, 'failed');
+  assert.equal(store.get(job.id).publicationState, 'publisher_failed');
+  assert.equal(store.get(job.id).error, 'github_request_failed:503');
+  updateJobFromPublisher(dir, { jobId: job.id, state: 'cancelled', observedGitHubState: 'closed' });
+  assert.equal(store.get(job.id).status, 'cancelled');
 });
 
 test('cancellation remains pending until GitHub outcome is verified', () => {

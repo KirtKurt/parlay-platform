@@ -1,20 +1,29 @@
-import { Codex } from '@openai/codex-sdk';
+import { EcsCodex, stopExecution } from './ecs-job.js';
 import { createWorkspace, collectChanges, git } from './git.js';
 import { sanitize } from './sanitize.js';
 import { withinAuthorizedScope, writePublicationRequest } from './publication.js';
 
-export function createRunner(config, store, CodexClass = Codex) {
+export function shouldStopCancelledExecution(job, isolatedRuntime = true, aborted = false) {
+  return isolatedRuntime && Boolean((job?.cancelRequested || aborted) && job?.execution && !job.execution.stoppedAt);
+}
+
+export function createRunner(config, store, CodexClass = null, { executionStop = stopExecution } = {}) {
   return async (job, signal) => {
     let workspace;
     try {
       job.status = 'running';
       job.error = null;
-      store.save(job);
+      await store.saveAsync(job);
+
+      if (shouldStopCancelledExecution(job, !CodexClass, signal.aborted)) {
+        await executionStop(config, job, store);
+        job.status = 'cancelled'; await store.saveAsync(job); return;
+      }
 
       ({ workspace, branch: job.branch } = await createWorkspace(config, job));
-      store.save(job);
+      await store.saveAsync(job);
 
-      const codex = new CodexClass();
+      const codex = CodexClass ? new CodexClass() : new EcsCodex({ config, job, workspace, store });
       const threadOptions = {
         workingDirectory: workspace,
         skipGitRepoCheck: false,
@@ -25,7 +34,7 @@ export function createRunner(config, store, CodexClass = Codex) {
       };
       const thread = job.threadId ? codex.resumeThread(job.threadId, threadOptions) : codex.startThread(threadOptions);
 
-      const prompt = `Authorized repository: KirtKurt/parlay-platform\nAuthorized paths: ${job.authorizedScope.join(', ')}\nDo not modify files outside those paths. Keep credentials out of code and output. Publishing and deployment credentials are not available to this coding worker.\n\n${job.instruction}`;
+      const prompt = `Authorized repository: KirtKurt/parlay-platform\nAuthorized paths: ${job.authorizedScope.join(', ')}\nDo not modify files outside those paths. Keep secrets out of code and output. Publishing and deployment authority are not available to this coding worker.\n\n${job.instruction}`;
       const { events } = await thread.runStreamed(prompt, { signal });
 
       let sawEvent = false;
@@ -52,12 +61,12 @@ export function createRunner(config, store, CodexClass = Codex) {
         }
         if (event.type === 'turn.completed') turnCompleted = true;
         if (event.type === 'turn.failed') turnFailure = event.error?.message || 'codex_turn_failed';
-        store.save(job);
+        await store.saveAsync(job);
       }
 
       if (signal.aborted || job.cancelRequested) {
         job.status = 'cancelled';
-        store.save(job);
+        await store.saveAsync(job);
         return;
       }
       if (turnFailure) throw new Error(turnFailure);
@@ -74,10 +83,9 @@ export function createRunner(config, store, CodexClass = Codex) {
       const head = await git(workspace, ['rev-parse', 'HEAD']);
       if (head !== job.startingRevision) job.commit = head;
 
-      // collectChanges/git may yield after the earlier cancellation check.
       if (signal.aborted || job.cancelRequested) {
         job.status = 'cancelled';
-        store.save(job);
+        await store.saveAsync(job);
         return;
       }
 
@@ -89,11 +97,23 @@ export function createRunner(config, store, CodexClass = Codex) {
         job.status = 'awaiting_publication';
         job.publicationState = 'queued';
       }
-      store.save(job);
+      await store.saveAsync(job);
     } catch (error) {
-      job.status = signal.aborted || job.cancelRequested ? 'cancelled' : 'failed';
+      if (['ESTALE', 'EWRITEUNKNOWN', 'EBUSY'].includes(error?.code)) throw error;
+      if (error?.code === 'EFBIG') {
+        // Do not retry the same oversized in-memory record while recording its
+        // failure. Start with the last confirmed snapshot and retain its data.
+        const latest = store.get(job.id);
+        if (latest && !['merged', 'merge_conflict'].includes(latest.publicationState) &&
+            !['completed', 'cancelled'].includes(latest.status)) {
+          latest.status = 'blocked'; latest.error = 'job_store_record_too_large';
+          await store.saveAsync(latest);
+        }
+        return;
+      }
+      job.status = job.execution && !job.execution.stoppedAt ? 'blocked' : signal.aborted || job.cancelRequested ? 'cancelled' : 'failed';
       job.error = sanitize(error?.message || error);
-      store.save(job);
+      await store.saveAsync(job);
     }
   };
 }

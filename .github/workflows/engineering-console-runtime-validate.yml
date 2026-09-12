@@ -1,0 +1,51 @@
+name: Engineering Console Runtime Validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'engineering_console/**'
+      - '.github/workflows/engineering-console-runtime-validate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'engineering_console/**'
+      - '.github/workflows/engineering-console-runtime-validate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout tested revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Use Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install locked dependencies and test runtime
+        working-directory: engineering_console
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          for file in src/*.js test/*.js scripts/*.mjs; do node --check "$file"; done
+          sh -n scripts/container-entrypoint.sh
+          npm test
+      - name: Build and inspect exact runtime image
+        run: |
+          set -euo pipefail
+          docker build --pull --iidfile runtime-image.id \
+            --label "org.opencontainers.image.revision=$SOURCE_SHA" \
+            -t "eng-console-runtime:$SOURCE_SHA" engineering_console
+          image_id=$(cat runtime-image.id)
+          test "$(docker image inspect "$image_id" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$SOURCE_SHA"
+          docker run --rm --entrypoint node "$image_id" -e 'if (process.versions.node.split(".")[0] !== "24" || process.getuid() === 0) process.exit(1)'
+          docker run --rm --entrypoint node "$image_id" --input-type=module -e 'await import("@openai/codex-sdk"); await import("jose")'
+          printf 'Validated source: `%s`\nLocal image ID: `%s`\nNo AWS deployment was performed.\n' "$SOURCE_SHA" "$image_id" >> "$GITHUB_STEP_SUMMARY"
