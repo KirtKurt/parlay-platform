@@ -15,7 +15,7 @@ jobs:
     # credentials. Only the explicitly controlled feature branch may run it.
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.head_ref == 'codex/ks1-starter-pitcher-profile-20260913'
+      github.head_ref == 'codex/ks1-starter-followup-20260913'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
