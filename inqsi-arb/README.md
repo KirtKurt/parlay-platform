@@ -12,7 +12,7 @@ The deterministic engine supports N-way markets and arbitrary provider market ke
 
 - `GET /v1/arb/health`
 - `GET /v1/arb/catalog`
-- `GET /v1/arb/scan?sport=baseball_mlb&markets=h2h,spreads,totals&bankroll=1000`
+- `GET /v1/arb/scan?sport=baseball_mlb&markets=h2h,spreads,totals&bankroll=1000&jurisdiction=ny`
 - `GET /v1/arb/scan?sport=all&markets=h2h&bankroll=1000`
 - `POST /v1/arb/scan` deterministic posted-payload evaluation
 
@@ -21,3 +21,11 @@ Extended market example:
 `/v1/arb/scan?sport=baseball_mlb&markets=player_strikeouts,alternate_totals`
 
 The service rejects incomplete outcome universes and never labels unknown/incompatible rule identities as an arb. Quote/book links and provider timestamps are retained where the provider supplies them.
+
+Production defaults to New York and `us,us2` provider regions. Supplying a
+different jurisdiction changes the validation scope; an explicit `regions`
+query parameter remains available for diagnostic catalog scans. Scan history
+persists bounded leg-level evidence for verified, held-back, rejected, and
+exchange-pending candidates. Lay markets are never evaluated as ordinary
+sportsbook back markets; they are reported separately until the commission,
+liability, and liquidity-aware back/lay engine can evaluate them.

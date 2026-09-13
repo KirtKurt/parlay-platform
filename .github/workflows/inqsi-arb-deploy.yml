@@ -155,6 +155,9 @@ jobs:
           assert h['websocket_public_url_present'] is True, h
           assert h['balance_aware_optimizer'] is True and h['two_leg_completion_assistant'] is True, h
           assert h['opportunity_history'] is True and h['rules_registry_entries'] >= 6, h
+          assert h['default_jurisdiction'] == 'ny', h
+          assert h['candidate_evidence_audit'] is True, h
+          assert h['profile_scoped_outcome_coverage'] is True and h['exchange_lay_routed'] is True, h
 
           _,_,rb=request('/v1/arb/rules')
           rules=json.loads(rb)
@@ -170,6 +173,41 @@ jobs:
           _,_,history_b=request('/v1/arb/history?limit=5')
           history=json.loads(history_b)
           assert history['ok'] is True and history['kind']=='SCAN' and isinstance(history['history'], list), history
+
+          now=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+          _,_,report_b=request('/v1/arb/scan', method='POST', payload={
+              'sport':'baseball_mlb', 'jurisdiction':'ny', 'bankroll':1000,
+              'events':[
+                  {'id':'ci-unverified','event':'A @ B','sport':'baseball_mlb','market':'h2h',
+                   'expected_outcomes':['A','B'],'quotes':[
+                       {'book':'ci-unreviewed-a','outcome':'A','decimal':2.2,'last_update':now},
+                       {'book':'ci-unreviewed-b','outcome':'B','decimal':2.2,'last_update':now}]},
+                  {'id':'ci-lay','event':'A @ B','sport':'baseball_mlb','market':'h2h_lay',
+                   'expected_outcomes':['A','B'],'quotes':[
+                       {'book':'ci-exchange','outcome':'A','decimal':110,'last_update':now},
+                       {'book':'ci-exchange','outcome':'B','decimal':110,'last_update':now}]},
+              ],
+          })
+          report=json.loads(report_b)
+          assert report['n_arbs'] == 0 and report['n_detected_unverified'] == 1, report
+          assert report['n_exchange_pending'] == 1 and report['jurisdiction'] == 'ny', report
+          held=report['detected_unverified'][0]
+          assert held['validation']['settlement_reason'] == 'UNREVIEWED_OR_MISSING_RULE', held
+          assert held['validation']['missing_books'] == ['ci-unreviewed-a','ci-unreviewed-b'], held
+          assert len(held['legs']) == 2, held
+          assert report['exchange_pending'][0]['validation']['qualification_reason'] == 'EXCHANGE_LAY_REQUIRES_BACK_LAY_ENGINE', report
+          report_event_id=report['audit_event_id']
+          saved=None
+          for _ in range(10):
+              _,_,saved_b=request('/v1/arb/history?limit=10')
+              saved_history=json.loads(saved_b)
+              saved=next((row for row in saved_history['history'] if row.get('event_id') == report_event_id), None)
+              if saved:
+                  break
+              time.sleep(1)
+          assert saved is not None, {'audit_event_id':report_event_id,'history':saved_history}
+          assert len(saved['payload']['detected_unverified'][0]['legs']) == 2, saved
+          assert saved['payload']['n_exchange_pending'] == 1, saved
 
           _,_,constraint_b=request('/v1/arb/constraints', method='POST', payload={
               'legs':[{'book':'draftkings','stake':80,'limit':100}],
@@ -218,6 +256,7 @@ jobs:
               'active_sports':c['n_sports'], 'reviewed_rules':rules['count'],
               'history_count':history['count'],
               'constraint_smoke':'pass', 'optimizer_smoke':'pass',
+              'candidate_evidence_audit_smoke':'pass', 'exchange_routing_smoke':'pass',
               'position_persistence_smoke':'pass', 'completion_assistant_smoke':'pass',
               'embedded_websocket_ui_smoke':'pass'
           }, indent=2))

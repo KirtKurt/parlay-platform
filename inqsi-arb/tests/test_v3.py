@@ -81,6 +81,10 @@ def test_unreviewed_book_does_not_poison_reviewed_pair():
     assert compatible[0]["context"]["excluded_unreviewed_books"] == ["unknownbook"]
     result = scan_all({"bankroll": 100, "events": rows})
     assert result["n_arbs"] == 1
+    assert result["n_detected_unverified"] == 1
+    held = result["detected_unverified"][0]
+    assert held["validation"]["settlement_reason"] == "UNREVIEWED_OR_MISSING_RULE"
+    assert held["validation"]["missing_books"] == ["unknownbook"]
 
 
 def test_stale_quotes_are_excluded_from_verified_arb():
@@ -205,6 +209,10 @@ def test_v3_health_rules_and_ui_routes(monkeypatch):
     assert body["automatic_market_discovery"] is True
     assert body["balance_aware_optimizer"] is True
     assert body["two_leg_completion_assistant"] is True
+    assert body["default_jurisdiction"] == "ny"
+    assert body["candidate_evidence_audit"] is True
+    assert body["profile_scoped_outcome_coverage"] is True
+    assert body["exchange_lay_routed"] is True
     assert body["rules_registry_entries"] >= 6
     rules = lambda_handler({"httpMethod": "GET", "path": "/v1/arb/rules"}, None)
     rules_body = json.loads(rules["body"])

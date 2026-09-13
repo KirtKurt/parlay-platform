@@ -102,6 +102,14 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
         "missing_outcomes": missing,
         "extra_outcomes": extra,
     }
+    settlement_validation = (context or {}).get("settlement_validation")
+    if isinstance(settlement_validation, Mapping):
+        if settlement_validation.get("reason"):
+            validation["settlement_reason"] = str(settlement_validation["reason"])
+        if settlement_validation.get("missing_books"):
+            validation["missing_books"] = sorted({
+                str(book) for book in settlement_validation["missing_books"] if str(book)
+            })
     if math_arb and not rules_compatible:
         validation["qualification_reason"] = "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
     return {"market_id": market_id, "event": event, "market": market, "commence_time": commence_time,
@@ -116,9 +124,27 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
 def scan_all(payload: Mapping[str, Any]) -> Dict[str, Any]:
     bankroll = float(payload.get("bankroll") or 1000.0)
     hits: List[Dict[str, Any]] = []; detected: List[Dict[str, Any]] = []; near: List[Dict[str, Any]] = []; rejected: List[Dict[str, Any]] = []
+    exchange_pending: List[Dict[str, Any]] = []
     for item in payload.get("events") or []:
+        market = str(item.get("market") or "unknown")
+        if market.endswith("_lay"):
+            quotes = list(item.get("quotes") or [])
+            exchange_pending.append({
+                "market_id": str(item.get("id") or item.get("market_id") or ""),
+                "event": str(item.get("event") or ""),
+                "market": market,
+                "commence_time": item.get("commence_time"),
+                "n_quotes": len(quotes),
+                "books": sorted({str(q.get("book") or "") for q in quotes if q.get("book")}),
+                "validation": {
+                    "rules_status": "not_evaluated",
+                    "rules_compatible": False,
+                    "qualification_reason": "EXCHANGE_LAY_REQUIRES_BACK_LAY_ENGINE",
+                },
+            })
+            continue
         row = scan_market(market_id=str(item.get("id") or item.get("market_id") or ""), event=str(item.get("event") or ""),
-                          market=str(item.get("market") or "unknown"), quotes=item.get("quotes") or [], bankroll=bankroll,
+                          market=market, quotes=item.get("quotes") or [], bankroll=bankroll,
                           expected_outcomes=item.get("expected_outcomes"), rules_status=str(item.get("rules_status") or "unknown"),
                           context=item.get("context") or {}, commence_time=item.get("commence_time"))
         if row is None: continue
@@ -131,6 +157,8 @@ def scan_all(payload: Mapping[str, Any]) -> Dict[str, Any]:
     key = lambda r: (r["minimum_profit"] or -10**9, r["margin_pct"])
     hits.sort(key=key, reverse=True); detected.sort(key=key, reverse=True); near.sort(key=lambda r: r["sum_implied"])
     return {"ok": True, "places_bets": False, "bankroll": bankroll,
-            "n_markets": len(hits)+len(detected)+len(near)+len(rejected), "n_arbs": len(hits),
+            "n_markets": len(hits)+len(detected)+len(near)+len(rejected)+len(exchange_pending), "n_arbs": len(hits),
             "n_detected_unverified": len(detected), "n_rejected": len(rejected),
-            "hits": hits, "detected_unverified": detected[:100], "near": near[:100], "rejected": rejected[:100]}
+            "n_exchange_pending": len(exchange_pending),
+            "hits": hits, "detected_unverified": detected[:100], "near": near[:100],
+            "rejected": rejected[:100], "exchange_pending": exchange_pending[:100]}
