@@ -172,9 +172,20 @@ def capture(target_date, output):
         compact = list(pool.map(reader.read, sorted(reader.keys(RECONSTRUCTED+'source-games/'))))
     games = {str(g['officialGamePk']): g for g in compact}
     games.update({str(g['officialGamePk']): g for g in prior['games']})
-    games = [g for g in games.values() if day(g['startAtUtc']).year == date.fromisoformat(target_date).year]
+    target_year = date.fromisoformat(target_date).year
+    games = [g for g in games.values() if day(g['startAtUtc']).year in (target_year-1, target_year)]
+    statcast = reader.pointer(reader.read(RESEARCH+'statcast.json')['artifact'])
     history = {'games': games, 'source_receipts': reader.receipts, 'schedule': prior.get('schedule', []),
+               'statcast': statcast.get('rows', []),
                'coverage_complete': prior.get('coverageComplete'),
+               'current30_history_complete': prior.get('current30CoverageComplete'),
+               'current_year_history_complete': prior.get('currentYearCoverageComplete'),
+               'prior_year_history_complete': prior.get('priorYearCoverageComplete'),
+               'statcast_coverage_complete': statcast.get('current30CoverageComplete', statcast.get('coverageComplete')),
+               'current_year_statcast_complete': statcast.get('currentYearCoverageComplete'),
+               'prior_year_statcast_complete': statcast.get('priorYearCoverageComplete'),
+               'prior_statcast_profiles': statcast.get('priorYearProfiles', {}),
+               'prior_statcast_year': statcast.get('priorYear'),
                'prior_observed_at': prior.get('updatedAtUtc') or prior.get('receipt', {}).get('retrievedAtUtc')}
     (output / 'history.json.gz').write_bytes(gzip.compress(encode(history), mtime=0))
     refs = json.loads((Path(__file__).parent/'model_refs.json').read_bytes())

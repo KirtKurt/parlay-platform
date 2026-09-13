@@ -13,7 +13,7 @@ import pytest
 from ks1 import daily
 from ks1.inventory import encode
 from ks1.live_inputs import ProviderFailure, lineup_feeds
-from ks1.refresh import observe, pregame_status
+from ks1.refresh import fingerprint, observe, pregame_status
 from ks1.publish import parquet_bytes
 
 DATE = '2026-09-10'
@@ -28,15 +28,21 @@ def envelope(payload, at=AT):
 
 
 def feed(game, confirmed=True):
-    boxes = {}
+    boxes, people = {}, {}
     for side in ('home', 'away'):
         tid = game['teams'][side]['team']['id']
         order = list(range(tid*100, tid*100+9)) if confirmed else []
         boxes[side] = {'team': game['teams'][side]['team'], 'battingOrder': order,
                        'players': {'ID'+str(pid): {'person': {'id': pid}, 'battingOrder': str(slot*100),
                                    'gameStatus': {'isSubstitute': False}} for slot, pid in enumerate(order, 1)}}
+        for pid in order:
+            people[str(pid)] = {'id': pid, 'batSide': {'code': 'R' if side == 'home' else 'L'}}
+        starter = game['teams'][side].get('probablePitcher', {}).get('id')
+        if starter:
+            people[str(starter)] = {'id': starter, 'pitchHand': {'code': 'L' if side == 'home' else 'R'}}
     return {'gameData': {'game': {'pk': game['gamePk']}, 'datetime': {'dateTime': game['gameDate']},
                          'status': {'abstractGameState': 'Preview'},
+                         'players': people,
                          'probablePitchers': {s: deepcopy(game['teams'][s].get('probablePitcher', {})) for s in ('home', 'away')}},
             'liveData': {'boxscore': {'teams': boxes}}}
 
@@ -126,6 +132,18 @@ def change_feed(folder, modify, pk='1'):
 def test_unchanged_poll_reuses_every_row_and_parquet_bytes_without_inference(capture):
     folder, output, calls, _ = capture
     first, _, out = daily.predict(folder, output)
+    for row in first.to_pylist():
+        profile = json.loads(row['starter_profile_json'])
+        assert row['starter_profile_contract'] == 'KS1-starter-profile-v2'
+        assert row['starter_profile_sha256'] == profile['sha256']
+        assert row['starter_profile_semantic_sha256'] == profile['semantic_sha256']
+        assert profile['source_roles']['fixture_crosscheck'] == 'Big_Balls_Data_matches_only'
+        assert profile['source_roles']['market_context'] == 'The_Odds_API_only'
+        assert profile['sides']['home']['starter_id'] == row['home_starter_id']
+        assert profile['sides']['home']['metrics']['pitch_hand_left'] == 1
+        assert profile['sides']['home']['metrics']['opponent_lhb_pct'] == 100
+        assert profile['sides']['home']['window_statuses']['30d'] == 'SOURCE_INCOMPLETE'
+        assert 'xera_30d' in profile['sides']['home']['unavailable_exact_metrics']
     body = (out/'predictions.parquet').read_bytes()
     advance(folder, out)
     history = json.loads(gzip.decompress((folder/'history.json.gz').read_bytes()))
@@ -135,6 +153,19 @@ def test_unchanged_poll_reuses_every_row_and_parquet_bytes_without_inference(cap
     assert first.equals(second) and body == (out/'predictions.parquet').read_bytes()
     assert calls == [2] and report['newly_scored'] == 0 and report['unchanged_rows'] == 2
     assert all(r['status'] == 'confirmed_lineups' for r in second.to_pylist())
+
+
+def test_profile_semantics_refresh_but_audit_timestamp_does_not():
+    row = {'game_id': '1', 'starter_profile_semantic_sha256': 'semantic-one',
+           'starter_profile_sha256': 'full-one', 'starter_profile_json': '{"as_of":"one"}',
+           'as_of': '2026-09-10T10:00:00Z'}
+    features = {'market_home_prob': .5}
+    first = fingerprint(row, features, {'market_home_prob'})
+    audit_only = {**row, 'starter_profile_sha256': 'full-two',
+                  'starter_profile_json': '{"as_of":"two"}', 'as_of': '2026-09-10T10:01:00Z'}
+    assert fingerprint(audit_only, features, {'market_home_prob'}) == first
+    changed = {**audit_only, 'starter_profile_semantic_sha256': 'semantic-two'}
+    assert fingerprint(changed, features, {'market_home_prob'}) != first
 
 
 def start_adjusted_inputs(folder):

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss
 
-from ks1.features import ET, Features
+from ks1.features import ET, Features, MATCHUP_METRICS
 from ks1.inventory import encode
 from ks1.sources import aws_clients, load_existing
 from ks1.table import build, contract
@@ -40,8 +40,7 @@ def split_recent(frame):
 
 
 def individual_feature(column):
-    return any(column.startswith(side+'_starter_'+metric) for side in ('home', 'away')
-               for metric in ('k_bb_pct_', 'whip_', 'bf_', 'appearances_'))
+    return any(column.startswith(side+'_starter_') for side in ('home', 'away'))
 
 
 def choose_features(train):
@@ -57,8 +56,16 @@ def choose_features(train):
         rejected = [c for c in features if individual_feature(c)]
         features = [c for c in features if c not in rejected]
         omitted = sorted(set(omitted) | set(rejected))
+    # An observed starter ID does not prove that a particular box/Statcast
+    # metric is covered. Do not let LightGBM learn an advanced field from a
+    # handful of non-null rows while silently treating the rest as missing.
+    sparse = [c for c in features if individual_feature(c)
+              and int(train[c].notna().sum()) < MIN_STARTER_ROWS]
+    features = [c for c in features if c not in sparse]
+    omitted = sorted(set(omitted) | set(sparse))
     supported = {side+'_'+key for side in ('home', 'away')
                  for key in Features([]).at(SPLIT_DATE+'T04:00:00Z', '0')}
+    supported.update(side+'_starter_'+metric for side in ('home', 'away') for metric in MATCHUP_METRICS)
     supported.update(('market_home_prob', 'market_total', 'market_spread'))
     if set(features) - supported:
         raise ValueError('training features missing from daily inference: '+','.join(sorted(set(features)-supported)))
@@ -110,6 +117,8 @@ def evaluate(frame, incumbent_bytes, output, proof):
               'features': features, 'omitted_features': omitted,
               'individual_starter_training_rows': coverage,
               'individual_starter_features_learned': [c for c in features if individual_feature(c)],
+              'individual_feature_training_rows': {
+                  c: int(train[c].notna().sum()) for c in features if individual_feature(c)},
               'minimum_individual_starter_rows_per_side': MIN_STARTER_ROWS,
               'parameters': PARAMS, 'test_used_for_tuning': False, 'holdout_refit': False,
               'model_reload_verified': True,
