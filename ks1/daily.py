@@ -277,6 +277,7 @@ def predict(folder, output):
     frozen_ids = set(frozen.game_id) if len(frozen) else set()
     prior_rows = {r['game_id']: r for r in pq.ParquetFile(folder/'previous.parquet').read().to_pylist()} if previous is not None else {}
     retained, changes, unchanged, withdrawals = [], [], [], []
+    provider_status_disagreement_retained = []
     # Frozen Phase 4 rows acquire only conservative status defaults; their
     # predictions and original cutoff are retained, never rescored postgame.
     migrated_frozen = []
@@ -308,6 +309,23 @@ def predict(folder, output):
             raise ValueError('scheduled official game missing from BBS: '+pk)
         bbs = assignments[pk]
         if bbs['status'].lower() != 'scheduled':
+            # BBS lifecycle state is supplemental identity evidence, not the
+            # official MLB game-state authority.  If the providers disagree,
+            # never score a new row or refresh an existing one.  A previously
+            # published pregame row can, however, be retained byte-for-byte so
+            # one early/incorrect BBS "live" transition does not abort every
+            # other game in the slate.  First publication still fails closed.
+            old = prior_rows.get(pk)
+            if old:
+                retained.append(old)
+                provider_status_disagreement_retained.append(pk)
+                exclusions.append({
+                    'game_id': pk,
+                    'reason': 'provider_pregame_status_disagreement_retained',
+                    'official_detailed_state': game.get('status', {}).get('detailedState'),
+                    'bbs_status': bbs.get('status'),
+                })
+                continue
             raise ValueError('BBS and official pregame status disagree: '+pk)
         row = {'date': target_date, 'game_id': pk, 'bbs_game_id': bbs['id'], 'commence_time': start.isoformat(),
                'model_version': model_version, 'as_of': as_of,
@@ -387,6 +405,8 @@ def predict(folder, output):
               'learned_feature_names': classifier.feature_name(),
               'individual_starter_features_learned': individual_learned,
               'rows': len(frame), 'newly_scored': len(rows), 'preserved_pregame_rows': len(frozen_ids),
+              'provider_status_disagreement_retained_rows': len(provider_status_disagreement_retained),
+              'provider_status_disagreement_retained_game_ids': provider_status_disagreement_retained,
               'unchanged_rows': len(unchanged), 'unchanged_game_ids': unchanged, 'changes': changes,
               'migrated_frozen_game_ids': migrated_frozen,
               'removed_game_ids': sorted(set(prior_rows)-set(frame.game_id)),
