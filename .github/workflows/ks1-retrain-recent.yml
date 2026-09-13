@@ -2,6 +2,9 @@ name: KS1 seven-day model validation
 on:
   pull_request:
     paths: ['ks1/features.py', 'ks1/retrain_recent.py', 'tests/ks1_recent/**', '.github/workflows/ks1-retrain-recent.yml']
+  workflow_dispatch:
+  schedule:
+    - cron: '35 7 * * 1'
 permissions:
   contents: read
 concurrency:
@@ -14,8 +17,11 @@ jobs:
     # This job executes checked-out code after receiving long-lived AWS
     # credentials. Only the explicitly controlled feature branch may run it.
     if: >-
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.head_ref == 'codex/ks1-starter-followup-20260913'
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.head_ref == 'codex/ks1-starter-followup-20260913') ||
+      ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+       github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
