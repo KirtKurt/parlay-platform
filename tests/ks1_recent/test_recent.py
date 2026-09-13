@@ -12,6 +12,9 @@ def test_recent_validation_credentials_are_restricted_to_trusted_branch():
     workflow_text = path.read_text()
     assert 'github.event.pull_request.head.repo.full_name == github.repository' in workflow_text
     assert "github.head_ref == 'codex/ks1-starter-followup-20260913'" in workflow_text
+    assert "github.event_name == 'schedule'" in workflow_text
+    assert "github.event_name == 'workflow_dispatch'" in workflow_text
+    assert "github.ref == 'refs/heads/main'" in workflow_text
     assert 'cancel-in-progress: true' in workflow_text
 
 
