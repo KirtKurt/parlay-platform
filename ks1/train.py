@@ -21,7 +21,7 @@ PARAMS = {'objective': 'binary', 'n_estimators': 200, 'learning_rate': 0.03,
           'random_state': 1729, 'n_jobs': 2, 'deterministic': True,
           'force_col_wise': True, 'verbosity': -1}
 KS1_RECENT_WORKFLOW = 'KirtKurt/parlay-platform/.github/workflows/ks1-retrain-recent.yml'
-KS1_RECENT_TRUSTED_PR_BRANCH = 'codex/ks1-starter-postmerge-repairs-20260913'
+KS1_RECENT_TRUSTED_PR_BRANCH = 'codex/ks1-historical-starter-bridge-20260913'
 
 
 def split(frame):

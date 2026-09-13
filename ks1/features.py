@@ -29,6 +29,52 @@ def number(value):
         return None
 
 
+def finite(value):
+    """Return any finite numeric value, including signed model features."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        result = float(value)
+        return result if math.isfinite(result) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def pitcher_context(values):
+    """V8-compatible current-season pitcher summary for history and inference."""
+    def first(*names):
+        return next((value for name in names if (value := finite(values.get(name))) is not None), None)
+
+    return {
+        "quality": first("starter_context_quality"),
+        "recent_form": first("starter_context_recent_form"),
+        # The official V8 game-log producer does not manufacture velocity.
+        # It remains available in KS1's separately named Statcast features.
+        "velocity": first("starter_context_velocity"),
+        "command": first("starter_context_command"),
+        "expected_innings": first("starter_expected_innings_last5"),
+    }
+
+
+def official_context_pitching(rows):
+    """Mirror V8's unshrunk official game-log summary contract."""
+    if not rows:
+        return {"quality": None, "command": None}
+    required = ("outs", "earnedRuns", "homeRuns", "baseOnBalls",
+                "hitBatsmen", "strikeOuts", "battersFaced")
+    if any(any(number(row.get(key)) is None for key in required) for row in rows):
+        return {"quality": None, "command": None}
+    total = {key: sum(number(row[key]) for row in rows) for key in required}
+    if not total["outs"]:
+        return {"quality": None, "command": None}
+    fip = ((13*total["homeRuns"] + 3*(total["baseOnBalls"]+total["hitBatsmen"])
+            - 2*total["strikeOuts"])*3/total["outs"] + FIP_CONSTANT)
+    command = (100*(total["strikeOuts"]-total["baseOnBalls"])/total["battersFaced"]
+               if total["battersFaced"] else None)
+    return {"quality": round(-fip, 4),
+            "command": round(command, 4) if command is not None else None}
+
+
 def counts(rows, keys):
     valid = [r for r in rows if all(number(r.get(k)) is not None for k in keys)]
     return {k: sum(number(r[k]) for r in valid) for k in keys}, len(valid)
@@ -347,6 +393,31 @@ class Features:
             statcast["xfip"] = self.xfip(box, statcast, league_hr_fb)
             for name, value in statcast.items():
                 result[f"starter_{name}_{window}d"] = value
+        current_appearances = [(r["start"], r["game_id"], p["stats"])
+                               for r in eligible for p in r["players"]
+                               if p["id"] == starter_id]
+        current_starts = [entry for entry in current_appearances
+                          if number(entry[2].get("gamesStarted")) == 1]
+        # Match V8's official game-log contract: target season only, latest one
+        # through five starts, with appearances as the no-start fallback.
+        context_entries = sorted(current_starts or current_appearances,
+                                 key=lambda item: item[0])
+        last_five = context_entries[-5:]
+        last_five_outs = [number(stats.get("outs")) for _, _, stats in last_five]
+        result["starter_expected_innings_last5"] = (
+            round(sum(last_five_outs)/(3*len(last_five_outs)), 3)
+            if starter_id and last_five_outs and all(value is not None for value in last_five_outs)
+            else None)
+        season_context = official_context_pitching([stats for _, _, stats in context_entries])
+        recent_context = official_context_pitching([stats for _, _, stats in context_entries[-3:]])
+        result.update({
+            "starter_context_quality": season_context["quality"],
+            "starter_context_command": season_context["command"],
+            "starter_context_recent_form": (recent_context["command"]
+                                             if recent_context["command"] is not None
+                                             else recent_context["quality"]),
+            "starter_context_velocity": None,
+        })
         starts = [(r["start"], r["game_id"], p["stats"]) for r in completed for p in r["players"]
                   if p["id"] == starter_id and number(p["stats"].get("gamesStarted")) == 1]
         last_three_pairs = sorted(starts, key=lambda item: item[0], reverse=True)[:3]
@@ -393,5 +464,7 @@ class Features:
             valid = all(number(r.get("pitches")) is not None and number(r.get("outs")) is not None for r in chosen)
             for stat in ("pitches", "outs"):
                 result[f"bullpen_{stat}_{window}d"] = sum(number(r[stat]) for r in chosen) if team and valid else None
+        result.update({"pitcher_context_"+name: value
+                       for name, value in pitcher_context(result).items()})
         self.cache[key] = result
         return result

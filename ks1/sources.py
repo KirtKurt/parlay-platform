@@ -1,7 +1,9 @@
 """Load the already retained MLB stores. This module has no provider client."""
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 import json
 
+from ks1.historical_starters import load_active_historical_context, read_locked_predictions
 from ks1.inventory import Reader, RESEARCH, RECONSTRUCTED, ROOT
 
 FINALS = "mlb/historical-daily-v1/official-finals/"
@@ -68,6 +70,41 @@ def load_existing(cf, s3, bucket):
         # An unavailable optional market store cannot invalidate the game table.
         optional_reads.append({"source": ODDS, "status": "unavailable",
                                "error_code": getattr(exc, "response", {}).get("Error", {}).get("Code", type(exc).__name__)})
+    published_predictions = []
+    try:
+        published_predictions, inventory = read_locked_predictions(
+            s3, bucket, datetime.now(timezone.utc).isoformat())
+        optional_reads.append({"source": "mlb/ks1/predictions-v1/", "status": "read",
+                               "rows": len(published_predictions),
+                               "versions": inventory["versions_read"]})
+        reader.receipts.extend({"bucket": source["bucket"], "key": source["key"],
+                                "versionId": source.get("version_id"),
+                                "sha256": source["sha256"]}
+                               for source in inventory["sources"])
+    except Exception as exc:
+        # This optional bridge is atomic: a failed version read contributes no
+        # starter identity and cannot fail the ordinary game-table build.
+        published_predictions = []
+        optional_reads.append({"source": "mlb/ks1/predictions-v1/", "status": "unavailable",
+                               "error_code": getattr(exc, "response", {}).get(
+                                   "Error", {}).get("Code", type(exc).__name__)})
+    historical_pitcher_context = {}
+    try:
+        import boto3
+        table = boto3.resource("dynamodb", region_name="us-east-1").Table(
+            "parlay_platform_snapshots")
+        historical_pitcher_context, status, receipt = load_active_historical_context(
+            s3, table)
+        optional_reads.append(status)
+        reader.receipts.append(receipt)
+    except Exception as exc:
+        # V8 context is a shadow-only accelerator.  Missing or invalid pointer
+        # evidence fails closed without weakening the base KS1 build.
+        historical_pitcher_context = {}
+        optional_reads.append({"source": "mlb/v8/historical-context/manifests/",
+                               "status": "unavailable",
+                               "error_code": getattr(exc, "response", {}).get(
+                                   "Error", {}).get("Code", type(exc).__name__)})
     return {"reconstructed": reconstructed, "research": research,
             "compact": compact, "full": prior["games"], "schedule": prior["schedule"],
             "current30_history_complete": prior.get("current30CoverageComplete") is True,
@@ -80,5 +117,7 @@ def load_existing(cf, s3, bucket):
             "prior_statcast_year": statcast.get("priorYear"),
             "schedule_observed_at": prior.get("receipt", {}).get("retrievedAtUtc"),
             "snapshots": snapshots, "finals": finals, "odds": odds,
+            "published_predictions": published_predictions,
+            "historical_pitcher_context": historical_pitcher_context,
             "source_receipts": sorted(reader.receipts, key=lambda r: (r["bucket"], r["key"])),
             "optional_reads": optional_reads}

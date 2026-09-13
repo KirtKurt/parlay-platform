@@ -34,11 +34,12 @@ market timing and vig, and atomic date-scoped publication.
 |---|---|---|
 | `game_id`, `date`, `season`, teams/IDs, start | Reconstructed game contract; official schedule; compact/full boxes | Official MLB `gamePk` and team IDs; one row per game |
 | `home_score`, `away_score`, `home_win` | Historical `mlb/historical-daily-v1/official-finals/{date}.json`, research dataset, full boxes, final schedule | Final status required; conflicting sources stop the build; label-only |
-| Pregame starter IDs/names/status | Original `research-v1/snapshots/` playerWindows, or schedule observed while Preview before cutoff | Final-box identities never fill these fields |
+| Pregame starter IDs/names/status | Original `research-v1/snapshots/` playerWindows, version-proven unchanged KS1 T-10 prediction rows, or schedule observed while Preview before cutoff | Stored-at timestamp and game/team/start binding required; final-box identities never fill these fields |
 | Actual starter IDs/names | Existing final full player boxes, `stats.pitching.gamesStarted == 1` | Audit labels only; never model inputs |
 | `*_offense_ops/iso/pa/games_{10,30,75}d` | Earlier completed compact and full team batting boxes | Calendar windows, shrunk OPS/ISO; counts remain observed |
 | `*_team_starter_*_{10,30,75}d` | Earlier completed compact starter groups / full starters | Team starter-group K-BB%, WHIP when hits available; distinct from individual starter |
 | `*_starter_*_{10,30,75}d` | Earlier completed full player pitching boxes | Individual pitcher only when pregame starter ID is known; otherwise null |
+| `*_pitcher_context_*` | Verified V8 point-in-time historical context or same-contract observed KS1 starter profile | Unshrunk current-season quality/command, up-to-three recent form, up-to-five expected innings; historical `strict_prior_projection` is marked separately and never represented as confirmed identity or prospective coverage |
 | `*_bullpen_pitches/outs_{1,3,5}d` | Earlier completed compact relief usage / full relief boxes | Observed workload; missing counts remain missing |
 | Lineup IDs/status | Original pregame playerWindows | Confirmed only with nine distinct observed players; otherwise projected; Phase 1 offense uses team prior |
 | `park`, `park_id` | Stored official schedule / full box venue | Identity only; no invented park coefficient |

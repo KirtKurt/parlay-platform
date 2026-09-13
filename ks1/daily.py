@@ -16,7 +16,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from ks1.features import Features, day, starter_matchup, utc
+from ks1.features import Features, day, pitcher_context, starter_matchup, utc
 from ks1.inventory import encode
 from ks1.poisson import home_probability, predict_exported
 from ks1.publish import parquet_bytes
@@ -318,6 +318,9 @@ def predict(folder, output):
     needed = set(classifier.feature_name()) | set(poisson['home']['features']) | set(poisson['away']['features'])
     individual_learned = any(name.startswith(side+'_starter_')
                              for name in classifier.feature_name() for side in ('home', 'away'))
+    pitcher_context_learned = [name for name in classifier.feature_name()
+                               if any(name.startswith(side+'_pitcher_context_')
+                                      for side in ('home', 'away'))]
     model_version = 'KS1-LGB-'+refs['lightgbm']['sha256'][:12]+'-DP-'+refs['poisson']['sha256'][:12]
     official = inputs['official']['payload']
     schedule = [g for d in official['dates'] for g in d['games']]
@@ -401,6 +404,8 @@ def predict(folder, output):
                       and inputs['history'].get('prior_year_history_complete') is True
                       and inputs['history'].get('current_year_statcast_complete') is True
                       and inputs['history'].get('prior_year_statcast_complete') is True),
+            'current_season_context': (
+                inputs['history'].get('current_year_history_complete') is True),
             'prior_year': (inputs['history'].get('prior_year_history_complete') is True
                            and inputs['history'].get('prior_year_statcast_complete') is True),
             'statcast_30d': inputs['history'].get('statcast_coverage_complete') is True,
@@ -422,9 +427,16 @@ def predict(folder, output):
             if not coverage['last3']:
                 side_values.update({key: None for key in side_values if key.startswith('starter_')
                                     and key.endswith('_last3')})
+            if not coverage['current_season_context']:
+                side_values.update({key: None for key in side_values
+                                    if key.startswith('starter_context_')})
+                side_values['starter_expected_innings_last5'] = None
             if not coverage['prior_year']:
                 side_values.update({key: None for key in side_values if key.startswith('starter_')
                                     and (key.endswith('_prior_year') or key.endswith('_talent'))})
+            # Derive context only after source-completeness masking.
+            side_values.update({'pitcher_context_'+key: value
+                                for key, value in pitcher_context(side_values).items()})
             features.update({side+'_'+k: v for k, v in side_values.items()})
             opposing = 'away' if side == 'home' else 'home'
             bats = row.get('_'+opposing+'_lineup_bat_sides')
@@ -512,6 +524,7 @@ def predict(folder, output):
     report = {'system': 'KS1', 'phase': 5, 'date': target_date, 'as_of': as_of, 'model_version': model_version,
               'learned_feature_names': classifier.feature_name(),
               'individual_starter_features_learned': individual_learned,
+              'pitcher_context_features_learned': pitcher_context_learned,
               'rows': len(frame), 'newly_scored': len(rows), 'preserved_pregame_rows': len(frozen_ids),
               'provider_status_disagreement_retained_rows': len(provider_status_disagreement_retained),
               'provider_status_disagreement_retained_game_ids': provider_status_disagreement_retained,

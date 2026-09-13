@@ -59,6 +59,10 @@ def individual_feature(column):
     return any(column.startswith(side+'_starter_') for side in ('home', 'away'))
 
 
+def pitcher_context_feature(column):
+    return any(column.startswith(side+'_pitcher_context_') for side in ('home', 'away'))
+
+
 def choose_features(train):
     _, dictionary = contract(train.iloc[0].to_dict())
     features, omitted = select_features(train, dictionary)
@@ -66,7 +70,7 @@ def choose_features(train):
     # are never substituted. Require genuine prior pitcher history, not a prior
     # computed for an ID with zero recorded appearances.
     coverage = {side: int((train[side+'_starter_id'].notna() &
-                           (train[side+'_starter_bf_30d'].fillna(0) > 0)).sum())
+                           (pd.to_numeric(train[side+'_starter_bf_30d'], errors='coerce') > 0)).sum())
                 for side in ('home', 'away')}
     if min(coverage.values()) < MIN_STARTER_ROWS:
         rejected = [c for c in features if individual_feature(c)]
@@ -79,6 +83,13 @@ def choose_features(train):
               and int(train[c].notna().sum()) < MIN_STARTER_ROWS]
     features = [c for c in features if c not in sparse]
     omitted = sorted(set(omitted) | set(sparse))
+    # Historical point-in-time summaries can accelerate shadow learning without
+    # claiming confirmed identity.  Each learned field still needs the same
+    # 300-row floor on both sides.
+    context_sparse = [c for c in features if pitcher_context_feature(c)
+                      and int(train[c].notna().sum()) < MIN_STARTER_ROWS]
+    features = [c for c in features if c not in context_sparse]
+    omitted = sorted(set(omitted) | set(context_sparse))
     supported = {side+'_'+key for side in ('home', 'away')
                  for key in Features([]).at(FEATURE_CONTRACT_DATE+'T04:00:00Z', '0')}
     supported.update(side+'_starter_'+metric for side in ('home', 'away') for metric in MATCHUP_METRICS)
@@ -105,6 +116,20 @@ def accepted(candidate, incumbent):
             and candidate['logloss'] <= incumbent['logloss'])
 
 
+def pitcher_promotion_ready(candidate, incumbent, context_features, prospective_rows):
+    return bool(accepted(candidate, incumbent) and context_features
+                and prospective_rows >= EVALUATION_GAMES)
+
+
+def prospective_context_coverage(frame, context_features):
+    prospective = frame.pitcher_context_evidence.eq(
+        'frozen_versioned_ks1_profile') & frame.historical_pitcher_context_mode.isna()
+    per_feature = {column: int((prospective & frame[column].notna()).sum())
+                   for column in context_features}
+    complete = frame[context_features].notna().all(axis=1) if context_features else False
+    return per_feature, int((prospective & complete).sum())
+
+
 def evaluate(frame, incumbent_bytes, output, proof):
     train, test = split_recent(frame)
     features, omitted, coverage = choose_features(train)
@@ -119,6 +144,12 @@ def evaluate(frame, incumbent_bytes, output, proof):
     ablation = lgb.LGBMClassifier(**PARAMS).fit(train[without_seven].astype(float), y_train)
     ablated = ablation.predict_proba(test[without_seven].astype(float))[:, 1]
     candidate_metrics, incumbent_metrics = metrics(y_test, predictions), metrics(y_test, old)
+    context_features = [c for c in features if pitcher_context_feature(c)]
+    prospective_feature_coverage, prospective_context_rows = prospective_context_coverage(
+        test, context_features)
+    statistical_gate = accepted(candidate_metrics, incumbent_metrics)
+    promotion_ready = pitcher_promotion_ready(
+        candidate_metrics, incumbent_metrics, context_features, prospective_context_rows)
     output.mkdir(parents=True, exist_ok=True)
     candidate.booster_.save_model(str(output/'model.txt'))
     loaded = lgb.Booster(model_file=str(output/'model.txt'))
@@ -130,14 +161,24 @@ def evaluate(frame, incumbent_bytes, output, proof):
               'test': {'start': test.date.min(), 'end': test.date.max(), 'games': len(test)},
               'candidate': candidate_metrics, 'incumbent': incumbent_metrics,
               'without_seven_day': metrics(y_test, ablated),
-              'accepted': accepted(candidate_metrics, incumbent_metrics),
+              'accepted': promotion_ready,
+              'statistical_gate_passed': statistical_gate,
               'promotion_rule': 'strictly lower Brier and no worse logloss than incumbent on identical trailing 300-game holdout',
+              'pitcher_promotion_rule': 'candidate must learn verified pitcher context and all 300 holdout games must carry prospective pregame pitcher context',
               'evaluation_window_games': EVALUATION_GAMES,
               'features': features, 'omitted_features': omitted,
               'individual_starter_training_rows': coverage,
               'individual_starter_features_learned': [c for c in features if individual_feature(c)],
               'individual_feature_training_rows': {
                   c: int(train[c].notna().sum()) for c in features if individual_feature(c)},
+              'historical_pitcher_context_training_rows': {
+                  side: int(train[side+'_pitcher_context_quality'].notna().sum())
+                  for side in ('home', 'away')},
+              'pitcher_context_features_learned': context_features,
+              'pitcher_context_feature_training_rows': {
+                  c: int(train[c].notna().sum()) for c in context_features},
+              'prospective_pitcher_context_feature_rows': prospective_feature_coverage,
+              'prospective_pitcher_context_test_rows': prospective_context_rows,
               'minimum_individual_starter_rows_per_side': MIN_STARTER_ROWS,
               'parameters': PARAMS, 'test_used_for_tuning': False, 'holdout_refit': False,
               'model_reload_verified': True,
@@ -180,6 +221,7 @@ def main():
         raise ValueError('incumbent hash mismatch')
     proof = {'input_table_sha256': hashlib.sha256((args.output/'input_table.parquet').read_bytes()).hexdigest(),
              'source_receipts': source_report['source_receipts'], 'source_coverage': source_report['coverage'],
+             'optional_reads': source_report['optional_reads'],
              'incumbent_ref': ref, 'provider_calls': 0}
     report = evaluate(frame, body, args.output, proof)
     # Only isolated experiment artifacts are saved. A separate reviewed model

@@ -1,7 +1,7 @@
 name: KS1 seven-day model validation
 on:
   pull_request:
-    paths: ['ks1/features.py', 'ks1/retrain_recent.py', 'tests/ks1_recent/**', '.github/workflows/ks1-retrain-recent.yml']
+    paths: ['ks1/**', 'tests/ks1/**', 'tests/ks1_recent/**', '.github/workflows/ks1-retrain-recent.yml']
   workflow_dispatch:
   schedule:
     - cron: '35 7 * * 1'
@@ -19,7 +19,7 @@ jobs:
     if: >-
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository &&
-       github.head_ref == 'codex/ks1-starter-postmerge-repairs-20260913') ||
+       github.head_ref == 'codex/ks1-historical-starter-bridge-20260913') ||
       ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
        github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest

@@ -3,7 +3,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from ks1.features import Features, pitching
-from ks1.retrain_recent import accepted, choose_features, completion_times, split_recent
+from ks1.retrain_recent import (accepted, choose_features, completion_times,
+                                pitcher_promotion_ready, prospective_context_coverage,
+                                split_recent)
 from ks1.train import artifact_write_authorized
 from tests.ks1.test_game_table import game
 
@@ -12,7 +14,7 @@ def test_recent_validation_credentials_are_restricted_to_trusted_branch():
     path = Path(__file__).resolve().parents[2]/'.github/workflows/ks1-retrain-recent.yml'
     workflow_text = path.read_text()
     assert 'github.event.pull_request.head.repo.full_name == github.repository' in workflow_text
-    assert "github.head_ref == 'codex/ks1-starter-postmerge-repairs-20260913'" in workflow_text
+    assert "github.head_ref == 'codex/ks1-historical-starter-bridge-20260913'" in workflow_text
     assert "github.event_name == 'schedule'" in workflow_text
     assert "github.event_name == 'workflow_dispatch'" in workflow_text
     assert "github.ref == 'refs/heads/main'" in workflow_text
@@ -24,7 +26,7 @@ def test_recent_validation_credentials_are_restricted_to_trusted_branch():
     ('workflow_dispatch', 'refs/heads/main', '', True),
     ('push', 'refs/heads/main', '', False),
     ('pull_request', 'refs/pull/1/merge',
-     'codex/ks1-starter-postmerge-repairs-20260913', True),
+     'codex/ks1-historical-starter-bridge-20260913', True),
     ('pull_request', 'refs/pull/2/merge', 'untrusted', False),
 ])
 def test_challenger_artifact_write_authority(monkeypatch, event, ref, head, authorized):
@@ -186,6 +188,40 @@ def test_last_three_is_fail_closed_when_only_two_starts_are_retained():
     feature = Features(games).at('2026-08-10T19:50:00Z', '1', '99', game_date='2026-08-10')
     assert feature['starter_starts_observed_last3'] == 2
     assert feature['starter_era_last3'] is None
+    assert feature['pitcher_context_expected_innings'] == 6
+    assert feature['pitcher_context_quality'] == round(-(8*3/18+3.1), 4)
+    assert feature['pitcher_context_command'] == 20
+    assert feature['pitcher_context_recent_form'] == 20
+
+
+def test_expected_innings_uses_up_to_five_current_season_starts():
+    stats = {'outs':18,'earnedRuns':2,'runs':3,'hits':4,'homeRuns':1,'baseOnBalls':2,
+             'hitBatsmen':1,'strikeOuts':7,'battersFaced':25,'wins':1,'losses':0,
+             'gamesStarted':1,'numberOfPitches':90}
+    games = [full_game(i, f'2026-07-{i:02d}', 99, {**stats, 'outs': 15+i})
+             for i in range(1, 7)]
+    feature = Features(games).at(
+        '2026-08-10T19:50:00Z', '1', '99', game_date='2026-08-10')
+    assert feature['pitcher_context_expected_innings'] == round(
+        sum(15+i for i in range(2, 7))/15, 3)
+    prior = full_game(99, '2025-09-01', 99, {**stats, 'outs': 3})
+    same = Features([prior, *games]).at(
+        '2026-08-10T19:50:00Z', '1', '99', game_date='2026-08-10')
+    assert same['pitcher_context_expected_innings'] == feature['pitcher_context_expected_innings']
+    assert same['pitcher_context_quality'] == feature['pitcher_context_quality']
+    assert same['pitcher_context_command'] == feature['pitcher_context_command']
+    assert same['pitcher_context_recent_form'] == feature['pitcher_context_recent_form']
+
+
+def test_current_season_context_falls_back_to_appearances_when_no_starts():
+    stats = {'outs':6,'earnedRuns':1,'runs':1,'hits':2,'homeRuns':0,'baseOnBalls':1,
+             'hitBatsmen':0,'strikeOuts':3,'battersFaced':9,'wins':0,'losses':0,
+             'gamesStarted':0,'numberOfPitches':31}
+    feature = Features([full_game(1, '2026-08-01', 99, stats)]).at(
+        '2026-08-10T19:50:00Z', '1', '99', game_date='2026-08-10')
+    assert feature['pitcher_context_expected_innings'] == 2
+    assert feature['pitcher_context_command'] == pytest.approx(100*2/9)
+    assert feature['pitcher_context_recent_form'] == feature['pitcher_context_command']
 
 
 def test_opening_day_last_three_uses_prior_year_league_baseline():
@@ -269,12 +305,74 @@ def test_sparse_advanced_starter_feature_is_not_learned_from_too_few_rows():
     assert 'home_starter_xwoba_30d' in omitted
 
 
+def test_verified_historical_pitcher_context_can_train_without_claiming_identity():
+    n = 300
+    frame = pd.DataFrame({
+        'home_offense_ops_7d': [0.5+i/1000 for i in range(n)],
+        'home_starter_id': [None]*n, 'away_starter_id': [None]*n,
+        'home_starter_bf_30d': [None]*n, 'away_starter_bf_30d': [None]*n,
+        'home_pitcher_context_quality': [-3-i/1000 for i in range(n)],
+        'away_pitcher_context_quality': [-4+i/1000 for i in range(n)],
+    })
+    features, omitted, coverage = choose_features(frame)
+    assert coverage == {'home': 0, 'away': 0}
+    assert 'home_pitcher_context_quality' in features
+    assert 'away_pitcher_context_quality' in features
+    frame.loc[0, 'away_pitcher_context_quality'] = None
+    features, omitted, _ = choose_features(frame)
+    assert 'away_pitcher_context_quality' not in features
+    assert 'away_pitcher_context_quality' in omitted
+
+
+def test_context_intermediates_are_never_direct_model_features():
+    n = 300
+    frame = pd.DataFrame({
+        'home_offense_ops_7d': [0.5+i/1000 for i in range(n)],
+        'home_starter_id': [str(i) for i in range(n)],
+        'away_starter_id': [str(i+n) for i in range(n)],
+        'home_starter_bf_30d': [25.]*n, 'away_starter_bf_30d': [25.]*n,
+        'home_starter_context_quality': [-3-i/1000 for i in range(n)],
+        'away_starter_expected_innings_last5': [5+i/1000 for i in range(n)],
+        'home_pitcher_context_quality': [-3-i/1000 for i in range(n)],
+        'away_pitcher_context_quality': [-4+i/1000 for i in range(n)],
+    })
+    features, _, _ = choose_features(frame)
+    assert 'home_starter_context_quality' not in features
+    assert 'away_starter_expected_innings_last5' not in features
+    assert 'home_pitcher_context_quality' in features
+
+
 def test_promotion_requires_both_probability_metrics_and_same_sufficient_cohort():
     old = {'games': 300, 'brier': .24, 'logloss': .68}
     assert accepted({'games': 300, 'brier': .23, 'logloss': .67}, old)
     assert not accepted({'games': 300, 'brier': .23, 'logloss': .69}, old)
     assert not accepted(old, old)
     assert not accepted({'games': 299, 'brier': .23, 'logloss': .67}, old)
+    better = {'games': 300, 'brier': .23, 'logloss': .67}
+    assert pitcher_promotion_ready(better, old, ['home_pitcher_context_quality'], 300)
+    assert not pitcher_promotion_ready(better, old, ['home_pitcher_context_quality'], 299)
+    assert not pitcher_promotion_ready(better, old, [], 300)
+
+
+def test_historical_projection_is_not_prospective_promotion_coverage():
+    source = Path(__file__).resolve().parents[2]/'ks1/retrain_recent.py'
+    text = source.read_text()
+    assert "frame.pitcher_context_evidence.eq(" in text
+    assert "frame.historical_pitcher_context_mode.isna()" in text
+
+
+def test_prospective_coverage_requires_every_learned_context_column():
+    frame = pd.DataFrame({
+        'pitcher_context_evidence': ['frozen_versioned_ks1_profile']*300,
+        'historical_pitcher_context_mode': [None]*300,
+        'home_pitcher_context_quality': [1.0]*300,
+        'away_pitcher_context_command': [2.0]*299+[None],
+    })
+    per_feature, complete = prospective_context_coverage(
+        frame, ['home_pitcher_context_quality', 'away_pitcher_context_command'])
+    assert per_feature == {'home_pitcher_context_quality': 300,
+                           'away_pitcher_context_command': 299}
+    assert complete == 299
 
 
 def test_evaluation_uses_only_the_latest_300_eligible_games():

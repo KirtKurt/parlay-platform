@@ -9,6 +9,9 @@ from botocore.exceptions import ClientError
 
 from ks1.features import Features, offense
 from ks1.inventory import encode
+from ks1.historical_starters import (KS1_STARTER_PROFILE_CONTRACT,
+                                     V8_MANIFEST_VERSION, V8_SNAPSHOT_VERSION,
+                                     historical_context_index)
 from ks1.publish import PREFIX, publish
 from ks1.table import build, market_for
 
@@ -146,9 +149,121 @@ def test_original_starter_requires_timing_identity_and_hash():
     assert row["away_starter_opponent_rhb_pct"] == 100
     assert row["home_starter_xwoba_30d"] == 0.31
     assert row["rolling_feature_evidence"] == "immutable original snapshot starter profile"
+    profile = {
+        "contract": KS1_STARTER_PROFILE_CONTRACT,
+        "as_of": "2026-08-03T19:40:00Z",
+        "history_as_of": "2026-08-03T19:30:00Z",
+        "coverage": {"current_season_context": True},
+        "sides": {side: {"starter_id": pid, "metrics": {
+            "context_quality": quality, "context_command": command,
+            "context_recent_form": command, "expected_innings_last5": 5.5},
+            "window_statuses": {"30d": "COMPLETE", "last3": "SOURCE_INCOMPLETE"}}
+            for side, pid, quality, command in (
+                ("home", "99", -3.2, 18.0), ("away", "199", -4.1, 12.0))},
+    }
+    semantic = {key: value for key, value in profile.items()
+                if key not in ("as_of", "history_as_of")}
+    profile["semantic_sha256"] = hashlib.sha256(encode(semantic)).hexdigest()
+    profile["sha256"] = hashlib.sha256(encode(profile)).hexdigest()
+    bundle["published_predictions"] = [{
+        "row": {"game_id": "3", "date": "2026-08-03",
+                "commence_time": "2026-08-03T20:00:00Z", "as_of": profile["as_of"],
+                "home_id": "1", "away_id": "2", "home_starter_id": "99",
+                "away_starter_id": "199", "starter_profile_contract": KS1_STARTER_PROFILE_CONTRACT,
+                "starter_profile_sha256": profile["sha256"],
+                "starter_profile_semantic_sha256": profile["semantic_sha256"],
+                "starter_profile_json": encode(profile).decode()},
+        "evidence": {"bucket": "b", "key": "k", "version_id": "v1",
+                     "stored_at": "2026-08-03T19:45:00Z", "sha256": "a"*64}}]
+    table, *_ = build(bundle)
+    row = table.to_pylist()[-1]
+    assert row["pregame_evidence"] == "original_snapshot+versioned_ks1_t10_prediction"
+    assert row["home_pitcher_context_quality"] == -3.2
+    assert row["pitcher_context_evidence"] == "frozen_versioned_ks1_profile"
+    assert row["as_of_timestamp"] == "2026-08-03T19:40:00+00:00"
+
+    # A later immutable T-10 observation supersedes the older snapshot's
+    # probable starter.  The replacement may use its own frozen context, but
+    # must never inherit starter-specific fields captured for the old pitcher.
+    replacement = deepcopy(profile)
+    replacement["sides"]["home"]["starter_id"] = "98"
+    replacement.pop("sha256")
+    replacement.pop("semantic_sha256")
+    semantic = {key: value for key, value in replacement.items()
+                if key not in ("as_of", "history_as_of")}
+    replacement["semantic_sha256"] = hashlib.sha256(encode(semantic)).hexdigest()
+    replacement["sha256"] = hashlib.sha256(encode(replacement)).hexdigest()
+    prediction = bundle["published_predictions"][0]["row"]
+    prediction.update(
+        home_starter_id="98",
+        starter_profile_sha256=replacement["sha256"],
+        starter_profile_semantic_sha256=replacement["semantic_sha256"],
+        starter_profile_json=encode(replacement).decode(),
+    )
+    table, *_ = build(bundle)
+    row = table.to_pylist()[-1]
+    assert row["home_starter_id"] == "98"
+    assert row["home_starter_status"] == "observed_versioned_t10_replacement"
+    assert row["home_starter_xwoba_30d"] is None
+    assert row["home_starter_opponent_lhb_pct"] is None
+    assert row["home_pitcher_context_quality"] == -3.2
+    assert row["pitcher_context_evidence"] == "frozen_versioned_ks1_profile"
+
+    bundle["published_predictions"] = []
     snapshot["capturedAtUtc"] = "2026-08-03T20:01:00Z"
     table, *_ = build(bundle)
     assert table["home_starter_id"].null_count == 3
+
+
+def test_versioned_t10_prediction_supplies_pregame_starter_identity():
+    bundle = fixture()
+    bundle["published_predictions"] = [{
+        "row": {"game_id": "3", "date": "2026-08-03",
+                "commence_time": "2026-08-03T20:00:00Z", "as_of": "2026-08-03T19:40:00Z",
+                "home_id": "1", "away_id": "2", "home_starter_id": "99",
+                "home_starter_name": "Observed", "away_starter_id": "199",
+                "away_starter_name": "Away observed"},
+        "evidence": {"bucket": "b", "key": "date=2026-08-03/predictions.parquet",
+                     "version_id": "v1", "stored_at": "2026-08-03T19:45:00Z",
+                     "sha256": "a"*64}}]
+    table, *_ = build(bundle)
+    row = table.to_pylist()[-1]
+    assert row["home_starter_id"] == "99"
+    assert row["home_starter_status"] == "observed_versioned_t10"
+    assert row["pregame_evidence"] == "versioned_ks1_t10_prediction"
+    assert row["pregame_version_id"] == "v1"
+    assert row["as_of_timestamp"] == "2026-08-03T19:40:00Z"
+
+
+def test_verified_historical_pitcher_summary_accelerates_without_inventing_identity():
+    bundle = fixture()
+    snapshot = {"version": V8_SNAPSHOT_VERSION,
+                "authority": "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY",
+                "officialGamePk": "3", "predictionLockAtUtc": "2026-08-03T19:15:00Z",
+                "trainingEligible": True, "pointInTimeVerified": True,
+                "postgameFieldsExcluded": True, "sameDayResultsExcluded": True,
+                "targetGameOutcomeUsed": False, "selectionUsedOutcomes": False,
+                "productionAuthorityChanged": False,
+                "featureAvailabilityMode": {"pitchers": "strict_prior_projection"},
+                "home": {"starterQuality": -3.2, "starterCommand": 18.0},
+                "away": {"starterQuality": -4.1, "starterCommand": 12.0}}
+    snapshot["fingerprint"] = hashlib.sha256(encode(snapshot)).hexdigest()
+    manifest = {"version": V8_MANIFEST_VERSION, "authority": snapshot["authority"],
+                "productionAuthorityChanged": False,
+                "selectionUsedOutcomes": False, "eligibleGameCount": 1,
+                "records": [{"officialGamePk": "3", "commenceTime": "2026-08-03T20:00:00Z",
+                             "predictionLockAtUtc": "2026-08-03T19:15:00Z",
+                             "homeTeam": "Home", "awayTeam": "Away",
+                             "trainingEligible": True, "snapshot": snapshot}]}
+    manifest["manifestDigest"] = hashlib.sha256(encode(manifest)).hexdigest()
+    bundle["historical_pitcher_context"] = historical_context_index(
+        manifest, {"bucket": "archive", "key": "manifest", "sha256": "b"*64})
+    table, *_ = build(bundle)
+    row = table.to_pylist()[-1]
+    assert row["home_starter_id"] is None
+    assert row["home_pitcher_context_quality"] == -3.2
+    assert row["historical_pitcher_context_mode"] == "strict_prior_projection"
+    assert row["as_of_timestamp"] == "2026-08-03T19:50:00+00:00"
 
 
 class MemoryS3:
