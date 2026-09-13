@@ -352,9 +352,12 @@ class Features:
         last_three_pairs = sorted(starts, key=lambda item: item[0], reverse=True)[:3]
         last_three_complete = len(last_three_pairs) == 3
         last_three = [stats for _, _, stats in last_three_pairs] if last_three_complete else []
-        # On opening day all three retained starts can be from the prior
-        # season, while the current-season league baseline is still empty.
-        last_three_league = prior_league_pitch if last_three and not eligible else league_pitch
+        # A pitcher's season debut can occur after other current-season games.
+        # Select the shrinkage baseline from the starts themselves, not the
+        # league-wide current-season history.
+        prior_only = (last_three_complete and
+                      all(start.year == date.year-1 for start, _, _ in last_three_pairs))
+        last_three_league = prior_league_pitch if prior_only else league_pitch
         last_three_box = pitching(last_three, last_three_league)
         for name, value in last_three_box.items():
             result[f"starter_{name}_last3"] = value if starter_id and last_three_complete else None

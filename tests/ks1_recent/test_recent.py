@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 from ks1.features import Features, pitching
 from ks1.retrain_recent import accepted, choose_features, completion_times, split_recent
+from ks1.train import artifact_write_authorized
 from tests.ks1.test_game_table import game
 
 
@@ -11,11 +12,32 @@ def test_recent_validation_credentials_are_restricted_to_trusted_branch():
     path = Path(__file__).resolve().parents[2]/'.github/workflows/ks1-retrain-recent.yml'
     workflow_text = path.read_text()
     assert 'github.event.pull_request.head.repo.full_name == github.repository' in workflow_text
-    assert "github.head_ref == 'codex/ks1-starter-followup-20260913'" in workflow_text
+    assert "github.head_ref == 'codex/ks1-starter-postmerge-repairs-20260913'" in workflow_text
     assert "github.event_name == 'schedule'" in workflow_text
     assert "github.event_name == 'workflow_dispatch'" in workflow_text
     assert "github.ref == 'refs/heads/main'" in workflow_text
     assert 'cancel-in-progress: true' in workflow_text
+
+
+@pytest.mark.parametrize(('event', 'ref', 'head', 'authorized'), [
+    ('schedule', 'refs/heads/main', '', True),
+    ('workflow_dispatch', 'refs/heads/main', '', True),
+    ('push', 'refs/heads/main', '', False),
+    ('pull_request', 'refs/pull/1/merge',
+     'codex/ks1-starter-postmerge-repairs-20260913', True),
+    ('pull_request', 'refs/pull/2/merge', 'untrusted', False),
+])
+def test_challenger_artifact_write_authority(monkeypatch, event, ref, head, authorized):
+    values = {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': 'KirtKurt/parlay-platform',
+              'GITHUB_WORKFLOW_REF': ('KirtKurt/parlay-platform/.github/workflows/'
+                                      'ks1-retrain-recent.yml@refs/heads/main'),
+              'GITHUB_EVENT_NAME': event, 'GITHUB_REF': ref, 'GITHUB_HEAD_REF': head}
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+    assert artifact_write_authorized() is authorized
+    monkeypatch.setenv('GITHUB_WORKFLOW_REF',
+                       'KirtKurt/parlay-platform/.github/workflows/other.yml@refs/heads/main')
+    assert artifact_write_authorized() is False
 
 
 def test_seven_day_calendar_boundary_and_future_exclusion():
@@ -175,10 +197,17 @@ def test_opening_day_last_three_uses_prior_year_league_baseline():
 
     feature = Features(games).at(
         '2026-04-01T19:50:00Z', '1', '99', game_date='2026-04-01')
+    unrelated = {**stats, 'hits': 15, 'baseOnBalls': 8, 'strikeOuts': 1,
+                 'battersFaced': 30}
+    after_other_teams_play = Features([
+        *games, full_game(4, '2026-03-20', 199, unrelated)
+    ]).at('2026-04-01T19:50:00Z', '1', '99', game_date='2026-04-01')
 
     assert feature['starter_starts_observed_last3'] == 3
     assert feature['starter_whip_last3'] is not None
     assert feature['starter_k_bb_pct_last3'] is not None
+    assert after_other_teams_play['starter_whip_last3'] == feature['starter_whip_last3']
+    assert after_other_teams_play['starter_k_bb_pct_last3'] == feature['starter_k_bb_pct_last3']
 
 
 def test_calendar_windows_cross_new_year_without_using_same_day_results():
@@ -194,6 +223,7 @@ def test_calendar_windows_cross_new_year_without_using_same_day_results():
 def test_split_has_no_overlap_and_requires_labels_and_counts():
     rows = [{'game_id': str(i), 'date': '2026-08-31' if i < 500 else '2026-09-01',
              'home_win': i % 2, 'home_score': 3, 'away_score': 2,
+             'as_of_timestamp': '2026-08-31T20:00:00Z' if i < 500 else '2026-09-01T19:50:00Z',
              'label_completed_at': '2026-08-31T23:00:00Z' if i < 500 else '2026-09-02T02:00:00Z'} for i in range(800)]
     frame = pd.DataFrame(rows)
     frame.loc[0, 'label_completed_at'] = '2026-08-31T23:00:00.123456+00:00'
@@ -250,6 +280,7 @@ def test_promotion_requires_both_probability_metrics_and_same_sufficient_cohort(
 def test_evaluation_uses_only_the_latest_300_eligible_games():
     rows = [{'game_id': str(i), 'date': '2026-08-31' if i < 500 else '2026-09-01',
              'home_win': i % 2, 'home_score': 3, 'away_score': 2,
+             'as_of_timestamp': '2026-08-31T20:00:00Z' if i < 500 else '2026-09-01T19:50:00Z',
              'label_completed_at': '2026-08-31T23:00:00Z' if i < 500 else '2026-09-02T02:00:00Z'}
             for i in range(850)]
     _, test = split_recent(pd.DataFrame(rows))
@@ -260,9 +291,11 @@ def test_evaluation_uses_only_the_latest_300_eligible_games():
 def test_latest_300_are_ordered_by_completion_not_game_id():
     training = [{'game_id': str(i), 'date': '2026-08-31', 'home_win': i % 2,
                  'home_score': 3, 'away_score': 2,
+                 'as_of_timestamp': '2026-08-31T20:00:00Z',
                  'label_completed_at': '2026-08-31T23:00:00Z'} for i in range(500)]
     holdout = [{'game_id': f'test-{300-i:03d}', 'date': '2026-09-01', 'home_win': i % 2,
                 'home_score': 3, 'away_score': 2,
+                'as_of_timestamp': '2026-09-01T19:50:00Z',
                 'label_completed_at': (pd.Timestamp('2026-09-02T00:00:00Z')+
                                        pd.Timedelta(minutes=i)).isoformat()}
                for i in range(301)]
@@ -280,6 +313,8 @@ def test_rolling_split_allows_mature_prospective_rows_into_training():
         rows.append({'game_id': str(i),
                      'date': '2026-08-31' if i < 500 else '2026-09-01',
                      'home_win': i % 2, 'home_score': 3, 'away_score': 2,
+                     'as_of_timestamp': (start+pd.Timedelta(minutes=i)-
+                                         pd.Timedelta(seconds=30)).isoformat(),
                      'label_completed_at': (start+pd.Timedelta(minutes=i)).isoformat()})
 
     train, test = split_recent(pd.DataFrame(rows))
@@ -288,15 +323,38 @@ def test_rolling_split_allows_mature_prospective_rows_into_training():
     assert (train.date >= '2026-09-01').sum() == 100
 
 
+def test_training_labels_stop_before_first_holdout_prediction():
+    early = [{'game_id': str(i), 'date': '2026-08-31', 'home_win': i % 2,
+              'home_score': 3, 'away_score': 2,
+              'as_of_timestamp': '2026-08-31T17:50:00Z',
+              'label_completed_at': '2026-08-31T18:00:00Z'} for i in range(500)]
+    overlapping = {'game_id': 'overlapping-result', 'date': '2026-09-01',
+                   'home_win': 1, 'home_score': 3, 'away_score': 2,
+                   'as_of_timestamp': '2026-09-01T18:00:00Z',
+                   'label_completed_at': '2026-09-01T20:30:00Z'}
+    holdout = [{'game_id': f'holdout-{i:03d}', 'date': '2026-09-01',
+                'home_win': i % 2, 'home_score': 3, 'away_score': 2,
+                'as_of_timestamp': '2026-09-01T20:00:00Z',
+                'label_completed_at': '2026-09-01T23:00:00Z'} for i in range(300)]
+
+    train, test = split_recent(pd.DataFrame([*early, overlapping, *holdout]))
+
+    assert len(train) == 500 and len(test) == 300
+    assert 'overlapping-result' not in set(train.game_id)
+
+
 def test_evaluation_excludes_labels_without_official_completion_time():
     training = [{'game_id': str(i), 'date': '2026-08-31', 'home_win': i % 2,
                  'home_score': 3, 'away_score': 2,
+                 'as_of_timestamp': '2026-08-31T20:00:00Z',
                  'label_completed_at': '2026-08-31T23:00:00Z'} for i in range(500)]
     holdout = [{'game_id': f'test-{i:03d}', 'date': '2026-09-01', 'home_win': i % 2,
                 'home_score': 3, 'away_score': 2,
+                'as_of_timestamp': '2026-09-01T19:50:00Z',
                 'label_completed_at': '2026-09-02T02:00:00Z'} for i in range(300)]
     missing = {'game_id': 'missing-completion', 'date': '2026-09-01', 'home_win': 1,
-               'home_score': 3, 'away_score': 2, 'label_completed_at': None}
+               'home_score': 3, 'away_score': 2,
+               'as_of_timestamp': '2026-09-01T19:50:00Z', 'label_completed_at': None}
 
     _, test = split_recent(pd.DataFrame([*training, *holdout, missing]))
 
@@ -307,6 +365,7 @@ def test_evaluation_excludes_labels_without_official_completion_time():
 def test_august_game_completed_after_holdout_start_cannot_train():
     rows = [{'game_id': str(i), 'date': '2026-08-31' if i < 501 else '2026-09-01',
              'home_win': i % 2, 'home_score': 3, 'away_score': 2,
+             'as_of_timestamp': '2026-08-31T20:00:00Z' if i < 501 else '2026-09-01T19:50:00Z',
              'label_completed_at': '2026-08-31T23:00:00Z' if i < 500 else '2026-09-02T02:00:00Z'} for i in range(801)]
     train, test = split_recent(pd.DataFrame(rows))
     assert len(train) == 500 and len(test) == 300

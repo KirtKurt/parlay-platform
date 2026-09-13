@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss
 
-from ks1.features import ET, Features, MATCHUP_METRICS
+from ks1.features import Features, MATCHUP_METRICS
 from ks1.inventory import encode
 from ks1.sources import aws_clients, load_existing
 from ks1.table import build, contract
@@ -35,20 +35,23 @@ def split_recent(frame):
     if not set(labeled.home_win.unique()).issubset({True, False, 0, 1}):
         raise ValueError('invalid labels')
     completed = completion_times(labeled.label_completed_at)
-    eligible = labeled.loc[completed.notna()].assign(
-        _label_completed_at=completed.loc[completed.notna()]
+    predicted = completion_times(labeled.as_of_timestamp)
+    valid = completed.notna() & predicted.notna() & (predicted < completed)
+    eligible = labeled.loc[valid].assign(
+        _label_completed_at=completed.loc[valid],
+        _prediction_at=predicted.loc[valid],
     ).sort_values(['_label_completed_at', 'game_id'])
     if len(eligible) < MIN_TRAIN + MIN_TEST:
         raise ValueError('insufficient chronological train/test games')
     test = eligible.tail(EVALUATION_GAMES)
-    boundary = test['_label_completed_at'].min()
-    # Labels completing at the first holdout timestamp are not available before
-    # the holdout begins, even if game_id provides a deterministic display order.
+    boundary = test['_prediction_at'].min()
+    # No training label may become available after the first held-out feature
+    # vector was frozen, including overlapping games from the same slate.
     train = eligible.loc[eligible['_label_completed_at'] < boundary]
     if len(train) < MIN_TRAIN:
         raise ValueError('insufficient chronological train/test games')
-    train = train.drop(columns='_label_completed_at')
-    test = test.drop(columns='_label_completed_at')
+    train = train.drop(columns=['_label_completed_at', '_prediction_at'])
+    test = test.drop(columns=['_label_completed_at', '_prediction_at'])
     return train, test
 
 
@@ -122,6 +125,7 @@ def evaluate(frame, incumbent_bytes, output, proof):
     np.testing.assert_allclose(loaded.predict(test[features].astype(float)), predictions, atol=1e-12, rtol=0)
     report = {'system': 'KS1', 'split_date': test.date.min(),
               'split_completed_at': min(completion_times(test.label_completed_at)).isoformat(),
+              'split_prediction_at': min(completion_times(test.as_of_timestamp)).isoformat(),
               'train': {'start': train.date.min(), 'end': train.date.max(), 'games': len(train)},
               'test': {'start': test.date.min(), 'end': test.date.max(), 'games': len(test)},
               'candidate': candidate_metrics, 'incumbent': incumbent_metrics,
@@ -141,10 +145,10 @@ def evaluate(frame, incumbent_bytes, output, proof):
               'incumbent_sha256': hashlib.sha256(incumbent_bytes).hexdigest(),
               'input_table_sha256': proof['input_table_sha256'],
               'provider_calls': 0, 'prediction_writes': 0, 'official_ledger_writes': 0,
-              'limitations': ['Retrospective historical evaluation, not official live grades.',
+              'limitations': ['Rolling retrospective evaluation, not official live grades.',
                              'Prior box scores can include later scoring corrections.',
                              'Individual starter inputs require retained pregame identity and earlier pitcher boxes.',
-                             'September holdout is small; future performance remains unproven.']}
+                             'The trailing 300-game holdout does not establish future performance.']}
     (output/'metrics.json').write_bytes(encode(report))
     (output/'input_proof.json').write_bytes(encode(proof))
     (output/'feature_list.json').write_bytes(encode(features))
