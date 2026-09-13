@@ -20,6 +20,7 @@ def _signed(value, field):
 def context_manifest():
     snapshot = _signed({
         "authority": V8_AUTHORITY, "officialGamePk": "3",
+        "snapshotRole": "HISTORICAL_POINT_IN_TIME_RECONSTRUCTION_AT_T_MINUS_45",
         "predictionLockAtUtc": "2026-08-03T19:15:00Z",
         "trainingEligible": True, "pointInTimeVerified": True,
         "postgameFieldsExcluded": True, "sameDayResultsExcluded": True,
@@ -61,6 +62,23 @@ def test_historical_context_validates_and_retains_projection_mode():
     broken["records"][0]["snapshot"]["home"]["starterQuality"] = 999
     broken = _signed(broken, "manifestDigest")
     assert historical_context_index(broken, {}) == {}
+
+
+def test_signed_t_minus_45_role_exactly_recovers_omitted_commence_time():
+    value = context_manifest()
+    del value["records"][0]["commenceTime"]
+    value = _signed(value, "manifestDigest")
+    row = historical_context_index(value, {})["3"]
+    assert row["commence_time"] == "2026-08-03T20:00:00+00:00"
+    assert row["source"]["commence_time_derivation"] == "signed_t_minus_45_lock"
+
+    value = context_manifest()
+    del value["records"][0]["commenceTime"]
+    value["records"][0]["snapshot"]["snapshotRole"] = "UNKNOWN"
+    value["records"][0]["snapshot"] = _signed(
+        value["records"][0]["snapshot"], "fingerprint")
+    value = _signed(value, "manifestDigest")
+    assert historical_context_index(value, {}) == {}
 
 
 class Table:

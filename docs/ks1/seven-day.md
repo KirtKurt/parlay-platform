@@ -35,6 +35,8 @@ same-day results and target outcomes, preserve the immutable game/start/lock
 binding, and identify their pitcher availability mode as `confirmed_archive` or
 `strict_prior_projection` are admitted. The latter populate the shared pitcher
 summary contract but remain explicitly distinct from observed starter identity.
+When the signed V8 T-minus-45 snapshot projection omits `commenceTime`, its exact
+start is recovered only from that retained lock and signed snapshot role.
 Versioned KS1 prediction objects can supply real pregame starter IDs only when
 S3 version history proves the unchanged row was stored no later than T-10.
 

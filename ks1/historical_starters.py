@@ -129,8 +129,16 @@ def historical_context_index(manifest, pointer):
     for record in manifest.get("records", []):
         snapshot = record.get("snapshot") or {}
         pk = str(record.get("officialGamePk") or "")
-        start = record.get("commenceTime")
         lock = record.get("predictionLockAtUtc")
+        start = record.get("commenceTime") or snapshot.get("commenceTime")
+        start_derivation = "retained_commence_time"
+        if (not start and lock
+                and str(snapshot.get("snapshotRole") or "").endswith("_AT_T_MINUS_45")):
+            # The V8 manifest deliberately retains the immutable T-45 lock but
+            # its row projection omits commenceTime.  The signed role makes the
+            # inverse exact; no schedule or postgame record is consulted.
+            start = (utc(lock)+timedelta(minutes=45)).isoformat()
+            start_derivation = "signed_t_minus_45_lock"
         if not pk or not start or not lock or utc(lock) > utc(start)-timedelta(minutes=10):
             continue
         valid = (
@@ -161,7 +169,8 @@ def historical_context_index(manifest, pointer):
         result[pk] = {"game_id": pk, "commence_time": start, "as_of": lock,
                       "teams": {side: record.get(side+"Team") for side in ("home", "away")},
                       "identity_mode": mode, "sides": sides,
-                      "source": {**pointer, "source_type": "v8_point_in_time_pitcher_context"}}
+                      "source": {**pointer, "source_type": "v8_point_in_time_pitcher_context",
+                                 "commence_time_derivation": start_derivation}}
     return result
 
 
