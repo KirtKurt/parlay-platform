@@ -48,14 +48,13 @@ def pitcher_context(values):
     quality = first("starter_xera_30d", "starter_fip_30d", "starter_era_30d")
     recent_command = first("starter_k_bb_pct_last3")
     recent_result = first("starter_xera_last3", "starter_fip_last3", "starter_era_last3")
-    outs, starts = first("starter_outs_30d"), first("starter_appearances_30d")
     return {
         "quality": -quality if quality is not None else None,
         "recent_form": recent_command if recent_command is not None else (
             -recent_result if recent_result is not None else None),
         "velocity": first("starter_velocity_30d"),
         "command": first("starter_k_bb_pct_30d"),
-        "expected_innings": outs/(3*starts) if outs is not None and starts else None,
+        "expected_innings": first("starter_expected_innings_last5"),
     }
 
 
@@ -379,6 +378,12 @@ class Features:
                 result[f"starter_{name}_{window}d"] = value
         starts = [(r["start"], r["game_id"], p["stats"]) for r in completed for p in r["players"]
                   if p["id"] == starter_id and number(p["stats"].get("gamesStarted")) == 1]
+        last_five = sorted(starts, key=lambda item: item[0], reverse=True)[:5]
+        last_five_outs = [number(stats.get("outs")) for _, _, stats in last_five]
+        result["starter_expected_innings_last5"] = (
+            sum(last_five_outs)/(3*len(last_five_outs))
+            if starter_id and len(last_five_outs) == 5 and all(value is not None for value in last_five_outs)
+            else None)
         last_three_pairs = sorted(starts, key=lambda item: item[0], reverse=True)[:3]
         last_three_complete = len(last_three_pairs) == 3
         last_three = [stats for _, _, stats in last_three_pairs] if last_three_complete else []

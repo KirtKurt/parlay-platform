@@ -9,7 +9,8 @@ from botocore.exceptions import ClientError
 
 from ks1.features import Features, offense
 from ks1.inventory import encode
-from ks1.historical_starters import historical_context_index
+from ks1.historical_starters import (V8_MANIFEST_VERSION, V8_SNAPSHOT_VERSION,
+                                     historical_context_index)
 from ks1.publish import PREFIX, publish
 from ks1.table import build, market_for
 
@@ -174,7 +175,8 @@ def test_versioned_t10_prediction_supplies_pregame_starter_identity():
 
 def test_verified_historical_pitcher_summary_accelerates_without_inventing_identity():
     bundle = fixture()
-    snapshot = {"authority": "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY",
+    snapshot = {"version": V8_SNAPSHOT_VERSION,
+                "authority": "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY",
                 "officialGamePk": "3", "predictionLockAtUtc": "2026-08-03T19:15:00Z",
                 "trainingEligible": True, "pointInTimeVerified": True,
                 "postgameFieldsExcluded": True, "sameDayResultsExcluded": True,
@@ -184,7 +186,8 @@ def test_verified_historical_pitcher_summary_accelerates_without_inventing_ident
                 "home": {"starterQuality": -3.2, "starterCommand": 18.0},
                 "away": {"starterQuality": -4.1, "starterCommand": 12.0}}
     snapshot["fingerprint"] = hashlib.sha256(encode(snapshot)).hexdigest()
-    manifest = {"authority": snapshot["authority"], "productionAuthorityChanged": False,
+    manifest = {"version": V8_MANIFEST_VERSION, "authority": snapshot["authority"],
+                "productionAuthorityChanged": False,
                 "selectionUsedOutcomes": False, "eligibleGameCount": 1,
                 "records": [{"officialGamePk": "3", "commenceTime": "2026-08-03T20:00:00Z",
                              "predictionLockAtUtc": "2026-08-03T19:15:00Z",
@@ -198,6 +201,7 @@ def test_verified_historical_pitcher_summary_accelerates_without_inventing_ident
     assert row["home_starter_id"] is None
     assert row["home_pitcher_context_quality"] == -3.2
     assert row["historical_pitcher_context_mode"] == "strict_prior_projection"
+    assert row["as_of_timestamp"] == "2026-08-03T19:50:00+00:00"
 
 
 class MemoryS3:

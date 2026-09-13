@@ -136,9 +136,8 @@ def evaluate(frame, incumbent_bytes, output, proof):
     ablated = ablation.predict_proba(test[without_seven].astype(float))[:, 1]
     candidate_metrics, incumbent_metrics = metrics(y_test, predictions), metrics(y_test, old)
     context_features = [c for c in features if pitcher_context_feature(c)]
-    prospective = test.pregame_evidence.isin(
-        ('original_snapshot', 'versioned_ks1_t10_prediction')) & (
-            test.historical_pitcher_context_mode.isna())
+    prospective = test.pitcher_context_evidence.eq(
+        'frozen_versioned_ks1_profile') & test.historical_pitcher_context_mode.isna()
     prospective_context_rows = int((prospective
         & test.home_pitcher_context_quality.notna()
         & test.away_pitcher_context_quality.notna()).sum())

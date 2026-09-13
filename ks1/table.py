@@ -195,6 +195,7 @@ def build(bundle, selected_date=None):
                "pregame_version_id": None, "pregame_stored_at": None,
                "pregame_sha256": None,
                "historical_pitcher_context_mode": None,
+               "pitcher_context_evidence": None,
                "historical_pitcher_context_as_of": None,
                "historical_pitcher_context_source": None,
                "reconstructed_source": json.dumps(r.get("sourceArtifact"), sort_keys=True) if r else None}
@@ -295,6 +296,11 @@ def build(bundle, selected_date=None):
             values = starter_matchup(starter[0].get("pitchHand") if len(starter) == 1 else None,
                                      [p.get("batSide") for p in lineup] if len(lineup) == 9 else None)
             row.update({f"{side}_starter_{key}": value for key, value in values.items()})
+        if published.get("contexts"):
+            for side in ("home", "away"):
+                row.update({f"{side}_pitcher_context_{key}": value
+                            for key, value in published["contexts"][side].items()})
+            row["pitcher_context_evidence"] = "frozen_versioned_ks1_profile"
         context = historical_context.get(pk, {})
         context_matches = bool(
             context and utc(context.get("commence_time")) == utc(start)
@@ -312,6 +318,8 @@ def build(bundle, selected_date=None):
                                 for key, value in context["sides"][side].items()})
                     context_applied = True
             if context_applied:
+                row["as_of_timestamp"] = max(
+                    utc(row["as_of_timestamp"]), utc(context["as_of"])).isoformat()
                 row.update(historical_pitcher_context_mode=context["identity_mode"],
                            historical_pitcher_context_as_of=context["as_of"],
                            historical_pitcher_context_source=json.dumps(context["source"], sort_keys=True))

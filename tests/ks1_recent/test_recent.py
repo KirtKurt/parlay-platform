@@ -187,6 +187,19 @@ def test_last_three_is_fail_closed_when_only_two_starts_are_retained():
     feature = Features(games).at('2026-08-10T19:50:00Z', '1', '99', game_date='2026-08-10')
     assert feature['starter_starts_observed_last3'] == 2
     assert feature['starter_era_last3'] is None
+    assert feature['pitcher_context_expected_innings'] is None
+
+
+def test_expected_innings_uses_exactly_the_most_recent_five_starts():
+    stats = {'outs':18,'earnedRuns':2,'runs':3,'hits':4,'homeRuns':1,'baseOnBalls':2,
+             'hitBatsmen':1,'strikeOuts':7,'battersFaced':25,'wins':1,'losses':0,
+             'gamesStarted':1,'numberOfPitches':90}
+    games = [full_game(i, f'2026-07-{i:02d}', 99, {**stats, 'outs': 15+i})
+             for i in range(1, 7)]
+    feature = Features(games).at(
+        '2026-08-10T19:50:00Z', '1', '99', game_date='2026-08-10')
+    assert feature['pitcher_context_expected_innings'] == pytest.approx(
+        sum(15+i for i in range(2, 7))/15)
 
 
 def test_opening_day_last_three_uses_prior_year_league_baseline():
@@ -304,6 +317,7 @@ def test_promotion_requires_both_probability_metrics_and_same_sufficient_cohort(
 def test_historical_projection_is_not_prospective_promotion_coverage():
     source = Path(__file__).resolve().parents[2]/'ks1/retrain_recent.py'
     text = source.read_text()
+    assert "test.pitcher_context_evidence.eq(" in text
     assert "test.historical_pitcher_context_mode.isna()" in text
 
 

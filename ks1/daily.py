@@ -16,7 +16,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from ks1.features import Features, day, starter_matchup, utc
+from ks1.features import Features, day, pitcher_context, starter_matchup, utc
 from ks1.inventory import encode
 from ks1.poisson import home_probability, predict_exported
 from ks1.publish import parquet_bytes
@@ -425,9 +425,13 @@ def predict(folder, output):
             if not coverage['last3']:
                 side_values.update({key: None for key in side_values if key.startswith('starter_')
                                     and key.endswith('_last3')})
+                side_values['starter_expected_innings_last5'] = None
             if not coverage['prior_year']:
                 side_values.update({key: None for key in side_values if key.startswith('starter_')
                                     and (key.endswith('_prior_year') or key.endswith('_talent'))})
+            # Derive context only after source-completeness masking.
+            side_values.update({'pitcher_context_'+key: value
+                                for key, value in pitcher_context(side_values).items()})
             features.update({side+'_'+k: v for k, v in side_values.items()})
             opposing = 'away' if side == 'home' else 'home'
             bats = row.get('_'+opposing+'_lineup_bat_sides')

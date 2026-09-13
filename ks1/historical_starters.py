@@ -13,7 +13,7 @@ import re
 
 import pyarrow.parquet as pq
 
-from ks1.features import finite, utc
+from ks1.features import finite, pitcher_context, utc
 from ks1.inventory import encode
 
 V8_POINTER_PK = "MLB_V8_HISTORICAL_CONTEXT#V1"
@@ -23,6 +23,8 @@ V8_POINTER_TYPES = frozenset({
     "mlb_v8_historical_official_context_active_manifest_v3",
 })
 V8_AUTHORITY = "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY"
+V8_MANIFEST_VERSION = "MLB-V8-HISTORICAL-BBS-MANIFEST-v1"
+V8_SNAPSHOT_VERSION = "MLB-V8-HISTORICAL-BBS-FUNDAMENTALS-SNAPSHOT-v1"
 V8_MANIFEST_PREFIX = "mlb/v8/historical-context/manifests/"
 CONTEXT_FIELDS = {
     "starterQuality": "quality",
@@ -32,6 +34,49 @@ CONTEXT_FIELDS = {
     "starterExpectedInnings": "expected_innings",
 }
 KS1_PREDICTION_PREFIX = "mlb/ks1/predictions-v1/"
+KS1_STARTER_PROFILE_CONTRACT = "KS1-starter-profile-v2"
+
+
+def frozen_profile_context(row):
+    """Recover only checksum-bound pitcher values retained in a KS1 lock."""
+    raw = row.get("starter_profile_json")
+    if not raw:
+        return {}
+    try:
+        profile = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    claimed = profile.pop("sha256", None)
+    semantic_claimed = profile.get("semantic_sha256")
+    semantic = {key: value for key, value in profile.items()
+                if key not in ("as_of", "history_as_of", "semantic_sha256")}
+    valid = (
+        row.get("starter_profile_contract") == KS1_STARTER_PROFILE_CONTRACT
+        and profile.get("contract") == KS1_STARTER_PROFILE_CONTRACT
+        and row.get("starter_profile_sha256") == claimed
+        and row.get("starter_profile_semantic_sha256") == semantic_claimed
+        and hashlib.sha256(encode(semantic)).hexdigest() == semantic_claimed
+        and hashlib.sha256(encode(profile)).hexdigest() == claimed
+        and profile.get("as_of") == row.get("as_of")
+        and (not profile.get("history_as_of")
+             or utc(profile["history_as_of"]) <= utc(row["as_of"]))
+    )
+    if not valid:
+        return {}
+    result = {}
+    for side in ("home", "away"):
+        source = (profile.get("sides") or {}).get(side) or {}
+        if str(source.get("starter_id") or "") != str(row.get(side+"_starter_id") or ""):
+            return {}
+        metrics, statuses = source.get("metrics") or {}, source.get("window_statuses") or {}
+        safe = {}
+        for name, value in metrics.items():
+            if ((name.endswith("_30d") and statuses.get("30d") == "COMPLETE")
+                    or (name.endswith("_last3") and statuses.get("last3") == "COMPLETE")
+                    or (name == "expected_innings_last5" and statuses.get("last3") == "COMPLETE")):
+                safe["starter_"+name] = value
+        result[side] = pitcher_context(safe)
+    return result if all(result[side].get("quality") is not None for side in result) else {}
 
 
 def read_locked_predictions(s3, bucket, as_of, *, target_date=None):
@@ -106,7 +151,8 @@ def published_starter_index(entries):
             continue
         value = {"game_id": pk, "commence_time": start, "as_of": observed,
                  "teams": {side: str(row.get(side+"_id") or "") for side in ("home", "away")},
-                 "sides": sides, "source": {**proof, "source_type": "versioned_ks1_t10_prediction"}}
+                 "sides": sides, "contexts": frozen_profile_context(row),
+                 "source": {**proof, "source_type": "versioned_ks1_t10_prediction"}}
         previous = latest.get(pk)
         if previous is None or utc(value["as_of"]) >= utc(previous["as_of"]):
             latest[pk] = value
@@ -120,7 +166,8 @@ def _digest(value, excluded):
 
 def historical_context_index(manifest, pointer):
     """Validate and index V8's strictly point-in-time pitcher summaries."""
-    if (manifest.get("authority") != V8_AUTHORITY
+    if (manifest.get("version") != V8_MANIFEST_VERSION
+            or manifest.get("authority") != V8_AUTHORITY
             or manifest.get("productionAuthorityChanged") is not False
             or manifest.get("selectionUsedOutcomes") is not False
             or manifest.get("manifestDigest") != _digest(manifest, "manifestDigest")):
@@ -144,6 +191,7 @@ def historical_context_index(manifest, pointer):
         valid = (
             record.get("trainingEligible") is True
             and snapshot.get("trainingEligible") is True
+            and snapshot.get("version") == V8_SNAPSHOT_VERSION
             and snapshot.get("authority") == V8_AUTHORITY
             and str(snapshot.get("officialGamePk") or "") == pk
             and snapshot.get("predictionLockAtUtc") == lock
@@ -185,15 +233,15 @@ def load_active_historical_context(s3, table):
         raise ValueError("historical pitcher-context pointer authority mismatch")
     pointer = data.get("manifest") or {}
     bucket, key, expected = pointer.get("bucket"), pointer.get("key"), pointer.get("sha256")
-    if not bucket or not str(key).startswith(V8_MANIFEST_PREFIX) or len(str(expected or "")) != 64:
+    version = pointer.get("versionId")
+    if (not bucket or not str(key).startswith(V8_MANIFEST_PREFIX)
+            or len(str(expected or "")) != 64 or not version or version == "null"):
         raise ValueError("historical pitcher-context pointer incomplete")
-    request = {"Bucket": bucket, "Key": key}
-    if pointer.get("versionId"):
-        request["VersionId"] = pointer["versionId"]
+    request = {"Bucket": bucket, "Key": key, "VersionId": version}
     response = s3.get_object(**request)
     body = response["Body"].read()
     actual = hashlib.sha256(body).hexdigest()
-    if actual != expected:
+    if actual != expected or response.get("VersionId") != version:
         raise ValueError("historical pitcher-context checksum mismatch")
     manifest = json.loads(body)
     proof = {"bucket": bucket, "key": key, "version_id": response.get("VersionId") or pointer.get("versionId"),

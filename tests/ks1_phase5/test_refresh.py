@@ -155,6 +155,23 @@ def test_unchanged_poll_reuses_every_row_and_parquet_bytes_without_inference(cap
     assert all(r['status'] == 'confirmed_lineups' for r in second.to_pylist())
 
 
+def test_incomplete_pitcher_history_masks_derived_context(capture, monkeypatch):
+    folder, output, _, _ = capture
+    seen = []
+    class ContextClassifier:
+        def feature_name(self):
+            return ['home_pitcher_context_quality', 'away_pitcher_context_quality']
+
+        def predict(self, values):
+            seen.append(values.copy())
+            return np.full(len(values), .5)
+
+    monkeypatch.setattr(daily.lgb, 'Booster', lambda **kwargs: ContextClassifier())
+    daily.predict(folder, output)
+    assert len(seen) == 1
+    assert seen[0].isna().all().all()
+
+
 def test_profile_semantics_refresh_but_audit_timestamp_does_not():
     row = {'game_id': '1', 'starter_profile_semantic_sha256': 'semantic-one',
            'starter_profile_sha256': 'full-one', 'starter_profile_json': '{"as_of":"one"}',

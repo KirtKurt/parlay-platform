@@ -5,8 +5,9 @@ import json
 import pytest
 
 from ks1.historical_starters import (
-    V8_AUTHORITY, historical_context_index, load_active_historical_context,
-    published_starter_index,
+    KS1_STARTER_PROFILE_CONTRACT, V8_AUTHORITY, V8_MANIFEST_VERSION,
+    V8_SNAPSHOT_VERSION, frozen_profile_context, historical_context_index,
+    load_active_historical_context, published_starter_index,
 )
 from ks1.inventory import encode
 
@@ -19,7 +20,7 @@ def _signed(value, field):
 
 def context_manifest():
     snapshot = _signed({
-        "authority": V8_AUTHORITY, "officialGamePk": "3",
+        "version": V8_SNAPSHOT_VERSION, "authority": V8_AUTHORITY, "officialGamePk": "3",
         "snapshotRole": "HISTORICAL_POINT_IN_TIME_RECONSTRUCTION_AT_T_MINUS_45",
         "predictionLockAtUtc": "2026-08-03T19:15:00Z",
         "trainingEligible": True, "pointInTimeVerified": True,
@@ -33,7 +34,8 @@ def context_manifest():
                  "starterExpectedInnings": 5.1},
     }, "fingerprint")
     return _signed({
-        "authority": V8_AUTHORITY, "productionAuthorityChanged": False,
+        "version": V8_MANIFEST_VERSION, "authority": V8_AUTHORITY,
+        "productionAuthorityChanged": False,
         "selectionUsedOutcomes": False, "eligibleGameCount": 1,
         "records": [{"officialGamePk": "3", "commenceTime": "2026-08-03T20:00:00Z",
                      "predictionLockAtUtc": "2026-08-03T19:15:00Z",
@@ -51,6 +53,33 @@ def test_published_index_requires_versioned_storage_before_t10():
     assert published_starter_index([entry])["3"]["sides"]["home"]["id"] == "99"
     entry["evidence"]["stored_at"] = "2026-08-03T19:50:01Z"
     assert published_starter_index([entry]) == {}
+
+
+def test_frozen_profile_context_requires_bound_complete_profile():
+    profile = {
+        "contract": KS1_STARTER_PROFILE_CONTRACT,
+        "as_of": "2026-08-03T19:40:00Z",
+        "history_as_of": "2026-08-03T19:30:00Z",
+        "coverage": {},
+        "sides": {
+            side: {"starter_id": pid, "metrics": {"fip_30d": fip,
+                    "k_bb_pct_30d": 18.0, "velocity_30d": 95.0},
+                   "window_statuses": {"30d": "COMPLETE", "last3": "SOURCE_INCOMPLETE"}}
+            for side, pid, fip in (("home", "99", 3.2), ("away", "199", 4.1))
+        },
+    }
+    semantic = {key: value for key, value in profile.items()
+                if key not in ("as_of", "history_as_of")}
+    profile["semantic_sha256"] = hashlib.sha256(encode(semantic)).hexdigest()
+    profile["sha256"] = hashlib.sha256(encode(profile)).hexdigest()
+    row = {"as_of": profile["as_of"], "home_starter_id": "99", "away_starter_id": "199",
+           "starter_profile_contract": KS1_STARTER_PROFILE_CONTRACT,
+           "starter_profile_sha256": profile["sha256"],
+           "starter_profile_semantic_sha256": profile["semantic_sha256"],
+           "starter_profile_json": encode(profile).decode()}
+    assert frozen_profile_context(row)["home"]["quality"] == -3.2
+    row["away_starter_id"] = "tampered"
+    assert frozen_profile_context(row) == {}
 
 
 def test_historical_context_validates_and_retains_projection_mode():
@@ -111,4 +140,8 @@ def test_active_manifest_read_is_version_and_checksum_bound():
     assert proof["version_id"] == "manifest-version"
     item["data"]["manifest"]["sha256"] = "0"*64
     with pytest.raises(ValueError, match="checksum"):
+        load_active_historical_context(S3(body), Table(item))
+    item["data"]["manifest"]["sha256"] = hashlib.sha256(body).hexdigest()
+    item["data"]["manifest"]["versionId"] = None
+    with pytest.raises(ValueError, match="incomplete"):
         load_active_historical_context(S3(body), Table(item))
