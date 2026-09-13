@@ -261,6 +261,22 @@ def test_latest_300_are_ordered_by_completion_not_game_id():
     assert 'test-000' in set(test.game_id)
 
 
+def test_evaluation_excludes_labels_without_official_completion_time():
+    training = [{'game_id': str(i), 'date': '2026-08-31', 'home_win': i % 2,
+                 'home_score': 3, 'away_score': 2,
+                 'label_completed_at': '2026-08-31T23:00:00Z'} for i in range(500)]
+    holdout = [{'game_id': f'test-{i:03d}', 'date': '2026-09-01', 'home_win': i % 2,
+                'home_score': 3, 'away_score': 2,
+                'label_completed_at': '2026-09-02T02:00:00Z'} for i in range(300)]
+    missing = {'game_id': 'missing-completion', 'date': '2026-09-01', 'home_win': 1,
+               'home_score': 3, 'away_score': 2, 'label_completed_at': None}
+
+    _, test = split_recent(pd.DataFrame([*training, *holdout, missing]))
+
+    assert len(test) == 300
+    assert 'missing-completion' not in set(test.game_id)
+
+
 def test_august_game_completed_after_holdout_start_cannot_train():
     rows = [{'game_id': str(i), 'date': '2026-08-31' if i < 501 else '2026-09-01',
              'home_win': i % 2, 'home_score': 3, 'away_score': 2,
