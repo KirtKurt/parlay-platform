@@ -18,8 +18,9 @@ from ks1.train import PARAMS, select_features, save_artifact
 # Fixed before inspecting results. No holdout refit or hyperparameter search.
 SPLIT_DATE = '2026-09-01'
 MIN_TRAIN = 500
-MIN_TEST = 100
-MIN_STARTER_ROWS = 100
+EVALUATION_GAMES = 300
+MIN_TEST = EVALUATION_GAMES
+MIN_STARTER_ROWS = EVALUATION_GAMES
 
 
 def split_recent(frame):
@@ -33,9 +34,10 @@ def split_recent(frame):
     completed = pd.to_datetime(labeled.label_completed_at, format='ISO8601', utc=True, errors='raise')
     boundary = pd.Timestamp(SPLIT_DATE, tz=ET).tz_convert('UTC')
     train = labeled.loc[(labeled.date < SPLIT_DATE) & (completed < boundary)].sort_values(['date', 'game_id'])
-    test = labeled.loc[labeled.date >= SPLIT_DATE].sort_values(['date', 'game_id'])
-    if len(train) < MIN_TRAIN or len(test) < MIN_TEST:
+    eligible_test = labeled.loc[labeled.date >= SPLIT_DATE].sort_values(['date', 'game_id'])
+    if len(train) < MIN_TRAIN or len(eligible_test) < MIN_TEST:
         raise ValueError('insufficient chronological train/test games')
+    test = eligible_test.tail(EVALUATION_GAMES)
     return train, test
 
 
@@ -113,7 +115,8 @@ def evaluate(frame, incumbent_bytes, output, proof):
               'candidate': candidate_metrics, 'incumbent': incumbent_metrics,
               'without_seven_day': metrics(y_test, ablated),
               'accepted': accepted(candidate_metrics, incumbent_metrics),
-              'promotion_rule': 'strictly lower Brier and no worse logloss than incumbent on identical September holdout',
+              'promotion_rule': 'strictly lower Brier and no worse logloss than incumbent on identical trailing 300-game holdout',
+              'evaluation_window_games': EVALUATION_GAMES,
               'features': features, 'omitted_features': omitted,
               'individual_starter_training_rows': coverage,
               'individual_starter_features_learned': [c for c in features if individual_feature(c)],

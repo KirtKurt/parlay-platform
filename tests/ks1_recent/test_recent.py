@@ -191,11 +191,11 @@ def test_calendar_windows_cross_new_year_without_using_same_day_results():
 def test_split_has_no_overlap_and_requires_labels_and_counts():
     rows = [{'game_id': str(i), 'date': '2026-08-31' if i < 500 else '2026-09-01',
              'home_win': i % 2, 'home_score': 3, 'away_score': 2,
-             'label_completed_at': '2026-08-31T23:00:00Z' if i < 500 else '2026-09-02T02:00:00Z'} for i in range(600)]
+             'label_completed_at': '2026-08-31T23:00:00Z' if i < 500 else '2026-09-02T02:00:00Z'} for i in range(800)]
     frame = pd.DataFrame(rows)
     frame.loc[0, 'label_completed_at'] = '2026-08-31T23:00:00.123456+00:00'
     train, test = split_recent(frame)
-    assert len(train) == 500 and len(test) == 100
+    assert len(train) == 500 and len(test) == 300
     assert train.date.max() < test.date.min()
     with pytest.raises(ValueError, match='duplicate'):
         split_recent(pd.concat([frame, frame.iloc[:1]]))
@@ -215,7 +215,7 @@ def test_no_individual_starter_learning_from_unobserved_ids_or_prior_only():
 
 
 def test_sparse_advanced_starter_feature_is_not_learned_from_too_few_rows():
-    n = 100
+    n = 300
     frame = pd.DataFrame({'home_offense_ops_7d': [0.5+i/1000 for i in range(n)],
                           'home_starter_id': [str(i) for i in range(n)],
                           'away_starter_id': [str(i+n) for i in range(n)],
@@ -228,19 +228,29 @@ def test_sparse_advanced_starter_feature_is_not_learned_from_too_few_rows():
 
 
 def test_promotion_requires_both_probability_metrics_and_same_sufficient_cohort():
-    old = {'games': 100, 'brier': .24, 'logloss': .68}
-    assert accepted({'games': 100, 'brier': .23, 'logloss': .67}, old)
-    assert not accepted({'games': 100, 'brier': .23, 'logloss': .69}, old)
+    old = {'games': 300, 'brier': .24, 'logloss': .68}
+    assert accepted({'games': 300, 'brier': .23, 'logloss': .67}, old)
+    assert not accepted({'games': 300, 'brier': .23, 'logloss': .69}, old)
     assert not accepted(old, old)
-    assert not accepted({'games': 99, 'brier': .23, 'logloss': .67}, old)
+    assert not accepted({'games': 299, 'brier': .23, 'logloss': .67}, old)
+
+
+def test_evaluation_uses_only_the_latest_300_eligible_games():
+    rows = [{'game_id': str(i), 'date': '2026-08-31' if i < 500 else '2026-09-01',
+             'home_win': i % 2, 'home_score': 3, 'away_score': 2,
+             'label_completed_at': '2026-08-31T23:00:00Z' if i < 500 else '2026-09-02T02:00:00Z'}
+            for i in range(850)]
+    _, test = split_recent(pd.DataFrame(rows))
+    assert len(test) == 300
+    assert set(test.game_id) == {str(i) for i in range(550, 850)}
 
 
 def test_august_game_completed_after_holdout_start_cannot_train():
     rows = [{'game_id': str(i), 'date': '2026-08-31' if i < 501 else '2026-09-01',
              'home_win': i % 2, 'home_score': 3, 'away_score': 2,
-             'label_completed_at': '2026-08-31T23:00:00Z' if i < 500 else '2026-09-02T02:00:00Z'} for i in range(601)]
+             'label_completed_at': '2026-08-31T23:00:00Z' if i < 500 else '2026-09-02T02:00:00Z'} for i in range(801)]
     train, test = split_recent(pd.DataFrame(rows))
-    assert len(train) == 500 and len(test) == 100
+    assert len(train) == 500 and len(test) == 300
     assert '500' not in set(train.game_id)
 
 
