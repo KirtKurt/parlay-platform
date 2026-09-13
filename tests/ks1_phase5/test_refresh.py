@@ -168,6 +168,24 @@ def test_profile_semantics_refresh_but_audit_timestamp_does_not():
     assert fingerprint(changed, features, {'market_home_prob'}) != first
 
 
+def test_profile_window_is_not_complete_when_exact_pitch_coverage_is_partial():
+    row = {'starter_source': 'official_MLB_probable_pitcher',
+           '_pitcher_history_coverage': {'7d': True},
+           'home_starter_id': '101', 'home_starter_name': 'Home Starter',
+           'home_starter_status': 'RESOLVED',
+           'away_starter_id': '102', 'away_starter_name': 'Away Starter',
+           'away_starter_status': 'RESOLVED'}
+    features = {
+        'home_starter_appearances_7d': 1, 'home_starter_complete_7d': 0,
+        'away_starter_appearances_7d': 1, 'away_starter_complete_7d': 0,
+    }
+
+    profile = daily.starter_profile(row, features, AT, AT)
+
+    assert profile['sides']['home']['window_statuses']['7d'] == 'SOURCE_INCOMPLETE'
+    assert profile['sides']['away']['window_statuses']['7d'] == 'SOURCE_INCOMPLETE'
+
+
 def start_adjusted_inputs(folder):
     official = json.loads((folder/'official.json').read_bytes())['payload']
     games = official['dates'][0]['games']

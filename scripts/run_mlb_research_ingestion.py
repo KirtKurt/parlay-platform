@@ -14,6 +14,39 @@ from mlb_research_dataset_v1 import publish_dataset
 import mlb_research_sources_v1 as source
 
 
+def cached_statcast(store,value,expected,deadline):
+    """Return a date only when its cached game set matches today's final set."""
+    if not expected:
+        return [],None
+    primary=f'sources/statcast-v2/{value}.json'
+    cached=store.get(primary)
+    actual={source.count(r['game_pk']) for r in cached.get('rows',[])} if cached else set()
+    if cached and actual!=expected:
+        # A suspended/late-final game can expand the expected set after the
+        # immutable daily object was written. Preserve it for audit and use a
+        # game-set-addressed revision instead of pretending it is complete.
+        key=f'sources/statcast-v2-revisions/{value}/{digest(sorted(expected))}.json'
+        cached=store.get(key)
+    else:
+        key=primary
+    if not cached:
+        if time.monotonic()>deadline:
+            raise TimeoutError('ingestion time budget reached')
+        fetched=source.statcast(value)
+        actual={source.count(r['game_pk']) for r in fetched['rows']}
+        if actual!=expected:
+            return [],{'date':value,'source':'statcast','error':'COVERAGE_MISMATCH',
+                       'expectedGameCount':len(expected),'observedGameCount':len(actual),
+                       'missingGameIds':sorted(expected-actual),'extraGameIds':sorted(actual-expected)}
+        cached=store.once(key,fetched)
+    actual={source.count(r['game_pk']) for r in cached.get('rows',[])}
+    if actual!=expected:
+        return [],{'date':value,'source':'statcast','error':'COVERAGE_MISMATCH',
+                   'expectedGameCount':len(expected),'observedGameCount':len(actual),
+                   'missingGameIds':sorted(expected-actual),'extraGameIds':sorted(actual-expected)}
+    return cached['rows'],None
+
+
 def discovery_summary(store):
     pointer=store.get('feature-discovery.json')
     if not pointer or not pointer.get('artifact'):
@@ -102,23 +135,9 @@ def ingest(store,seconds=2400):
                 expected_by_date[game_day].add(source.count(game['gamePk']))
         def prepare_statcast(value):
             expected=expected_by_date[value]
-            if not expected:
-                return value,[],None
-            # v2 retains contact, discipline, movement, spin and arsenal fields;
-            # do not reuse the narrower v1 daily cache under the new contract.
-            key=f'sources/statcast-v2/{value}.json'
             try:
-                cached=store.get(key)
-                if not cached:
-                    if time.monotonic()>deadline: raise TimeoutError('ingestion time budget reached')
-                    fetched=source.statcast(value)
-                    actual={source.count(r['game_pk']) for r in fetched['rows']}
-                    if actual!=expected:
-                        return value,[],{'date':value,'source':'statcast','error':'COVERAGE_MISMATCH',
-                                          'expectedGameCount':len(expected),'observedGameCount':len(actual),
-                                          'missingGameIds':sorted(expected-actual),'extraGameIds':sorted(actual-expected)}
-                    cached=store.once(key,fetched)
-                return value,cached['rows'],None
+                rows,error=cached_statcast(store,value,expected,deadline)
+                return value,rows,error
             except Exception as exc:
                 return value,[],{'date':value,'source':'statcast','error':type(exc).__name__}
         statcast_by_date={};complete_dates=set()

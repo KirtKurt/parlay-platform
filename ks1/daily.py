@@ -70,19 +70,24 @@ def starter_profile(row, features, as_of, history_as_of):
                              if value is None and any(name in key for name in
                                 ('xera', 'siera', 'stuff_plus', 'location_plus',
                                  'pitching_plus', 'active_spin_pct')))
+        def window_status(window):
+            if row[side+'_starter_id'] is None:
+                return 'MISSING_STARTER'
+            if not row.get('_pitcher_history_coverage', {}).get(window):
+                return 'SOURCE_INCOMPLETE'
+            observed = (metrics.get('starts_observed_last3') == 3 if window == 'last3'
+                        else (metrics.get('appearances_'+window) or 0) > 0)
+            if not observed:
+                return 'NO_APPEARANCES_OR_INCOMPLETE'
+            return ('COMPLETE' if metrics.get('complete_'+window) == 1
+                    else 'SOURCE_INCOMPLETE')
         profile['sides'][side] = {
             'starter_id': row[side+'_starter_id'],
             'starter_name': row[side+'_starter_name'],
             'starter_status': row[side+'_starter_status'],
             'metrics': metrics,
-            'window_statuses': {
-                window: ('MISSING_STARTER' if row[side+'_starter_id'] is None
-                         else 'SOURCE_INCOMPLETE' if not row.get('_pitcher_history_coverage', {}).get(window)
-                         else 'COMPLETE' if (metrics.get('starts_observed_last3') == 3 if window == 'last3'
-                                             else (metrics.get('appearances_'+window) or 0) > 0)
-                         else 'NO_APPEARANCES_OR_INCOMPLETE')
-                for window in ('7d', '30d', 'last3', 'prior_year')
-            },
+            'window_statuses': {window: window_status(window)
+                                for window in ('7d', '30d', 'last3', 'prior_year')},
             'unavailable_exact_metrics': unavailable,
         }
     semantic = {key: value for key, value in profile.items() if key not in ('as_of', 'history_as_of')}

@@ -1,4 +1,4 @@
-"""Fixed September holdout for seven-day KS1 features; never publish predictions."""
+"""Rolling chronological holdout for seven-day KS1 features; never publish predictions."""
 import argparse
 import hashlib
 import json
@@ -15,11 +15,17 @@ from ks1.sources import aws_clients, load_existing
 from ks1.table import build, contract
 from ks1.train import PARAMS, select_features, save_artifact
 
-# Fixed before inspecting results. No holdout refit or hyperparameter search.
-SPLIT_DATE = '2026-09-01'
+# Feature-contract construction needs a valid timestamp but does not inspect data.
+FEATURE_CONTRACT_DATE = '2026-09-01'
 MIN_TRAIN = 500
-MIN_TEST = 100
-MIN_STARTER_ROWS = 100
+EVALUATION_GAMES = 300
+MIN_TEST = EVALUATION_GAMES
+MIN_STARTER_ROWS = EVALUATION_GAMES
+
+
+def completion_times(values):
+    """Parse retained completion timestamps, accepting valid mixed ISO-8601 forms."""
+    return pd.to_datetime(values, format='ISO8601', utc=True, errors='raise')
 
 
 def split_recent(frame):
@@ -28,14 +34,21 @@ def split_recent(frame):
     labeled = frame.loc[frame.home_win.notna() & frame.home_score.notna() & frame.away_score.notna()].copy()
     if not set(labeled.home_win.unique()).issubset({True, False, 0, 1}):
         raise ValueError('invalid labels')
-    # A resumed August game completed in September cannot supply a training
-    # label that was unavailable at the start of the holdout.
-    completed = pd.to_datetime(labeled.label_completed_at, format='ISO8601', utc=True, errors='raise')
-    boundary = pd.Timestamp(SPLIT_DATE, tz=ET).tz_convert('UTC')
-    train = labeled.loc[(labeled.date < SPLIT_DATE) & (completed < boundary)].sort_values(['date', 'game_id'])
-    test = labeled.loc[labeled.date >= SPLIT_DATE].sort_values(['date', 'game_id'])
-    if len(train) < MIN_TRAIN or len(test) < MIN_TEST:
+    completed = completion_times(labeled.label_completed_at)
+    eligible = labeled.loc[completed.notna()].assign(
+        _label_completed_at=completed.loc[completed.notna()]
+    ).sort_values(['_label_completed_at', 'game_id'])
+    if len(eligible) < MIN_TRAIN + MIN_TEST:
         raise ValueError('insufficient chronological train/test games')
+    test = eligible.tail(EVALUATION_GAMES)
+    boundary = test['_label_completed_at'].min()
+    # Labels completing at the first holdout timestamp are not available before
+    # the holdout begins, even if game_id provides a deterministic display order.
+    train = eligible.loc[eligible['_label_completed_at'] < boundary]
+    if len(train) < MIN_TRAIN:
+        raise ValueError('insufficient chronological train/test games')
+    train = train.drop(columns='_label_completed_at')
+    test = test.drop(columns='_label_completed_at')
     return train, test
 
 
@@ -64,7 +77,7 @@ def choose_features(train):
     features = [c for c in features if c not in sparse]
     omitted = sorted(set(omitted) | set(sparse))
     supported = {side+'_'+key for side in ('home', 'away')
-                 for key in Features([]).at(SPLIT_DATE+'T04:00:00Z', '0')}
+                 for key in Features([]).at(FEATURE_CONTRACT_DATE+'T04:00:00Z', '0')}
     supported.update(side+'_starter_'+metric for side in ('home', 'away') for metric in MATCHUP_METRICS)
     supported.update(('market_home_prob', 'market_total', 'market_spread'))
     if set(features) - supported:
@@ -107,13 +120,15 @@ def evaluate(frame, incumbent_bytes, output, proof):
     candidate.booster_.save_model(str(output/'model.txt'))
     loaded = lgb.Booster(model_file=str(output/'model.txt'))
     np.testing.assert_allclose(loaded.predict(test[features].astype(float)), predictions, atol=1e-12, rtol=0)
-    report = {'system': 'KS1', 'split_date': SPLIT_DATE,
+    report = {'system': 'KS1', 'split_date': test.date.min(),
+              'split_completed_at': min(completion_times(test.label_completed_at)).isoformat(),
               'train': {'start': train.date.min(), 'end': train.date.max(), 'games': len(train)},
               'test': {'start': test.date.min(), 'end': test.date.max(), 'games': len(test)},
               'candidate': candidate_metrics, 'incumbent': incumbent_metrics,
               'without_seven_day': metrics(y_test, ablated),
               'accepted': accepted(candidate_metrics, incumbent_metrics),
-              'promotion_rule': 'strictly lower Brier and no worse logloss than incumbent on identical September holdout',
+              'promotion_rule': 'strictly lower Brier and no worse logloss than incumbent on identical trailing 300-game holdout',
+              'evaluation_window_games': EVALUATION_GAMES,
               'features': features, 'omitted_features': omitted,
               'individual_starter_training_rows': coverage,
               'individual_starter_features_learned': [c for c in features if individual_feature(c)],

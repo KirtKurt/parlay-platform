@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from ks1.features import Features, pitching
-from ks1.retrain_recent import accepted, choose_features, split_recent
+from ks1.retrain_recent import accepted, choose_features, completion_times, split_recent
 from tests.ks1.test_game_table import game
 
 
@@ -11,7 +11,10 @@ def test_recent_validation_credentials_are_restricted_to_trusted_branch():
     path = Path(__file__).resolve().parents[2]/'.github/workflows/ks1-retrain-recent.yml'
     workflow_text = path.read_text()
     assert 'github.event.pull_request.head.repo.full_name == github.repository' in workflow_text
-    assert "github.head_ref == 'codex/ks1-starter-pitcher-profile-20260913'" in workflow_text
+    assert "github.head_ref == 'codex/ks1-starter-followup-20260913'" in workflow_text
+    assert "github.event_name == 'schedule'" in workflow_text
+    assert "github.event_name == 'workflow_dispatch'" in workflow_text
+    assert "github.ref == 'refs/heads/main'" in workflow_text
     assert 'cancel-in-progress: true' in workflow_text
 
 
@@ -163,6 +166,21 @@ def test_last_three_is_fail_closed_when_only_two_starts_are_retained():
     assert feature['starter_era_last3'] is None
 
 
+def test_opening_day_last_three_uses_prior_year_league_baseline():
+    stats = {'outs':18,'earnedRuns':2,'runs':3,'hits':4,'homeRuns':1,'baseOnBalls':2,
+             'hitBatsmen':1,'strikeOuts':7,'battersFaced':25,'wins':1,'losses':0,
+             'gamesStarted':1,'numberOfPitches':90}
+    games = [full_game(pk, date, 99, stats) for pk, date in (
+        (1, '2025-09-01'), (2, '2025-09-08'), (3, '2025-09-15'))]
+
+    feature = Features(games).at(
+        '2026-04-01T19:50:00Z', '1', '99', game_date='2026-04-01')
+
+    assert feature['starter_starts_observed_last3'] == 3
+    assert feature['starter_whip_last3'] is not None
+    assert feature['starter_k_bb_pct_last3'] is not None
+
+
 def test_calendar_windows_cross_new_year_without_using_same_day_results():
     stats = {'outs':18,'earnedRuns':2,'runs':3,'hits':4,'homeRuns':1,'baseOnBalls':2,
              'hitBatsmen':1,'strikeOuts':7,'battersFaced':25,'wins':1,'losses':0,
@@ -176,17 +194,26 @@ def test_calendar_windows_cross_new_year_without_using_same_day_results():
 def test_split_has_no_overlap_and_requires_labels_and_counts():
     rows = [{'game_id': str(i), 'date': '2026-08-31' if i < 500 else '2026-09-01',
              'home_win': i % 2, 'home_score': 3, 'away_score': 2,
-             'label_completed_at': '2026-08-31T23:00:00Z' if i < 500 else '2026-09-02T02:00:00Z'} for i in range(600)]
+             'label_completed_at': '2026-08-31T23:00:00Z' if i < 500 else '2026-09-02T02:00:00Z'} for i in range(800)]
     frame = pd.DataFrame(rows)
     frame.loc[0, 'label_completed_at'] = '2026-08-31T23:00:00.123456+00:00'
     train, test = split_recent(frame)
-    assert len(train) == 500 and len(test) == 100
+    assert len(train) == 500 and len(test) == 300
     assert train.date.max() < test.date.min()
     with pytest.raises(ValueError, match='duplicate'):
         split_recent(pd.concat([frame, frame.iloc[:1]]))
     frame.loc[599, 'home_score'] = None
     with pytest.raises(ValueError, match='insufficient'):
         split_recent(frame)
+
+
+def test_completion_times_accept_mixed_fractional_iso8601_forms():
+    parsed = completion_times(pd.Series([
+        '2026-08-31T23:00:00.123456+00:00',
+        '2026-09-02T02:00:00Z',
+    ]))
+    assert parsed.notna().all()
+    assert min(parsed).isoformat() == '2026-08-31T23:00:00.123456+00:00'
 
 
 def test_no_individual_starter_learning_from_unobserved_ids_or_prior_only():
@@ -200,7 +227,7 @@ def test_no_individual_starter_learning_from_unobserved_ids_or_prior_only():
 
 
 def test_sparse_advanced_starter_feature_is_not_learned_from_too_few_rows():
-    n = 100
+    n = 300
     frame = pd.DataFrame({'home_offense_ops_7d': [0.5+i/1000 for i in range(n)],
                           'home_starter_id': [str(i) for i in range(n)],
                           'away_starter_id': [str(i+n) for i in range(n)],
@@ -213,19 +240,76 @@ def test_sparse_advanced_starter_feature_is_not_learned_from_too_few_rows():
 
 
 def test_promotion_requires_both_probability_metrics_and_same_sufficient_cohort():
-    old = {'games': 100, 'brier': .24, 'logloss': .68}
-    assert accepted({'games': 100, 'brier': .23, 'logloss': .67}, old)
-    assert not accepted({'games': 100, 'brier': .23, 'logloss': .69}, old)
+    old = {'games': 300, 'brier': .24, 'logloss': .68}
+    assert accepted({'games': 300, 'brier': .23, 'logloss': .67}, old)
+    assert not accepted({'games': 300, 'brier': .23, 'logloss': .69}, old)
     assert not accepted(old, old)
-    assert not accepted({'games': 99, 'brier': .23, 'logloss': .67}, old)
+    assert not accepted({'games': 299, 'brier': .23, 'logloss': .67}, old)
+
+
+def test_evaluation_uses_only_the_latest_300_eligible_games():
+    rows = [{'game_id': str(i), 'date': '2026-08-31' if i < 500 else '2026-09-01',
+             'home_win': i % 2, 'home_score': 3, 'away_score': 2,
+             'label_completed_at': '2026-08-31T23:00:00Z' if i < 500 else '2026-09-02T02:00:00Z'}
+            for i in range(850)]
+    _, test = split_recent(pd.DataFrame(rows))
+    assert len(test) == 300
+    assert set(test.game_id) == {str(i) for i in range(550, 850)}
+
+
+def test_latest_300_are_ordered_by_completion_not_game_id():
+    training = [{'game_id': str(i), 'date': '2026-08-31', 'home_win': i % 2,
+                 'home_score': 3, 'away_score': 2,
+                 'label_completed_at': '2026-08-31T23:00:00Z'} for i in range(500)]
+    holdout = [{'game_id': f'test-{300-i:03d}', 'date': '2026-09-01', 'home_win': i % 2,
+                'home_score': 3, 'away_score': 2,
+                'label_completed_at': (pd.Timestamp('2026-09-02T00:00:00Z')+
+                                       pd.Timedelta(minutes=i)).isoformat()}
+               for i in range(301)]
+
+    _, test = split_recent(pd.DataFrame([*training, *holdout]))
+
+    assert 'test-300' not in set(test.game_id)
+    assert 'test-000' in set(test.game_id)
+
+
+def test_rolling_split_allows_mature_prospective_rows_into_training():
+    rows = []
+    start = pd.Timestamp('2026-08-01T00:00:00Z')
+    for i in range(900):
+        rows.append({'game_id': str(i),
+                     'date': '2026-08-31' if i < 500 else '2026-09-01',
+                     'home_win': i % 2, 'home_score': 3, 'away_score': 2,
+                     'label_completed_at': (start+pd.Timedelta(minutes=i)).isoformat()})
+
+    train, test = split_recent(pd.DataFrame(rows))
+
+    assert len(train) == 600 and len(test) == 300
+    assert (train.date >= '2026-09-01').sum() == 100
+
+
+def test_evaluation_excludes_labels_without_official_completion_time():
+    training = [{'game_id': str(i), 'date': '2026-08-31', 'home_win': i % 2,
+                 'home_score': 3, 'away_score': 2,
+                 'label_completed_at': '2026-08-31T23:00:00Z'} for i in range(500)]
+    holdout = [{'game_id': f'test-{i:03d}', 'date': '2026-09-01', 'home_win': i % 2,
+                'home_score': 3, 'away_score': 2,
+                'label_completed_at': '2026-09-02T02:00:00Z'} for i in range(300)]
+    missing = {'game_id': 'missing-completion', 'date': '2026-09-01', 'home_win': 1,
+               'home_score': 3, 'away_score': 2, 'label_completed_at': None}
+
+    _, test = split_recent(pd.DataFrame([*training, *holdout, missing]))
+
+    assert len(test) == 300
+    assert 'missing-completion' not in set(test.game_id)
 
 
 def test_august_game_completed_after_holdout_start_cannot_train():
     rows = [{'game_id': str(i), 'date': '2026-08-31' if i < 501 else '2026-09-01',
              'home_win': i % 2, 'home_score': 3, 'away_score': 2,
-             'label_completed_at': '2026-08-31T23:00:00Z' if i < 500 else '2026-09-02T02:00:00Z'} for i in range(601)]
+             'label_completed_at': '2026-08-31T23:00:00Z' if i < 500 else '2026-09-02T02:00:00Z'} for i in range(801)]
     train, test = split_recent(pd.DataFrame(rows))
-    assert len(train) == 500 and len(test) == 100
+    assert len(train) == 500 and len(test) == 300
     assert '500' not in set(train.game_id)
 
 
