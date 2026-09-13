@@ -34,10 +34,12 @@ def split_recent(frame):
     completed = pd.to_datetime(labeled.label_completed_at, format='ISO8601', utc=True, errors='raise')
     boundary = pd.Timestamp(SPLIT_DATE, tz=ET).tz_convert('UTC')
     train = labeled.loc[(labeled.date < SPLIT_DATE) & (completed < boundary)].sort_values(['date', 'game_id'])
-    eligible_test = labeled.loc[labeled.date >= SPLIT_DATE].sort_values(['date', 'game_id'])
+    eligible_test = labeled.loc[labeled.date >= SPLIT_DATE].assign(
+        _label_completed_at=completed.loc[labeled.date >= SPLIT_DATE]
+    ).sort_values(['_label_completed_at', 'game_id'])
     if len(train) < MIN_TRAIN or len(eligible_test) < MIN_TEST:
         raise ValueError('insufficient chronological train/test games')
-    test = eligible_test.tail(EVALUATION_GAMES)
+    test = eligible_test.tail(EVALUATION_GAMES).drop(columns='_label_completed_at')
     return train, test
 
 
