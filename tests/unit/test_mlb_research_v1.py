@@ -17,6 +17,7 @@ import mlb_research_signals_v1 as signals
 import mlb_research_models_v1 as models
 import mlb_research_runtime_v1 as runtime
 from mlb_research_dataset_v1 import publish_dataset
+import run_mlb_research_ingestion as ingestion
 
 AT=datetime(2026,9,9,18,tzinfo=timezone.utc)
 
@@ -93,6 +94,20 @@ def test_storage_lease_prevents_overlap_and_releases(store):
     a=store.acquire('capture');assert a and not store.acquire('capture')
     store.release('capture','someone-else');assert not store.acquire('capture')
     store.release('capture',a);assert store.acquire('capture')
+
+
+def test_statcast_cache_revalidates_when_a_late_game_becomes_final(store, monkeypatch):
+    day = '2026-09-09'
+    store.once(f'sources/statcast-v2/{day}.json', {'rows': [{'game_pk': '1'}]})
+    fetched = {'rows': [{'game_pk': '1'}, {'game_pk': '2'}]}
+    monkeypatch.setattr(source, 'statcast', lambda value: fetched)
+
+    rows, error = ingestion.cached_statcast(store, day, {1, 2}, float('inf'))
+
+    revision = f'sources/statcast-v2-revisions/{day}/{storage.digest([1, 2])}.json'
+    assert error is None and rows == fetched['rows']
+    assert store.get(revision) == fetched
+    assert store.get(f'sources/statcast-v2/{day}.json')['rows'] == [{'game_pk': '1'}]
 
 
 @pytest.mark.parametrize('bad',[float('inf'),float('-inf'),float('nan'),-0.1,1.1,[.5]])

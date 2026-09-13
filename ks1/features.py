@@ -352,7 +352,10 @@ class Features:
         last_three_pairs = sorted(starts, key=lambda item: item[0], reverse=True)[:3]
         last_three_complete = len(last_three_pairs) == 3
         last_three = [stats for _, _, stats in last_three_pairs] if last_three_complete else []
-        last_three_box = pitching(last_three, league_pitch)
+        # On opening day all three retained starts can be from the prior
+        # season, while the current-season league baseline is still empty.
+        last_three_league = prior_league_pitch if last_three and not eligible else league_pitch
+        last_three_box = pitching(last_three, last_three_league)
         for name, value in last_three_box.items():
             result[f"starter_{name}_last3"] = value if starter_id and last_three_complete else None
         result["starter_starts_observed_last3"] = float(len(last_three_pairs)) if starter_id else None

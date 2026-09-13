@@ -163,6 +163,21 @@ def test_last_three_is_fail_closed_when_only_two_starts_are_retained():
     assert feature['starter_era_last3'] is None
 
 
+def test_opening_day_last_three_uses_prior_year_league_baseline():
+    stats = {'outs':18,'earnedRuns':2,'runs':3,'hits':4,'homeRuns':1,'baseOnBalls':2,
+             'hitBatsmen':1,'strikeOuts':7,'battersFaced':25,'wins':1,'losses':0,
+             'gamesStarted':1,'numberOfPitches':90}
+    games = [full_game(pk, date, 99, stats) for pk, date in (
+        (1, '2025-09-01'), (2, '2025-09-08'), (3, '2025-09-15'))]
+
+    feature = Features(games).at(
+        '2026-04-01T19:50:00Z', '1', '99', game_date='2026-04-01')
+
+    assert feature['starter_starts_observed_last3'] == 3
+    assert feature['starter_whip_last3'] is not None
+    assert feature['starter_k_bb_pct_last3'] is not None
+
+
 def test_calendar_windows_cross_new_year_without_using_same_day_results():
     stats = {'outs':18,'earnedRuns':2,'runs':3,'hits':4,'homeRuns':1,'baseOnBalls':2,
              'hitBatsmen':1,'strikeOuts':7,'battersFaced':25,'wins':1,'losses':0,
