@@ -1,0 +1,68 @@
+name: Soccer KSS1 Freeze Smoke
+
+# Isolated read/invoke of the already-deployed soccer_auto stack.
+# Does not touch MLB or tennis. Does not mutate the SAM template.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soccer-kss1-freeze-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Prove live freeze handler and KSS1 sidecar
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          region="$AWS_REGION"
+          stack=parlay-platform-soccer-auto
+          fn=$(aws cloudformation describe-stack-resource \
+            --stack-name "$stack" \
+            --logical-resource-id SoccerFreezeFunction \
+            --region "$region" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$fn"
+          handler=$(aws lambda get-function-configuration \
+            --function-name "$fn" \
+            --region "$region" \
+            --query 'Handler' \
+            --output text)
+          echo "live_freeze_handler=$handler"
+          test "$handler" = "soccer_auto.kss1_runtime.freeze_handler"
+          aws lambda invoke \
+            --function-name "$fn" \
+            --region "$region" \
+            --cli-connect-timeout 10 \
+            --cli-read-timeout 300 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"freeze_t45_training_and_t10_final_decision"}' \
+            /tmp/kss1-freeze.json \
+            > /tmp/kss1-freeze-meta.json
+          python3 - <<'PY'
+          import json
+          meta = json.load(open("/tmp/kss1-freeze-meta.json"))
+          body = json.load(open("/tmp/kss1-freeze.json"))
+          print("meta", meta)
+          print("body", body)
+          assert not meta.get("FunctionError"), meta
+          assert body.get("system") == "soccer_auto", body
+          assert body.get("kss1_engine") == "kss1-goals-v1", body
+          assert "kss1_shadow_written" in body, body
+          assert "kss1_shadow_skipped" in body, body
+          assert "kss1_shadow_error" not in body, body
+          print("kss1_freeze_smoke_ok", body.get("kss1_shadow_written"), body.get("predictions_written"))
+          PY
