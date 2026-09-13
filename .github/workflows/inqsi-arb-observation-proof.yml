@@ -109,7 +109,7 @@ jobs:
               'markets': 'h2h',
               'bankroll': '1000',
               'max_events': '2',
-              'jurisdiction': '*',
+              'jurisdiction': 'ny',
           })
           status, scan = get('/v1/arb/scan?' + scan_query, timeout=120)
           assert status == 200 and isinstance(scan, dict), scan
@@ -143,10 +143,12 @@ jobs:
               'event_market_sample': selected['markets'][:25],
               'scan_market': 'h2h',
               'scan_max_events': 2,
+              'jurisdiction': scan.get('jurisdiction'),
               'n_markets': scan.get('n_markets'),
               'n_arbs': scan.get('n_arbs'),
               'n_detected_unverified': scan.get('n_detected_unverified'),
               'n_rejected': scan.get('n_rejected'),
+              'n_exchange_pending': scan.get('n_exchange_pending'),
               'audit_event_id': audit_event_id,
               'history_count': history.get('count'),
               'history_visibility_attempts': history_attempts,

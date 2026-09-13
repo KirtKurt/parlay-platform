@@ -1,6 +1,6 @@
 # Inqsi ARB Status
 
-Updated: 2026-09-11
+Updated: 2026-09-13
 
 Repository: `KirtKurt/parlay-platform`
 Service: `INQSI-ARB-v3`
@@ -34,6 +34,19 @@ The latest declared cached/read-only production latency proof measured 300 succe
 Reviewed production settlement coverage has expanded beyond the initial MLB seed into jurisdiction-scoped major-sport rules, including reviewed Fanatics New York full-game winner/spread/total profiles for supported major sports. Coverage remains intentionally fail-closed: any unreviewed sportsbook/sport/market/jurisdiction combination stays UNKNOWN and cannot be presented as a verified strict arbitrage.
 
 The settlement-state verification layer now supports explicit exhaustive state universes, cent-rounded outcome P&L verification, refund/push states, dead-heat/partial-void representations, quarter-line split representation, and exchange commission/liability calculations. These capabilities do not imply that every sportsbook rule combination has been reviewed; rule breadth remains a separate qualification requirement.
+
+The 2026-09-13 settlement/reporting repair makes New York the explicit
+production default and limits default New York scans to the US provider regions.
+The provider's original exhaustive outcome universe is preserved after
+freshness and settlement-profile filtering, so a removed or stale winning state
+can never disappear from completeness checks. A parallel held-back row preserves
+any better mathematical price that depends on an unreviewed book, without
+duplicating the same legs already reported as verified. Exchange `*_lay` quotes are routed away from
+ordinary sportsbook implied-probability math and reported as exchange-pending
+until the commission/liability/liquidity-aware engine can evaluate them. Scan
+audit rows now retain bounded leg-level evidence, exact qualification reasons,
+missing-rule books, jurisdiction, rejected rows, and exchange-pending rows;
+the UI exposes both current and historical held-back opportunities.
 
 ## Operations controller and observation
 
