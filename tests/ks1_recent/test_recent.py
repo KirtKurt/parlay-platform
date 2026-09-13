@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from ks1.features import Features, pitching
-from ks1.retrain_recent import accepted, choose_features, split_recent
+from ks1.retrain_recent import accepted, choose_features, completion_times, split_recent
 from tests.ks1.test_game_table import game
 
 
@@ -205,6 +205,15 @@ def test_split_has_no_overlap_and_requires_labels_and_counts():
     frame.loc[599, 'home_score'] = None
     with pytest.raises(ValueError, match='insufficient'):
         split_recent(frame)
+
+
+def test_completion_times_accept_mixed_fractional_iso8601_forms():
+    parsed = completion_times(pd.Series([
+        '2026-08-31T23:00:00.123456+00:00',
+        '2026-09-02T02:00:00Z',
+    ]))
+    assert parsed.notna().all()
+    assert min(parsed).isoformat() == '2026-08-31T23:00:00.123456+00:00'
 
 
 def test_no_individual_starter_learning_from_unobserved_ids_or_prior_only():
