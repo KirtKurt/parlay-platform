@@ -193,6 +193,40 @@ def test_adjusted_identity_does_not_admit_new_nonpregame_predictions(capture):
     assert report['exclusions'] == [{'game_id': '1', 'reason': 'not_scheduled_before_T10'}]
 
 
+def test_existing_prediction_survives_early_bbs_live_status_and_other_game_refreshes(capture):
+    folder, output, calls, _ = capture
+    first, _, out = daily.predict(folder, output)
+    original = next(r for r in first.to_pylist() if r['game_id'] == '1')
+    advance(folder, out)
+
+    official = json.loads((folder/'official.json').read_bytes())['payload']
+    official['dates'][0]['games'][0]['status'].update(
+        abstractGameState='Preview', detailedState='Delayed Start', reason='Wet Grounds')
+    official['dates'][0]['games'][1]['teams']['home']['probablePitcher'] = {
+        'id': 777, 'fullName': 'New starter'}
+    (folder/'official.json').write_bytes(encode(envelope(official, DATE+'T10:01:00+00:00')))
+    change_feed(folder, lambda p: p['gameData']['probablePitchers'].update(
+        home={'id': 777, 'fullName': 'New starter'}), pk='2')
+
+    bbs = json.loads((folder/'bbs.json').read_bytes())['payload']
+    bbs['data'][0]['status'] = 'live'
+    (folder/'bbs.json').write_bytes(encode(envelope(bbs, DATE+'T10:01:00+00:00')))
+    seal(folder, DATE+'T10:01:00+00:00')
+
+    result, report, _ = daily.predict(folder, output)
+    assert next(r for r in result.to_pylist() if r['game_id'] == '1') == original
+    assert next(r for r in result.to_pylist() if r['game_id'] == '2')['home_starter_id'] == '777'
+    assert calls == [2, 1]
+    assert report['provider_status_disagreement_retained_rows'] == 1
+    assert report['provider_status_disagreement_retained_game_ids'] == ['1']
+    assert report['exclusions'] == [{
+        'game_id': '1',
+        'reason': 'provider_pregame_status_disagreement_retained',
+        'official_detailed_state': 'Delayed Start',
+        'bbs_status': 'live',
+    }]
+
+
 def test_scratch_rebuilds_only_affected_game_and_next_rerun_is_noop(capture):
     folder, output, calls, _ = capture
     first, _, out = daily.predict(folder, output); advance(folder, out)
