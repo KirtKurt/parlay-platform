@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 
-from ks1.features import Features, day, number, utc
+from ks1.features import Features, day, number, starter_matchup, utc
 from ks1.inventory import encode
 
 VERSION = "KS1-game-table-v1"
@@ -108,7 +108,10 @@ def build(bundle, selected_date=None):
     for s in bundle.get("snapshots", []):
         if s.get("originalObservation") is True and s.get("outcomeKnownAtCapture") is False:
             snapshots[str(s["officialGamePk"])].append(s)
-    history = Features(list(games.values()))
+    history = Features(list(games.values()), bundle.get("statcast", []),
+                       statcast_complete=bundle.get("statcast_coverage_complete") is True,
+                       prior_statcast_profiles=bundle.get("prior_statcast_profiles"),
+                       prior_statcast_year=bundle.get("prior_statcast_year"))
     markets = market_index(bundle.get("odds", []))
     crosswalk = defaultdict(set)
     player_names = defaultdict(set)
@@ -203,7 +206,10 @@ def build(bundle, selected_date=None):
                         f"{side}_starter_status": "missing_pregame_evidence",
                         f"{side}_actual_starter_id": None, f"{side}_actual_starter_name": None,
                         f"{side}_lineup_status": "projected", f"{side}_lineup_ids": None,
-                        f"{side}_travel_km": None})
+                        f"{side}_travel_km": None,
+                        **{f"{side}_starter_{metric}": None for metric in (
+                            "pitch_hand_left", "opponent_lhb_pct", "opponent_rhb_pct",
+                            "opponent_switch_pct")}})
             observed = snapshot.get("playerWindows", {}).get("teams", {}).get(side, {})
             if observed and str(observed.get("teamId")) != tid:
                 raise ValueError(f"snapshot team ID conflict: {pk}")
@@ -231,6 +237,11 @@ def build(bundle, selected_date=None):
                 row[f"{side}_actual_starter_id"] = str(actuals[0]["person"]["id"])
                 row[f"{side}_actual_starter_name"] = actuals[0]["person"].get("fullName")
             row.update({f"{side}_{k}": v for k, v in history.at(cutoff, tid, row[f"{side}_starter_id"]).items()})
+            captured = {key: value for key, value in snapshot.get("features", {}).items()
+                        if key.startswith(f"{side}_starter_")}
+            if captured:
+                row.update(captured)
+                row["rolling_feature_evidence"] = "immutable original snapshot starter profile"
             cutoff_day = day(cutoff)
             gaps = {key: calendar_date.fromisoformat(date)
                     for key, date in missing_boxes[tid]
@@ -242,6 +253,17 @@ def build(bundle, selected_date=None):
                 if any((cutoff_day-date).days <= window for date in gaps.values()):
                     for stat in ("pitches", "outs"):
                         row[f"{side}_bullpen_{stat}_{window}d"] = None
+        for side in ("home", "away"):
+            opposing = "away" if side == "home" else "home"
+            own = snapshot.get("playerWindows", {}).get("teams", {}).get(side, {})
+            other = snapshot.get("playerWindows", {}).get("teams", {}).get(opposing, {})
+            starter = [p for p in own.get("players", [])
+                       if str(p.get("id")) == str(row.get(f"{side}_starter_id"))]
+            lineup = sorted((p for p in other.get("players", []) if p.get("lineupSlot")),
+                            key=lambda p: p["lineupSlot"])
+            values = starter_matchup(starter[0].get("pitchHand") if len(starter) == 1 else None,
+                                     [p.get("batSide") for p in lineup] if len(lineup) == 9 else None)
+            row.update({f"{side}_starter_{key}": value for key, value in values.items()})
         if missing_identity:
             exclusions.append({"game_id": pk, "reason": "missing_official_team_identity"})
             continue
@@ -338,9 +360,37 @@ def contract(example):
             dtype = pa.bool_()
         elif column in ("season", "home_score", "away_score"):
             dtype = pa.int64()
-        if any(t in column for t in ("_offense_", "_team_starter_", "_starter_k_", "_starter_whip", "_starter_bf", "_starter_appearances", "_bullpen_", "_rest_days", "_history_games")):
+        starter_metric = "_starter_" in column and not any(column.endswith(suffix) for suffix in (
+            "_starter_id", "_starter_name", "_starter_status", "_actual_starter_id", "_actual_starter_name"))
+        if starter_metric or any(t in column for t in ("_offense_", "_team_starter_", "_bullpen_", "_rest_days", "_history_games")):
             dtype, role, source = pa.float64(), "feature", "strictly earlier completed compact/full game boxes"
             meaning += "; calendar-day windows; same-day excluded; current-season empirical prior; OPS/ISO 100 PA/AB, K-BB 100 BF, WHIP 75 outs shrinkage; *_games/*_pa/*_bf/*_appearances are observed counts"
+            statcast = any(token in column for token in (
+                "_complete_", "_pitches_", "_hard_hit_pct_", "_barrel_pct_", "_avg_ev_allowed_",
+                "_xwoba", "_swstr_pct_", "_csw_pct_", "_velocity_", "_spin_",
+                "_horizontal_break_in_", "_vertical_break_in_", "_extension_", "_fly_balls_",
+                "_mix_pct_", "_whiff_pct_", "_whiff_per_pitch_pct_"))
+            unavailable = any(token in column for token in (
+                "_xera_", "_siera_", "_stuff_plus_", "_location_plus_",
+                "_pitching_plus_", "_active_spin_pct_"))
+            matchup = any(column.endswith("_"+metric) for metric in (
+                "pitch_hand_left", "opponent_lhb_pct", "opponent_rhb_pct",
+                "opponent_switch_pct"))
+            if matchup:
+                source = "original pregame playerWindows lineup and handedness observation"
+                meaning += "; null unless all nine lineup bat sides and probable-starter throwing hand are verified"
+            elif unavailable:
+                source = "not present in admitted exact-window sources; stored null and excluded from training"
+                meaning += "; unavailable is not zero and no proprietary metric is approximated under this name"
+            elif "_xfip_" in column:
+                source = "official completed game logs plus retained Baseball Savant fly balls and point-in-time league HR/FB"
+            elif statcast:
+                source = "retained Baseball Savant pitch rows bound to strictly earlier completed official games"
+            if column.endswith("_prior_year"):
+                meaning += "; previous-season observation available before the cutoff"
+            if column.endswith("_talent"):
+                source = "30-day and previous-season retained Baseball Savant pitch rows"
+                meaning += "; pitch-count weighted with previous-season weight capped at 300 pitches"
         elif column.endswith("_missing_history_boxes_75d"):
             dtype, role, source = pa.int64(), "audit", "retained official finals lacking a compact or full box"
             meaning = "Known earlier same-season final games with missing boxes in 75 calendar days; partial history flag, never interpreted as zero workload."

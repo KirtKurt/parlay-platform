@@ -1,7 +1,7 @@
 """Autonomous source preparation and original-snapshot settlement; no trainer invocation."""
 import argparse
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import date as calendar_date, timedelta
 import json
 from pathlib import Path
 import sys
@@ -56,12 +56,23 @@ def ingest(store,seconds=2400):
             except Exception as exc:
                 errors.append({'source':'historical','error':type(exc).__name__})
         day=started.astimezone(source.ET).date()
-        first=(day-timedelta(days=30)).isoformat()
-        games,receipt=source.schedule(first,day.isoformat())
+        current_dates={day-timedelta(days=age) for age in range(1,31)}
+        current_year_dates={calendar_date(day.year,1,1)+timedelta(days=age)
+                            for age in range((day-calendar_date(day.year,1,1)).days)}
+        prior_year=day.year-1
+        prior_dates={calendar_date(prior_year,1,1)+timedelta(days=age)
+                     for age in range((calendar_date(prior_year+1,1,1)-calendar_date(prior_year,1,1)).days)}
+        recent_games,recent_receipt=source.schedule(f'{day.year}-01-01',day.isoformat())
+        prior_games,prior_receipt=source.schedule(f'{prior_year}-01-01',f'{prior_year}-12-31')
+        games=list({g['gamePk']:g for g in [*prior_games,*recent_games]}.values())
+        receipt={'requests':[prior_receipt,recent_receipt],'uniqueGames':len(games),
+                 'scopes':{'priorYear':prior_year,'currentDays':30}}
         completed=[g for g in games if source.final(g)]
         sources=[]
         def prepare(game):
-            key=f"sources/games/{game['gamePk']}.json"
+            # v1 omitted fields now required by pitcher-result profiles. Never
+            # reinterpret an immutable legacy projection as the expanded one.
+            key=f"sources/games-v2/{game['gamePk']}.json"
             try:
                 cached=store.get(key)
                 if cached: return cached,None
@@ -72,29 +83,96 @@ def ingest(store,seconds=2400):
             for value,error in pool.map(prepare,completed):
                 if error: errors.append(error)
                 else: sources.append(value)
+        prior_game_ids={g['gamePk'] for g in prior_games if source.final(g)}
+        recent_game_ids={g['gamePk'] for g in completed
+                         if utc(g['gameDate']).astimezone(source.ET).date() in current_dates}
+        current_year_game_ids={g['gamePk'] for g in recent_games if source.final(g)}
+        observed_game_ids={g['officialGamePk'] for g in sources}
         prior={'games':sources,'schedule':games,'receipt':receipt,
-               'coverageComplete':len(sources)==len(completed),'updatedAtUtc':now().isoformat()}
+               'coverageComplete':len(sources)==len(completed),
+               'current30CoverageComplete':recent_game_ids.issubset(observed_game_ids),
+               'currentYearCoverageComplete':current_year_game_ids.issubset(observed_game_ids),
+               'priorYearCoverageComplete':prior_game_ids.issubset(observed_game_ids),
+               'priorYear':prior_year,'updatedAtUtc':now().isoformat()}
         store.latest('prior-games.json',{'artifact':store.artifact('prior-games',prior),'updatedAtUtc':prior['updatedAtUtc']})
-        statcasts=[];complete_days=0
-        for age in range(1,31):
-            date=(day-timedelta(days=age)).isoformat()
-            key=f'sources/statcast/{date}.json'
+        expected_by_date={value.isoformat():set() for value in current_year_dates|prior_dates}
+        for game in completed:
+            game_day=utc(game['gameDate']).astimezone(source.ET).date().isoformat()
+            if game_day in expected_by_date:
+                expected_by_date[game_day].add(source.count(game['gamePk']))
+        def prepare_statcast(value):
+            expected=expected_by_date[value]
+            if not expected:
+                return value,[],None
+            # v2 retains contact, discipline, movement, spin and arsenal fields;
+            # do not reuse the narrower v1 daily cache under the new contract.
+            key=f'sources/statcast-v2/{value}.json'
             try:
                 cached=store.get(key)
                 if not cached:
                     if time.monotonic()>deadline: raise TimeoutError('ingestion time budget reached')
-                    expected={source.count(g['gamePk']) for g in completed if utc(g['gameDate']).astimezone(source.ET).date().isoformat()==date}
-                    value=source.statcast(date) if expected else {'date':date,'rows':[],'receipt':receipt,'noGamesConfirmedByOfficialSchedule':True}
-                    actual={source.count(r['game_pk']) for r in value['rows']}
+                    fetched=source.statcast(value)
+                    actual={source.count(r['game_pk']) for r in fetched['rows']}
                     if actual!=expected:
-                        errors.append({'date':date,'source':'statcast','error':'COVERAGE_MISMATCH',
-                                       'expectedGameCount':len(expected),'observedGameCount':len(actual),
-                                       'missingGameIds':sorted(expected-actual),'extraGameIds':sorted(actual-expected)})
-                        continue
-                    cached=store.once(key,value)
-                statcasts.extend(cached['rows']);complete_days+=1
-            except Exception as exc: errors.append({'date':date,'source':'statcast','error':type(exc).__name__})
-        sc={'rows':statcasts,'coverageComplete':complete_days==30,'updatedAtUtc':now().isoformat()}
+                        return value,[],{'date':value,'source':'statcast','error':'COVERAGE_MISMATCH',
+                                          'expectedGameCount':len(expected),'observedGameCount':len(actual),
+                                          'missingGameIds':sorted(expected-actual),'extraGameIds':sorted(actual-expected)}
+                    cached=store.once(key,fetched)
+                return value,cached['rows'],None
+            except Exception as exc:
+                return value,[],{'date':value,'source':'statcast','error':type(exc).__name__}
+        statcast_by_date={};complete_dates=set()
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for value,rows,error in pool.map(prepare_statcast,sorted(expected_by_date)):
+                if error: errors.append(error)
+                else: statcast_by_date[value]=rows;complete_dates.add(value)
+        current_rows=[row for value in sorted(d.isoformat() for d in current_dates)
+                      for row in statcast_by_date.get(value,())]
+        current_complete={d.isoformat() for d in current_dates}.issubset(complete_dates)
+        current_year_complete={d.isoformat() for d in current_year_dates}.issubset(complete_dates)
+        prior_complete={d.isoformat() for d in prior_dates}.issubset(complete_dates)
+        prior_profiles={};last_start_rows=[]
+        if (prior_complete and current_year_complete and prior['priorYearCoverageComplete']
+                and prior['currentYearCoverageComplete']):
+            from ks1.features import Features, number
+            prior_rows=[row for value in sorted(d.isoformat() for d in prior_dates)
+                        for row in statcast_by_date.get(value,())]
+            engine=Features([g for g in sources if utc(g['startAtUtc']).astimezone(source.ET).date().year==prior_year],
+                            prior_rows,statcast_complete=True)
+            appearances={}
+            for row in engine.rows:
+                for player in row['players']:
+                    if number(player['stats'].get('gamesStarted'))==1:
+                        appearances.setdefault(player['id'],[]).append((row['game_id'],player['stats']))
+            for pitcher,pairs in appearances.items():
+                expected=sum(number(stats.get('numberOfPitches')) for _,stats in pairs) if all(
+                    number(stats.get('numberOfPitches')) is not None for _,stats in pairs) else None
+                profile=engine.statcast(pitcher,{game_id for game_id,_ in pairs},expected)
+                if profile['complete']==1:
+                    prior_profiles[pitcher]=profile
+            all_rows=[row for value in sorted(d.isoformat() for d in prior_dates|current_year_dates)
+                      for row in statcast_by_date.get(value,())]
+            all_engine=Features(sources,all_rows,statcast_complete=True)
+            last_pairs=set()
+            appearances={}
+            for row in all_engine.rows:
+                for player in row['players']:
+                    if number(player['stats'].get('gamesStarted'))==1:
+                        appearances.setdefault(player['id'],[]).append((row['start'],row['game_id']))
+            for pitcher,pairs in appearances.items():
+                last_pairs.update((pitcher,game_id) for _,game_id in sorted(pairs,reverse=True)[:3])
+            last_start_rows=[row for row in all_rows
+                             if (str(row.get('pitcher')),str(row.get('game_pk'))) in last_pairs]
+        retained_rows={}
+        for row in [*current_rows,*last_start_rows]:
+            identity=tuple(str(row.get(key)) for key in ('game_pk','at_bat_number','pitch_number'))
+            retained_rows[identity]=row
+        sc={'rows':current_rows,'coverageComplete':current_complete and current_year_complete and prior_complete,
+            'current30CoverageComplete':current_complete,'priorYearCoverageComplete':prior_complete,
+            'currentYearCoverageComplete':current_year_complete,
+            'priorYear':prior_year,'priorYearProfiles':prior_profiles,
+            'updatedAtUtc':now().isoformat()}
+        sc['rows']=list(retained_rows.values())
         store.latest('statcast.json',{'artifact':store.artifact('statcast',sc),'updatedAtUtc':sc['updatedAtUtc']})
         index=store.get('original-index.json') or {'slates':{}}
         available=sorted({key.split('/')[1] for key in store.keys('snapshots/') if key.endswith('/T10.json')})
@@ -131,7 +209,12 @@ def ingest(store,seconds=2400):
         data=publish_dataset(store)
         report={'ok':True,'status':'PARTIAL' if errors else 'COMPLETE','updatedAtUtc':now().isoformat(),
                 'startedAtUtc':started.isoformat(),'priorGames':len(sources),'expectedPriorGames':len(completed),
-                'statcastDays':complete_days,'expectedStatcastDays':30,'statcastPitches':len(statcasts),
+                'statcastDays':len({d.isoformat() for d in current_dates}&complete_dates),'expectedStatcastDays':30,
+                'priorYearStatcastDays':len({d.isoformat() for d in prior_dates}&complete_dates),
+                'expectedPriorYearStatcastDays':len(prior_dates),
+                'currentYearStatcastDays':len({d.isoformat() for d in current_year_dates}&complete_dates),
+                'expectedCurrentYearStatcastDays':len(current_year_dates),
+                'retainedStatcastPitches':len(sc['rows']),'priorYearProfiles':len(prior_profiles),
                 'datasetRows':len(data['rows']),'originalRows':data['originalRows'],
                 'featureDiscovery':discovery_summary(store),'errors':errors,
                 'productionAuthorityChanged':False}

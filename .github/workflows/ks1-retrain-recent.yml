@@ -6,10 +6,16 @@ permissions:
   contents: read
 concurrency:
   group: ks1-retrain-recent-${{ github.ref }}
-  cancel-in-progress: false
+  # A new PR head supersedes its retrospective artifact; do not let the old,
+  # slower rebuild block validation of the repaired indexed implementation.
+  cancel-in-progress: true
 jobs:
   evaluate:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'agent/ks1-seven-day-starter'
+    # This job executes checked-out code after receiving long-lived AWS
+    # credentials. Only the explicitly controlled feature branch may run it.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'codex/ks1-starter-pitcher-profile-20260913'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:

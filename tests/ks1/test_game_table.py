@@ -72,6 +72,15 @@ def test_date_rebuild_and_full_column_dictionary():
     assert len(sample) == 3
 
 
+def test_starter_dictionary_separates_game_log_statcast_and_unavailable_sources():
+    _, _, dictionary, _, _ = build(fixture())
+    fields = {row['column']: row for row in dictionary}
+    assert 'completed compact/full game boxes' in fields['home_starter_era_30d']['source']
+    assert 'Baseball Savant' in fields['home_starter_xwoba_30d']['source']
+    assert 'stored null' in fields['home_starter_xera_30d']['source']
+    assert fields['home_starter_xera_30d']['role'] == 'feature'
+
+
 def test_conflicting_final_scores_fail():
     bundle = fixture()
     bundle["finals"] = [{"officialGamePk": 1, "completed": True, "homeScore": 7,
@@ -113,16 +122,30 @@ def test_missing_known_prior_box_does_not_become_zero_or_complete_workload():
 
 def test_original_starter_requires_timing_identity_and_hash():
     bundle = fixture()
-    features = {"marketHomeProbability": 0.55}
+    features = {"marketHomeProbability": 0.55, "home_starter_xwoba_30d": 0.31}
     snapshot = {"officialGamePk": 3, "commenceTime": "2026-08-03T20:00:00Z",
                 "capturedAtUtc": "2026-08-03T19:20:00Z", "featureCutoffUtc": "2026-08-03T19:30:00Z",
                 "originalObservation": True, "outcomeKnownAtCapture": False,
                 "features": features, "featureFingerprint": hashlib.sha256(encode(features)).hexdigest(),
-                "playerWindows": {"teams": {"home": {"teamId": 1, "starterId": 99,
-                                        "players": [{"id": 99, "name": "Observed starter"}]}}}}
+                "playerWindows": {"teams": {
+                    "home": {"teamId": 1, "starterId": 99, "lineupConfirmed": True,
+                             "battingOrder": list(range(100, 109)),
+                             "players": [{"id": 99, "name": "Observed starter", "pitchHand": "L"},
+                                         *[{"id": pid, "lineupSlot": slot, "batSide": "R"}
+                                           for slot, pid in enumerate(range(100, 109), 1)]]},
+                    "away": {"teamId": 2, "starterId": 199, "lineupConfirmed": True,
+                             "battingOrder": list(range(200, 209)),
+                             "players": [{"id": 199, "name": "Away starter", "pitchHand": "R"},
+                                         *[{"id": pid, "lineupSlot": slot, "batSide": "L"}
+                                           for slot, pid in enumerate(range(200, 209), 1)]]}}}}
     bundle["snapshots"] = [snapshot]
     table, *_ = build(bundle)
-    assert table["home_starter_id"].to_pylist()[-1] == "99"
+    row = table.to_pylist()[-1]
+    assert row["home_starter_id"] == "99"
+    assert row["home_starter_opponent_lhb_pct"] == 100
+    assert row["away_starter_opponent_rhb_pct"] == 100
+    assert row["home_starter_xwoba_30d"] == 0.31
+    assert row["rolling_feature_evidence"] == "immutable original snapshot starter profile"
     snapshot["capturedAtUtc"] = "2026-08-03T20:01:00Z"
     table, *_ = build(bundle)
     assert table["home_starter_id"].null_count == 3

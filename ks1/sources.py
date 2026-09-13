@@ -29,6 +29,7 @@ def load_existing(cf, s3, bucket):
     reconstructed = reader.pointer(pointer)["rows"]
     research = reader.pointer(reader.read(RESEARCH + "dataset.json")["artifact"])["rows"]
     prior = reader.pointer(reader.read(RESEARCH + "prior-games.json")["artifact"])
+    statcast = reader.pointer(reader.read(RESEARCH + "statcast.json")["artifact"])
     with ThreadPoolExecutor(max_workers=8) as pool:
         compact = list(pool.map(reader.read, sorted(reader.keys(RECONSTRUCTED + "source-games/"))))
     snapshots = [{**reader.read(key), "source_key": key}
@@ -69,6 +70,14 @@ def load_existing(cf, s3, bucket):
                                "error_code": getattr(exc, "response", {}).get("Error", {}).get("Code", type(exc).__name__)})
     return {"reconstructed": reconstructed, "research": research,
             "compact": compact, "full": prior["games"], "schedule": prior["schedule"],
+            "current30_history_complete": prior.get("current30CoverageComplete") is True,
+            "current_year_history_complete": prior.get("currentYearCoverageComplete") is True,
+            "prior_year_history_complete": prior.get("priorYearCoverageComplete") is True,
+            "statcast": statcast.get("rows", []),
+            "statcast_coverage_complete": statcast.get("current30CoverageComplete",
+                                                        statcast.get("coverageComplete")) is True,
+            "prior_statcast_profiles": statcast.get("priorYearProfiles", {}),
+            "prior_statcast_year": statcast.get("priorYear"),
             "schedule_observed_at": prior.get("receipt", {}).get("retrievedAtUtc"),
             "snapshots": snapshots, "finals": finals, "odds": odds,
             "source_receipts": sorted(reader.receipts, key=lambda r: (r["bucket"], r["key"])),

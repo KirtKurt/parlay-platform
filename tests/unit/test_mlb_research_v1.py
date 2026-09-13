@@ -113,6 +113,29 @@ def test_player_era_uses_outs_and_zero_exposure_stays_missing():
     assert players.rates(dict.fromkeys(players.PITCHING,0),'pitching')['era'] is None
 
 
+def test_starter_results_discipline_fip_and_last_three_are_count_based():
+    values = dict.fromkeys(players.PITCHING, 0)
+    values.update(outs=18, earnedRuns=2, runs=3, hits=4, homeRuns=1, baseOnBalls=2,
+                  hitBatsmen=1, strikeOuts=7, battersFaced=25, numberOfPitches=90,
+                  wins=1, losses=0, gamesStarted=1)
+    rates = players.rates(values, 'pitching')
+    assert rates['era'] == 3 and rates['ra9'] == 4.5 and rates['whip'] == 1
+    assert rates['kPct'] == 28 and rates['bbPct'] == 8 and rates['kMinusBbPct'] == 20
+    assert rates['fip'] == pytest.approx(3.1 + 8*3/18)
+    assert rates['wins'] == 1 and rates['losses'] == 0 and rates['winPct'] == 1
+    entries = []
+    for pk, day, started in ((1, '2026-09-01', 1), (2, '2026-09-03', 1),
+                             (3, '2026-09-05', 0), (4, '2026-09-07', 1), (5, '2026-09-08', 1)):
+        stat = dict(values, gamesStarted=started)
+        entries.append({'date': day, 'gamePk': pk, 'stats': stat})
+    latest = players.last_starts(entries, 'pitching')
+    assert latest['gameIds'] == [5, 4, 2] and latest['appearances'] == 3
+    assert latest['stats']['gamesStarted'] == 3
+    incomplete = players.last_starts(entries[:2], 'pitching')
+    assert incomplete['status'] == 'INCOMPLETE' and incomplete['appearances'] == 2
+    assert incomplete['stats'] is None
+
+
 def test_calendar_windows_include_completed_today_and_exclude_eighth_date():
     stats={k:1 for k in players.PITCHING}
     entries=[{'date':(AT.date()-timedelta(days=n)).isoformat(),'gamePk':n+1,'stats':stats} for n in (0,6,7,14,29,30)]
@@ -162,6 +185,49 @@ def test_statcast_only_fair_contact_and_missing_player_coverage():
     value=source.statcast_player(rows,10,'pitcher')
     assert value['fairContacts']==1 and value['hardHitRate']==1 and value['xwobaOnContact']==.4
     assert source.statcast_player(rows,99,'pitcher')['hardHitRate'] is None
+
+
+def test_statcast_pitch_quality_physics_and_arsenal_are_explicit():
+    rows = [
+        {'pitcher':'10','batter':'20','type':'X','launch_speed':'101','launch_speed_angle':'6',
+         'release_speed':'96','release_spin_rate':'2400','release_extension':'6.5','pfx_x':'-.7','pfx_z':'1.3',
+         'pitch_type':'FF','description':'hit_into_play','estimated_woba_using_speedangle':'.51'},
+        {'pitcher':'10','batter':'21','type':'S','launch_speed':'','launch_speed_angle':'',
+         'release_speed':'95','release_spin_rate':'2380','release_extension':'6.4','pfx_x':'-.6','pfx_z':'1.2',
+         'pitch_type':'FF','description':'swinging_strike','estimated_woba_using_speedangle':''},
+        {'pitcher':'10','batter':'22','type':'S','launch_speed':'','launch_speed_angle':'',
+         'release_speed':'86','release_spin_rate':'2500','release_extension':'6.3','pfx_x':'.3','pfx_z':'.2',
+         'pitch_type':'SL','description':'called_strike','estimated_woba_using_speedangle':''},
+    ]
+    value = source.statcast_player(rows, 10, 'pitcher')
+    assert value['hardHitRate'] == value['barrelRate'] == 1
+    assert value['averageExitVelocityAllowed'] == 101 and value['xwobaOnContact'] == .51
+    assert value['swingingStrikeRate'] == pytest.approx(1/3)
+    assert value['cswRate'] == pytest.approx(2/3)
+    assert value['meanVelocity'] == pytest.approx(277/3)
+    assert value['pitchMix'] == {'FF': pytest.approx(2/3), 'SL': pytest.approx(1/3)}
+    assert value['arsenal']['FF']['velocity'] == 95.5
+    assert value['arsenal']['FF']['verticalBreakIn'] == 15
+    batter = source.statcast_player(rows, 20, 'batter')
+    assert 'averageExitVelocityAllowed' not in batter
+    assert batter['averageExitVelocity'] == 101
+
+
+def test_research_starter_values_fail_closed_before_snapshot_binding():
+    values={'starter_era_7d':2.5,'starter_xwoba_30d':.3,
+            'starter_csw_pct_last3':31,'starter_ff_velocity_prior_year':95,
+            'starter_ff_velocity_talent':96,'starter_pitch_hand_left':1}
+    prior={'current30CoverageComplete':False,'currentYearCoverageComplete':True,
+           'priorYearCoverageComplete':False}
+    statcast={'current30CoverageComplete':True,'currentYearCoverageComplete':True,
+              'priorYearCoverageComplete':False}
+    result,coverage=runtime.fail_closed_starter_values(values,prior,statcast)
+    assert coverage=={'30d':False,'last3':False,'prior_year':False}
+    assert result['starter_era_7d'] is result['starter_xwoba_30d'] is None
+    assert result['starter_csw_pct_last3'] is None
+    assert result['starter_ff_velocity_prior_year'] is None
+    assert result['starter_ff_velocity_talent'] is None
+    assert result['starter_pitch_hand_left']==1
 
 
 @pytest.mark.parametrize('field,value',[('originalObservation',False),('outcomeKnownAtCapture',True),('officialGamePk','2'),
@@ -361,6 +427,38 @@ def test_historical_failure_does_not_stop_current_source_ingestion(monkeypatch,s
     assert result['status']=='PARTIAL' and result['statcastDays']==30
     assert result['errors']==[{'source':'historical','error':'ValueError'}]
     assert store.get('dataset.json')['rows']==0
+
+
+def test_ingestion_versions_expanded_games_and_retains_prior_year_scope(monkeypatch,store):
+    import run_mlb_research_ingestion as ingestion
+    monkeypatch.setattr(ingestion,'now',lambda:AT)
+    store.once('historical-input.json', {'ready':True})
+    monkeypatch.setattr(ingestion,'publish_dataset',lambda store:{'rows':[],'originalRows':0})
+    prior_game=game(11,day='2025-04-01',state='Final')
+    current_game=game(12,day='2026-09-08',state='Final')
+    def schedule(first,last):
+        return ([prior_game] if first.startswith('2025') else [current_game]), {'first':first,'last':last}
+    monkeypatch.setattr(source,'schedule',schedule)
+    def final_source(value):
+        return {'officialGamePk':value['gamePk'],'startAtUtc':value['gameDate'],
+                'completedAtUtc':value['gameDate'],'gameType':'R',
+                'teams':{side:{'id':team['team']['id'],'name':team['team']['name'],
+                               'batting':{},'priorStarters':{},'relief':{}}
+                         for side,team in value['teams'].items()}}
+    monkeypatch.setattr(source,'final_source',final_source)
+    ids={'2025-04-01':11,'2026-09-08':12}
+    monkeypatch.setattr(source,'statcast',lambda value:{'date':value,'rows':[
+        {'game_pk':str(ids[value]),'at_bat_number':'1','pitch_number':'1',
+         'pitcher':'99','type':'S','pitch_type':'FF'}]})
+    result=ingestion.ingest(store,seconds=60)
+    keys=set(store.keys('sources/'))
+    assert {'sources/games-v2/11.json','sources/games-v2/12.json'}.issubset(keys)
+    assert not any(key.startswith('sources/games/') for key in keys)
+    prior=store.load(store.get('prior-games.json')['artifact'])
+    statcast=store.load(store.get('statcast.json')['artifact'])
+    assert prior['priorYear']==2025 and prior['priorYearCoverageComplete'] is True
+    assert statcast['priorYear']==2025 and statcast['current30CoverageComplete'] is True
+    assert result['priorYearStatcastDays']==365
 
 
 def test_new_deployment_refreshes_training_from_existing_capture_owner(monkeypatch,store):
