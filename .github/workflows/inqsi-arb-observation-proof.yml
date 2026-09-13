@@ -109,7 +109,7 @@ jobs:
               'markets': 'h2h',
               'bankroll': '1000',
               'max_events': '2',
-              'jurisdiction': 'ny',
+              'jurisdiction': '*',
           })
           status, scan = get('/v1/arb/scan?' + scan_query, timeout=120)
           assert status == 200 and isinstance(scan, dict), scan

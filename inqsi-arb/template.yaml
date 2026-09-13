@@ -7,7 +7,7 @@ Parameters:
     NoEcho: true
   ArbRegions:
     Type: String
-    Default: us,us2,uk,eu,au,ca,fr,se,fi
+    Default: us,us2,us_dfs,us_ex,uk,eu,fr,se,au
 Globals:
   Function:
     Runtime: python3.11
@@ -18,7 +18,7 @@ Globals:
         ODDS_API_KEY: !Ref OddsApiKey
         ARB_REGIONS: !Ref ArbRegions
         ARB_US_REGIONS: us,us2
-        ARB_DEFAULT_JURISDICTION: ny
+        ARB_DEFAULT_JURISDICTION: '*'
         ARB_MAX_EVENT_MARKET_EVENTS: '40'
         ARB_MAX_MARKETS_PER_EVENT: '120'
         ARB_MAX_SPORTS_PER_ALL_SCAN: '100'

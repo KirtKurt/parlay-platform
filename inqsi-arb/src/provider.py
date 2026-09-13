@@ -231,7 +231,7 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
 
 
 def scan_sport_payload(sport_key: str, *, bankroll: float, markets: Sequence[str], regions: Optional[str] = None, bookmakers: Optional[str] = None, max_events: Optional[int] = None) -> Dict[str, Any]:
-    regions = regions or os.environ.get("ARB_REGIONS", "us,us2,uk,eu,au")
+    regions = regions or os.environ.get("ARB_REGIONS", "us,us2,us_dfs,us_ex,uk,eu,fr,se,au")
     max_events = int(max_events if max_events is not None else os.environ.get("ARB_MAX_EVENT_MARKET_EVENTS", "40"))
     featured = [m for m in markets if m in FEATURED]
     extended = [m for m in markets if m not in FEATURED]

@@ -80,7 +80,7 @@ def _maybe_broadcast(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _default_jurisdiction() -> str:
-    return (os.environ.get("ARB_DEFAULT_JURISDICTION") or "ny").strip().lower() or "ny"
+    return (os.environ.get("ARB_DEFAULT_JURISDICTION") or "*").strip().lower() or "*"
 
 
 def _regions(jurisdiction: str, explicit: str = "") -> str:
@@ -88,7 +88,7 @@ def _regions(jurisdiction: str, explicit: str = "") -> str:
         return explicit.strip()
     if jurisdiction.strip().lower() in US_JURISDICTIONS:
         return os.environ.get("ARB_US_REGIONS", "us,us2")
-    return os.environ.get("ARB_REGIONS", "us,us2,uk,eu,au")
+    return os.environ.get("ARB_REGIONS", "us,us2,us_dfs,us_ex,uk,eu,fr,se,au")
 
 
 def _audit_candidate(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -208,6 +208,8 @@ def lambda_handler(event, context):
             "candidate_evidence_audit": True,
             "required_outcome_universe_preserved": True,
             "exchange_lay_routed": True,
+            "sportsbook_scope": "all_provider_returned",
+            "default_regions": _regions(_default_jurisdiction()).split(","),
         })
 
     if method == "GET" and path == "/v1/arb/history":
@@ -254,7 +256,7 @@ def lambda_handler(event, context):
             "sports": sports,
             "n_sports": len(sports),
             "market_families": {**MARKET_FAMILIES, **MARKET_FAMILY_KEYS},
-            "sportsbook_policy": "all provider-returned books in requested permitted regions; no hard-coded allowlist",
+            "sportsbook_policy": "all provider-returned books in requested configured regions; no hard-coded allowlist",
             "settlement_policy": "explicit reviewed book rules only; unknown combinations fail closed",
             "provider": meta,
         })
@@ -264,7 +266,8 @@ def lambda_handler(event, context):
         event_id = query.get("event_id", "").strip()
         if not sport:
             return response(400, {"ok": False, "error": "SPORT_REQUIRED"})
-        regions = query.get("regions") or os.environ.get("ARB_REGIONS", "us,us2,uk,eu,au")
+        jurisdiction = (query.get("jurisdiction") or _default_jurisdiction()).strip().lower()
+        regions = _regions(jurisdiction, query.get("regions", ""))
         if event_id:
             keys, meta = discover_event_market_keys(
                 sport, event_id, regions=regions, bookmakers=query.get("bookmakers"),
