@@ -261,6 +261,21 @@ def test_latest_300_are_ordered_by_completion_not_game_id():
     assert 'test-000' in set(test.game_id)
 
 
+def test_rolling_split_allows_mature_prospective_rows_into_training():
+    rows = []
+    start = pd.Timestamp('2026-08-01T00:00:00Z')
+    for i in range(900):
+        rows.append({'game_id': str(i),
+                     'date': '2026-08-31' if i < 500 else '2026-09-01',
+                     'home_win': i % 2, 'home_score': 3, 'away_score': 2,
+                     'label_completed_at': (start+pd.Timedelta(minutes=i)).isoformat()})
+
+    train, test = split_recent(pd.DataFrame(rows))
+
+    assert len(train) == 600 and len(test) == 300
+    assert (train.date >= '2026-09-01').sum() == 100
+
+
 def test_evaluation_excludes_labels_without_official_completion_time():
     training = [{'game_id': str(i), 'date': '2026-08-31', 'home_win': i % 2,
                  'home_score': 3, 'away_score': 2,
