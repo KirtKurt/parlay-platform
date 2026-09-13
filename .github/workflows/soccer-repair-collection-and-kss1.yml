@@ -58,11 +58,13 @@ jobs:
           dlq = qurl(os.environ['DLQ_QUEUE'])
           now = datetime.datetime.now(datetime.timezone.utc)
           def attrs(url):
-              raw = sqs.get_queue_attributes(QueueUrl=url, AttributeNames=['ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible','ApproximateAgeOfOldestMessage'])['Attributes']
+              raw = sqs.get_queue_attributes(
+                  QueueUrl=url,
+                  AttributeNames=['ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible'],
+              )['Attributes']
               return {
                   'visible': int(raw.get('ApproximateNumberOfMessages') or 0),
                   'inflight': int(raw.get('ApproximateNumberOfMessagesNotVisible') or 0),
-                  'oldest_age_seconds': int(raw.get('ApproximateAgeOfOldestMessage') or 0),
               }
           before = {'main': attrs(main), 'dlq': attrs(dlq)}
           scanned = retired = released = malformed = 0
