@@ -136,6 +136,9 @@ def test_audit_payload_is_bounded_below_dynamodb_item_limit():
 
     payload = _audit_scan_payload(result, sport="baseball_mlb", jurisdiction="ny")
     assert len(json.dumps(payload).encode("utf-8")) < 300_000
+    assert sum(len(payload[name]) for name in (
+        "hits", "detected_unverified", "rejected", "exchange_pending"
+    )) <= 25
     assert payload["truncated"]["detected_unverified"] == 25
 
 

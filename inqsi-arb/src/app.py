@@ -127,7 +127,19 @@ def _audit_candidate(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _audit_scan_payload(result: Dict[str, Any], *, sport: str, jurisdiction: str) -> Dict[str, Any]:
-    limit = 25
+    remaining = 25
+    saved: Dict[str, list] = {}
+    for name in ("hits", "detected_unverified", "rejected", "exchange_pending"):
+        rows = list(result.get(name) or [])
+        selected = rows[:remaining]
+        saved[name] = [_audit_candidate(row) for row in selected]
+        remaining -= len(selected)
+    counts = {
+        "hits": int(result.get("n_arbs") or 0),
+        "detected_unverified": int(result.get("n_detected_unverified") or 0),
+        "rejected": int(result.get("n_rejected") or 0),
+        "exchange_pending": int(result.get("n_exchange_pending") or 0),
+    }
     return {
         "sport": sport,
         "jurisdiction": jurisdiction,
@@ -136,20 +148,8 @@ def _audit_scan_payload(result: Dict[str, Any], *, sport: str, jurisdiction: str
         "n_detected_unverified": result.get("n_detected_unverified"),
         "n_rejected": result.get("n_rejected"),
         "n_exchange_pending": result.get("n_exchange_pending"),
-        "hits": [_audit_candidate(row) for row in list(result.get("hits") or [])[:limit]],
-        "detected_unverified": [
-            _audit_candidate(row) for row in list(result.get("detected_unverified") or [])[:limit]
-        ],
-        "rejected": [_audit_candidate(row) for row in list(result.get("rejected") or [])[:limit]],
-        "exchange_pending": [
-            _audit_candidate(row) for row in list(result.get("exchange_pending") or [])[:limit]
-        ],
-        "truncated": {
-            "hits": max(0, int(result.get("n_arbs") or 0) - limit),
-            "detected_unverified": max(0, int(result.get("n_detected_unverified") or 0) - limit),
-            "rejected": max(0, int(result.get("n_rejected") or 0) - limit),
-            "exchange_pending": max(0, int(result.get("n_exchange_pending") or 0) - limit),
-        },
+        **saved,
+        "truncated": {name: max(0, count - len(saved[name])) for name, count in counts.items()},
     }
 
 
