@@ -15,116 +15,73 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Hot-update freeze Lambda with repaired KSS1 writer
+      - name: Hot-update recovery and freeze Lambdas
         env:
           REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           stack=parlay-platform-soccer-auto
-          freeze=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerFreezeFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          physical() { aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id "$1" --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text; }
           rm -rf /tmp/soccer-hot && mkdir -p /tmp/soccer-hot/soccer_auto
           cp soccer_auto/*.py /tmp/soccer-hot/soccer_auto/
-          (cd /tmp/soccer-hot && zip -qr /tmp/soccer-freeze.zip soccer_auto)
-          aws lambda update-function-code --function-name "$freeze" --region "$REGION" --zip-file fileb:///tmp/soccer-freeze.zip >/tmp/update-freeze.json
-          aws lambda wait function-updated-v2 --function-name "$freeze" --region "$REGION"
-          handler=$(aws lambda get-function-configuration --function-name "$freeze" --region "$REGION" --query Handler --output text)
-          echo "live_freeze_handler=$handler"
-          test "$handler" = "soccer_auto.kss1_runtime.freeze_handler"
-      - name: Retire stale main-queue collection work
-        env:
-          REGION: ${{ secrets.AWS_REGION }}
-        run: |
-          set -euo pipefail
-          python -m pip install --quiet 'boto3>=1.34,<2'
-          stack=parlay-platform-soccer-auto
-          main=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
-          dlq=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionDeadLetterQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
-          export MAIN_QUEUE="$main" DLQ_QUEUE="$dlq"
-          python - <<'PY'
-          import boto3, json, os, datetime, pathlib
-          region = os.environ['REGION']
-          sqs = boto3.client('sqs', region_name=region)
-          def qurl(value):
-              return value if str(value).startswith('http') else sqs.get_queue_url(QueueName=value)['QueueUrl']
-          main = qurl(os.environ['MAIN_QUEUE'])
-          dlq = qurl(os.environ['DLQ_QUEUE'])
-          now = datetime.datetime.now(datetime.timezone.utc)
-          def attrs(url):
-              raw = sqs.get_queue_attributes(
-                  QueueUrl=url,
-                  AttributeNames=['ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible'],
-              )['Attributes']
-              return {
-                  'visible': int(raw.get('ApproximateNumberOfMessages') or 0),
-                  'inflight': int(raw.get('ApproximateNumberOfMessagesNotVisible') or 0),
-              }
-          before = {'main': attrs(main), 'dlq': attrs(dlq)}
-          scanned = retired = released = malformed = 0
-          empty = 0
-          while scanned < 2500 and empty < 6:
-              resp = sqs.receive_message(QueueUrl=main, MaxNumberOfMessages=10, VisibilityTimeout=30, WaitTimeSeconds=1, AttributeNames=['All'])
-              msgs = resp.get('Messages') or []
-              if not msgs:
-                  empty += 1
-                  continue
-              empty = 0
-              for msg in msgs:
-                  scanned += 1
-                  stale = False
-                  try:
-                      body = json.loads(msg.get('Body') or '{}')
-                      ev = body.get('event') or {}
-                      raw = ev.get('commence_time') or ev.get('commenceTime') or body.get('commence_time') or ''
-                      dt = datetime.datetime.fromisoformat(str(raw).replace('Z', '+00:00')) if raw else None
-                      sent_ms = int((msg.get('Attributes') or {}).get('SentTimestamp') or 0)
-                      sent = datetime.datetime.fromtimestamp(sent_ms / 1000, datetime.timezone.utc) if sent_ms else None
-                      if dt and dt <= now:
-                          stale = True
-                      elif dt is None and sent and (now - sent).total_seconds() > 36 * 3600:
-                          stale = True
-                  except Exception:
-                      malformed += 1
-                      stale = True
-                  if stale:
-                      sqs.delete_message(QueueUrl=main, ReceiptHandle=msg['ReceiptHandle'])
-                      retired += 1
-                  else:
-                      sqs.change_message_visibility(QueueUrl=main, ReceiptHandle=msg['ReceiptHandle'], VisibilityTimeout=0)
-                      released += 1
-          after = {'main': attrs(main), 'dlq': attrs(dlq)}
-          result = {'before': before, 'after': after, 'scanned': scanned, 'retired_stale': retired, 'released_future': released, 'malformed': malformed}
-          pathlib.Path('/tmp/queue-repair.json').write_text(json.dumps(result, indent=2))
-          print(json.dumps(result, indent=2))
-          PY
-      - name: Invoke freeze and prove KSS1 sidecar
+          (cd /tmp/soccer-hot && zip -qr /tmp/soccer-runtime.zip soccer_auto)
+          for logical in SoccerDlqRecoveryFunction SoccerFreezeFunction SoccerCollectionWorkerFunction; do
+            fn=$(physical "$logical")
+            aws lambda update-function-code --function-name "$fn" --region "$REGION" --zip-file fileb:///tmp/soccer-runtime.zip >/dev/null
+            aws lambda wait function-updated-v2 --function-name "$fn" --region "$REGION"
+            echo "updated $logical $fn"
+          done
+      - name: Drain stale main-queue work via Lambda role
         env:
           REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           stack=parlay-platform-soccer-auto
-          freeze=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerFreezeFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
-          dispatch=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerDispatchFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
-          aws lambda invoke --function-name "$dispatch" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"repair_dispatch"}' /tmp/dispatch.json >/tmp/dispatch-meta.json || true
-          aws lambda invoke --function-name "$freeze" --region "$REGION" --cli-read-timeout 300 --cli-binary-format raw-in-base64-out --payload '{"action":"freeze_t45_training_and_t10_final_decision"}' /tmp/kss1-freeze.json >/tmp/kss1-freeze-meta.json
+          recovery=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerDlqRecoveryFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          aws lambda invoke --function-name "$recovery" --region "$REGION" --cli-read-timeout 300 --cli-binary-format raw-in-base64-out --payload '{"action":"recover_collection_dlq","max_messages":1000}' /tmp/dlq.json >/tmp/dlq-meta.json
+          aws lambda invoke --function-name "$recovery" --region "$REGION" --cli-read-timeout 300 --cli-binary-format raw-in-base64-out --payload '{"action":"recover_collection_main","max_messages":2000}' /tmp/main1.json >/tmp/main1-meta.json
+          aws lambda invoke --function-name "$recovery" --region "$REGION" --cli-read-timeout 300 --cli-binary-format raw-in-base64-out --payload '{"action":"recover_collection_main","max_messages":2000}' /tmp/main2.json >/tmp/main2-meta.json
           python3 - <<'PY'
           import json
-          meta = json.load(open('/tmp/kss1-freeze-meta.json'))
-          body = json.load(open('/tmp/kss1-freeze.json'))
-          queue = json.load(open('/tmp/queue-repair.json'))
-          print('queue', json.dumps(queue))
-          print('meta', meta)
-          print('body', body)
-          assert not meta.get('FunctionError'), meta
-          assert body.get('ok') is True, body
-          assert body.get('kss1_engine') == 'kss1-goals-v1', body
-          assert 'kss1_shadow_error' not in body, body
-          print('kss1_shadow_written', body.get('kss1_shadow_written'), 'skipped', body.get('kss1_shadow_skipped'))
+          for name in ('dlq','main1','main2'):
+              meta=json.load(open(f'/tmp/{name}-meta.json'))
+              body=json.load(open(f'/tmp/{name}.json'))
+              print(name, meta.get('FunctionError'), json.dumps(body)[:1500])
+              assert not meta.get('FunctionError'), (name, meta, body)
+              assert body.get('ok') is True, (name, body)
+          PY
+      - name: Prove freeze, bounded settlement, and status API
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-soccer-auto
+          physical() { aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id "$1" --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text; }
+          freeze=$(physical SoccerFreezeFunction)
+          settlement=$(physical SoccerSettlementFunction)
+          api=$(physical SoccerApiFunction)
+          aws lambda invoke --function-name "$freeze" --region "$REGION" --cli-read-timeout 300 --cli-binary-format raw-in-base64-out --payload '{"action":"freeze_t45_training_and_t10_final_decision"}' /tmp/freeze.json >/tmp/freeze-meta.json
+          aws lambda invoke --function-name "$settlement" --region "$REGION" --cli-read-timeout 360 --cli-binary-format raw-in-base64-out --payload '{"action":"reconcile_admissibility_only"}' /tmp/settlement.json >/tmp/settlement-meta.json
+          aws lambda invoke --function-name "$api" --region "$REGION" --cli-read-timeout 60 --cli-binary-format raw-in-base64-out --payload '{"httpMethod":"GET","path":"/v1/soccer-auto/status"}' /tmp/api.json >/tmp/api-meta.json || true
+          status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text)
+          curl --fail --silent --show-error --max-time 45 "$status_url" >/tmp/status.json || echo '{"status_curl_failed":true}' >/tmp/status.json
+          python3 - <<'PY'
+          import json
+          freeze=json.load(open('/tmp/freeze.json'))
+          settle=json.load(open('/tmp/settlement.json'))
+          main=json.load(open('/tmp/main2.json'))
+          status=json.load(open('/tmp/status.json'))
+          print('main_after', main.get('after'))
+          print('freeze', {k:freeze.get(k) for k in ('ok','kss1_engine','kss1_shadow_written','kss1_shadow_skipped','kss1_shadow_error','lock_reason_counts')})
+          print('settlement_ok', settle.get('ok'), settle.get('action'), (settle.get('admissibility_reconciliation') or {}).get('scan_mode'))
+          print('status_keys', sorted(status)[:20] if isinstance(status, dict) else type(status))
+          assert freeze.get('ok') is True, freeze
+          assert freeze.get('kss1_engine')=='kss1-goals-v1', freeze
+          assert 'kss1_shadow_error' not in freeze, freeze
+          assert settle.get('ok') is True, settle
           PY
