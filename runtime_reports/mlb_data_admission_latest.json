@@ -1,5 +1,5 @@
 {
-  "createdAtUtc": "2026-09-13T14:59:50.433652+00:00",
+  "createdAtUtc": "2026-09-13T19:54:03.906391+00:00",
   "version": "MLB-RECONSTRUCTED-DEVELOPMENT-DATA-v1",
   "historicalArchiveSlates": 371,
   "historicalArchiveGames": 4639,
@@ -16,16 +16,18 @@
     "sourceUnchanged": true
   },
   "combinedOriginalAdmission": {
-    "inspectedRows": 668,
+    "inspectedRows": 669,
     "admittedRows": 163,
     "classificationCounts": {
       "ADMITTED_ORIGINAL_OBSERVATION": 163,
       "HISTORICAL_MISSINGNESS_SEPARATE_DATASET": 495,
-      "ORIGINAL_EVIDENCE_REQUIRES_REVIEW": 10
+      "ORIGINAL_EVIDENCE_REQUIRES_REVIEW": 10,
+      "WAITING_FOR_COMPLETE_SLATE": 1
     },
     "rejectionReasons": {
       "invalid immutable fundamentals snapshot": 495,
-      "canonical training admission rejected: probability_direction_integrity_correction": 10
+      "canonical training admission rejected: probability_direction_integrity_correction": 10,
+      "waiting for complete slate settlement": 1
     },
     "sourceUnchanged": true
   },
@@ -167,7 +169,7 @@
       "readOnly": true,
       "scheduleReceipt": {
         "endpoint": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-08-31&endDate=2026-08-31",
-        "retrievedAtUtc": "2026-09-13T14:39:51.551994+00:00",
+        "retrievedAtUtc": "2026-09-13T19:39:21.788209+00:00",
         "sha256": "caa5271a66db251637debbe0dfe9d64c6455b40f60e9b30fcc8d53fe40f94e94",
         "listedOccurrences": 12,
         "uniqueGames": 12
@@ -337,7 +339,7 @@
       "readOnly": true,
       "scheduleReceipt": {
         "endpoint": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-09-01&endDate=2026-09-01",
-        "retrievedAtUtc": "2026-09-13T14:41:17.476478+00:00",
+        "retrievedAtUtc": "2026-09-13T19:40:17.986192+00:00",
         "sha256": "4c5ac447097665c15edf7b540a4dd6f70cc8516f360395a47c8d3d015b0b7df0",
         "listedOccurrences": 15,
         "uniqueGames": 15
@@ -504,7 +506,7 @@
       "readOnly": true,
       "scheduleReceipt": {
         "endpoint": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-09-02&endDate=2026-09-02",
-        "retrievedAtUtc": "2026-09-13T14:43:10.866442+00:00",
+        "retrievedAtUtc": "2026-09-13T19:41:36.574651+00:00",
         "sha256": "d191b69cf1d9c126013dc58155e1dd450695847e2fbe07c321ab652f77c2efbb",
         "listedOccurrences": 15,
         "uniqueGames": 15
@@ -617,7 +619,7 @@
       "readOnly": true,
       "scheduleReceipt": {
         "endpoint": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-09-03&endDate=2026-09-03",
-        "retrievedAtUtc": "2026-09-13T14:44:51.965630+00:00",
+        "retrievedAtUtc": "2026-09-13T19:42:44.486674+00:00",
         "sha256": "7254fd01b7f49f719ce3593faf56bbe2e9ffe9ebe3c8eda9f363abd6f60017ba",
         "listedOccurrences": 9,
         "uniqueGames": 9
@@ -796,7 +798,7 @@
       "readOnly": true,
       "scheduleReceipt": {
         "endpoint": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-09-04&endDate=2026-09-04",
-        "retrievedAtUtc": "2026-09-13T14:45:47.801854+00:00",
+        "retrievedAtUtc": "2026-09-13T19:43:18.203966+00:00",
         "sha256": "8043670f85458f11dee14c3b5359d6e104c60365add2d39b3580194893e98ce8",
         "listedOccurrences": 16,
         "uniqueGames": 16
@@ -966,7 +968,7 @@
       "readOnly": true,
       "scheduleReceipt": {
         "endpoint": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-09-05&endDate=2026-09-05",
-        "retrievedAtUtc": "2026-09-13T14:47:49.812153+00:00",
+        "retrievedAtUtc": "2026-09-13T19:44:40.543805+00:00",
         "sha256": "5e77e0cc0306c2db94f68aa785b011d2c13fcfbe2eaa8238854fe092d776f083",
         "listedOccurrences": 15,
         "uniqueGames": 15
@@ -1136,7 +1138,7 @@
       "readOnly": true,
       "scheduleReceipt": {
         "endpoint": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-09-06&endDate=2026-09-06",
-        "retrievedAtUtc": "2026-09-13T14:49:40.825041+00:00",
+        "retrievedAtUtc": "2026-09-13T19:45:54.760419+00:00",
         "sha256": "48190b1818cd98d5ef295748afd720b33de227c57c77bc655190730b7688551f",
         "listedOccurrences": 15,
         "uniqueGames": 15
@@ -1267,7 +1269,7 @@
       "readOnly": true,
       "scheduleReceipt": {
         "endpoint": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-09-07&endDate=2026-09-07",
-        "retrievedAtUtc": "2026-09-13T14:51:07.246426+00:00",
+        "retrievedAtUtc": "2026-09-13T19:46:53.611740+00:00",
         "sha256": "2b5dbf37cd5ecbaf794f5b0bdac40c57c63f480526c070689f9f33d84869b335",
         "listedOccurrences": 11,
         "uniqueGames": 11
@@ -1437,7 +1439,7 @@
       "readOnly": true,
       "scheduleReceipt": {
         "endpoint": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-09-08&endDate=2026-09-08",
-        "retrievedAtUtc": "2026-09-13T14:52:08.483034+00:00",
+        "retrievedAtUtc": "2026-09-13T19:47:33.013056+00:00",
         "sha256": "40966c773dd044cdb0196cc6f0d2377a552060a146afe9d237d2f0b5d5e8eb42",
         "listedOccurrences": 15,
         "uniqueGames": 15
@@ -1609,7 +1611,7 @@
       "readOnly": true,
       "scheduleReceipt": {
         "endpoint": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-09-09&endDate=2026-09-09",
-        "retrievedAtUtc": "2026-09-13T14:54:03.102375+00:00",
+        "retrievedAtUtc": "2026-09-13T19:48:53.598019+00:00",
         "sha256": "d8791ec394ec358f988c11b69f3d59748c7863606147bdb394eb3d0677378315",
         "listedOccurrences": 15,
         "uniqueGames": 15
@@ -1691,7 +1693,7 @@
       "readOnly": true,
       "scheduleReceipt": {
         "endpoint": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-09-10&endDate=2026-09-10",
-        "retrievedAtUtc": "2026-09-13T14:55:47.831099+00:00",
+        "retrievedAtUtc": "2026-09-13T19:50:10.322566+00:00",
         "sha256": "4eacf2ae07da8cc82fe7d38d62438835047be65b0f0c911be665273e8065c092",
         "listedOccurrences": 5,
         "uniqueGames": 5
@@ -1866,7 +1868,7 @@
       "readOnly": true,
       "scheduleReceipt": {
         "endpoint": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-09-11&endDate=2026-09-11",
-        "retrievedAtUtc": "2026-09-13T14:56:16.743299+00:00",
+        "retrievedAtUtc": "2026-09-13T19:50:27.541652+00:00",
         "sha256": "9e61bef0b17d29f77a27f8922f937a50d504321da53dfe046ca164de76c270e4",
         "listedOccurrences": 15,
         "uniqueGames": 15
@@ -2041,7 +2043,7 @@
       "readOnly": true,
       "scheduleReceipt": {
         "endpoint": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-09-12&endDate=2026-09-12",
-        "retrievedAtUtc": "2026-09-13T14:58:05.400712+00:00",
+        "retrievedAtUtc": "2026-09-13T19:51:50.232153+00:00",
         "sha256": "b2129ec106cd5c3c0092fc518bdabc1155286d8aa1ee58c12cfec95b131801b5",
         "listedOccurrences": 15,
         "uniqueGames": 15
@@ -2051,111 +2053,94 @@
       "slateDateEt": "2026-09-13",
       "scheduledGames": 15,
       "collectedGames": 15,
-      "validLocks": 0,
+      "validLocks": 14,
       "rejectedLocks": [],
-      "officialFinalGames": 0,
-      "storedFinalLabels": 0,
+      "officialFinalGames": 1,
+      "storedFinalLabels": 1,
       "admittedSettledGames": 0,
       "sourceCoverage": {
-        "bothStarterRates": 13,
-        "bothConfirmedLineups": 1,
-        "bothLineupOps": 1,
+        "bothStarterRates": 15,
+        "bothConfirmedLineups": 13,
+        "bothLineupOps": 13,
         "bothBullpenWorkloads": 15
       },
-      "waitingOrMissingLabels": [],
-      "admission": {
-        "inspectedRows": 0,
-        "admittedRows": 0,
-        "classificationCounts": {},
-        "rejectionReasons": {},
-        "rows": [],
-        "sourceUnchanged": true
-      },
-      "collectionOrLockGaps": [
+      "waitingOrMissingLabels": [
         {
-          "officialGamePk": "824225",
-          "collectionPresent": true,
-          "validLockPresent": false,
-          "officialState": "Preview"
+          "officialGamePk": "823495",
+          "state": "WAITING_FOR_SETTLEMENT"
         },
         {
           "officialGamePk": "822682",
-          "collectionPresent": true,
-          "validLockPresent": false,
-          "officialState": "Preview"
+          "state": "WAITING_FOR_SETTLEMENT"
         },
         {
           "officialGamePk": "824869",
-          "collectionPresent": true,
-          "validLockPresent": false,
-          "officialState": "Preview"
-        },
-        {
-          "officialGamePk": "823495",
-          "collectionPresent": true,
-          "validLockPresent": false,
-          "officialState": "Preview"
+          "state": "WAITING_FOR_SETTLEMENT"
         },
         {
           "officialGamePk": "822764",
-          "collectionPresent": true,
-          "validLockPresent": false,
-          "officialState": "Preview"
-        },
-        {
-          "officialGamePk": "822928",
-          "collectionPresent": true,
-          "validLockPresent": false,
-          "officialState": "Preview"
+          "state": "WAITING_FOR_SETTLEMENT"
         },
         {
           "officialGamePk": "823815",
-          "collectionPresent": true,
-          "validLockPresent": false,
-          "officialState": "Preview"
+          "state": "WAITING_FOR_SETTLEMENT"
         },
         {
-          "officialGamePk": "823658",
-          "collectionPresent": true,
-          "validLockPresent": false,
-          "officialState": "Preview"
+          "officialGamePk": "822928",
+          "state": "WAITING_FOR_SETTLEMENT"
         },
         {
           "officialGamePk": "823734",
-          "collectionPresent": true,
-          "validLockPresent": false,
-          "officialState": "Preview"
+          "state": "WAITING_FOR_SETTLEMENT"
+        },
+        {
+          "officialGamePk": "823658",
+          "state": "WAITING_FOR_SETTLEMENT"
         },
         {
           "officialGamePk": "823008",
-          "collectionPresent": true,
-          "validLockPresent": false,
-          "officialState": "Preview"
+          "state": "WAITING_FOR_SETTLEMENT"
         },
         {
           "officialGamePk": "824628",
-          "collectionPresent": true,
-          "validLockPresent": false,
-          "officialState": "Preview"
+          "state": "WAITING_FOR_SETTLEMENT"
         },
         {
           "officialGamePk": "824708",
-          "collectionPresent": true,
-          "validLockPresent": false,
-          "officialState": "Preview"
+          "state": "WAITING_FOR_SETTLEMENT"
         },
         {
           "officialGamePk": "824952",
-          "collectionPresent": true,
-          "validLockPresent": false,
-          "officialState": "Preview"
+          "state": "WAITING_FOR_SETTLEMENT"
         },
         {
           "officialGamePk": "825033",
-          "collectionPresent": true,
-          "validLockPresent": false,
-          "officialState": "Preview"
+          "state": "WAITING_FOR_SETTLEMENT"
+        }
+      ],
+      "admission": {
+        "inspectedRows": 1,
+        "admittedRows": 0,
+        "classificationCounts": {
+          "WAITING_FOR_COMPLETE_SLATE": 1
         },
+        "rejectionReasons": {
+          "waiting for complete slate settlement": 1
+        },
+        "rows": [
+          {
+            "slateDateEt": "2026-09-13",
+            "officialGamePk": "824225",
+            "admitted": false,
+            "reason": "waiting for complete slate settlement",
+            "classification": "WAITING_FOR_COMPLETE_SLATE",
+            "snapshotErrors": [],
+            "snapshotFingerprint": "be86ea797568eb4a1c6d51498936c1a5eee5a2b05b31f6a6c48ac592e9e17fcd"
+          }
+        ],
+        "sourceUnchanged": true
+      },
+      "collectionOrLockGaps": [
         {
           "officialGamePk": "823171",
           "collectionPresent": true,
@@ -2166,8 +2151,8 @@
       "readOnly": true,
       "scheduleReceipt": {
         "endpoint": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-09-13&endDate=2026-09-13",
-        "retrievedAtUtc": "2026-09-13T14:59:42.947864+00:00",
-        "sha256": "5fd11320f13f7e175b4558010aa1768cf47cde8775d346deae6c8f8f2840ded7",
+        "retrievedAtUtc": "2026-09-13T19:53:04.279593+00:00",
+        "sha256": "95f32aa2c47b0a614356d6886f564c1ab7f022ef422c041f1feb9d34529f690d",
         "listedOccurrences": 15,
         "uniqueGames": 15
       }
@@ -2202,9 +2187,9 @@
     "prospectiveQualificationEvidence": false,
     "artifact": {
       "bucket": "parlay-platform-dev-mlbmlartifactsbucket-rtsuugrwreet",
-      "key": "mlb/development-data/reconstructed-v1/acd0e55b4eaf17c6af5001bc8410912d46a6ce1017e2c501c2ab7b4ad22f9a42/dataset.json",
-      "versionId": "4bB4nzQwhWlGGzq43zCaM0f7YShEl2cs",
-      "sha256": "acd0e55b4eaf17c6af5001bc8410912d46a6ce1017e2c501c2ab7b4ad22f9a42",
+      "key": "mlb/development-data/reconstructed-v1/f49708b458fbbb0ddb0dce5e4637989e1d8df51bef33da3a78f53639a9592388/dataset.json",
+      "versionId": "C2vcSRmYbcePIzIvZ4trHJGD.Pu_Cat7",
+      "sha256": "f49708b458fbbb0ddb0dce5e4637989e1d8df51bef33da3a78f53639a9592388",
       "byteLength": 15577001
     }
   }

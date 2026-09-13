@@ -1,14 +1,16 @@
 {
-  "inspectedRows": 668,
+  "inspectedRows": 669,
   "admittedRows": 163,
   "classificationCounts": {
     "ADMITTED_ORIGINAL_OBSERVATION": 163,
     "HISTORICAL_MISSINGNESS_SEPARATE_DATASET": 495,
-    "ORIGINAL_EVIDENCE_REQUIRES_REVIEW": 10
+    "ORIGINAL_EVIDENCE_REQUIRES_REVIEW": 10,
+    "WAITING_FOR_COMPLETE_SLATE": 1
   },
   "rejectionReasons": {
     "invalid immutable fundamentals snapshot": 495,
-    "canonical training admission rejected: probability_direction_integrity_correction": 10
+    "canonical training admission rejected: probability_direction_integrity_correction": 10,
+    "waiting for complete slate settlement": 1
   },
   "rows": [
     {
@@ -8241,6 +8243,15 @@
       "snapshotFingerprint": "f673011d90785bde565c3b575374d5607216ba1ad8fb3ffbf08e62c3e5e33fd8"
     },
     {
+      "slateDateEt": "2026-09-13",
+      "officialGamePk": "824225",
+      "admitted": false,
+      "reason": "waiting for complete slate settlement",
+      "classification": "WAITING_FOR_COMPLETE_SLATE",
+      "snapshotErrors": [],
+      "snapshotFingerprint": "be86ea797568eb4a1c6d51498936c1a5eee5a2b05b31f6a6c48ac592e9e17fcd"
+    },
+    {
       "slateDateEt": "2025-05-03",
       "officialGamePk": "778064",
       "admitted": false,
@@ -9490,5 +9501,5 @@
     }
   ],
   "sourceUnchanged": true,
-  "createdAtUtc": "2026-09-13T14:59:50.433652+00:00"
+  "createdAtUtc": "2026-09-13T19:54:03.906391+00:00"
 }
