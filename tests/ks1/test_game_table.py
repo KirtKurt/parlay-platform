@@ -181,6 +181,34 @@ def test_original_starter_requires_timing_identity_and_hash():
     assert row["home_pitcher_context_quality"] == -3.2
     assert row["pitcher_context_evidence"] == "frozen_versioned_ks1_profile"
     assert row["as_of_timestamp"] == "2026-08-03T19:40:00+00:00"
+
+    # A later immutable T-10 observation supersedes the older snapshot's
+    # probable starter.  The replacement may use its own frozen context, but
+    # must never inherit starter-specific fields captured for the old pitcher.
+    replacement = deepcopy(profile)
+    replacement["sides"]["home"]["starter_id"] = "98"
+    replacement.pop("sha256")
+    replacement.pop("semantic_sha256")
+    semantic = {key: value for key, value in replacement.items()
+                if key not in ("as_of", "history_as_of")}
+    replacement["semantic_sha256"] = hashlib.sha256(encode(semantic)).hexdigest()
+    replacement["sha256"] = hashlib.sha256(encode(replacement)).hexdigest()
+    prediction = bundle["published_predictions"][0]["row"]
+    prediction.update(
+        home_starter_id="98",
+        starter_profile_sha256=replacement["sha256"],
+        starter_profile_semantic_sha256=replacement["semantic_sha256"],
+        starter_profile_json=encode(replacement).decode(),
+    )
+    table, *_ = build(bundle)
+    row = table.to_pylist()[-1]
+    assert row["home_starter_id"] == "98"
+    assert row["home_starter_status"] == "observed_versioned_t10_replacement"
+    assert row["home_starter_xwoba_30d"] is None
+    assert row["home_starter_opponent_lhb_pct"] is None
+    assert row["home_pitcher_context_quality"] == -3.2
+    assert row["pitcher_context_evidence"] == "frozen_versioned_ks1_profile"
+
     bundle["published_predictions"] = []
     snapshot["capturedAtUtc"] = "2026-08-03T20:01:00Z"
     table, *_ = build(bundle)

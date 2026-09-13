@@ -324,6 +324,24 @@ def test_verified_historical_pitcher_context_can_train_without_claiming_identity
     assert 'away_pitcher_context_quality' in omitted
 
 
+def test_context_intermediates_are_never_direct_model_features():
+    n = 300
+    frame = pd.DataFrame({
+        'home_offense_ops_7d': [0.5+i/1000 for i in range(n)],
+        'home_starter_id': [str(i) for i in range(n)],
+        'away_starter_id': [str(i+n) for i in range(n)],
+        'home_starter_bf_30d': [25.]*n, 'away_starter_bf_30d': [25.]*n,
+        'home_starter_context_quality': [-3-i/1000 for i in range(n)],
+        'away_starter_expected_innings_last5': [5+i/1000 for i in range(n)],
+        'home_pitcher_context_quality': [-3-i/1000 for i in range(n)],
+        'away_pitcher_context_quality': [-4+i/1000 for i in range(n)],
+    })
+    features, _, _ = choose_features(frame)
+    assert 'home_starter_context_quality' not in features
+    assert 'away_starter_expected_innings_last5' not in features
+    assert 'home_pitcher_context_quality' in features
+
+
 def test_promotion_requires_both_probability_metrics_and_same_sufficient_cohort():
     old = {'games': 300, 'brier': .24, 'logloss': .68}
     assert accepted({'games': 300, 'brier': .23, 'logloss': .67}, old)

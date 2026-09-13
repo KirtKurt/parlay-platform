@@ -253,10 +253,17 @@ def build(bundle, selected_date=None):
             locked_team = published.get("teams", {}).get(side)
             if published and locked_team and str(locked_team) != tid:
                 raise ValueError(f"published starter team ID conflict: {pk}")
-            if not row[f"{side}_starter_id"] and locked.get("id"):
+            locked_is_latest = bool(locked.get("id") and (
+                not snapshot or utc(published["as_of"]) >= utc(snapshot["capturedAtUtc"])))
+            snapshot_starter_replaced = bool(
+                locked_is_latest and row[f"{side}_starter_id"]
+                and str(locked["id"]) != str(row[f"{side}_starter_id"]))
+            if locked_is_latest:
                 row[f"{side}_starter_id"] = str(locked["id"])
                 row[f"{side}_starter_name"] = locked.get("name")
-                row[f"{side}_starter_status"] = "observed_versioned_t10"
+                row[f"{side}_starter_status"] = ("observed_versioned_t10_replacement"
+                                                  if snapshot_starter_replaced
+                                                  else "observed_versioned_t10")
             if observed.get("lineupConfirmed") is True and len(set(observed.get("battingOrder", []))) == 9:
                 row[f"{side}_lineup_status"] = "confirmed"
                 row[f"{side}_lineup_ids"] = json.dumps(observed["battingOrder"])
@@ -275,7 +282,7 @@ def build(bundle, selected_date=None):
                 row[f"{side}_actual_starter_name"] = actuals[0]["person"].get("fullName")
             row.update({f"{side}_{k}": v for k, v in history.at(cutoff, tid, row[f"{side}_starter_id"]).items()})
             captured = {key: value for key, value in snapshot.get("features", {}).items()
-                        if key.startswith(f"{side}_starter_")}
+                        if key.startswith(f"{side}_starter_") and not snapshot_starter_replaced}
             if captured:
                 row.update(captured)
                 row["rolling_feature_evidence"] = "immutable original snapshot starter profile"
@@ -439,6 +446,9 @@ def contract(example):
             dtype = pa.int64()
         starter_metric = "_starter_" in column and not any(column.endswith(suffix) for suffix in (
             "_starter_id", "_starter_name", "_starter_status", "_actual_starter_id", "_actual_starter_name"))
+        context_intermediate = any(column.startswith(side+prefix) for side in ("home", "away")
+                                   for prefix in ("_starter_context_",
+                                                  "_starter_expected_innings_last5"))
         pitcher_context_metric = (column.startswith("home_pitcher_context_")
                                   or column.startswith("away_pitcher_context_"))
         if starter_metric or pitcher_context_metric or any(t in column for t in ("_offense_", "_team_starter_", "_bullpen_", "_rest_days", "_history_games")):
@@ -461,6 +471,10 @@ def contract(example):
             elif pitcher_context_metric:
                 source = "verified V8 point-in-time pitcher summary or same-contract observed KS1 starter profile"
                 meaning += "; historical projections remain explicitly marked and are never counted as confirmed starter identity"
+            elif context_intermediate:
+                role = "audit"
+                source = "strictly earlier official game logs; intermediate for frozen pitcher-context derivation"
+                meaning += "; persisted for profile integrity but never directly eligible for model training"
             elif unavailable:
                 source = "not present in admitted exact-window sources; stored null and excluded from training"
                 meaning += "; unavailable is not zero and no proprietary metric is approximated under this name"
