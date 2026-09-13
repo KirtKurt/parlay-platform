@@ -127,6 +127,46 @@ def test_incompatible_profile_does_not_duplicate_verified_candidate():
     assert result["n_rejected"] == 0
 
 
+def test_deduplication_keeps_distinct_events_without_ids():
+    ts = fresh_ts()
+    quotes = [
+        {"book": "draftkings", "outcome": "A", "decimal": 2.2, "last_update": ts},
+        {"book": "fanduel", "outcome": "B", "decimal": 2.2, "last_update": ts},
+    ]
+    result = scan_all({"bankroll": 100, "events": [
+        {
+            "event": "A @ B", "market": "h2h", "expected_outcomes": ["A", "B"],
+            "quotes": quotes, "rules_status": "compatible",
+        },
+        {
+            "event": "C @ D", "market": "h2h", "expected_outcomes": ["A", "B"],
+            "quotes": quotes, "rules_status": "incompatible",
+        },
+    ]})
+    assert result["n_arbs"] == 1
+    assert result["n_rejected"] == 1
+    assert result["n_held_unverified"] == 1
+
+
+def test_held_total_is_not_limited_by_detail_slice():
+    ts = fresh_ts()
+    events = [
+        {
+            "id": f"held-{i}", "event": f"A{i} @ B{i}", "market": "h2h",
+            "expected_outcomes": ["A", "B"], "rules_status": "unknown",
+            "quotes": [
+                {"book": "one", "outcome": "A", "decimal": 2.2, "last_update": ts},
+                {"book": "two", "outcome": "B", "decimal": 2.2, "last_update": ts},
+            ],
+        }
+        for i in range(101)
+    ]
+    result = scan_all({"bankroll": 100, "events": events})
+    assert result["n_held_unverified"] == 101
+    assert result["n_detected_unverified"] == 101
+    assert len(result["detected_unverified"]) == 100
+
+
 def test_stale_quotes_are_excluded_from_verified_arb():
     ts = stale_ts()
     event = {

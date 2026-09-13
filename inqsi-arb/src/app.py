@@ -147,12 +147,13 @@ def _audit_scan_payload(result: Dict[str, Any], *, sport: str, jurisdiction: str
         "exchange_pending": int(result.get("n_exchange_pending") or 0),
     }
     return {
-        "sport": sport,
-        "jurisdiction": jurisdiction,
+        "sport": str(sport)[:256],
+        "jurisdiction": str(jurisdiction)[:256],
         "n_markets": result.get("n_markets"),
         "n_arbs": result.get("n_arbs"),
         "n_detected_unverified": result.get("n_detected_unverified"),
         "n_rejected": result.get("n_rejected"),
+        "n_held_unverified": result.get("n_held_unverified"),
         "n_exchange_pending": result.get("n_exchange_pending"),
         **saved,
         "truncated": {name: max(0, count - len(saved[name])) for name, count in counts.items()},

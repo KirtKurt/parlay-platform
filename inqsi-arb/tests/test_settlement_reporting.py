@@ -189,6 +189,18 @@ def test_audit_payload_is_bounded_below_dynamodb_item_limit():
     assert payload["truncated"]["detected_unverified"] == 25
 
 
+def test_audit_payload_bounds_top_level_request_strings():
+    result = {
+        "n_markets": 0, "n_arbs": 0, "n_detected_unverified": 0,
+        "n_rejected": 0, "n_held_unverified": 0, "n_exchange_pending": 0,
+        "hits": [], "detected_unverified": [], "rejected": [], "exchange_pending": [],
+    }
+    payload = _audit_scan_payload(result, sport="s" * 500_000, jurisdiction="j" * 500_000)
+    assert len(payload["sport"]) == 256
+    assert len(payload["jurisdiction"]) == 256
+    assert len(json.dumps(payload).encode("utf-8")) < 10_000
+
+
 def test_new_york_default_uses_us_provider_regions(monkeypatch):
     monkeypatch.delenv("ARB_DEFAULT_JURISDICTION", raising=False)
     monkeypatch.delenv("ARB_US_REGIONS", raising=False)
@@ -224,3 +236,4 @@ def test_embedded_ui_reports_held_and_exchange_candidates():
     assert "Inspect held-back opportunities" in HTML
     assert "(j.rejected||[]).filter(x=>x.math_arb)" in HTML
     assert "el('held').innerHTML=''" in HTML
+    assert "j.n_held_unverified??held.length" in HTML

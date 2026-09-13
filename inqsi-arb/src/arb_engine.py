@@ -45,10 +45,13 @@ def _net_decimal(decimal_odds: float, commission_rate: float) -> float:
     return 1.0 + (decimal_odds - 1.0) * (1.0 - c)
 
 
-def _candidate_signature(row: Mapping[str, Any]) -> tuple[str, tuple[tuple[str, str, Any], ...]]:
+def _candidate_signature(row: Mapping[str, Any]) -> tuple[Any, ...]:
     """Identify the selected prices independently of settlement-profile rows."""
     return (
         str(row.get("market_id") or "").split("|rules:", 1)[0],
+        str(row.get("event") or ""),
+        str(row.get("market") or ""),
+        str(row.get("commence_time") or ""),
         tuple(sorted(
             (str(leg.get("outcome") or ""), str(leg.get("book") or ""), leg.get("net_decimal"))
             for leg in row.get("legs") or []
@@ -171,11 +174,13 @@ def scan_all(payload: Mapping[str, Any]) -> Dict[str, Any]:
         row for row in rejected
         if not row.get("math_arb") or _candidate_signature(row) not in verified_signatures
     ]
+    n_held_unverified = len(detected) + sum(bool(row.get("math_arb")) for row in rejected)
     key = lambda r: (r["minimum_profit"] or -10**9, r["margin_pct"])
     hits.sort(key=key, reverse=True); detected.sort(key=key, reverse=True); near.sort(key=lambda r: r["sum_implied"])
     return {"ok": True, "places_bets": False, "bankroll": bankroll,
             "n_markets": len(hits)+len(detected)+len(near)+len(rejected)+len(exchange_pending), "n_arbs": len(hits),
             "n_detected_unverified": len(detected), "n_rejected": len(rejected),
+            "n_held_unverified": n_held_unverified,
             "n_exchange_pending": len(exchange_pending),
             "hits": hits, "detected_unverified": detected[:100], "near": near[:100],
             "rejected": rejected[:100], "exchange_pending": exchange_pending[:100]}
