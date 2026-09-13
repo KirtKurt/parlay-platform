@@ -289,10 +289,12 @@ def test_v3_health_rules_and_ui_routes(monkeypatch):
     assert body["automatic_market_discovery"] is True
     assert body["balance_aware_optimizer"] is True
     assert body["two_leg_completion_assistant"] is True
-    assert body["default_jurisdiction"] == "ny"
+    assert body["default_jurisdiction"] == "*"
     assert body["candidate_evidence_audit"] is True
     assert body["required_outcome_universe_preserved"] is True
     assert body["exchange_lay_routed"] is True
+    assert body["sportsbook_scope"] == "all_provider_returned"
+    assert body["default_regions"] == ["us", "us2", "us_dfs", "us_ex", "uk", "eu", "fr", "se", "au"]
     assert body["rules_registry_entries"] >= 6
     rules = lambda_handler({"httpMethod": "GET", "path": "/v1/arb/rules"}, None)
     rules_body = json.loads(rules["body"])
@@ -303,3 +305,10 @@ def test_v3_health_rules_and_ui_routes(monkeypatch):
     assert "Inqsi ARB Console" in ui["body"]
     assert "wss://example.invalid/Prod" in ui["body"]
     assert "__INQSI_WS_URL__" not in ui["body"]
+
+
+def test_deploy_and_repair_force_the_supported_worldwide_regions():
+    expected = '"ArbRegions=us,us2,us_dfs,us_ex,uk,eu,fr,se,au"'
+    workflows = ROOT.parent / ".github" / "workflows"
+    for name in ("inqsi-arb-deploy.yml", "inqsi-arb-repair.yml"):
+        assert expected in (workflows / name).read_text()

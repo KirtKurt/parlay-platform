@@ -108,7 +108,9 @@ jobs:
             --resolve-s3 \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
-            --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}"
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              "ArbRegions=us,us2,us_dfs,us_ex,uk,eu,fr,se,au"
       - name: Verify live v3 health, rules, history, optimization, persistence, completion, UI and infrastructure
         run: |
           set -euo pipefail
@@ -155,9 +157,11 @@ jobs:
           assert h['websocket_public_url_present'] is True, h
           assert h['balance_aware_optimizer'] is True and h['two_leg_completion_assistant'] is True, h
           assert h['opportunity_history'] is True and h['rules_registry_entries'] >= 6, h
-          assert h['default_jurisdiction'] == 'ny', h
+          assert h['default_jurisdiction'] == '*', h
           assert h['candidate_evidence_audit'] is True, h
           assert h['required_outcome_universe_preserved'] is True and h['exchange_lay_routed'] is True, h
+          assert h['sportsbook_scope'] == 'all_provider_returned', h
+          assert h['default_regions'] == ['us','us2','us_dfs','us_ex','uk','eu','fr','se','au'], h
 
           _,_,rb=request('/v1/arb/rules')
           rules=json.loads(rb)

@@ -22,11 +22,11 @@ HTML = r'''<!doctype html>
           <div><label>Sport key</label><input id="sport" value="baseball_mlb"></div>
           <div><label>Markets</label><input id="markets" value="h2h,spreads,totals"></div>
           <div><label>Bankroll</label><input id="bankroll" type="number" min="1" value="1000"></div>
-          <div><label>Jurisdiction</label><select id="jurisdiction"><option value="ny" selected>New York</option><option value="in">Indiana</option><option value="*">Unscoped</option></select></div>
+          <div><label>Settlement scope</label><select id="jurisdiction"><option value="*" selected>Worldwide</option><option value="ny">New York</option><option value="in">Indiana</option></select></div>
           <button id="scanBtn">Scan</button>
           <button id="allBtn" class="secondary">All markets</button>
         </div>
-        <div class="small" style="margin-top:7px">Choose the jurisdiction where the wager would be placed. Unscoped mode only uses rules that are genuinely jurisdiction-independent; state-specific house rules stay fail-closed.</div>
+        <div class="small" style="margin-top:7px">Worldwide scans include every provider-returned sportsbook. Only genuinely jurisdiction-independent rules can verify globally; select a jurisdiction to apply its reviewed state-specific rules.</div>
         <div class="metrics">
           <div class="metric"><b id="mArbs">—</b><span>Verified arbs</span></div>
           <div class="metric"><b id="mMarkets">—</b><span>Markets evaluated</span></div>

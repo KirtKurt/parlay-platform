@@ -35,8 +35,11 @@ Reviewed production settlement coverage has expanded beyond the initial MLB seed
 
 The settlement-state verification layer now supports explicit exhaustive state universes, cent-rounded outcome P&L verification, refund/push states, dead-heat/partial-void representations, quarter-line split representation, and exchange commission/liability calculations. These capabilities do not imply that every sportsbook rule combination has been reviewed; rule breadth remains a separate qualification requirement.
 
-The 2026-09-13 settlement/reporting repair makes New York the explicit
-production default and limits default New York scans to the US provider regions.
+The 2026-09-13 settlement/reporting repair uses worldwide settlement scope as
+the production default and scans every sportsbook returned across the configured
+global provider regions. No bookmaker allowlist hides mathematical candidates.
+Jurisdiction-specific verification remains available when explicitly requested;
+unreviewed worldwide combinations remain visible but fail closed.
 The provider's original exhaustive outcome universe is preserved after
 freshness and settlement-profile filtering, so a removed or stale winning state
 can never disappear from completeness checks. A parallel held-back row preserves
