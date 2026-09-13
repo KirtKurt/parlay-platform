@@ -4,7 +4,8 @@ import pandas as pd
 import pytest
 from ks1.features import Features, pitching
 from ks1.retrain_recent import (accepted, choose_features, completion_times,
-                                pitcher_promotion_ready, split_recent)
+                                pitcher_promotion_ready, prospective_context_coverage,
+                                split_recent)
 from ks1.train import artifact_write_authorized
 from tests.ks1.test_game_table import game
 
@@ -187,10 +188,10 @@ def test_last_three_is_fail_closed_when_only_two_starts_are_retained():
     feature = Features(games).at('2026-08-10T19:50:00Z', '1', '99', game_date='2026-08-10')
     assert feature['starter_starts_observed_last3'] == 2
     assert feature['starter_era_last3'] is None
-    assert feature['pitcher_context_expected_innings'] is None
+    assert feature['pitcher_context_expected_innings'] == 6
 
 
-def test_expected_innings_uses_exactly_the_most_recent_five_starts():
+def test_expected_innings_uses_up_to_five_current_season_starts():
     stats = {'outs':18,'earnedRuns':2,'runs':3,'hits':4,'homeRuns':1,'baseOnBalls':2,
              'hitBatsmen':1,'strikeOuts':7,'battersFaced':25,'wins':1,'losses':0,
              'gamesStarted':1,'numberOfPitches':90}
@@ -200,6 +201,10 @@ def test_expected_innings_uses_exactly_the_most_recent_five_starts():
         '2026-08-10T19:50:00Z', '1', '99', game_date='2026-08-10')
     assert feature['pitcher_context_expected_innings'] == pytest.approx(
         sum(15+i for i in range(2, 7))/15)
+    prior = full_game(99, '2025-09-01', 99, {**stats, 'outs': 3})
+    same = Features([prior, *games]).at(
+        '2026-08-10T19:50:00Z', '1', '99', game_date='2026-08-10')
+    assert same['pitcher_context_expected_innings'] == feature['pitcher_context_expected_innings']
 
 
 def test_opening_day_last_three_uses_prior_year_league_baseline():
@@ -317,8 +322,22 @@ def test_promotion_requires_both_probability_metrics_and_same_sufficient_cohort(
 def test_historical_projection_is_not_prospective_promotion_coverage():
     source = Path(__file__).resolve().parents[2]/'ks1/retrain_recent.py'
     text = source.read_text()
-    assert "test.pitcher_context_evidence.eq(" in text
-    assert "test.historical_pitcher_context_mode.isna()" in text
+    assert "frame.pitcher_context_evidence.eq(" in text
+    assert "frame.historical_pitcher_context_mode.isna()" in text
+
+
+def test_prospective_coverage_requires_every_learned_context_column():
+    frame = pd.DataFrame({
+        'pitcher_context_evidence': ['frozen_versioned_ks1_profile']*300,
+        'historical_pitcher_context_mode': [None]*300,
+        'home_pitcher_context_quality': [1.0]*300,
+        'away_pitcher_context_command': [2.0]*299+[None],
+    })
+    per_feature, complete = prospective_context_coverage(
+        frame, ['home_pitcher_context_quality', 'away_pitcher_context_command'])
+    assert per_feature == {'home_pitcher_context_quality': 300,
+                           'away_pitcher_context_command': 299}
+    assert complete == 299
 
 
 def test_evaluation_uses_only_the_latest_300_eligible_games():

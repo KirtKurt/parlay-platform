@@ -376,14 +376,22 @@ class Features:
             statcast["xfip"] = self.xfip(box, statcast, league_hr_fb)
             for name, value in statcast.items():
                 result[f"starter_{name}_{window}d"] = value
-        starts = [(r["start"], r["game_id"], p["stats"]) for r in completed for p in r["players"]
-                  if p["id"] == starter_id and number(p["stats"].get("gamesStarted")) == 1]
-        last_five = sorted(starts, key=lambda item: item[0], reverse=True)[:5]
+        current_appearances = [(r["start"], r["game_id"], p["stats"])
+                               for r in eligible for p in r["players"]
+                               if p["id"] == starter_id]
+        current_starts = [entry for entry in current_appearances
+                          if number(entry[2].get("gamesStarted")) == 1]
+        # Match V8's official game-log contract: target season only, latest one
+        # through five starts, with appearances as the no-start fallback.
+        last_five = sorted(current_starts or current_appearances,
+                           key=lambda item: item[0], reverse=True)[:5]
         last_five_outs = [number(stats.get("outs")) for _, _, stats in last_five]
         result["starter_expected_innings_last5"] = (
             sum(last_five_outs)/(3*len(last_five_outs))
-            if starter_id and len(last_five_outs) == 5 and all(value is not None for value in last_five_outs)
+            if starter_id and last_five_outs and all(value is not None for value in last_five_outs)
             else None)
+        starts = [(r["start"], r["game_id"], p["stats"]) for r in completed for p in r["players"]
+                  if p["id"] == starter_id and number(p["stats"].get("gamesStarted")) == 1]
         last_three_pairs = sorted(starts, key=lambda item: item[0], reverse=True)[:3]
         last_three_complete = len(last_three_pairs) == 3
         last_three = [stats for _, _, stats in last_three_pairs] if last_three_complete else []

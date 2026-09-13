@@ -121,6 +121,15 @@ def pitcher_promotion_ready(candidate, incumbent, context_features, prospective_
                 and prospective_rows >= EVALUATION_GAMES)
 
 
+def prospective_context_coverage(frame, context_features):
+    prospective = frame.pitcher_context_evidence.eq(
+        'frozen_versioned_ks1_profile') & frame.historical_pitcher_context_mode.isna()
+    per_feature = {column: int((prospective & frame[column].notna()).sum())
+                   for column in context_features}
+    complete = frame[context_features].notna().all(axis=1) if context_features else False
+    return per_feature, int((prospective & complete).sum())
+
+
 def evaluate(frame, incumbent_bytes, output, proof):
     train, test = split_recent(frame)
     features, omitted, coverage = choose_features(train)
@@ -136,11 +145,8 @@ def evaluate(frame, incumbent_bytes, output, proof):
     ablated = ablation.predict_proba(test[without_seven].astype(float))[:, 1]
     candidate_metrics, incumbent_metrics = metrics(y_test, predictions), metrics(y_test, old)
     context_features = [c for c in features if pitcher_context_feature(c)]
-    prospective = test.pitcher_context_evidence.eq(
-        'frozen_versioned_ks1_profile') & test.historical_pitcher_context_mode.isna()
-    prospective_context_rows = int((prospective
-        & test.home_pitcher_context_quality.notna()
-        & test.away_pitcher_context_quality.notna()).sum())
+    prospective_feature_coverage, prospective_context_rows = prospective_context_coverage(
+        test, context_features)
     statistical_gate = accepted(candidate_metrics, incumbent_metrics)
     promotion_ready = pitcher_promotion_ready(
         candidate_metrics, incumbent_metrics, context_features, prospective_context_rows)
@@ -171,6 +177,7 @@ def evaluate(frame, incumbent_bytes, output, proof):
               'pitcher_context_features_learned': context_features,
               'pitcher_context_feature_training_rows': {
                   c: int(train[c].notna().sum()) for c in context_features},
+              'prospective_pitcher_context_feature_rows': prospective_feature_coverage,
               'prospective_pitcher_context_test_rows': prospective_context_rows,
               'minimum_individual_starter_rows_per_side': MIN_STARTER_ROWS,
               'parameters': PARAMS, 'test_used_for_tuning': False, 'holdout_refit': False,
