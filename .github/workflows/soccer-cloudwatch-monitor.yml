@@ -1,0 +1,118 @@
+name: Soccer CloudWatch Monitor
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soccer-cloudwatch-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Tail soccer Lambda logs and alarms
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          region="$AWS_REGION"
+          stack=parlay-platform-soccer-auto
+          mkdir -p /tmp/cw
+          python3 - <<'PY'
+          import json, os, subprocess, time
+          region = os.environ["AWS_REGION"]
+          stack = "parlay-platform-soccer-auto"
+          logicals = [
+              "SoccerFreezeFunction",
+              "SoccerDispatchFunction",
+              "SoccerCollectionWorkerFunction",
+              "SoccerControllerFunction",
+              "SoccerSettlementFunction",
+              "SoccerApiFunction",
+          ]
+          start_ms = int((time.time() - 90 * 60) * 1000)
+          report = {"window_minutes": 90, "functions": {}, "alarms": []}
+
+          def aws(*args):
+              return subprocess.check_output(["aws", *args, "--region", region], text=True)
+
+          for logical in logicals:
+              try:
+                  fn = aws(
+                      "cloudformation", "describe-stack-resource",
+                      "--stack-name", stack,
+                      "--logical-resource-id", logical,
+                      "--query", "StackResourceDetail.PhysicalResourceId",
+                      "--output", "text",
+                  ).strip()
+              except subprocess.CalledProcessError as exc:
+                  report["functions"][logical] = {"error": "missing_resource"}
+                  continue
+              group = f"/aws/lambda/{fn}"
+              cfg = json.loads(aws(
+                  "lambda", "get-function-configuration",
+                  "--function-name", fn,
+                  "--query", "{Handler:Handler,State:State,LastUpdateStatus:LastUpdateStatus,LastModified:LastModified,Timeout:Timeout}",
+              ))
+              try:
+                  events = json.loads(aws(
+                      "logs", "filter-log-events",
+                      "--log-group-name", group,
+                      "--start-time", str(start_ms),
+                      "--limit", "40",
+                  )).get("events") or []
+              except subprocess.CalledProcessError:
+                  events = []
+              try:
+                  errors = json.loads(aws(
+                      "logs", "filter-log-events",
+                      "--log-group-name", group,
+                      "--start-time", str(start_ms),
+                      "--filter-pattern", "?ERROR ?Error ?Exception ?Traceback ?kss1_shadow_error",
+                      "--limit", "20",
+                  )).get("events") or []
+              except subprocess.CalledProcessError:
+                  errors = []
+              report["functions"][logical] = {
+                  "function_name": fn,
+                  "handler": cfg.get("Handler"),
+                  "state": cfg.get("State"),
+                  "last_update": cfg.get("LastUpdateStatus"),
+                  "last_modified": cfg.get("LastModified"),
+                  "event_count": len(events),
+                  "error_hits": [
+                      {"ts": e.get("timestamp"), "msg": (e.get("message") or "")[:400]}
+                      for e in errors[-8:]
+                  ],
+                  "latest": [
+                      {"ts": e.get("timestamp"), "msg": (e.get("message") or "")[:300]}
+                      for e in events[-8:]
+                  ],
+              }
+          alarms = json.loads(aws(
+              "cloudwatch", "describe-alarms",
+              "--query", "MetricAlarms[?contains(AlarmName, `Soccer`) || contains(AlarmName, `soccer`)].{AlarmName:AlarmName,StateValue:StateValue,StateReason:StateReason,StateUpdatedTimestamp:StateUpdatedTimestamp}",
+          ))
+          report["alarms"] = alarms
+          open("/tmp/cw/report.json", "w").write(json.dumps(report, indent=2, default=str))
+          print(json.dumps(report, indent=2, default=str)[:20000])
+          PY
+          {
+            echo '### Soccer CloudWatch snapshot'
+            echo '```json'
+            python3 - <<'PY'
+          import json
+          print(json.dumps(json.load(open("/tmp/cw/report.json")), indent=2)[:50000])
+          PY
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
