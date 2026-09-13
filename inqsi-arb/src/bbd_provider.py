@@ -246,6 +246,14 @@ def sports() -> Dict[str, Any]:
         return {"ok": False, "enabled": True, "reason": "BBD_API_KEY_NOT_CONFIGURED", "sports": []}
     try:
         status, headers, payload = _request("/v1/sports")
+        if status != 200:
+            return {
+                "ok": False,
+                "enabled": True,
+                "status": status,
+                "reason": "BBD_SPORTS_ENDPOINT_UNAVAILABLE_OR_UNENTITLED",
+                "sports": [],
+            }
         rows = _items(payload)
         return {
             "ok": status == 200,
