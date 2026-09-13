@@ -2,7 +2,8 @@
 
 The cron is a recovery seed, not a delivery guarantee. A singleton owner checks
 for an overdue main production run and hands off to a new bounded owner before
-its runner timeout. GitHub dispatch/runners can still be delayed or unavailable.
+its runner timeout. An ambiguous handoff is verified by exact-workflow readback
+before one bounded retry. GitHub dispatch/runners can still be delayed.
 """
 from datetime import datetime, timedelta, timezone
 import json
@@ -19,6 +20,7 @@ OWNER_SECONDS = 55 * 60
 POLL_SECONDS = 60
 REQUEST_TIMEOUT = 10
 READ_BACKOFF = (2, 5)
+HANDOFF_CONFIRM_BACKOFF = (2, 5, 10, 20)
 
 
 def timestamp(value):
@@ -79,6 +81,10 @@ class GitHub:
         result = self.request('workflows/'+TARGET+'/runs?branch=main&per_page=100')
         return result['workflow_runs']
 
+    def owner_runs(self):
+        result = self.request('workflows/'+OWNER+'/runs?branch=main&per_page=20')
+        return result['workflow_runs']
+
     def dispatch(self, name):
         if name not in (TARGET, OWNER):
             raise ValueError('dispatch target is outside KS1')
@@ -93,6 +99,41 @@ def require_owner():
             and os.environ.get('GITHUB_EVENT_NAME') in EVENTS
             and os.environ.get('GITHUB_WORKFLOW_REF') == expected):
         raise ValueError('dispatch requires the main KS1 watchdog workflow')
+
+
+def successor_active(runs, current_run_id):
+    return any(str(r.get('id')) != str(current_run_id)
+               and r.get('head_branch') == 'main'
+               and r.get('event') in EVENTS
+               and r.get('path') == '.github/workflows/'+OWNER
+               and r.get('head_repository', {}).get('full_name') == REPOSITORY
+               and r.get('status') != 'completed'
+               for r in runs)
+
+
+def handoff(api, *, current_run_id, sleep=time.sleep):
+    try:
+        api.dispatch(OWNER)
+        return 'next_bounded_owner_requested'
+    except RuntimeError:
+        # A failed POST is ambiguous: GitHub may have accepted it before the
+        # client timed out. Verify the exact workflow before considering retry.
+        print(json.dumps({'status': 'handoff_dispatch_unconfirmed'}), flush=True)
+    read_succeeded = False
+    for delay in HANDOFF_CONFIRM_BACKOFF:
+        sleep(delay)
+        try:
+            runs = api.owner_runs()
+        except RuntimeError:
+            continue
+        read_succeeded = True
+        if successor_active(runs, current_run_id):
+            return 'next_bounded_owner_confirmed'
+    if not read_succeeded:
+        # Retrying without fresh readback could queue a duplicate owner.
+        raise RuntimeError('KS1 owner handoff unconfirmed; fresh readback unavailable') from None
+    api.dispatch(OWNER)
+    return 'next_bounded_owner_retry_requested'
 
 
 def run_owner(api, *, clock=lambda: datetime.now(timezone.utc),
@@ -138,8 +179,9 @@ def run_owner(api, *, clock=lambda: datetime.now(timezone.utc),
             last_dispatch = now
         sleep(min(POLL_SECONDS, max(0, deadline-monotonic())))
     if api.active():
-        api.dispatch(OWNER)
-        print(json.dumps({'status': 'next_bounded_owner_requested',
+        status = handoff(api, current_run_id=os.environ.get('GITHUB_RUN_ID'),
+                         sleep=sleep)
+        print(json.dumps({'status': status,
                           'read_failures': read_failures}), flush=True)
     if failures:
         raise RuntimeError('KS1 dispatch was unconfirmed; inspect the production runs')
