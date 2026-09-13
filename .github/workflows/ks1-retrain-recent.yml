@@ -19,7 +19,7 @@ jobs:
     if: >-
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository &&
-       github.head_ref == 'codex/ks1-starter-followup-20260913') ||
+       github.head_ref == 'codex/ks1-starter-postmerge-repairs-20260913') ||
       ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
        github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
