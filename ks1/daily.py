@@ -318,6 +318,9 @@ def predict(folder, output):
     needed = set(classifier.feature_name()) | set(poisson['home']['features']) | set(poisson['away']['features'])
     individual_learned = any(name.startswith(side+'_starter_')
                              for name in classifier.feature_name() for side in ('home', 'away'))
+    pitcher_context_learned = [name for name in classifier.feature_name()
+                               if any(name.startswith(side+'_pitcher_context_')
+                                      for side in ('home', 'away'))]
     model_version = 'KS1-LGB-'+refs['lightgbm']['sha256'][:12]+'-DP-'+refs['poisson']['sha256'][:12]
     official = inputs['official']['payload']
     schedule = [g for d in official['dates'] for g in d['games']]
@@ -512,6 +515,7 @@ def predict(folder, output):
     report = {'system': 'KS1', 'phase': 5, 'date': target_date, 'as_of': as_of, 'model_version': model_version,
               'learned_feature_names': classifier.feature_name(),
               'individual_starter_features_learned': individual_learned,
+              'pitcher_context_features_learned': pitcher_context_learned,
               'rows': len(frame), 'newly_scored': len(rows), 'preserved_pregame_rows': len(frozen_ids),
               'provider_status_disagreement_retained_rows': len(provider_status_disagreement_retained),
               'provider_status_disagreement_retained_game_ids': provider_status_disagreement_retained,

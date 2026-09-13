@@ -29,6 +29,36 @@ def number(value):
         return None
 
 
+def finite(value):
+    """Return any finite numeric value, including signed model features."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        result = float(value)
+        return result if math.isfinite(result) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def pitcher_context(values):
+    """Common pitcher-summary contract for history and live inference."""
+    def first(*names):
+        return next((value for name in names if (value := finite(values.get(name))) is not None), None)
+
+    quality = first("starter_xera_30d", "starter_fip_30d", "starter_era_30d")
+    recent_command = first("starter_k_bb_pct_last3")
+    recent_result = first("starter_xera_last3", "starter_fip_last3", "starter_era_last3")
+    outs, starts = first("starter_outs_30d"), first("starter_appearances_30d")
+    return {
+        "quality": -quality if quality is not None else None,
+        "recent_form": recent_command if recent_command is not None else (
+            -recent_result if recent_result is not None else None),
+        "velocity": first("starter_velocity_30d"),
+        "command": first("starter_k_bb_pct_30d"),
+        "expected_innings": outs/(3*starts) if outs is not None and starts else None,
+    }
+
+
 def counts(rows, keys):
     valid = [r for r in rows if all(number(r.get(k)) is not None for k in keys)]
     return {k: sum(number(r[k]) for r in valid) for k in keys}, len(valid)
@@ -393,5 +423,7 @@ class Features:
             valid = all(number(r.get("pitches")) is not None and number(r.get("outs")) is not None for r in chosen)
             for stat in ("pitches", "outs"):
                 result[f"bullpen_{stat}_{window}d"] = sum(number(r[stat]) for r in chosen) if team and valid else None
+        result.update({"pitcher_context_"+name: value
+                       for name, value in pitcher_context(result).items()})
         self.cache[key] = result
         return result

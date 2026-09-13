@@ -2,68 +2,19 @@
 
 No lock, grade ledger, audit record, provider endpoint, or AWS state is written.
 """
-from collections import defaultdict
-from datetime import date, timedelta
+from datetime import timedelta
 import hashlib
-import io
 import json
 import re
 
 import numpy as np
-import pyarrow.parquet as pq
 
 from ks1.features import utc
+from ks1.historical_starters import read_locked_predictions
 from ks1.inventory import encode
 from ks1.platt import identity, raw_model_version, temperature_identity
 
 PREFIX = 'mlb/ks1/predictions-v1/'
-
-
-def read_locked_predictions(s3, bucket, as_of, *, target_date=None):
-    # Coverage needs only today's versions; existing grading callers retain the
-    # full-history scan and exactly the same admission rules.
-    prefix = PREFIX
-    if target_date is not None:
-        if date.fromisoformat(target_date).isoformat() != target_date:
-            raise ValueError('invalid prediction date')
-        prefix += 'date='+target_date+'/'
-    versions, deleted = defaultdict(list), set()
-    for page in s3.get_paginator('list_object_versions').paginate(Bucket=bucket, Prefix=prefix):
-        deleted.update(v['Key'] for v in page.get('DeleteMarkers', []) if v.get('IsLatest'))
-        for v in page.get('Versions', []):
-            if re.fullmatch(re.escape(PREFIX)+r'date=\d{4}-\d{2}-\d{2}/predictions.parquet', v['Key']):
-                versions[v['Key']].append(v)
-    admitted, excluded, sources = [], [], []
-    for key, entries in sorted(versions.items()):
-        if key in deleted:
-            excluded.append({'key': key, 'reason': 'current_object_deleted'}); continue
-        candidates, current = {}, None
-        for v in sorted(entries, key=lambda v: v['LastModified']):
-            body = s3.get_object(Bucket=bucket, Key=key, VersionId=v['VersionId'])['Body'].read()
-            source = {'key': key, 'bucket': bucket, 'version_id': v['VersionId'],
-                      'stored_at': v['LastModified'].isoformat(), 'sha256': hashlib.sha256(body).hexdigest()}
-            sources.append(source)
-            rows = pq.ParquetFile(io.BytesIO(body)).read().to_pylist()
-            if len({r['game_id'] for r in rows}) != len(rows):
-                raise ValueError('duplicate stored prediction IDs')
-            if v.get('IsLatest'):
-                current = {r['game_id']: r for r in rows}
-            for row in rows:
-                cutoff = utc(row['commence_time'])-timedelta(minutes=10)
-                if (v['VersionId'] != 'null' and row['date'] == key.split('date=')[1].split('/')[0]
-                        and utc(row['as_of']) <= utc(source['stored_at']) <= cutoff < utc(as_of)):
-                    candidates[row['game_id']] = {'row': row, 'evidence': source}
-        for pk, entry in candidates.items():
-            now = (current or {}).get(pk, {})
-            if not now or any(now.get(k) != v for k, v in entry['row'].items()):
-                excluded.append({'game_id': pk, 'reason': 'changed_or_missing_frozen_row'}); continue
-            admitted.append(entry)
-        for pk, row in (current or {}).items():
-            if pk not in candidates and utc(row['commence_time'])-timedelta(minutes=10) < utc(as_of):
-                excluded.append({'game_id': pk, 'reason': 'no_original_pre_cutoff_version'})
-    return admitted, {'prediction_keys': len(versions), 'locked_rows': len(admitted),
-                      'versions_read': len(sources), 'sources': sources, 'excluded': excluded}
-
 
 def capture(s3, bucket, as_of, prior, final_sources):
     locked, inventory = read_locked_predictions(s3, bucket, as_of)

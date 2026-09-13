@@ -3,7 +3,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from ks1.features import Features, pitching
-from ks1.retrain_recent import accepted, choose_features, completion_times, split_recent
+from ks1.retrain_recent import (accepted, choose_features, completion_times,
+                                pitcher_promotion_ready, split_recent)
 from ks1.train import artifact_write_authorized
 from tests.ks1.test_game_table import game
 
@@ -12,7 +13,7 @@ def test_recent_validation_credentials_are_restricted_to_trusted_branch():
     path = Path(__file__).resolve().parents[2]/'.github/workflows/ks1-retrain-recent.yml'
     workflow_text = path.read_text()
     assert 'github.event.pull_request.head.repo.full_name == github.repository' in workflow_text
-    assert "github.head_ref == 'codex/ks1-starter-postmerge-repairs-20260913'" in workflow_text
+    assert "github.head_ref == 'codex/ks1-historical-starter-bridge-20260913'" in workflow_text
     assert "github.event_name == 'schedule'" in workflow_text
     assert "github.event_name == 'workflow_dispatch'" in workflow_text
     assert "github.ref == 'refs/heads/main'" in workflow_text
@@ -24,7 +25,7 @@ def test_recent_validation_credentials_are_restricted_to_trusted_branch():
     ('workflow_dispatch', 'refs/heads/main', '', True),
     ('push', 'refs/heads/main', '', False),
     ('pull_request', 'refs/pull/1/merge',
-     'codex/ks1-starter-postmerge-repairs-20260913', True),
+     'codex/ks1-historical-starter-bridge-20260913', True),
     ('pull_request', 'refs/pull/2/merge', 'untrusted', False),
 ])
 def test_challenger_artifact_write_authority(monkeypatch, event, ref, head, authorized):
@@ -269,12 +270,41 @@ def test_sparse_advanced_starter_feature_is_not_learned_from_too_few_rows():
     assert 'home_starter_xwoba_30d' in omitted
 
 
+def test_verified_historical_pitcher_context_can_train_without_claiming_identity():
+    n = 300
+    frame = pd.DataFrame({
+        'home_offense_ops_7d': [0.5+i/1000 for i in range(n)],
+        'home_starter_id': [None]*n, 'away_starter_id': [None]*n,
+        'home_starter_bf_30d': [None]*n, 'away_starter_bf_30d': [None]*n,
+        'home_pitcher_context_quality': [-3-i/1000 for i in range(n)],
+        'away_pitcher_context_quality': [-4+i/1000 for i in range(n)],
+    })
+    features, omitted, coverage = choose_features(frame)
+    assert coverage == {'home': 0, 'away': 0}
+    assert 'home_pitcher_context_quality' in features
+    assert 'away_pitcher_context_quality' in features
+    frame.loc[0, 'away_pitcher_context_quality'] = None
+    features, omitted, _ = choose_features(frame)
+    assert 'away_pitcher_context_quality' not in features
+    assert 'away_pitcher_context_quality' in omitted
+
+
 def test_promotion_requires_both_probability_metrics_and_same_sufficient_cohort():
     old = {'games': 300, 'brier': .24, 'logloss': .68}
     assert accepted({'games': 300, 'brier': .23, 'logloss': .67}, old)
     assert not accepted({'games': 300, 'brier': .23, 'logloss': .69}, old)
     assert not accepted(old, old)
     assert not accepted({'games': 299, 'brier': .23, 'logloss': .67}, old)
+    better = {'games': 300, 'brier': .23, 'logloss': .67}
+    assert pitcher_promotion_ready(better, old, ['home_pitcher_context_quality'], 300)
+    assert not pitcher_promotion_ready(better, old, ['home_pitcher_context_quality'], 299)
+    assert not pitcher_promotion_ready(better, old, [], 300)
+
+
+def test_historical_projection_is_not_prospective_promotion_coverage():
+    source = Path(__file__).resolve().parents[2]/'ks1/retrain_recent.py'
+    text = source.read_text()
+    assert "test.historical_pitcher_context_mode.isna()" in text
 
 
 def test_evaluation_uses_only_the_latest_300_eligible_games():

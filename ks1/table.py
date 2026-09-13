@@ -10,6 +10,7 @@ import pandas as pd
 import pyarrow as pa
 
 from ks1.features import Features, day, number, starter_matchup, utc
+from ks1.historical_starters import published_starter_index
 from ks1.inventory import encode
 
 VERSION = "KS1-game-table-v1"
@@ -108,6 +109,8 @@ def build(bundle, selected_date=None):
     for s in bundle.get("snapshots", []):
         if s.get("originalObservation") is True and s.get("outcomeKnownAtCapture") is False:
             snapshots[str(s["officialGamePk"])].append(s)
+    published_starters = published_starter_index(bundle.get("published_predictions", []))
+    historical_context = bundle.get("historical_pitcher_context", {})
     history = Features(list(games.values()), bundle.get("statcast", []),
                        statcast_complete=bundle.get("statcast_coverage_complete") is True,
                        prior_statcast_profiles=bundle.get("prior_statcast_profiles"),
@@ -139,7 +142,7 @@ def build(bundle, selected_date=None):
                 if len(ids) == 1:
                     missing_boxes[next(iter(ids))].append((pk, entry["officialDate"]))
     rows, exclusions = [], []
-    for pk in sorted(set(reconstructed) | set(schedule) | set(snapshots)):
+    for pk in sorted(set(reconstructed) | set(schedule) | set(snapshots) | set(published_starters)):
         r, sch, game = reconstructed.get(pk, {}), schedule.get(pk, {}), games.get(pk, {})
         start = r.get("commenceTime") or sch.get("gameDate") or game.get("startAtUtc")
         if not start:
@@ -166,9 +169,16 @@ def build(bundle, selected_date=None):
             if hashlib.sha256(encode(snapshot["features"])).hexdigest() != snapshot["featureFingerprint"]:
                 raise ValueError("snapshot feature fingerprint mismatch")
             cutoff = snapshot["capturedAtUtc"]
+        published = published_starters.get(pk, {}) if not snapshot else {}
+        published_problem = None
+        if published and utc(published["commence_time"]) != utc(start):
+            published_problem, published = "published_starter_start_mismatch", {}
+        if published:
+            cutoff = published["as_of"]
         row = {"game_id": pk, "date": date, "season": int(sch.get("season") or date[:4]),
                "commence_time": start, "as_of_timestamp": cutoff, "table_version": VERSION,
-               "pregame_evidence": "original_snapshot" if snapshot else "reconstructed",
+               "pregame_evidence": ("original_snapshot" if snapshot else
+                                    "versioned_ks1_t10_prediction" if published else "reconstructed"),
                "historical_corrections_possible": True,
                "rolling_feature_evidence": "reconstructed_prior_completed_counts",
                "park": (sch.get("venue") or game.get("venue") or {}).get("name"),
@@ -182,7 +192,20 @@ def build(bundle, selected_date=None):
                "game_status": sch.get("status", {}).get("abstractGameState") or "Final" if (sch or game or r.get("label")) else "Unknown",
                "label_source": None, "final_score_status": "missing",
                "pregame_source_key": snapshot.get("source_key"),
+               "pregame_version_id": None, "pregame_stored_at": None,
+               "pregame_sha256": None,
+               "historical_pitcher_context_mode": None,
+               "historical_pitcher_context_as_of": None,
+               "historical_pitcher_context_source": None,
                "reconstructed_source": json.dumps(r.get("sourceArtifact"), sort_keys=True) if r else None}
+        if published:
+            proof = published["source"]
+            row.update(pregame_source_key=proof.get("key"),
+                       pregame_version_id=proof.get("version_id"),
+                       pregame_stored_at=proof.get("stored_at"),
+                       pregame_sha256=proof.get("sha256"))
+        if published_problem:
+            exclusions.append({"game_id": pk, "reason": published_problem})
         missing_identity = False
         for side in ("home", "away"):
             team = sch.get("teams", {}).get(side) or game.get("teams", {}).get(side)
@@ -220,6 +243,14 @@ def build(bundle, selected_date=None):
                     raise ValueError("snapshot starter lacks unique player identity")
                 row[f"{side}_starter_id"], row[f"{side}_starter_name"] = pid, players[0].get("name")
                 row[f"{side}_starter_status"] = "observed_pregame"
+            locked = published.get("sides", {}).get(side, {})
+            locked_team = published.get("teams", {}).get(side)
+            if published and locked_team and str(locked_team) != tid:
+                raise ValueError(f"published starter team ID conflict: {pk}")
+            if not row[f"{side}_starter_id"] and locked.get("id"):
+                row[f"{side}_starter_id"] = str(locked["id"])
+                row[f"{side}_starter_name"] = locked.get("name")
+                row[f"{side}_starter_status"] = "observed_versioned_t10"
             if observed.get("lineupConfirmed") is True and len(set(observed.get("battingOrder", []))) == 9:
                 row[f"{side}_lineup_status"] = "confirmed"
                 row[f"{side}_lineup_ids"] = json.dumps(observed["battingOrder"])
@@ -264,6 +295,26 @@ def build(bundle, selected_date=None):
             values = starter_matchup(starter[0].get("pitchHand") if len(starter) == 1 else None,
                                      [p.get("batSide") for p in lineup] if len(lineup) == 9 else None)
             row.update({f"{side}_starter_{key}": value for key, value in values.items()})
+        context = historical_context.get(pk, {})
+        context_matches = bool(
+            context and utc(context.get("commence_time")) == utc(start)
+            and all(context.get("teams", {}).get(side) == row.get(side+"_team")
+                    for side in ("home", "away")))
+        if context and not context_matches:
+            exclusions.append({"game_id": pk, "reason": "historical_pitcher_context_identity_mismatch"})
+        elif context_matches:
+            context_applied = False
+            for side in ("home", "away"):
+                # A real immutable T-10 starter profile is more specific.  The
+                # V8 summary accelerates only rows lacking that identity.
+                if row.get(side+"_starter_id") is None:
+                    row.update({f"{side}_pitcher_context_{key}": value
+                                for key, value in context["sides"][side].items()})
+                    context_applied = True
+            if context_applied:
+                row.update(historical_pitcher_context_mode=context["identity_mode"],
+                           historical_pitcher_context_as_of=context["as_of"],
+                           historical_pitcher_context_source=json.dumps(context["source"], sort_keys=True))
         if missing_identity:
             exclusions.append({"game_id": pk, "reason": "missing_official_team_identity"})
             continue
@@ -344,9 +395,15 @@ def build(bundle, selected_date=None):
 
 def coverage(frame):
     both = frame.home_starter_id.notna() & frame.away_starter_id.notna()
+    context = (frame.home_pitcher_context_quality.notna()
+               & frame.away_pitcher_context_quality.notna())
     actual = frame.home_actual_starter_id.notna() & frame.away_actual_starter_id.notna()
     final = frame.home_score.notna() & frame.away_score.notna()
     return {"with_both_pregame_starters": int(both.sum()), "pct_with_both_pregame_starters": round(100*both.mean(), 3),
+            "with_both_pitcher_contexts": int(context.sum()),
+            "pct_with_both_pitcher_contexts": round(100*context.mean(), 3),
+            "with_strict_prior_pitcher_projection": int(
+                (frame.historical_pitcher_context_mode == "strict_prior_projection").sum()),
             "with_both_actual_starters": int(actual.sum()), "pct_with_both_actual_starters": round(100*actual.mean(), 3),
             "with_final_score": int(final.sum()), "pct_with_final_score": round(100*final.mean(), 3)}
 
@@ -362,7 +419,9 @@ def contract(example):
             dtype = pa.int64()
         starter_metric = "_starter_" in column and not any(column.endswith(suffix) for suffix in (
             "_starter_id", "_starter_name", "_starter_status", "_actual_starter_id", "_actual_starter_name"))
-        if starter_metric or any(t in column for t in ("_offense_", "_team_starter_", "_bullpen_", "_rest_days", "_history_games")):
+        pitcher_context_metric = (column.startswith("home_pitcher_context_")
+                                  or column.startswith("away_pitcher_context_"))
+        if starter_metric or pitcher_context_metric or any(t in column for t in ("_offense_", "_team_starter_", "_bullpen_", "_rest_days", "_history_games")):
             dtype, role, source = pa.float64(), "feature", "strictly earlier completed compact/full game boxes"
             meaning += "; calendar-day windows; same-day excluded; current-season empirical prior; OPS/ISO 100 PA/AB, K-BB 100 BF, WHIP 75 outs shrinkage; *_games/*_pa/*_bf/*_appearances are observed counts"
             statcast = any(token in column for token in (
@@ -379,6 +438,9 @@ def contract(example):
             if matchup:
                 source = "original pregame playerWindows lineup and handedness observation"
                 meaning += "; null unless all nine lineup bat sides and probable-starter throwing hand are verified"
+            elif pitcher_context_metric:
+                source = "verified V8 point-in-time pitcher summary or same-contract observed KS1 starter profile"
+                meaning += "; historical projections remain explicitly marked and are never counted as confirmed starter identity"
             elif unavailable:
                 source = "not present in admitted exact-window sources; stored null and excluded from training"
                 meaning += "; unavailable is not zero and no proprietary metric is approximated under this name"
