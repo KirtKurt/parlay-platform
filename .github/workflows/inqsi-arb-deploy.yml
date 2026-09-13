@@ -157,7 +157,7 @@ jobs:
           assert h['opportunity_history'] is True and h['rules_registry_entries'] >= 6, h
           assert h['default_jurisdiction'] == 'ny', h
           assert h['candidate_evidence_audit'] is True, h
-          assert h['profile_scoped_outcome_coverage'] is True and h['exchange_lay_routed'] is True, h
+          assert h['required_outcome_universe_preserved'] is True and h['exchange_lay_routed'] is True, h
 
           _,_,rb=request('/v1/arb/rules')
           rules=json.loads(rb)

@@ -44,7 +44,7 @@ def test_exchange_lay_market_is_not_mispriced_as_sportsbook_arb():
     assert "margin_pct" not in result["exchange_pending"][0]
 
 
-def test_reviewed_profile_recomputes_outcomes_after_unknown_books_removed():
+def test_reviewed_profile_preserves_original_outcomes_after_books_removed():
     ts = fresh_ts()
     event = {
         "sport": "baseball_mlb",
@@ -63,10 +63,36 @@ def test_reviewed_profile_recomputes_outcomes_after_unknown_books_removed():
     rows = validate_event(event, jurisdiction="ny")
     compatible = [row for row in rows if row["rules_status"] == "compatible"]
     assert len(compatible) == 1
-    assert compatible[0]["expected_outcomes"] == ["Away +1.5", "Home -1.5"]
+    assert compatible[0]["expected_outcomes"] == [
+        "Away +1.5", "Home -1.5", "Away +7", "Home -7",
+    ]
     result = scan_all({"bankroll": 1000, "events": rows})
-    assert result["n_arbs"] == 1
-    assert result["n_rejected"] == 0
+    assert result["n_arbs"] == 0
+    assert result["n_rejected"] >= 1
+
+
+def test_stale_third_outcome_cannot_be_erased_from_three_way_market():
+    now = datetime.now(timezone.utc)
+    event = {
+        "sport": "baseball_mlb",
+        "market": "h2h_3_way_1st_5_innings",
+        "id": "three-way",
+        "event": "Away @ Home",
+        "expected_outcomes": ["Away", "Home", "Tie"],
+        "quotes": [
+            {"book": "fanatics", "outcome": "Away", "decimal": 3.2, "last_update": now.isoformat()},
+            {"book": "fanatics", "outcome": "Home", "decimal": 3.2, "last_update": now.isoformat()},
+            {"book": "fanatics", "outcome": "Tie", "decimal": 3.2,
+             "last_update": now.replace(year=now.year - 1).isoformat()},
+        ],
+    }
+
+    rows = validate_event(event, jurisdiction="ny")
+    assert rows[0]["expected_outcomes"] == ["Away", "Home", "Tie"]
+    result = scan_all({"bankroll": 1000, "events": rows})
+    assert result["n_arbs"] == 0
+    assert result["n_rejected"] == 1
+    assert result["rejected"][0]["validation"]["missing_outcomes"] == ["Tie"]
 
 
 def test_audit_payload_retains_held_candidate_legs_and_exact_reason():
@@ -112,6 +138,27 @@ def test_audit_payload_retains_held_candidate_legs_and_exact_reason():
     assert [(leg["book"], leg["american"]) for leg in saved["legs"]] == [
         ("book-a", 110), ("book-b", 110),
     ]
+
+
+def test_audit_payload_reports_omitted_n_way_legs():
+    candidate = {
+        "market_id": "n-way", "event": "Field winner", "market": "outrights",
+        "math_arb": True, "arb": False, "validation": {"rules_status": "unknown"},
+        "legs": [
+            {"outcome": f"runner-{i}", "book": f"book-{i}", "decimal": 10, "stake": 10}
+            for i in range(7)
+        ],
+    }
+    result = {
+        "n_markets": 1, "n_arbs": 0, "n_detected_unverified": 1,
+        "n_rejected": 0, "n_exchange_pending": 0, "hits": [],
+        "detected_unverified": [candidate], "rejected": [], "exchange_pending": [],
+    }
+
+    saved = _audit_scan_payload(result, sport="golf", jurisdiction="ny")["detected_unverified"][0]
+    assert saved["n_legs"] == 7
+    assert len(saved["legs"]) == 4
+    assert saved["omitted_legs"] == 3
 
 
 def test_audit_payload_is_bounded_below_dynamodb_item_limit():
@@ -175,3 +222,5 @@ def test_embedded_ui_reports_held_and_exchange_candidates():
     assert "Held-back mathematical opportunities" in HTML
     assert "exchange lay market(s) routed away" in HTML
     assert "Inspect held-back opportunities" in HTML
+    assert "(j.rejected||[]).filter(x=>x.math_arb)" in HTML
+    assert "el('held').innerHTML=''" in HTML

@@ -45,6 +45,17 @@ def _net_decimal(decimal_odds: float, commission_rate: float) -> float:
     return 1.0 + (decimal_odds - 1.0) * (1.0 - c)
 
 
+def _candidate_signature(row: Mapping[str, Any]) -> tuple[str, tuple[tuple[str, str, Any], ...]]:
+    """Identify the selected prices independently of settlement-profile rows."""
+    return (
+        str(row.get("market_id") or "").split("|rules:", 1)[0],
+        tuple(sorted(
+            (str(leg.get("outcome") or ""), str(leg.get("book") or ""), leg.get("net_decimal"))
+            for leg in row.get("legs") or []
+        )),
+    )
+
+
 def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Mapping[str, Any]],
                 bankroll: float = 1000.0, expected_outcomes: Optional[Iterable[str]] = None,
                 rules_status: str = "unknown", context: Optional[Mapping[str, Any]] = None,
@@ -154,6 +165,12 @@ def scan_all(payload: Mapping[str, Any]) -> Dict[str, Any]:
         elif row["arb"]: hits.append(row)
         elif row["math_arb"]: detected.append(row)
         else: near.append(row)
+    verified_signatures = {_candidate_signature(row) for row in hits}
+    detected = [row for row in detected if _candidate_signature(row) not in verified_signatures]
+    rejected = [
+        row for row in rejected
+        if not row.get("math_arb") or _candidate_signature(row) not in verified_signatures
+    ]
     key = lambda r: (r["minimum_profit"] or -10**9, r["margin_pct"])
     hits.sort(key=key, reverse=True); detected.sort(key=key, reverse=True); near.sort(key=lambda r: r["sum_implied"])
     return {"ok": True, "places_bets": False, "bankroll": bankroll,

@@ -111,8 +111,9 @@ def _audit_candidate(row: Dict[str, Any]) -> Dict[str, Any]:
         validation["settlement_reason"] = settlement["reason"]
     if settlement.get("missing_books") and not validation.get("missing_books"):
         validation["missing_books"] = bounded(settlement["missing_books"])
+    all_legs = list(row.get("legs") or [])
     legs = []
-    for leg in list(row.get("legs") or [])[:4]:
+    for leg in all_legs[:4]:
         legs.append({key: bounded(leg.get(key)) for key in (
             "outcome", "book", "american", "decimal", "net_decimal", "stake",
             "payout_if_wins", "profit_if_wins", "last_update", "provider", "link", "limit",
@@ -123,7 +124,12 @@ def _audit_candidate(row: Dict[str, Any]) -> Dict[str, Any]:
             "sum_implied", "margin_pct", "hold_pct", "bankroll", "minimum_payout",
             "minimum_profit", "n_quotes", "n_books", "outcomes", "books",
         )
-    } | {"validation": validation, "legs": legs}
+    } | {
+        "validation": validation,
+        "legs": legs,
+        "n_legs": len(all_legs),
+        "omitted_legs": max(0, len(all_legs) - len(legs)),
+    }
 
 
 def _audit_scan_payload(result: Dict[str, Any], *, sport: str, jurisdiction: str) -> Dict[str, Any]:
@@ -199,7 +205,7 @@ def lambda_handler(event, context):
             "opportunity_history": audit_enabled(),
             "default_jurisdiction": _default_jurisdiction(),
             "candidate_evidence_audit": True,
-            "profile_scoped_outcome_coverage": True,
+            "required_outcome_universe_preserved": True,
             "exchange_lay_routed": True,
         })
 

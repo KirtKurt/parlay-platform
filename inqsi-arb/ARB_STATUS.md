@@ -37,10 +37,11 @@ The settlement-state verification layer now supports explicit exhaustive state u
 
 The 2026-09-13 settlement/reporting repair makes New York the explicit
 production default and limits default New York scans to the US provider regions.
-Outcome universes are recomputed after freshness and settlement-profile
-partitioning, so excluded books can no longer make a reviewed market look
-incomplete. A parallel held-back row preserves any better mathematical price
-that depends on an unreviewed book. Exchange `*_lay` quotes are routed away from
+The provider's original exhaustive outcome universe is preserved after
+freshness and settlement-profile filtering, so a removed or stale winning state
+can never disappear from completeness checks. A parallel held-back row preserves
+any better mathematical price that depends on an unreviewed book, without
+duplicating the same legs already reported as verified. Exchange `*_lay` quotes are routed away from
 ordinary sportsbook implied-probability math and reported as exchange-pending
 until the commission/liability/liquidity-aware engine can evaluate them. Scan
 audit rows now retain bounded leg-level evidence, exact qualification reasons,
