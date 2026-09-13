@@ -23,13 +23,18 @@ MIN_TEST = EVALUATION_GAMES
 MIN_STARTER_ROWS = EVALUATION_GAMES
 
 
+def completion_times(values):
+    """Parse retained completion timestamps, accepting valid mixed ISO-8601 forms."""
+    return pd.to_datetime(values, format='ISO8601', utc=True, errors='raise')
+
+
 def split_recent(frame):
     if frame.game_id.duplicated().any():
         raise ValueError('duplicate game IDs')
     labeled = frame.loc[frame.home_win.notna() & frame.home_score.notna() & frame.away_score.notna()].copy()
     if not set(labeled.home_win.unique()).issubset({True, False, 0, 1}):
         raise ValueError('invalid labels')
-    completed = pd.to_datetime(labeled.label_completed_at, format='ISO8601', utc=True, errors='raise')
+    completed = completion_times(labeled.label_completed_at)
     eligible = labeled.loc[completed.notna()].assign(
         _label_completed_at=completed.loc[completed.notna()]
     ).sort_values(['_label_completed_at', 'game_id'])
@@ -116,7 +121,7 @@ def evaluate(frame, incumbent_bytes, output, proof):
     loaded = lgb.Booster(model_file=str(output/'model.txt'))
     np.testing.assert_allclose(loaded.predict(test[features].astype(float)), predictions, atol=1e-12, rtol=0)
     report = {'system': 'KS1', 'split_date': test.date.min(),
-              'split_completed_at': min(pd.to_datetime(test.label_completed_at, utc=True)).isoformat(),
+              'split_completed_at': min(completion_times(test.label_completed_at)).isoformat(),
               'train': {'start': train.date.min(), 'end': train.date.max(), 'games': len(train)},
               'test': {'start': test.date.min(), 'end': test.date.max(), 'games': len(test)},
               'candidate': candidate_metrics, 'incumbent': incumbent_metrics,
