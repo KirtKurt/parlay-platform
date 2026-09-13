@@ -169,15 +169,20 @@ def build(bundle, selected_date=None):
             if hashlib.sha256(encode(snapshot["features"])).hexdigest() != snapshot["featureFingerprint"]:
                 raise ValueError("snapshot feature fingerprint mismatch")
             cutoff = snapshot["capturedAtUtc"]
-        published = published_starters.get(pk, {}) if not snapshot else {}
+        # Snapshot fields and a later immutable KS1 starter profile are
+        # independent evidence. Preserve both when both were known by T-10.
+        published = published_starters.get(pk, {})
         published_problem = None
         if published and utc(published["commence_time"]) != utc(start):
             published_problem, published = "published_starter_start_mismatch", {}
         if published:
-            cutoff = published["as_of"]
+            cutoff = (max(utc(cutoff), utc(published["as_of"])).isoformat()
+                      if snapshot else published["as_of"])
         row = {"game_id": pk, "date": date, "season": int(sch.get("season") or date[:4]),
                "commence_time": start, "as_of_timestamp": cutoff, "table_version": VERSION,
-               "pregame_evidence": ("original_snapshot" if snapshot else
+               "pregame_evidence": ("original_snapshot+versioned_ks1_t10_prediction"
+                                    if snapshot and published else
+                                    "original_snapshot" if snapshot else
                                     "versioned_ks1_t10_prediction" if published else "reconstructed"),
                "historical_corrections_possible": True,
                "rolling_feature_evidence": "reconstructed_prior_completed_counts",
@@ -296,7 +301,14 @@ def build(bundle, selected_date=None):
             values = starter_matchup(starter[0].get("pitchHand") if len(starter) == 1 else None,
                                      [p.get("batSide") for p in lineup] if len(lineup) == 9 else None)
             row.update({f"{side}_starter_{key}": value for key, value in values.items()})
-        if published.get("contexts"):
+        profile_identity_matches = all(
+            not published.get("contexts")
+            or not published.get("sides", {}).get(side, {}).get("id")
+            or str(published["sides"][side]["id"]) == str(row.get(side+"_starter_id"))
+            for side in ("home", "away"))
+        if published.get("contexts") and not profile_identity_matches:
+            exclusions.append({"game_id": pk, "reason": "published_profile_starter_identity_mismatch"})
+        elif published.get("contexts"):
             for side in ("home", "away"):
                 row.update({f"{side}_pitcher_context_{key}": value
                             for key, value in published["contexts"][side].items()})

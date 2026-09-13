@@ -189,6 +189,9 @@ def test_last_three_is_fail_closed_when_only_two_starts_are_retained():
     assert feature['starter_starts_observed_last3'] == 2
     assert feature['starter_era_last3'] is None
     assert feature['pitcher_context_expected_innings'] == 6
+    assert feature['pitcher_context_quality'] == round(-(8*3/18+3.1), 4)
+    assert feature['pitcher_context_command'] == 20
+    assert feature['pitcher_context_recent_form'] == 20
 
 
 def test_expected_innings_uses_up_to_five_current_season_starts():
@@ -199,12 +202,26 @@ def test_expected_innings_uses_up_to_five_current_season_starts():
              for i in range(1, 7)]
     feature = Features(games).at(
         '2026-08-10T19:50:00Z', '1', '99', game_date='2026-08-10')
-    assert feature['pitcher_context_expected_innings'] == pytest.approx(
-        sum(15+i for i in range(2, 7))/15)
+    assert feature['pitcher_context_expected_innings'] == round(
+        sum(15+i for i in range(2, 7))/15, 3)
     prior = full_game(99, '2025-09-01', 99, {**stats, 'outs': 3})
     same = Features([prior, *games]).at(
         '2026-08-10T19:50:00Z', '1', '99', game_date='2026-08-10')
     assert same['pitcher_context_expected_innings'] == feature['pitcher_context_expected_innings']
+    assert same['pitcher_context_quality'] == feature['pitcher_context_quality']
+    assert same['pitcher_context_command'] == feature['pitcher_context_command']
+    assert same['pitcher_context_recent_form'] == feature['pitcher_context_recent_form']
+
+
+def test_current_season_context_falls_back_to_appearances_when_no_starts():
+    stats = {'outs':6,'earnedRuns':1,'runs':1,'hits':2,'homeRuns':0,'baseOnBalls':1,
+             'hitBatsmen':0,'strikeOuts':3,'battersFaced':9,'wins':0,'losses':0,
+             'gamesStarted':0,'numberOfPitches':31}
+    feature = Features([full_game(1, '2026-08-01', 99, stats)]).at(
+        '2026-08-10T19:50:00Z', '1', '99', game_date='2026-08-10')
+    assert feature['pitcher_context_expected_innings'] == 2
+    assert feature['pitcher_context_command'] == pytest.approx(100*2/9)
+    assert feature['pitcher_context_recent_form'] == feature['pitcher_context_command']
 
 
 def test_opening_day_last_three_uses_prior_year_league_baseline():

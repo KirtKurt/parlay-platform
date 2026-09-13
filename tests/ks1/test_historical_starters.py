@@ -60,10 +60,11 @@ def test_frozen_profile_context_requires_bound_complete_profile():
         "contract": KS1_STARTER_PROFILE_CONTRACT,
         "as_of": "2026-08-03T19:40:00Z",
         "history_as_of": "2026-08-03T19:30:00Z",
-        "coverage": {},
+        "coverage": {"current_season_context": True},
         "sides": {
-            side: {"starter_id": pid, "metrics": {"fip_30d": fip,
-                    "k_bb_pct_30d": 18.0, "velocity_30d": 95.0},
+            side: {"starter_id": pid, "metrics": {"context_quality": -fip,
+                    "context_command": 18.0, "context_recent_form": 17.0,
+                    "expected_innings_last5": 5.5},
                    "window_statuses": {"30d": "COMPLETE", "last3": "SOURCE_INCOMPLETE"}}
             for side, pid, fip in (("home", "99", 3.2), ("away", "199", 4.1))
         },
@@ -78,6 +79,7 @@ def test_frozen_profile_context_requires_bound_complete_profile():
            "starter_profile_semantic_sha256": profile["semantic_sha256"],
            "starter_profile_json": encode(profile).decode()}
     assert frozen_profile_context(row)["home"]["quality"] == -3.2
+    assert frozen_profile_context(row)["home"]["expected_innings"] == 5.5
     row["away_starter_id"] = "tampered"
     assert frozen_profile_context(row) == {}
 
@@ -91,6 +93,14 @@ def test_historical_context_validates_and_retains_projection_mode():
     broken["records"][0]["snapshot"]["home"]["starterQuality"] = 999
     broken = _signed(broken, "manifestDigest")
     assert historical_context_index(broken, {}) == {}
+
+
+def test_historical_context_rejects_duplicate_signed_identities():
+    manifest = context_manifest()
+    manifest["records"].append(dict(manifest["records"][0]))
+    manifest = _signed(manifest, "manifestDigest")
+    with pytest.raises(ValueError, match="duplicated"):
+        historical_context_index(manifest, {})
 
 
 def test_signed_t_minus_45_role_exactly_recovers_omitted_commence_time():

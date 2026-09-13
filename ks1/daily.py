@@ -404,6 +404,8 @@ def predict(folder, output):
                       and inputs['history'].get('prior_year_history_complete') is True
                       and inputs['history'].get('current_year_statcast_complete') is True
                       and inputs['history'].get('prior_year_statcast_complete') is True),
+            'current_season_context': (
+                inputs['history'].get('current_year_history_complete') is True),
             'prior_year': (inputs['history'].get('prior_year_history_complete') is True
                            and inputs['history'].get('prior_year_statcast_complete') is True),
             'statcast_30d': inputs['history'].get('statcast_coverage_complete') is True,
@@ -425,6 +427,9 @@ def predict(folder, output):
             if not coverage['last3']:
                 side_values.update({key: None for key in side_values if key.startswith('starter_')
                                     and key.endswith('_last3')})
+            if not coverage['current_season_context']:
+                side_values.update({key: None for key in side_values
+                                    if key.startswith('starter_context_')})
                 side_values['starter_expected_innings_last5'] = None
             if not coverage['prior_year']:
                 side_values.update({key: None for key in side_values if key.startswith('starter_')

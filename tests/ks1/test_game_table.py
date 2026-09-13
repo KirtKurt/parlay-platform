@@ -9,7 +9,8 @@ from botocore.exceptions import ClientError
 
 from ks1.features import Features, offense
 from ks1.inventory import encode
-from ks1.historical_starters import (V8_MANIFEST_VERSION, V8_SNAPSHOT_VERSION,
+from ks1.historical_starters import (KS1_STARTER_PROFILE_CONTRACT,
+                                     V8_MANIFEST_VERSION, V8_SNAPSHOT_VERSION,
                                      historical_context_index)
 from ks1.publish import PREFIX, publish
 from ks1.table import build, market_for
@@ -148,6 +149,39 @@ def test_original_starter_requires_timing_identity_and_hash():
     assert row["away_starter_opponent_rhb_pct"] == 100
     assert row["home_starter_xwoba_30d"] == 0.31
     assert row["rolling_feature_evidence"] == "immutable original snapshot starter profile"
+    profile = {
+        "contract": KS1_STARTER_PROFILE_CONTRACT,
+        "as_of": "2026-08-03T19:40:00Z",
+        "history_as_of": "2026-08-03T19:30:00Z",
+        "coverage": {"current_season_context": True},
+        "sides": {side: {"starter_id": pid, "metrics": {
+            "context_quality": quality, "context_command": command,
+            "context_recent_form": command, "expected_innings_last5": 5.5},
+            "window_statuses": {"30d": "COMPLETE", "last3": "SOURCE_INCOMPLETE"}}
+            for side, pid, quality, command in (
+                ("home", "99", -3.2, 18.0), ("away", "199", -4.1, 12.0))},
+    }
+    semantic = {key: value for key, value in profile.items()
+                if key not in ("as_of", "history_as_of")}
+    profile["semantic_sha256"] = hashlib.sha256(encode(semantic)).hexdigest()
+    profile["sha256"] = hashlib.sha256(encode(profile)).hexdigest()
+    bundle["published_predictions"] = [{
+        "row": {"game_id": "3", "date": "2026-08-03",
+                "commence_time": "2026-08-03T20:00:00Z", "as_of": profile["as_of"],
+                "home_id": "1", "away_id": "2", "home_starter_id": "99",
+                "away_starter_id": "199", "starter_profile_contract": KS1_STARTER_PROFILE_CONTRACT,
+                "starter_profile_sha256": profile["sha256"],
+                "starter_profile_semantic_sha256": profile["semantic_sha256"],
+                "starter_profile_json": encode(profile).decode()},
+        "evidence": {"bucket": "b", "key": "k", "version_id": "v1",
+                     "stored_at": "2026-08-03T19:45:00Z", "sha256": "a"*64}}]
+    table, *_ = build(bundle)
+    row = table.to_pylist()[-1]
+    assert row["pregame_evidence"] == "original_snapshot+versioned_ks1_t10_prediction"
+    assert row["home_pitcher_context_quality"] == -3.2
+    assert row["pitcher_context_evidence"] == "frozen_versioned_ks1_profile"
+    assert row["as_of_timestamp"] == "2026-08-03T19:40:00+00:00"
+    bundle["published_predictions"] = []
     snapshot["capturedAtUtc"] = "2026-08-03T20:01:00Z"
     table, *_ = build(bundle)
     assert table["home_starter_id"].null_count == 3

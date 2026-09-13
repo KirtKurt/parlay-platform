@@ -69,11 +69,14 @@ def frozen_profile_context(row):
         if str(source.get("starter_id") or "") != str(row.get(side+"_starter_id") or ""):
             return {}
         metrics, statuses = source.get("metrics") or {}, source.get("window_statuses") or {}
+        current_season_complete = (profile.get("coverage") or {}).get(
+            "current_season_context") is True
         safe = {}
         for name, value in metrics.items():
             if ((name.endswith("_30d") and statuses.get("30d") == "COMPLETE")
                     or (name.endswith("_last3") and statuses.get("last3") == "COMPLETE")
-                    or (name == "expected_innings_last5" and statuses.get("last3") == "COMPLETE")):
+                    or (name.startswith("context_") and current_season_complete)
+                    or (name == "expected_innings_last5" and current_season_complete)):
                 safe["starter_"+name] = value
         result[side] = pitcher_context(safe)
     return result if all(result[side].get("quality") is not None for side in result) else {}
@@ -172,8 +175,18 @@ def historical_context_index(manifest, pointer):
             or manifest.get("selectionUsedOutcomes") is not False
             or manifest.get("manifestDigest") != _digest(manifest, "manifestDigest")):
         raise ValueError("invalid historical pitcher-context manifest")
+    records = manifest.get("records", [])
+    identities = set()
+    for record in records:
+        if not isinstance(record, dict):
+            raise ValueError("invalid historical pitcher-context record")
+        identity = (str(record.get("officialGamePk") or ""),
+                    str(record.get("predictionLockAtUtc") or ""))
+        if not all(identity) or identity in identities:
+            raise ValueError("historical pitcher-context identity missing or duplicated")
+        identities.add(identity)
     result = {}
-    for record in manifest.get("records", []):
+    for record in records:
         snapshot = record.get("snapshot") or {}
         pk = str(record.get("officialGamePk") or "")
         lock = record.get("predictionLockAtUtc")
@@ -214,6 +227,8 @@ def historical_context_index(manifest, pointer):
             sides[side] = {target: finite(raw.get(source)) for source, target in CONTEXT_FIELDS.items()}
         if not all(any(value is not None for value in sides[side].values()) for side in sides):
             continue
+        if pk in result:
+            raise ValueError("multiple historical pitcher-context locks for game")
         result[pk] = {"game_id": pk, "commence_time": start, "as_of": lock,
                       "teams": {side: record.get(side+"Team") for side in ("home", "away")},
                       "identity_mode": mode, "sides": sides,
