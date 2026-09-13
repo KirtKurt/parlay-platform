@@ -1,0 +1,40 @@
+name: KS1 Phase 2 train and save artifact only
+on:
+  pull_request:
+    paths: ['ks1/train.py', 'ks1/phase2_data.py', 'ks1/training-requirements.txt', 'tests/ks1_phase2/**', '.github/workflows/ks1-phase2.yml']
+permissions:
+  contents: read
+concurrency:
+  group: ks1-phase2-${{ github.head_ref }}
+  cancel-in-progress: false
+jobs:
+  train:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: 'true'
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r ks1/training-requirements.txt 'pytest>=8,<9'
+      - run: python -m pytest -q tests/ks1_phase2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Verify deployed table, train, evaluate, and save isolated model artifact
+        run: python -m ks1.train --aws --save-artifact --output /tmp/ks1-phase2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ks1-phase2-${{ github.run_id }}
+          path: /tmp/ks1-phase2/
+          if-no-files-found: error
+          retention-days: 90
