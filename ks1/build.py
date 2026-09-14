@@ -9,14 +9,18 @@ import pyarrow.compute as pc
 
 from ks1.inventory import encode
 from ks1.publish import parquet_bytes, publish
+from ks1.progress import record_progress
 from ks1.sources import aws_clients, load_existing
 from ks1.table import build
 
 
 def run(args):
+    record_progress(args.output, 'loading_sources')
     cf, s3, bucket = aws_clients(args.region, args.stack)
     bundle = load_existing(cf, s3, bucket)
+    record_progress(args.output, 'building_table')
     table, report, dictionary, sample, crosswalk = build(bundle, args.date)
+    record_progress(args.output, 'verifying_date_rebuild', rows=table.num_rows)
     # Rebuild one date independently from the same retained input snapshot.
     selected = max(table["date"].to_pylist())
     again, *_ = build(bundle, selected)
@@ -31,6 +35,7 @@ def run(args):
     (output / "crosswalk.json").write_bytes(encode(crosswalk))
     (output / "report.json").write_bytes(encode(report))
     if args.publish:
+        record_progress(args.output, 'publishing_partitions', rows=table.num_rows)
         deployment = publish(s3, bucket, table, report["source_receipts"])
         second = publish(s3, bucket, again, report["source_receipts"])
         if second["write_keys"]:
@@ -38,6 +43,7 @@ def run(args):
         deployment["same_date_noop_verified"] = selected
         deployment["second_run_write_count"] = len(second["write_keys"])
         (output / "deployment.json").write_bytes(encode(deployment))
+    record_progress(args.output, 'complete', rows=table.num_rows, published=args.publish)
     compact = {k: v for k, v in report.items() if k not in ("source_receipts", "gaps")}
     print(json.dumps(compact, indent=2))
     print(sample[["game_id", "date", "home_team", "away_team", "home_score", "away_score",

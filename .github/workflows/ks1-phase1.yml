@@ -20,7 +20,8 @@ jobs:
   phase1:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # The complete two-season player archive exceeded the former 25m limit.
+    timeout-minutes: 60
     env:
       AWS_DEFAULT_REGION: us-east-1
       AWS_EC2_METADATA_DISABLED: 'true'

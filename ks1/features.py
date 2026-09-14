@@ -313,6 +313,18 @@ class Features:
             self.statcast_by_batter_game.setdefault((str(row.get("batter")), game_id), []).append(row)
         self.cache = {}
         self.priors = {}
+        # Preserve the original row/player order while avoiding a full league
+        # scan for each of nine batters and each roster reliever in every game.
+        self.batter_history = {}
+        self.reliever_history = {}
+        self.bullpen_priors = {}
+        for row_number, row in enumerate(self.rows):
+            for batter in row["batters"]:
+                self.batter_history.setdefault(batter["id"], []).append((row, batter["stats"]))
+            for player_number, player in enumerate(row["players"]):
+                if number(player["stats"].get("gamesStarted")) != 1:
+                    self.reliever_history.setdefault(player["id"], []).append(
+                        ((row_number, player_number), row, player["stats"]))
 
     def team_statcast_window_complete(self, target, window):
         """Archive completeness alone cannot prove compacted rows are loaded."""
@@ -424,15 +436,24 @@ class Features:
         # Apply the current, point-in-time roster identity after selecting the
         # history.  A traded/claimed reliever's earlier appearances remain
         # relevant even when they were recorded for another club.
-        completed = [r for r in self.rows if r["completed"] < utc(cutoff)
+        cutoff_at = utc(cutoff)
+        completed = [r for r in self.rows if r["completed"] < cutoff_at
                      and r["day"] < target]
-        league_rows = [p["stats"] for r in self.rows if r["completed"] < utc(cutoff)
-                       and r["day"] < target and r["day"].year == target.year
-                       for p in r["players"]]
-        league = {"kbb": counts(league_rows, PITCH)[0],
-                  "whip": counts(league_rows, ("outs", "hits", "baseOnBalls"))[0]}
-        appearances = [(r, p["stats"]) for r in completed for p in r["players"]
-                       if p["id"] in roster and number(p["stats"].get("gamesStarted")) != 1]
+        eligible = [r for r in completed if r["day"].year == target.year]
+        # For a fixed target date, increasing cutoff can only add completed
+        # rows. Equal lengths therefore identify the same eligible population.
+        prior_key = (target, len(eligible))
+        if prior_key not in self.bullpen_priors:
+            league_rows = [p["stats"] for r in eligible for p in r["players"]]
+            self.bullpen_priors[prior_key] = {
+                "kbb": counts(league_rows, PITCH)[0],
+                "whip": counts(league_rows, ("outs", "hits", "baseOnBalls"))[0]}
+        league = self.bullpen_priors[prior_key]
+        indexed = [entry for pid in roster for entry in self.reliever_history.get(pid, ())
+                   if entry[1]["completed"] < cutoff_at and entry[1]["day"] < target]
+        # The pooled sums must retain original accumulation order, including
+        # appearances before a trade and interleaved opposing-team records.
+        appearances = [(r, stats) for _, r, stats in sorted(indexed, key=lambda entry: entry[0])]
         result = {"bullpen_context_roster_count": float(len(roster))}
         for window in (7, 15, 30):
             pairs = [(r, stats) for r, stats in appearances
@@ -585,12 +606,14 @@ class Features:
                           opposing_hand=None, *, game_date=None):
         """Return batter-level prior boxes/Statcast and lineup aggregates."""
         target = calendar_date.fromisoformat(game_date) if game_date else day(cutoff)
-        completed = [r for r in self.rows if r["completed"] < utc(cutoff) and r["day"] < target]
+        cutoff_at = utc(cutoff)
+        completed = [r for r in self.rows if r["completed"] < cutoff_at and r["day"] < target]
+        recent_game_ids = {r["game_id"] for r in completed
+                           if r["day"] >= target-timedelta(days=30)}
         ids = [str(value) for value in lineup_ids]
         starter_rows = [row for game_id in self.statcast_by_pitcher_game
                         if game_id[0] == str(opposing_starter_id)
-                        and any(r["game_id"] == game_id[1] and r["day"] >= target-timedelta(days=30)
-                                for r in completed)
+                        and game_id[1] in recent_game_ids
                         for row in self.statcast_by_pitcher_game[game_id]]
         starter_mix = Counter(row.get("pitch_type") for row in starter_rows
                               if row.get("pitch_type") in PITCH_TYPES)
@@ -617,8 +640,8 @@ class Features:
 
         profiles = []
         for slot, pid in enumerate(ids, 1):
-            pairs = [(r, batter["stats"]) for r in completed for batter in r["batters"]
-                     if batter["id"] == pid]
+            pairs = [(r, stats) for r, stats in self.batter_history.get(pid, ())
+                     if r["completed"] < cutoff_at and r["day"] < target]
             profile = {"player_id": pid, "slot": slot, "windows": {}}
             for window in (7, 30):
                 chosen = [(r, stats) for r, stats in pairs

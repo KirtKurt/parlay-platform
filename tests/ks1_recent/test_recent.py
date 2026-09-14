@@ -7,6 +7,7 @@ from ks1.features import Features, pitching
 from ks1.retrain_recent import (accepted, choose_features, completion_times,
                                 bullpen_context_performance_feature,
                                 historical_team_context_mask,
+                                qualified_training_population,
                                 lineup_performance_feature,
                                 pitcher_promotion_ready, prospective_context_coverage,
                                 qualification_basis, qualified_context_coverage,
@@ -503,6 +504,26 @@ def test_frozen_evidence_tag_alone_cannot_qualify_incomplete_history():
     assert qualified_team_context_coverage(frame, features)['qualified_rows'] == 300
     frame.loc[0, 'lineup_bullpen_history_status'] = 'UNPROVEN'
     assert qualified_team_context_coverage(frame, features)['qualified_rows'] == 299
+
+
+def test_training_source_filter_is_outcome_blind_and_keeps_explicit_missing():
+    base, receipt = historical_team_context_frame('SUPPORTED_V1_EXPLICIT_MISSING')
+    frame = pd.concat([base, base, base], ignore_index=True)
+    frame['game_id'] = frame.index.astype(str)
+    frame['home_win'] = frame.index % 2
+    frame.loc[0, 'historical_lineup_bullpen_context_source'] = '{}'
+    frame.loc[1, 'historical_lineup_bullpen_context_as_of'] = '2025-05-01T19:51:00Z'
+    frame.loc[2, 'historical_lineup_bullpen_context_status'] = 'UNAVAILABLE_FAIL_CLOSED'
+    selected, report = qualified_training_population(frame, [receipt])
+    assert len(selected) == 897
+    assert report['excluded_game_ids'] == ['0', '1', '2']
+    assert selected.away_bullpen_context_fip_30d.isna().all()
+    reversed_labels = frame.assign(home_win=1-frame.home_win)
+    other, other_report = qualified_training_population(reversed_labels, [receipt])
+    assert selected.game_id.tolist() == other.game_id.tolist()
+    assert report == other_report
+    with pytest.raises(ValueError, match='verified team context'):
+        qualified_training_population(frame, [])
 
 
 @pytest.mark.parametrize('side', ['home', 'away'])
