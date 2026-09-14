@@ -238,7 +238,11 @@ def load_training_statcast(bundle, s3, bucket):
             from ks1.statcast_recovery import read_recovery
             payload, recovery_receipts = read_recovery(s3, bucket, value)
             if payload is not None:
-                reason = validation_reason(payload, value, games, expected, invalid)
+                reason = physical_validation_reason(
+                    payload, value, games, physical_expected, physical_batters,
+                    physical_invalid)
+                if reason is None:
+                    reason = validation_reason(payload, value, games, expected, invalid)
                 if reason is None:
                     return value, payload['rows'], recovery_receipts, None, True, None
                 reasons.append('recovered_' + reason)

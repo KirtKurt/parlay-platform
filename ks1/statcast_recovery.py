@@ -11,7 +11,10 @@ import sys
 import time
 
 from ks1.inventory import RESEARCH, Reader, encode
-from ks1.statcast_history import official_pitch_counts, validation_reason
+from ks1.statcast_history import (official_physical_pitch_counts,
+                                  official_pitch_counts,
+                                  physical_validation_reason,
+                                  validation_reason)
 
 PREFIX = 'sources/statcast-recovery-v1/'
 MAX_DATES = 64
@@ -53,6 +56,8 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
     deadline = time.monotonic() + seconds
     today = datetime.now(timezone.utc).date().isoformat()
     expected, invalid = official_pitch_counts(bundle['full'])
+    physical_expected, physical_batters, physical_invalid = official_physical_pitch_counts(
+        bundle['full'])
     scheduled = {}
     from ks1.features import day
     for game in bundle['schedule']:
@@ -100,7 +105,11 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
             # independent official game set, exactly as the existing collector.
             payload = {**payload, 'rows': [row for row in payload['rows']
                        if str(row.get('game_pk')) in {str(pk) for pk in games}]}
-            reason = validation_reason(payload, value, games, expected, invalid)
+            reason = physical_validation_reason(
+                payload, value, games, physical_expected, physical_batters,
+                physical_invalid)
+            if reason is None:
+                reason = validation_reason(payload, value, games, expected, invalid)
         except Exception as exc:
             reason = 'provider_error:' + type(exc).__name__
             status = getattr(exc, 'code', None)
@@ -116,6 +125,9 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
             retained = reader.read(RESEARCH + object_name, sha=content_hash)
             receipt = reader.receipts[-1]
             if (receipt.get('versionId') in (None, '', 'null')
+                    or physical_validation_reason(
+                        retained, value, games, physical_expected, physical_batters,
+                        physical_invalid) is not None
                     or validation_reason(retained, value, games, expected, invalid) is not None):
                 raise ValueError('recovered source readback failed')
             pointer = {'name': object_name, 'versionId': receipt['versionId'], 'sha256': content_hash}

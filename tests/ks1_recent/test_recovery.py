@@ -79,13 +79,15 @@ def test_invalid_same_game_cache_recovers_without_editing_raw_source(monkeypatch
     assert '2026-09-01' not in bundle['statcast_retained_dates']
 
 
-@pytest.mark.parametrize('defect', ['missing_woba', 'missing_pitch', 'duplicate', 'wrong_date'])
+@pytest.mark.parametrize('defect', ['missing_woba', 'missing_pitch', 'duplicate',
+                                   'wrong_date', 'blank_batter'])
 def test_incomplete_provider_response_stays_unqualified_and_is_not_synthesized(monkeypatch, defect):
     authorize(monkeypatch)
     bundle, value, _ = fixture()
     if defect == 'missing_woba': value['rows'][-1]['woba_denom'] = ''
     elif defect == 'missing_pitch': value['rows'].pop()
     elif defect == 'duplicate': value['rows'].append(value['rows'][0])
+    elif defect == 'blank_batter': value['rows'][0]['batter'] = ''
     else: value['date'] = '2026-08-31'
     s3 = MemoryS3()
     initial = load_training_statcast(bundle, s3, 'b')
