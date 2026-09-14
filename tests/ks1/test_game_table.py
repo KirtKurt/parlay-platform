@@ -86,6 +86,7 @@ def test_starter_dictionary_separates_game_log_statcast_and_unavailable_sources(
     assert 'official MLB game boxes' in fields['home_lineup_ops_7d']['source']
     assert 'Baseball Savant' in fields['home_lineup_xwoba_7d']['source']
     assert 'official MLB game boxes' in fields['home_lineup_ops_talent']['source']
+    assert 'plate-appearance weighted' in fields['home_lineup_ops_talent']['description']
 
 
 def test_conflicting_final_scores_fail():

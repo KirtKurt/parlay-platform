@@ -153,6 +153,15 @@ def test_missing_current_team_identity_fails_closed():
                       "2026-09-14T16:05:00+00:00", History())
 
 
+def test_roster_only_shape_binds_through_validated_lineup_teams():
+    stored = stored_observation(); game, row = game_row()
+    bullpen = stored["data"]["passiveTeamContext"]["bullpen_fatigue"]
+    bullpen.pop("home_team_id"); bullpen.pop("away_team_id")
+    profile, _ = build_profile(stored, game, row,
+                               "2026-09-14T16:05:00+00:00", History())
+    assert profile["sides"]["home"]["team_id"] == "10"
+
+
 def test_frozen_reader_rejects_tampering_and_recovers_only_features():
     history = History(); game, row = game_row()
     profile, features = build_profile(stored_observation(), game, row,
@@ -278,6 +287,31 @@ def test_bullpen_contact_rates_use_pooled_contact_denominators():
         "2026-09-10T17:50:00Z", "10", ["151", "152"])
     assert values["bullpen_context_barrel_pct_7d"] == pytest.approx(100/11)
     assert values["bullpen_context_avg_ev_allowed_7d"] == pytest.approx(900/11)
+
+
+def test_pooled_bullpen_statcast_excludes_current_reliever_start():
+    starter = {"outs": 3, "earnedRuns": 0, "runs": 0, "hits": 1, "homeRuns": 0,
+               "baseOnBalls": 0, "hitBatsmen": 0, "strikeOuts": 2,
+               "battersFaced": 4, "wins": 0, "losses": 0, "gamesStarted": 1,
+               "numberOfPitches": 3}
+    relief = {**starter, "gamesStarted": 0, "numberOfPitches": 2}
+    game = {"officialGamePk": 12, "startAtUtc": "2026-09-09T18:00:00Z",
+            "completedAtUtc": "2026-09-09T21:00:00Z", "gameType": "R",
+            "teams": {side: {"team": {"id": tid, "name": side},
+                              "teamStats": {"batting": {}},
+                              "players": ({"ID151": {"person": {"id": 151},
+                                                       "stats": {"pitching": starter}},
+                                           "ID152": {"person": {"id": 152},
+                                                       "stats": {"pitching": relief}}}
+                                          if side == "home" else {})}
+                      for side, tid in (("home", 10), ("away", 20))}}
+    pitches = ([{"game_pk": "12", "pitcher": "151", "type": "B",
+                 "description": "ball", "release_speed": "99"} for _ in range(3)]
+               + [{"game_pk": "12", "pitcher": "152", "type": "B",
+                   "description": "ball", "release_speed": "91"} for _ in range(2)])
+    values = Features([game], pitches).bullpen_roster_at(
+        "2026-09-10T17:50:00Z", "10", ["151", "152"])
+    assert values["bullpen_context_velocity_7d"] == 91
 
 
 def test_pitch_matchup_requires_full_starter_mix_coverage():

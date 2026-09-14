@@ -553,10 +553,13 @@ def contract(example):
             if column.endswith("_prior_year"):
                 meaning += "; previous-season observation available before the cutoff"
             if column.endswith("_talent"):
+                lineup_talent = lineup_bullpen_metric and "_lineup_" in column
                 source = ("30-day and previous-season completed official MLB game boxes"
-                          if lineup_bullpen_metric and "_lineup_" in column
-                          else "30-day and previous-season retained Baseball Savant pitch rows")
-                meaning += "; pitch-count weighted with previous-season weight capped at 300 pitches"
+                          if lineup_talent else
+                          "30-day and previous-season retained Baseball Savant pitch rows")
+                meaning += ("; plate-appearance weighted with previous-season weight capped at 300 PA"
+                            if lineup_talent else
+                            "; pitch-count weighted with previous-season weight capped at 300 pitches")
         elif column.endswith("_missing_history_boxes_75d"):
             dtype, role, source = pa.int64(), "audit", "retained official finals lacking a compact or full box"
             meaning = "Known earlier same-season final games with missing boxes in 75 calendar days; partial history flag, never interpreted as zero workload."

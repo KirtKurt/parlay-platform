@@ -379,8 +379,12 @@ class Features:
                         if pairs and all(number(stats.get("numberOfPitches")) is not None
                                          for _, stats in pairs) else None)
             statcast = self.statcast(None, set(), None)
-            selected = [row for game_id in game_ids for row in self.statcast_by_game.get(game_id, ())
-                        if str(row.get("pitcher")) in roster]
+            relief_identities = {(r["game_id"], p["id"])
+                                 for r, stats in pairs for p in r["players"]
+                                 if p["id"] in roster and p["stats"] is stats
+                                 and number(p["stats"].get("gamesStarted")) != 1}
+            selected = [row for game_id, pitcher_id in relief_identities
+                        for row in self.statcast_by_pitcher_game.get((pitcher_id, game_id), ())]
             if expected is not None and len(selected) == expected:
                 descriptions = [str(row.get("description") or "").lower() for row in selected]
                 contacts = [row for row in selected if row.get("type") == "X"]
