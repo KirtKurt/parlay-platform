@@ -508,6 +508,25 @@ def test_ingestion_versions_expanded_games_and_retains_prior_year_scope(monkeypa
     assert result['priorYearStatcastDays']==365
 
 
+def test_prior_year_profiles_survive_current_year_statcast_lag():
+    stats = dict(outs=3, earnedRuns=0, runs=0, hits=0, homeRuns=0,
+                 baseOnBalls=0, hitBatsmen=0, strikeOuts=2, battersFaced=3,
+                 numberOfPitches=1, wins=1, losses=0, gamesStarted=1)
+    prior = {'officialGamePk':'11','startAtUtc':'2025-04-01T18:18:00+00:00',
+             'completedAtUtc':'2025-04-01T20:18:00+00:00','gameType':'R','teams':{
+                 'home':{'team':{'id':10},'teamStats':{'batting':{}},'players':{
+                     'ID99':{'person':{'id':99},'stats':{'pitching':stats}}}},
+                 'away':{'team':{'id':20},'teamStats':{'batting':{}},'players':{}}}}
+    pitch = {'game_pk':'11','pitcher':'99','batter':'1','type':'S',
+             'pitch_type':'FF','description':'swinging_strike','release_speed':'95',
+             'release_spin_rate':'2400','release_extension':'6.5','pfx_x':'-.5','pfx_z':'1.2'}
+
+    profiles = ingestion.prior_year_profiles([prior], [pitch], 2025)
+
+    assert profiles['99']['complete'] == 1
+    assert profiles['99']['pitches'] == 1
+
+
 def test_new_deployment_refreshes_training_from_existing_capture_owner(monkeypatch,store):
     monkeypatch.setenv('INQSI_DEPLOY_GIT_SHA','old-release')
     store.latest('dataset.json',{'rowsHash':'unchanged-data'})
