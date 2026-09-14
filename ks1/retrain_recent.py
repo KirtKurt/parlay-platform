@@ -15,14 +15,19 @@ from sklearn.metrics import accuracy_score, brier_score_loss, log_loss
 from ks1.features import Features, MATCHUP_METRICS, normalize
 from ks1.historical_starters import V8_MANIFEST_PREFIX
 from ks1.inventory import encode
-from ks1.passive_context import (LINEUP_FEATURES, BULLPEN_FEATURES,
+from ks1.passive_context import (LINEUP_FEATURES, LINEUP_VALUE_FEATURES,
+                                 LINEUP_PERFORMANCE_FEATURES,
+                                 BULLPEN_FEATURES, BULLPEN_VALUE_FEATURES,
+                                 BULLPEN_PERFORMANCE_FEATURES,
                                  MODEL_FEATURES as LINEUP_BULLPEN_FEATURES)
 from ks1.sources import aws_clients, load_existing
 from ks1.table import build, contract
 from ks1.train import PARAMS, select_features, save_artifact
 from ks1.prior_pitcher_context import (PriorPitcherContext, pregame_identity_index,
                                       verified_reconstruction)
-from ks1.historical_feed import collect as collect_historical_feeds
+from ks1.historical_feed import (collect as collect_historical_feeds,
+                                 collect_team_context as collect_historical_team_context,
+                                 feed_team_context)
 
 # Feature-contract construction needs a valid timestamp but does not inspect data.
 FEATURE_CONTRACT_DATE = '2026-09-01'
@@ -64,6 +69,20 @@ def split_recent(frame):
     return train, test
 
 
+def split_development(train):
+    """Purge labels unavailable at the earliest development prediction."""
+    count = min(EVALUATION_GAMES, max(100, len(train)//5), len(train)-MIN_TRAIN)
+    if count <= 0:
+        raise ValueError('insufficient games for recipe-selection development set')
+    development = train.iloc[-count:]
+    boundary = completion_times(development.as_of_timestamp).min()
+    fit = train.iloc[:-count]
+    fit = fit.loc[completion_times(fit.label_completed_at) < boundary]
+    if len(fit) < MIN_TRAIN:
+        raise ValueError('insufficient non-overlapping development training games')
+    return fit, development
+
+
 def individual_feature(column):
     return any(column.startswith(side+'_starter_') for side in ('home', 'away'))
 
@@ -78,6 +97,26 @@ def lineup_feature(column):
 
 def bullpen_context_feature(column):
     return any(column == side+'_'+name for side in ('home', 'away') for name in BULLPEN_FEATURES)
+
+
+def lineup_value_feature(column):
+    return any(column == side+'_'+name
+               for side in ('home', 'away') for name in LINEUP_VALUE_FEATURES)
+
+
+def bullpen_context_value_feature(column):
+    return any(column == side+'_'+name
+               for side in ('home', 'away') for name in BULLPEN_VALUE_FEATURES)
+
+
+def lineup_performance_feature(column):
+    return any(column == side+'_'+name
+               for side in ('home', 'away') for name in LINEUP_PERFORMANCE_FEATURES)
+
+
+def bullpen_context_performance_feature(column):
+    return any(column == side+'_'+name
+               for side in ('home', 'away') for name in BULLPEN_PERFORMANCE_FEATURES)
 
 
 def choose_features(train):
@@ -135,6 +174,12 @@ def metrics(y, p):
 
 def accepted(candidate, incumbent):
     return (candidate['games'] == EVALUATION_GAMES and candidate['games'] == incumbent['games']
+            and candidate['brier'] < incumbent['brier']
+            and candidate['logloss'] <= incumbent['logloss'])
+
+
+def improves(candidate, incumbent):
+    return (candidate['games'] == incumbent['games']
             and candidate['brier'] < incumbent['brier']
             and candidate['logloss'] <= incumbent['logloss'])
 
@@ -238,6 +283,75 @@ def prospective_team_context_coverage(frame, features):
     return per_feature, int((prospective & complete).sum())
 
 
+def historical_team_context_mask(frame, source_receipts=None):
+    """Verify the row-bound receipt for MLB's timecoded pregame team state."""
+    inventory = None
+    if source_receipts is not None:
+        inventory = {(str(item.get('bucket')), str(item.get('key')),
+                      str(item.get('versionId') or item.get('version_id')),
+                      str(item.get('sha256')))
+                     for item in source_receipts if isinstance(item, dict)}
+
+    def verified(row):
+        if (row.get('lineup_bullpen_context_evidence') != 'historical_timecoded_mlb_feed'
+                or row.get('historical_lineup_bullpen_context_status') not in (
+                    'SUPPORTED_V1_COMPLETE', 'SUPPORTED_V1_EXPLICIT_MISSING')):
+            return False
+        try:
+            receipt = json.loads(row['historical_lineup_bullpen_context_source'])
+            observed = pd.Timestamp(row['historical_lineup_bullpen_context_as_of'])
+            start = pd.Timestamp(row['commence_time'])
+            cutoff = pd.Timestamp(row['as_of_timestamp'])
+            binding = (str(receipt.get('bucket')), str(receipt.get('key')),
+                       str(receipt.get('versionId') or receipt.get('version_id')),
+                       str(receipt.get('sha256')))
+            return bool(receipt.get('source_type') == 'mlb_statsapi_timecoded_team_context'
+                        and receipt.get('provider') == 'MLB Stats API'
+                        and receipt.get('bucket') and receipt.get('versionId') not in (None, '', 'null')
+                        and str(receipt.get('key') or '').startswith(
+                            'mlb/development-data/ks1-historical-team-context-v1/')
+                        and re.fullmatch('[0-9a-f]{64}', str(receipt.get('sha256') or ''))
+                        and re.fullmatch('[0-9a-f]{64}', str(receipt.get('payload_sha256') or ''))
+                        and all(t.tzinfo is not None and not pd.isna(t)
+                                for t in (observed, start, cutoff))
+                        and observed <= cutoff <= start-pd.Timedelta(minutes=10)
+                        and (inventory is None or binding in inventory))
+        except (KeyError, TypeError, ValueError):
+            return False
+    return frame.apply(verified, axis=1).astype(bool)
+
+
+def qualified_team_context_coverage(frame, features, *, source_receipts=None):
+    """Count complete point-in-time evidence, allowing explicit missing values."""
+    historical = historical_team_context_mask(frame, source_receipts)
+    frozen = (frame.lineup_bullpen_context_evidence.eq('frozen_versioned_ks1_profile')
+              & frame.get('lineup_bullpen_history_status',
+                          pd.Series(None, index=frame.index, dtype=object)).eq('COMPLETE'))
+    qualified = historical | frozen
+    complete = pd.Series(True, index=frame.index)
+    per_feature = {}
+    for column in features:
+        values = pd.to_numeric(frame[column], errors='coerce')
+        if column.endswith('_missing'):
+            base = column.removesuffix('_missing')
+            base_values = (pd.to_numeric(frame[base], errors='coerce')
+                           if base in frame else pd.Series(np.nan, index=frame.index))
+            base_finite = base_values.notna() & np.isfinite(base_values)
+            covered = (values.eq(0.0) & base_finite) | (values.eq(1.0) & base_values.isna())
+        else:
+            missing = column+'_missing'
+            indicators = (pd.to_numeric(frame[missing], errors='coerce')
+                          if missing in frame else pd.Series(np.nan, index=frame.index))
+            finite = values.notna() & np.isfinite(values)
+            covered = (finite & indicators.eq(0.0)) | (values.isna() & indicators.eq(1.0))
+        per_feature[column] = int((qualified & covered).sum())
+        complete &= covered
+    return {'historical_rows': int((historical & complete).sum()),
+            'frozen_rows': int((frozen & complete).sum()),
+            'qualified_rows': int((qualified & complete).sum()),
+            'per_feature': per_feature}
+
+
 def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
     train, test = split_recent(frame)
     features, omitted, coverage = choose_features(train)
@@ -246,53 +360,159 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
     bullpen_features = [c for c in features if bullpen_context_feature(c)]
     baseline_features = [c for c in features if c not in lineup_features+bullpen_features]
     batter_features = baseline_features+lineup_features
-    candidate = lgb.LGBMClassifier(**PARAMS).fit(train[features].astype(float), y_train)
-    predictions = candidate.predict_proba(test[features].astype(float))[:, 1]
-    baseline = lgb.LGBMClassifier(**PARAMS).fit(train[baseline_features].astype(float), y_train)
-    baseline_predictions = baseline.predict_proba(test[baseline_features].astype(float))[:, 1]
-    batter = lgb.LGBMClassifier(**PARAMS).fit(train[batter_features].astype(float), y_train)
-    batter_predictions = batter.predict_proba(test[batter_features].astype(float))[:, 1]
+    recipes = {
+        'starter': baseline_features,
+        'starter_plus_batters': batter_features,
+        'starter_plus_batters_and_bullpen': features,
+    }
+    # Freeze the recipe on a chronological development tail before touching the
+    # exact 300-game final holdout. Hyperparameters remain fixed.
+    development_fit, development = split_development(train)
+    development_games = len(development)
+    development_metrics = {}
+    for name, columns in recipes.items():
+        development_model = lgb.LGBMClassifier(**PARAMS).fit(
+            development_fit[columns].astype(float), development_fit.home_win.astype(int))
+        probability = development_model.predict_proba(
+            development[columns].astype(float))[:, 1]
+        development_metrics[name] = metrics(development.home_win.astype(int), probability)
+    development_baseline = development_metrics['starter']
+    development_eligible = ['starter'] + [
+        name for name in ('starter_plus_batters', 'starter_plus_batters_and_bullpen')
+        if improves(development_metrics[name], development_baseline)]
+    development_selected = min(
+        development_eligible, key=lambda name: development_metrics[name]['brier'])
+    models, predictions, comparisons = {}, {}, {}
+    output.mkdir(parents=True, exist_ok=True)
+    for name, columns in recipes.items():
+        model = lgb.LGBMClassifier(**PARAMS).fit(train[columns].astype(float), y_train)
+        probability = model.predict_proba(test[columns].astype(float))[:, 1]
+        path = output/('model_'+name+'.txt')
+        model.booster_.save_model(str(path))
+        loaded = lgb.Booster(model_file=str(path))
+        np.testing.assert_allclose(loaded.predict(test[columns].astype(float)), probability,
+                                   atol=1e-12, rtol=0)
+        split_counts = dict(zip(columns, map(int, model.booster_.feature_importance())))
+        models[name], predictions[name] = model, probability
+        comparisons[name] = {
+            'metrics': metrics(y_test, probability),
+            'features': columns,
+            'features_used_in_splits': [c for c in columns if split_counts[c] > 0],
+            'lineup_features_used_in_splits': [c for c in columns
+                                               if lineup_feature(c) and split_counts[c] > 0],
+            'bullpen_features_used_in_splits': [c for c in columns
+                                                if bullpen_context_feature(c) and split_counts[c] > 0],
+            'lineup_value_features_used_in_splits': [c for c in columns
+                                                     if lineup_value_feature(c)
+                                                     and split_counts[c] > 0],
+            'bullpen_value_features_used_in_splits': [c for c in columns
+                                                      if bullpen_context_value_feature(c)
+                                                      and split_counts[c] > 0],
+            'feature_split_counts': split_counts,
+            'model_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+            'model_reload_verified': True,
+        }
     incumbent = lgb.Booster(model_str=incumbent_bytes.decode())
     old = incumbent.predict(test[incumbent.feature_name()].astype(float))
+    incumbent_metrics = metrics(y_test, old)
+    for name, comparison in comparisons.items():
+        used_pitcher_context = [c for c in comparison['features_used_in_splits']
+                                if pitcher_context_feature(c)]
+        pitcher_qualification = qualified_context_coverage(
+            test, used_pitcher_context, reconstruction=reconstruction)
+        team_used = (comparison['lineup_features_used_in_splits']+
+                     comparison['bullpen_features_used_in_splits'])
+        comparison['pitcher_context_features_used_in_splits'] = used_pitcher_context
+        comparison['pitcher_context_qualification'] = pitcher_qualification
+        comparison['team_context_qualification'] = qualified_team_context_coverage(
+            test, team_used, source_receipts=proof.get('source_receipts'))
+        comparison['team_context_training_qualification'] = qualified_team_context_coverage(
+            train, team_used, source_receipts=proof.get('source_receipts'))
+        comparison['statistical_gate_passed'] = accepted(
+            comparison['metrics'], incumbent_metrics)
+        comparison['point_in_time_gate_passed'] = (
+            not team_used
+            or (comparison['team_context_qualification']['qualified_rows'] == EVALUATION_GAMES
+                and comparison['team_context_training_qualification']['qualified_rows'] == len(train)))
+        if name == 'starter':
+            comparison['requested_group_usage_passed'] = True
+        elif name == 'starter_plus_batters':
+            comparison['requested_group_usage_passed'] = bool(
+                any(lineup_performance_feature(c)
+                    for c in comparison['lineup_value_features_used_in_splits']))
+        else:
+            comparison['requested_group_usage_passed'] = bool(
+                any(lineup_performance_feature(c)
+                    for c in comparison['lineup_value_features_used_in_splits'])
+                and any(bullpen_context_performance_feature(c)
+                        for c in comparison['bullpen_value_features_used_in_splits']))
+        comparison['qualified'] = bool(
+            comparison['statistical_gate_passed']
+            and used_pitcher_context
+            and pitcher_qualification['qualified_rows'] == EVALUATION_GAMES
+            and comparison['point_in_time_gate_passed']
+            and comparison['requested_group_usage_passed'])
+    # The final holdout is evaluation-only: it may accept or reject the recipe
+    # frozen on development data, but it never changes which recipe is selected.
+    selected = development_selected
+    winning = selected if comparisons[selected]['qualified'] else None
+    candidate, candidate_predictions = models[selected], predictions[selected]
+    candidate_metrics = comparisons[selected]['metrics']
     # One prespecified ablation isolates the seven-day contribution from the
     # expanded training period. It is reported, never used to tune the model.
-    without_seven = [c for c in features if not c.endswith('_7d')]
+    without_seven = [c for c in recipes[selected]
+                     if not (c.endswith('_7d') or c.endswith('_7d_missing'))]
     ablation = lgb.LGBMClassifier(**PARAMS).fit(train[without_seven].astype(float), y_train)
     ablated = ablation.predict_proba(test[without_seven].astype(float))[:, 1]
-    candidate_metrics, incumbent_metrics = metrics(y_test, predictions), metrics(y_test, old)
-    context_features = [c for c in features if pitcher_context_feature(c)]
-    split_counts = dict(zip(features, map(int, candidate.booster_.feature_importance())))
+    selected_features = recipes[selected]
+    split_counts = comparisons[selected]['feature_split_counts']
+    context_features = [c for c in selected_features if pitcher_context_feature(c)]
     used_context_features = [c for c in context_features if split_counts[c] > 0]
-    without_context = [c for c in features if not pitcher_context_feature(c)]
+    without_context = [c for c in selected_features if not pitcher_context_feature(c)]
     pitcher_ablation = lgb.LGBMClassifier(**PARAMS).fit(train[without_context].astype(float), y_train)
     without_pitcher = pitcher_ablation.predict_proba(test[without_context].astype(float))[:, 1]
     prospective_feature_coverage, prospective_context_rows = prospective_context_coverage(
         test, context_features)
     context_qualification = qualified_context_coverage(test, context_features, reconstruction=reconstruction)
-    team_features = lineup_features+bullpen_features
+    team_features = (comparisons[selected]['lineup_features_used_in_splits']+
+                     comparisons[selected]['bullpen_features_used_in_splits'])
     prospective_team_feature_coverage, prospective_team_rows = prospective_team_context_coverage(
         test, team_features)
-    statistical_gate = accepted(candidate_metrics, incumbent_metrics)
+    team_context_qualification = qualified_team_context_coverage(
+        test, team_features, source_receipts=proof.get('source_receipts'))
+    statistical_gate = comparisons[selected]['statistical_gate_passed']
     promotion_ready = pitcher_promotion_ready(
         candidate_metrics, incumbent_metrics, used_context_features,
         context_qualification['qualified_rows'])
-    # Batter/bullpen evidence is required when the candidate consumes it.
-    # A starter-only candidate must not wait for unrelated, unused groups.
-    promotion_ready = bool(promotion_ready and
-                           (not team_features or prospective_team_rows == EVALUATION_GAMES))
-    output.mkdir(parents=True, exist_ok=True)
+    # This task may promote only the full recipe, and only when both newly
+    # requested groups are used by the fitted trees with complete pregame proof.
+    promotion_ready = bool(promotion_ready
+                           and selected == 'starter_plus_batters_and_bullpen'
+                           and winning == selected
+                           and team_context_qualification['qualified_rows'] == EVALUATION_GAMES
+                           and comparisons[selected]['requested_group_usage_passed'])
     candidate.booster_.save_model(str(output/'model.txt'))
     loaded = lgb.Booster(model_file=str(output/'model.txt'))
-    np.testing.assert_allclose(loaded.predict(test[features].astype(float)), predictions, atol=1e-12, rtol=0)
+    np.testing.assert_allclose(loaded.predict(test[selected_features].astype(float)),
+                               candidate_predictions, atol=1e-12, rtol=0)
     report = {'system': 'KS1', 'split_date': test.date.min(),
               'split_completed_at': min(completion_times(test.label_completed_at)).isoformat(),
               'split_prediction_at': min(completion_times(test.as_of_timestamp)).isoformat(),
               'train': {'start': train.date.min(), 'end': train.date.max(), 'games': len(train)},
               'test': {'start': test.date.min(), 'end': test.date.max(), 'games': len(test)},
               'candidate': candidate_metrics, 'incumbent': incumbent_metrics,
-              'ablation_baseline_without_lineup_or_bullpen': metrics(y_test, baseline_predictions),
-              'ablation_baseline_plus_batters': metrics(y_test, batter_predictions),
-              'ablation_baseline_plus_batters_and_bullpen': candidate_metrics,
+              'candidate_comparison': comparisons,
+              'selected_candidate': selected,
+              'winning_qualified_candidate': winning,
+              'recipe_selection': {'method': 'chronological_development_tail',
+                                   'games': development_games,
+                                   'fit_games': len(development_fit),
+                                   'selected': development_selected,
+                                   'metrics': development_metrics,
+                                   'final_holdout_used_for_selection': False},
+              'ablation_baseline_without_lineup_or_bullpen': comparisons['starter']['metrics'],
+              'ablation_baseline_plus_batters': comparisons['starter_plus_batters']['metrics'],
+              'ablation_baseline_plus_batters_and_bullpen': comparisons['starter_plus_batters_and_bullpen']['metrics'],
               'without_seven_day': metrics(y_test, ablated),
               'without_pitcher_context': metrics(y_test, without_pitcher),
               'accepted': promotion_ready,
@@ -306,10 +526,11 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
               'heldout_pitcher_context_bases': context_basis_counts(test),
               'cold_start_priors_are_observed_current_form': False,
               'evaluation_window_games': EVALUATION_GAMES,
-              'features': features, 'omitted_features': omitted,
+              'features': selected_features, 'all_admitted_features': features,
+              'omitted_features': omitted,
               'individual_starter_training_rows': coverage,
-              'individual_starter_features_learned': [c for c in features if individual_feature(c)],
-              'individual_starter_features_used_in_splits': [c for c in features if individual_feature(c) and split_counts[c] > 0],
+              'individual_starter_features_learned': [c for c in selected_features if individual_feature(c)],
+              'individual_starter_features_used_in_splits': [c for c in selected_features if individual_feature(c) and split_counts[c] > 0],
               'heldout_starter_identity_statuses': {
                   side: test[side+'_starter_status'].value_counts(dropna=False).to_dict()
                   for side in ('home', 'away')},
@@ -325,13 +546,19 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
                   c: int(train[c].notna().sum()) for c in context_features},
               'prospective_pitcher_context_feature_rows': prospective_feature_coverage,
               'prospective_pitcher_context_test_rows': prospective_context_rows,
-              'lineup_features_learned': lineup_features,
-              'bullpen_features_learned': bullpen_features,
+              'lineup_features_learned': [c for c in selected_features if lineup_feature(c)],
+              'bullpen_features_learned': [c for c in selected_features if bullpen_context_feature(c)],
+              'lineup_features_used_in_splits': comparisons[selected]['lineup_features_used_in_splits'],
+              'bullpen_features_used_in_splits': comparisons[selected]['bullpen_features_used_in_splits'],
+              'lineup_value_features_used_in_splits': comparisons[selected]['lineup_value_features_used_in_splits'],
+              'bullpen_value_features_used_in_splits': comparisons[selected]['bullpen_value_features_used_in_splits'],
               'prospective_lineup_bullpen_feature_rows': prospective_team_feature_coverage,
               'prospective_lineup_bullpen_test_rows': prospective_team_rows,
-              'lineup_bullpen_promotion_rule': 'if consumed, all learned lineup/bullpen fields require frozen pre-T10 evidence on the same 300 games; unused groups do not block starter qualification',
+              'lineup_bullpen_context_qualification': team_context_qualification,
+              'lineup_bullpen_promotion_rule': 'the full candidate must use substantive lineup and individual-bullpen value fields, not only missingness indicators, in tree splits; every consumed training and exact-300 holdout value must have frozen or MLB-timecoded pre-T10 evidence',
               'minimum_individual_starter_rows_per_side': MIN_STARTER_ROWS,
-              'parameters': PARAMS, 'test_used_for_tuning': False, 'holdout_refit': False,
+              'parameters': PARAMS, 'test_used_for_tuning': False,
+              'development_used_for_recipe_selection': True, 'holdout_refit': False,
               'model_reload_verified': True,
               'model_sha256': hashlib.sha256((output/'model.txt').read_bytes()).hexdigest(),
               'incumbent_sha256': hashlib.sha256(incumbent_bytes).hexdigest(),
@@ -341,14 +568,16 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
                              'Prior box scores can include later scoring corrections.',
                              'Individual starter inputs require retained pregame identity and earlier pitcher boxes.',
                              'Season debuts use explicitly identified prior-year pitcher history or a prior league-starter population; these are priors, not observed current-year form.',
+                             'MLB timecoded historical state is retrospective provider reconstruction, not original prospective storage.',
                              'The trailing 300-game holdout does not establish future performance.']}
     (output/'metrics.json').write_bytes(encode(report))
     (output/'input_proof.json').write_bytes(encode(proof))
-    (output/'feature_list.json').write_bytes(encode(features))
+    (output/'feature_list.json').write_bytes(encode(selected_features))
     rows = test[['date', 'game_id', 'home_win']].copy()
-    rows['candidate_p_home'], rows['incumbent_p_home'], rows['without_seven_p_home'] = predictions, old, ablated
-    rows['baseline_without_lineup_or_bullpen_p_home'] = baseline_predictions
-    rows['baseline_plus_batters_p_home'] = batter_predictions
+    rows['candidate_p_home'], rows['incumbent_p_home'], rows['without_seven_p_home'] = candidate_predictions, old, ablated
+    rows['baseline_without_lineup_or_bullpen_p_home'] = predictions['starter']
+    rows['baseline_plus_batters_p_home'] = predictions['starter_plus_batters']
+    rows['baseline_plus_batters_and_bullpen_p_home'] = predictions['starter_plus_batters_and_bullpen']
     rows['without_pitcher_context_p_home'] = without_pitcher
     rows.to_parquet(output/'test_predictions.parquet', index=False)
     print(json.dumps(report, indent=2))
@@ -369,6 +598,33 @@ def prepare_historical_feeds(bundle, s3, bucket):
     return list(retained.values()), report
 
 
+def prepare_historical_team_context(bundle, s3, bucket):
+    existing = bundle.get('historical_team_context', [])
+    if os.environ.get('GITHUB_EVENT_NAME') == 'pull_request':
+        return existing, {'selected_games':0, 'verified_games':len(existing),
+                          'provider_requests':0, 'readback_verified_games':len(existing),
+                          'collection_skipped':'pull_request_read_only', 'errors':[]}
+    collected, report = collect_historical_team_context(s3, bucket, bundle.get('full', []))
+    retained = {(entry['game_id'], entry['timecode']):entry for entry in existing}
+    retained.update({(entry['game_id'], entry['timecode']):entry for entry in collected})
+    report['retained_total_games'] = len(retained)
+    verified = [feed_team_context(entry) for entry in retained.values()]
+    verified = [entry for entry in verified if entry is not None]
+    report['retained_verified_games'] = len(verified)
+    report['coverage_status_counts'] = dict(Counter(
+        entry['coverage_status'] for entry in verified))
+    report['side_status_counts'] = {
+        side: {
+            'lineup': dict(Counter(entry['sides'][side]['lineup_status']
+                                   for entry in verified)),
+            'bullpen': dict(Counter(entry['sides'][side]['bullpen_status']
+                                    for entry in verified)),
+        }
+        for side in ('home', 'away')
+    }
+    return list(retained.values()), report
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True, type=Path)
@@ -378,9 +634,13 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     historical_feeds, feed_report = prepare_historical_feeds(bundle, s3, bucket)
     bundle['historical_pregame_feeds'] = historical_feeds
+    historical_team, team_report = prepare_historical_team_context(bundle, s3, bucket)
+    bundle['historical_team_context'] = historical_team
     bundle['source_receipts'].extend(entry['receipt'] for entry in historical_feeds)
+    bundle['source_receipts'].extend(entry['receipt'] for entry in historical_team)
     (args.output/'historical_feed_report.json').write_bytes(encode(feed_report))
     (args.output/'historical_pregame_feeds.json').write_bytes(encode(historical_feeds))
+    (args.output/'historical_team_context_report.json').write_bytes(encode(team_report))
     table, source_report, *_ = build(bundle)
     args.output.mkdir(parents=True, exist_ok=True)
     frame = table.to_pandas()
@@ -398,7 +658,9 @@ def main():
              'source_receipts': source_report['source_receipts'], 'source_coverage': source_report['coverage'],
              'optional_reads': source_report['optional_reads'],
              'incumbent_ref': ref, 'historical_feed_report': feed_report,
-             'provider_calls': feed_report['provider_requests']}
+             'historical_team_context_report': team_report,
+             'provider_calls': (feed_report['provider_requests']+
+                                team_report['provider_requests'])}
     proof['official_history_source'] = bundle.get('official_history_source')
     reconstruction = PriorPitcherContext(normalize(bundle.get('full', [])),
                                          bundle.get('official_history_source', {}),

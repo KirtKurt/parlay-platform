@@ -15,14 +15,23 @@ from decimal import Decimal
 from ks1.features import utc
 from ks1.inventory import encode
 
-CONTRACT = "KS1-lineup-bullpen-profile-v1"
+CONTRACT = "KS1-lineup-bullpen-profile-v2"
+SUPPORTED_FROZEN_CONTRACTS = ("KS1-lineup-bullpen-profile-v1", CONTRACT)
+HISTORY_COVERAGE_KEYS = ("7d", "30d", "last3", "current_season_context",
+                         "prior_year", "statcast_30d", "player_history_complete")
+
+
+def history_coverage_complete(coverage):
+    return isinstance(coverage, dict) and all(
+        coverage.get(key) is True for key in HISTORY_COVERAGE_KEYS)
+
 TEAM_CONTEXT_VERSION = "MLB-STATSAPI-TEAM-CONTEXT-v1-prelock-observations"
 BATTING_VERSION = "MLB-LINEUP-SEASON-BATTING-v1-passive-observations"
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 SLOT_WEIGHTS = (1.00, .98, .96, .94, .92, .90, .88, .86, .84)
-LINEUP_FEATURES = ("lineup_quality_ops", "lineup_quality_obp", "lineup_quality_slg",
-                   "lineup_top4_ops", "lineup_2_5_ops", "lineup_observed_batters",
-                   "lineup_total_pa") + tuple(
+LINEUP_VALUE_FEATURES = ("lineup_quality_ops", "lineup_quality_obp", "lineup_quality_slg",
+                         "lineup_top4_ops", "lineup_2_5_ops", "lineup_observed_batters",
+                         "lineup_total_pa") + tuple(
     f"lineup_{metric}_{window}"
     for window in ("7d", "30d")
     for metric in ("ops", "obp", "slg", "iso", "k_pct", "bb_pct", "k_bb_pct",
@@ -32,7 +41,7 @@ LINEUP_FEATURES = ("lineup_quality_ops", "lineup_quality_obp", "lineup_quality_s
     f"lineup_{metric}_{label}"
     for label in ("prior_year", "talent")
     for metric in ("ops", "obp", "slg", "iso", "k_pct", "bb_pct", "k_bb_pct"))
-BULLPEN_FEATURES = tuple(
+BULLPEN_VALUE_FEATURES = tuple(
     f"bullpen_context_{metric}_{window}d"
     for window in (7, 15, 30)
     for metric in ("era", "whip", "ra9", "wins", "losses", "fip", "k_pct",
@@ -45,6 +54,21 @@ BULLPEN_FEATURES = tuple(
      "bullpen_context_platoon_coverage", "bullpen_context_available_quality",
      "bullpen_context_quality", "bullpen_context_command",
      "bullpen_context_expected_innings", "bullpen_context_early_exit_quality")
+LINEUP_PERFORMANCE_FEATURES = tuple(
+    name for name in LINEUP_VALUE_FEATURES
+    if name not in ("lineup_observed_batters", "lineup_total_pa"))
+BULLPEN_PERFORMANCE_FEATURES = tuple(
+    name for name in BULLPEN_VALUE_FEATURES
+    if not name.startswith("bullpen_context_appearances_")
+    and name not in ("bullpen_context_roster_count", "bullpen_context_available_count",
+                    "bullpen_context_limited_count",
+                    "bullpen_context_likely_unavailable_count",
+                    "bullpen_context_unknown_count", "bullpen_context_fatigue_score",
+                    "bullpen_context_depth", "bullpen_context_expected_innings"))
+LINEUP_MISSING_FEATURES = tuple(name+"_missing" for name in LINEUP_VALUE_FEATURES)
+BULLPEN_MISSING_FEATURES = tuple(name+"_missing" for name in BULLPEN_VALUE_FEATURES)
+LINEUP_FEATURES = LINEUP_VALUE_FEATURES + LINEUP_MISSING_FEATURES
+BULLPEN_FEATURES = BULLPEN_VALUE_FEATURES + BULLPEN_MISSING_FEATURES
 MODEL_FEATURES = LINEUP_FEATURES + BULLPEN_FEATURES
 
 
@@ -149,14 +173,20 @@ def _lineup_features(samples):
     }
 
 
+def with_missingness(values, names):
+    """Bind every nullable feature to an explicit observed/missing indicator."""
+    result = {name: values.get(name) for name in names}
+    result.update({name+"_missing": float(values.get(name) is None) for name in names})
+    return result
+
+
 def build_profile(stored, game, row, as_of, history, history_as_of=None,
                   statcast_as_of=None, history_coverage=None):
     """Validate one exact persisted observation and bind it to a KS1 game."""
     raw = stored.get("data", stored) if isinstance(stored, dict) else {}
     game_id, start, cutoff = str(game["gamePk"]), utc(game["gameDate"]), utc(game["gameDate"])-timedelta(minutes=10)
     observed = utc(as_of)
-    if history_coverage is not None and not all(history_coverage.get(key) is True for key in (
-            "7d", "30d", "last3", "current_season_context", "prior_year", "statcast_30d")):
+    if history_coverage is not None and not history_coverage_complete(history_coverage):
         raise ValueError("lineup bullpen history coverage incomplete")
     if any(value is not None and utc(value) > observed
            for value in (history_as_of, statcast_as_of)):
@@ -207,9 +237,11 @@ def build_profile(stored, game, row, as_of, history, history_as_of=None,
             game_date=scheduled_game_date)
             if hasattr(history, "lineup_batters_at") else ([], {}))
         lineup_values.update(batter_features)
+        lineup_values = with_missingness(lineup_values, LINEUP_VALUE_FEATURES)
         bullpen_values = dict(history.bullpen_roster_at(
             as_of, row[side+"_id"], roster_ids, game_date=scheduled_game_date))
         reliever_profiles = bullpen_values.pop("_reliever_profiles", [])
+        bullpen_values = with_missingness(bullpen_values, BULLPEN_VALUE_FEATURES)
         features.update({side+"_"+key: value for key, value in {**lineup_values, **bullpen_values}.items()})
         sides[side] = {"team_id": row[side+"_id"], "lineup_ids": ids,
                        "opposing_starter_id": row.get(opposing+"_starter_id"),
@@ -226,6 +258,8 @@ def build_profile(stored, game, row, as_of, history, history_as_of=None,
     if bullpen_block.get("bullpenRosterObservationStatus") != "OBSERVED_ROSTER_ONLY":
         raise ValueError("bullpen roster status invalid")
     profile = {"contract": CONTRACT, "as_of": observed.isoformat(),
+               "history_coverage": dict(history_coverage or {}),
+               "statcast_retained_dates": sorted(getattr(history, 'statcast_retained_dates', None) or []),
                "history_as_of": history_as_of,
                "statcast_as_of": statcast_as_of,
                "game_id": game_id, "commence_time": start.isoformat(),
@@ -276,7 +310,7 @@ def read_date(table, target_date):
 
 
 def frozen_profile_features(row):
-    """Recover only checksum-bound values from an immutable KS1 row."""
+    """Recover checksum-bound immutable profiles under their recorded contract."""
     raw = row.get("lineup_bullpen_profile_json")
     if not raw:
         return None
@@ -287,8 +321,9 @@ def frozen_profile_features(row):
     claimed = profile.pop("sha256", None)
     semantic_claimed = profile.pop("semantic_sha256", None)
     semantic = {key: value for key, value in profile.items() if key != "as_of"}
-    valid = (row.get("lineup_bullpen_profile_contract") == CONTRACT
-             and profile.get("contract") == CONTRACT
+    recorded_contract = row.get("lineup_bullpen_profile_contract")
+    valid = (recorded_contract in SUPPORTED_FROZEN_CONTRACTS
+             and profile.get("contract") == recorded_contract
              and row.get("lineup_bullpen_profile_sha256") == claimed
              and row.get("lineup_bullpen_profile_semantic_sha256") == semantic_claimed
              and hashlib.sha256(encode(semantic)).hexdigest() == semantic_claimed
@@ -320,7 +355,9 @@ def frozen_profile_features(row):
             "matchup_starters": {side: profile["sides"][side].get("opposing_starter_id")
                                  for side in ("home", "away")},
             "features": features,
-            "coverage_status": profile.get("coverage_status")}
+            "history_complete": history_coverage_complete(profile.get("history_coverage")),
+            "coverage_status": profile.get("coverage_status"),
+            "contract": recorded_contract}
 
 
 def published_profile_index(entries):

@@ -11,11 +11,13 @@ import pyarrow as pa
 from ks1.features import Features, day, number, starter_matchup, utc
 from ks1.historical_starters import published_starter_index
 from ks1.inventory import encode
-from ks1.passive_context import MODEL_FEATURES as LINEUP_BULLPEN_FEATURES, published_profile_index
+from ks1.passive_context import (MODEL_FEATURES as LINEUP_BULLPEN_FEATURES,
+                                 LINEUP_VALUE_FEATURES, BULLPEN_VALUE_FEATURES,
+                                 published_profile_index, with_missingness)
 from ks1.prior_pitcher_context import PriorPitcherContext, pregame_identity_index
-from ks1.historical_feed import feed_identity
+from ks1.historical_feed import feed_identity, feed_team_context
 
-VERSION = "KS1-game-table-v1"
+VERSION = "KS1-game-table-v2"
 
 
 def index(rows, key):
@@ -118,7 +120,28 @@ def build(bundle, selected_date=None):
     for entry in bundle.get('historical_pregame_feeds', []):
         if (value := feed_identity(entry)) is not None:
             archived_identities[value['game_id']].append(value)
+    archived_team_context = defaultdict(list)
+    for entry in bundle.get('historical_team_context', []):
+        if (value := feed_team_context(entry)) is not None:
+            archived_team_context[value['game_id']].append(value)
+            for side, context in value['sides'].items():
+                if context['probable_pitcher_id']:
+                    archived_identities[value['game_id']].append({
+                        'pitcher_id': context['probable_pitcher_id'],
+                        'name': context['probable_pitcher_name'],
+                        'team_id': context['team_id'],
+                        'as_of': value['as_of'],
+                        'commence_time': value['commence_time'],
+                        'source': value['source'],
+                        'side': side,
+                    })
+    team_context_history_complete = all(bundle.get(key) is True for key in (
+        "current30_history_complete", "current_year_history_complete",
+        "prior_year_history_complete", "statcast_coverage_complete",
+        "current_year_statcast_complete", "prior_year_statcast_complete"))
+    complete_official_years = set(bundle.get("official_history_source", {}).get("complete_years", []))
     history = Features(list(games.values()), bundle.get("statcast", []),
+                       statcast_retained_dates=bundle.get("statcast_retained_dates", []),
                        statcast_complete=bundle.get("statcast_coverage_complete") is True,
                        prior_statcast_profiles=bundle.get("prior_statcast_profiles"),
                        prior_statcast_year=bundle.get("prior_statcast_year"))
@@ -141,12 +164,14 @@ def build(bundle, selected_date=None):
         for name in names:
             name_to_ids[name].add(tid)
     missing_boxes = defaultdict(list)
+    missing_official_dates = set()
     for pk, entries in finals.items():
         if pk in games:
             continue
         for entry in entries:
             if not entry.get("officialDate") or entry.get("completed") is not True:
                 continue
+            missing_official_dates.add(entry["officialDate"])
             for side in ("home", "away"):
                 ids = name_to_ids.get(entry.get(side+"Team"), set())
                 if len(ids) == 1:
@@ -179,8 +204,6 @@ def build(bundle, selected_date=None):
             if hashlib.sha256(encode(snapshot["features"])).hexdigest() != snapshot["featureFingerprint"]:
                 raise ValueError("snapshot feature fingerprint mismatch")
             cutoff = snapshot["capturedAtUtc"]
-        # Snapshot fields and a later immutable KS1 starter profile are
-        # independent evidence. Preserve both when both were known by T-10.
         published = published_starters.get(pk, {})
         published_problem = None
         if published and utc(published["commence_time"]) != utc(start):
@@ -188,13 +211,16 @@ def build(bundle, selected_date=None):
         if published:
             cutoff = (max(utc(cutoff), utc(published["as_of"])).isoformat()
                       if snapshot else published["as_of"])
-        # Select the latest matching archived observations before computing
-        # either side's features, so both sides share the final safe cutoff.
         archived_for_game = {}
         for side in ('home', 'away'):
-            candidates = [entry['sides'][side] for entry in archived_identities.get(pk, [])
-                          if utc(entry['sides'][side]['commence_time']) == utc(start)
-                          and utc(entry['sides'][side]['as_of']) <= utc(start)-timedelta(minutes=10)]
+            candidates = []
+            for entry in archived_identities.get(pk, []):
+                candidate = (entry['sides'][side] if 'sides' in entry else entry
+                             if entry.get('side') == side else None)
+                if (candidate
+                        and utc(candidate['commence_time']) == utc(start)
+                        and utc(candidate['as_of']) <= utc(start)-timedelta(minutes=10)):
+                    candidates.append(candidate)
             if candidates:
                 archived_for_game[side] = max(candidates, key=lambda entry: utc(entry['as_of']))
                 cutoff = max(utc(cutoff), utc(archived_for_game[side]['as_of'])).isoformat()
@@ -222,11 +248,16 @@ def build(bundle, selected_date=None):
                "historical_pitcher_context_mode": None,
                "pitcher_context_evidence": None,
                "lineup_bullpen_context_evidence": None,
+               "lineup_bullpen_history_status": "UNPROVEN",
+               "historical_lineup_bullpen_context_status": "UNAVAILABLE_FAIL_CLOSED",
+               "historical_lineup_bullpen_context_as_of": None,
+               "historical_lineup_bullpen_context_source": None,
                "historical_pitcher_context_as_of": None,
                "historical_pitcher_context_source": None,
                "reconstructed_pitcher_context_proof": None,
                "reconstructed_source": json.dumps(r.get("sourceArtifact"), sort_keys=True) if r else None}
-        row.update({side+"_"+feature: None for side in ("home", "away")
+        row.update({side+"_"+feature: (1.0 if feature.endswith("_missing") else None)
+                    for side in ("home", "away")
                     for feature in LINEUP_BULLPEN_FEATURES})
         if published:
             proof = published["source"]
@@ -235,6 +266,10 @@ def build(bundle, selected_date=None):
                        pregame_stored_at=proof.get("stored_at"),
                        pregame_sha256=proof.get("sha256"))
         frozen_team_context = published_team_context.get(pk)
+        if frozen_team_context and not frozen_team_context.get("history_complete"):
+            exclusions.append({"game_id": pk,
+                               "reason": "published_lineup_bullpen_history_unproven"})
+            frozen_team_context = None
         if frozen_team_context:
             current_teams = {side: team_identity(
                 sch.get("teams", {}).get(side) or game.get("teams", {}).get(side))[0]
@@ -252,6 +287,7 @@ def build(bundle, selected_date=None):
         if published_problem:
             exclusions.append({"game_id": pk, "reason": published_problem})
         missing_identity = False
+        cutoff_day = day(cutoff)
         for side in ("home", "away"):
             team = sch.get("teams", {}).get(side) or game.get("teams", {}).get(side)
             identity_method = "official_game_team_id"
@@ -342,17 +378,98 @@ def build(bundle, selected_date=None):
             if captured:
                 row.update(captured)
                 row["rolling_feature_evidence"] = "immutable original snapshot starter profile"
-            cutoff_day = day(cutoff)
-            gaps = {key: calendar_date.fromisoformat(date)
-                    for key, date in missing_boxes[tid]
-                    if date[:4] == str(cutoff_day.year) and date < str(cutoff_day)}
-            gaps = {key: date for key, date in gaps.items() if (cutoff_day-date).days <= 75}
-            row[f"{side}_missing_history_boxes_75d"] = len(gaps)
-            row[f"{side}_history_status"] = "partial_known_missing_boxes" if gaps else "complete_for_retained_finals"
+            relevant_gap_years = {str(cutoff_day.year), str(cutoff_day.year-1)}
+            history_gaps = {key: calendar_date.fromisoformat(date)
+                            for key, date in missing_boxes[tid]
+                            if date[:4] in relevant_gap_years and date < str(cutoff_day)}
+            recent_gaps = {key: date for key, date in history_gaps.items()
+                           if (cutoff_day-date).days <= 75}
+            row[f"{side}_missing_history_boxes_75d"] = len(recent_gaps)
+            row[f"{side}_history_status"] = ("partial_known_missing_boxes"
+                                             if history_gaps else "complete_for_retained_finals")
             for window in (1, 3, 5):
-                if any((cutoff_day-date).days <= window for date in gaps.values()):
+                if any((cutoff_day-date).days <= window for date in recent_gaps.values()):
                     for stat in ("pitches", "outs"):
                         row[f"{side}_bullpen_{stat}_{window}d"] = None
+        historical_team = None
+        candidates = [value for value in archived_team_context.get(pk, [])
+                      if utc(value['commence_time']) == utc(start)
+                      and utc(value['as_of']) <= utc(start)-timedelta(minutes=10)]
+        if candidates:
+            historical_team = max(candidates, key=lambda value: utc(value['as_of']))
+        if historical_team:
+            teams_match = all(historical_team['sides'][side]['team_id'] == row.get(side+'_id')
+                              for side in ('home', 'away'))
+            starters_match = all(
+                historical_team['sides'][side]['probable_pitcher_id'] in (
+                    None, row.get(side+'_starter_id'))
+                for side in ('home', 'away'))
+            # Player talent uses current/prior seasons, including games before
+            # a trade. A team's recent 75-day gap check cannot prove those
+            # histories complete; unmapped-team gaps must fail closed too.
+            missing_player_history = any(
+                f'{cutoff_day.year-1}-01-01' <= date < str(cutoff_day)
+                for date in missing_official_dates)
+            incomplete_team_history = (not team_context_history_complete
+                                       or cutoff_day.year not in complete_official_years
+                                       or missing_player_history
+                                       or any(row.get(side+'_history_status')
+                                              == 'partial_known_missing_boxes'
+                                              for side in ('home', 'away')))
+            if not teams_match:
+                exclusions.append({'game_id': pk,
+                                   'reason': 'historical_lineup_bullpen_team_identity_mismatch'})
+            elif not starters_match:
+                exclusions.append({'game_id': pk,
+                                   'reason': 'historical_lineup_bullpen_starter_identity_mismatch'})
+                row['historical_lineup_bullpen_context_status'] = 'STARTER_MISMATCH_FAIL_CLOSED'
+            elif incomplete_team_history:
+                exclusions.append({'game_id': pk,
+                                   'reason': 'historical_lineup_bullpen_history_incomplete'})
+                row['historical_lineup_bullpen_context_status'] = (
+                    'HISTORY_INCOMPLETE_FAIL_CLOSED')
+            else:
+                context_features = {}
+                for side in ('home', 'away'):
+                    source = historical_team['sides'][side]
+                    opposing = 'away' if side == 'home' else 'home'
+                    opposing_source = historical_team['sides'][opposing]
+                    lineup_values = {}
+                    if source['lineup_status'] == 'CONFIRMED':
+                        _, lineup_values = history.lineup_batters_at(
+                            historical_team['as_of'], source['lineup_ids'],
+                            opposing_source['probable_pitcher_id'],
+                            opposing_source['probable_pitcher_hand'], game_date=date)
+                        if cutoff_day.year-1 not in complete_official_years:
+                            # Run-relative prior-year flags do not certify the
+                            # target's prior season. Keep unsupported shrink
+                            # inputs missing, not silently equal to recent form.
+                            lineup_values = {key: None if key.endswith(
+                                ('_prior_year', '_talent')) else value
+                                for key, value in lineup_values.items()}
+                    bullpen_values = {}
+                    if source['bullpen_status'] == 'OBSERVED_ROSTER_ONLY':
+                        bullpen_values = dict(history.bullpen_roster_at(
+                            historical_team['as_of'], row[side+'_id'],
+                            source['bullpen_roster_ids'], game_date=date))
+                        bullpen_values.pop('_reliever_profiles', None)
+                    lineup_values = with_missingness(lineup_values, LINEUP_VALUE_FEATURES)
+                    bullpen_values = with_missingness(bullpen_values, BULLPEN_VALUE_FEATURES)
+                    context_features.update({side+'_'+key: value for key, value in {
+                        **lineup_values, **bullpen_values}.items()})
+                    if source['lineup_status'] == 'CONFIRMED':
+                        row[side+'_lineup_status'] = 'confirmed'
+                        row[side+'_lineup_ids'] = json.dumps(
+                            [int(value) for value in source['lineup_ids']])
+                row.update(context_features)
+                row['lineup_bullpen_context_evidence'] = 'historical_timecoded_mlb_feed'
+                row['historical_lineup_bullpen_context_status'] = historical_team[
+                    'coverage_status']
+                row['historical_lineup_bullpen_context_as_of'] = historical_team['as_of']
+                row['historical_lineup_bullpen_context_source'] = json.dumps(
+                    historical_team['source'], sort_keys=True)
+                row['as_of_timestamp'] = max(
+                    utc(row['as_of_timestamp']), utc(historical_team['as_of'])).isoformat()
         if frozen_team_context:
             lineup_matches = all(
                 not row.get(side+"_lineup_ids")
@@ -374,8 +491,12 @@ def build(bundle, selected_date=None):
                         for window in ("7d", "30d"):
                             context_features[side+"_lineup_platoon_xwoba_"+window] = None
                             context_features[side+"_lineup_pitch_type_matchup_xwoba_"+window] = None
+                            context_features[side+"_lineup_platoon_xwoba_"+window+"_missing"] = 1.0
+                            context_features[side+"_lineup_pitch_type_matchup_xwoba_"+window+"_missing"] = 1.0
                 row.update(context_features)
                 row["lineup_bullpen_context_evidence"] = "frozen_versioned_ks1_profile"
+                row["lineup_bullpen_history_status"] = "COMPLETE"
+                row["historical_lineup_bullpen_context_status"] = "SUPERSEDED_BY_FROZEN_PROFILE"
                 for side in ("home", "away"):
                     row[side+"_lineup_status"] = "confirmed"
                     row[side+"_lineup_ids"] = json.dumps(
@@ -413,8 +534,6 @@ def build(bundle, selected_date=None):
         elif context_matches:
             context_applied = False
             for side in ("home", "away"):
-                # A real immutable T-10 starter profile is more specific.  The
-                # V8 summary accelerates only rows lacking that identity.
                 if row.get(side+"_starter_id") is None:
                     row.update({f"{side}_pitcher_context_{key}": value
                                 for key, value in context["sides"][side].items()})
@@ -548,8 +667,15 @@ def contract(example):
         lineup_bullpen_metric = any(
             column == side+"_"+feature for side in ("home", "away")
             for feature in LINEUP_BULLPEN_FEATURES)
-        if column == "lineup_bullpen_context_evidence":
-            source = "checksum-bound KS1-lineup-bullpen-profile-v1 audit metadata"
+        lineup_bullpen_audit = column in (
+            "lineup_bullpen_history_status",
+            "lineup_bullpen_context_evidence",
+            "historical_lineup_bullpen_context_status",
+            "historical_lineup_bullpen_context_as_of",
+            "historical_lineup_bullpen_context_source",
+        )
+        if lineup_bullpen_audit:
+            source = "checksum-bound KS1-lineup-bullpen-profile-v2 or historical timecoded-feed audit metadata"
         elif starter_metric or pitcher_context_metric or lineup_bullpen_metric or any(t in column for t in ("_offense_", "_team_starter_", "_bullpen_", "_rest_days", "_history_games")):
             dtype, role, source = pa.float64(), "feature", "strictly earlier completed compact/full game boxes"
             meaning += "; calendar-day windows; same-day excluded; current-season empirical prior; OPS/ISO 100 PA/AB, K-BB 100 BF, WHIP 75 outs shrinkage; *_games/*_pa/*_bf/*_appearances are observed counts"
@@ -569,7 +695,7 @@ def contract(example):
                           "strictly earlier completed official MLB game boxes"
                           if "_lineup_" in column else
                           "immutable pre-T10 MLB roster plus strictly earlier official boxes/retained Statcast")
-                meaning += "; admitted only from checksum-bound KS1-lineup-bullpen-profile-v1"
+                meaning += "; admitted only from checksum-bound KS1-lineup-bullpen-profile-v2 or verified historical timecoded context"
             statcast = any(token in column for token in (
                 "_complete_", "_pitches_", "_hard_hit_pct_", "_barrel_pct_", "_avg_ev_allowed_",
                 "_xwoba", "_swstr_pct_", "_csw_pct_", "_velocity_", "_spin_",

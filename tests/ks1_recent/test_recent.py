@@ -1,11 +1,16 @@
 from pathlib import Path
+import json
 
 import pandas as pd
 import pytest
 from ks1.features import Features, pitching
 from ks1.retrain_recent import (accepted, choose_features, completion_times,
+                                bullpen_context_performance_feature,
+                                historical_team_context_mask,
+                                lineup_performance_feature,
                                 pitcher_promotion_ready, prospective_context_coverage,
-                                qualification_basis, qualified_context_coverage, split_recent)
+                                qualification_basis, qualified_context_coverage,
+                                qualified_team_context_coverage, split_recent, split_development)
 from ks1.train import artifact_write_authorized
 from tests.ks1.test_game_table import game
 
@@ -430,6 +435,76 @@ def test_mixed_history_and_frozen_evidence_counts_each_game_once():
     assert qualification_basis(coverage) == 'frozen_pregame_profiles_300'
 
 
+def historical_team_context_frame(status='SUPPORTED_V1_COMPLETE'):
+    receipt = {'source_type': 'mlb_statsapi_timecoded_team_context',
+               'provider': 'MLB Stats API', 'bucket': 'retained-history',
+               'key': ('mlb/development-data/ks1-historical-team-context-v1/'
+                       'game=1/timecode=20250501_195000.json'),
+               'versionId': 'immutable-version', 'sha256': 'b'*64,
+               'payload_sha256': 'c'*64}
+    frame = pd.DataFrame({
+        'lineup_bullpen_context_evidence': ['historical_timecoded_mlb_feed']*300,
+        'historical_lineup_bullpen_context_status': [status]*300,
+        'historical_lineup_bullpen_context_source': [json.dumps(receipt)]*300,
+        'historical_lineup_bullpen_context_as_of': ['2025-05-01T19:45:00Z']*300,
+        'as_of_timestamp': ['2025-05-01T19:45:00Z']*300,
+        'commence_time': ['2025-05-01T20:00:00Z']*300,
+        'home_lineup_ops_30d': [.750]*300,
+        'home_lineup_ops_30d_missing': [0.]*300,
+        'away_bullpen_context_fip_30d': [None]*300,
+        'away_bullpen_context_fip_30d_missing': [1.]*300,
+    })
+    return frame, receipt
+
+
+def test_timecoded_team_context_qualifies_explicit_missing_values_with_receipts():
+    frame, receipt = historical_team_context_frame('SUPPORTED_V1_EXPLICIT_MISSING')
+    features = ['home_lineup_ops_30d', 'home_lineup_ops_30d_missing',
+                'away_bullpen_context_fip_30d',
+                'away_bullpen_context_fip_30d_missing']
+    coverage = qualified_team_context_coverage(
+        frame, features, source_receipts=[receipt])
+    assert coverage['historical_rows'] == coverage['qualified_rows'] == 300
+    assert coverage['frozen_rows'] == 0
+
+
+@pytest.mark.parametrize(('column', 'bad'), [
+    ('historical_lineup_bullpen_context_status', 'UNAVAILABLE_FAIL_CLOSED'),
+    ('historical_lineup_bullpen_context_source', '{}'),
+    ('historical_lineup_bullpen_context_as_of', '2025-05-01T19:51:00Z'),
+    ('as_of_timestamp', '2025-05-01T19:51:00Z'),
+    ('home_lineup_ops_30d', None),
+    ('home_lineup_ops_30d_missing', None),
+    ('away_bullpen_context_fip_30d_missing', 0),
+])
+def test_timecoded_team_context_rejects_unproven_or_unmarked_values(column, bad):
+    frame, receipt = historical_team_context_frame()
+    frame.loc[0, column] = bad
+    features = ['home_lineup_ops_30d', 'home_lineup_ops_30d_missing',
+                'away_bullpen_context_fip_30d',
+                'away_bullpen_context_fip_30d_missing']
+    coverage = qualified_team_context_coverage(
+        frame, features, source_receipts=[receipt])
+    assert coverage['qualified_rows'] == 299
+
+
+def test_timecoded_team_context_requires_receipt_in_qualification_inventory():
+    frame, receipt = historical_team_context_frame()
+    assert historical_team_context_mask(frame, [receipt]).all()
+    assert not historical_team_context_mask(frame, []).any()
+
+
+def test_frozen_evidence_tag_alone_cannot_qualify_incomplete_history():
+    frame, _ = historical_team_context_frame()
+    frame['lineup_bullpen_context_evidence'] = 'frozen_versioned_ks1_profile'
+    features = ['home_lineup_ops_30d', 'home_lineup_ops_30d_missing']
+    assert qualified_team_context_coverage(frame, features)['qualified_rows'] == 0
+    frame['lineup_bullpen_history_status'] = 'COMPLETE'
+    assert qualified_team_context_coverage(frame, features)['qualified_rows'] == 300
+    frame.loc[0, 'lineup_bullpen_history_status'] = 'UNPROVEN'
+    assert qualified_team_context_coverage(frame, features)['qualified_rows'] == 299
+
+
 @pytest.mark.parametrize('side', ['home', 'away'])
 def test_partial_manifest_cannot_qualify_untouched_starter_side(side):
     frame = historical_qualification_frame()
@@ -562,3 +637,27 @@ def test_training_rejects_features_unavailable_at_serving():
                           'home_starter_bf_30d': [0., 0.], 'away_starter_bf_30d': [0., 0.]})
     with pytest.raises(ValueError, match='missing from daily inference: temp'):
         choose_features(frame)
+
+
+def test_promotion_usage_gate_distinguishes_quality_from_coverage_counts():
+    assert lineup_performance_feature('home_lineup_ops_30d')
+    assert not lineup_performance_feature('home_lineup_observed_batters')
+    assert bullpen_context_performance_feature('away_bullpen_context_fip_30d')
+    assert not bullpen_context_performance_feature('away_bullpen_context_roster_count')
+    assert not bullpen_context_performance_feature('away_bullpen_context_fatigue_score')
+    for window in (7, 15, 30):
+        assert not bullpen_context_performance_feature(
+            f'home_bullpen_context_appearances_{window}d')
+
+
+def test_development_split_purges_overlapping_labels():
+    start = pd.Timestamp('2026-01-01T00:00:00Z')
+    frame = pd.DataFrame([{
+        'game_id': str(i),
+        'as_of_timestamp': (start+pd.Timedelta(hours=i)).isoformat(),
+        'label_completed_at': (start+pd.Timedelta(hours=i+3)).isoformat(),
+    } for i in range(1000)])
+    fit, development = split_development(frame)
+    assert len(development) == 200
+    assert len(fit) == 797
+    assert completion_times(fit.label_completed_at).max() < completion_times(development.as_of_timestamp).min()

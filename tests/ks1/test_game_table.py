@@ -9,7 +9,7 @@ from botocore.exceptions import ClientError
 
 from ks1.features import Features, offense
 from ks1.inventory import encode
-from ks1.passive_context import CONTRACT as LINEUP_BULLPEN_CONTRACT
+from ks1.passive_context import CONTRACT as LINEUP_BULLPEN_CONTRACT, HISTORY_COVERAGE_KEYS
 from ks1.historical_starters import (KS1_STARTER_PROFILE_CONTRACT,
                                      V8_MANIFEST_VERSION, V8_SNAPSHOT_VERSION,
                                      historical_context_index)
@@ -240,7 +240,8 @@ def test_versioned_t10_prediction_supplies_pregame_starter_identity():
     assert row["as_of_timestamp"] == "2026-08-03T19:40:00Z"
 
 
-def test_frozen_team_profile_restores_confirmed_lineup_metadata():
+@pytest.mark.parametrize('complete_history', [True, False])
+def test_frozen_team_profile_restores_confirmed_lineup_metadata(complete_history):
     bundle = fixture()
     profile = {
         "contract": LINEUP_BULLPEN_CONTRACT,
@@ -249,6 +250,8 @@ def test_frozen_team_profile_restores_confirmed_lineup_metadata():
         "statcast_as_of": "2026-08-03T19:30:00Z",
         "game_id": "3", "commence_time": "2026-08-03T20:00:00Z",
         "coverage_status": "SUPPORTED_V1_COMPLETE",
+        "history_coverage": ({key: True for key in HISTORY_COVERAGE_KEYS}
+                             if complete_history else {}),
         "sides": {
             "home": {"team_id": "1", "lineup_ids": [str(i) for i in range(101, 110)],
                      "opposing_starter_id": "199",
@@ -274,10 +277,16 @@ def test_frozen_team_profile_restores_confirmed_lineup_metadata():
                      "stored_at": "2026-08-03T19:45:00Z", "sha256": "a"*64}}]
     table, *_ = build(bundle)
     row = table.to_pylist()[-1]
+    if not complete_history:
+        assert row['lineup_bullpen_context_evidence'] is None
+        assert row['home_lineup_quality_ops'] is None
+        assert row['home_lineup_quality_ops_missing'] == 1
+        return
     assert row["home_lineup_status"] == "confirmed"
     assert json.loads(row["home_lineup_ids"]) == list(range(101, 110))
     assert row["home_lineup_quality_ops"] == .750
     assert row["home_lineup_pitch_type_matchup_xwoba_30d"] is None
+    assert row["home_lineup_pitch_type_matchup_xwoba_30d_missing"] == 1
     assert row["lineup_bullpen_context_evidence"] == "frozen_versioned_ks1_profile"
 
 

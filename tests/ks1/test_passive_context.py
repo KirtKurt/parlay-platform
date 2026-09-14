@@ -2,6 +2,7 @@ import copy
 import hashlib
 import json
 from decimal import Decimal
+from datetime import date, timedelta
 
 import pytest
 
@@ -74,6 +75,10 @@ def test_builds_checksum_bound_profile_and_supported_features():
     assert "bullpen_SIERA" in profile["unavailable_fields"]
     assert features["home_lineup_observed_batters"] == 9
     assert features["away_bullpen_context_unknown_count"] == 5
+    assert features["home_lineup_observed_batters_missing"] == 0
+    assert features["away_bullpen_context_unknown_count_missing"] == 0
+    assert features["home_lineup_xwoba_7d_missing"] == 1
+    assert features["away_bullpen_context_fip_30d_missing"] == 1
     claimed = profile.pop("sha256")
     assert hashlib.sha256(encode(profile)).hexdigest() == claimed
     assert len(history.calls) == 2
@@ -243,6 +248,20 @@ def test_batter_windows_and_pitch_matchup_use_only_earlier_games():
     assert features["lineup_barrel_pct_30d"] is None
     assert features["lineup_pitch_type_matchup_xwoba_30d"] is None
     assert features["lineup_ops_talent"] is None
+    # The global archive can be complete while the compact payload omits
+    # portions of this historical window. Admit only proven retained dates.
+    assert profiles[0]['windows']['30d']['xwoba'] == .8
+    engine.statcast_retained_dates = {
+        (date(2026, 9, 10)-timedelta(days=age)).isoformat()
+        for age in range(1, 31)}
+    complete, _ = engine.lineup_batters_at(
+        '2026-09-10T17:50:00Z', [101], game_date='2026-09-10')
+    assert complete[0]['windows']['30d']['xwoba'] == .8
+    engine.statcast_retained_dates.remove('2026-08-20')
+    partial, _ = engine.lineup_batters_at(
+        '2026-09-10T17:50:00Z', [101], game_date='2026-09-10')
+    assert partial[0]['windows']['30d']['xwoba'] is None
+    assert partial[0]['windows']['30d']['ops'] is not None
 
 
 def test_reliever_profile_has_strict_prior_workload_quality_and_arsenal():

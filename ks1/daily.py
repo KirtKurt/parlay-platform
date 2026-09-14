@@ -23,6 +23,7 @@ from ks1.poisson import home_probability, predict_exported
 from ks1.publish import parquet_bytes
 from ks1.refresh import change_reason, fingerprint, observe, pregame_status
 from ks1.passive_context import (CONTRACT as LINEUP_BULLPEN_CONTRACT,
+                                 SUPPORTED_FROZEN_CONTRACTS,
                                  MODEL_FEATURES as LINEUP_BULLPEN_FEATURES,
                                  build_profile as lineup_bullpen_profile)
 from ks1.table import american, team_identity
@@ -44,7 +45,6 @@ STRINGS += ['starter_profile_contract', 'starter_profile_sha256',
 STRINGS += ['lineup_bullpen_profile_contract', 'lineup_bullpen_profile_sha256',
             'lineup_bullpen_profile_semantic_sha256', 'lineup_bullpen_profile_json',
             'lineup_bullpen_profile_status']
-# Dictionary date also reads cleanly with Arrow's automatic Hive partitioning.
 SCHEMA = pa.schema([pa.field(k, pa.dictionary(pa.int32(), pa.string()) if k == 'date' else pa.string())
                     for k in STRINGS] + [pa.field(k, pa.float64()) for k in FLOATS])
 STARTER_PROFILE_CONTRACT = 'KS1-starter-profile-v2'
@@ -231,16 +231,11 @@ def bbs_assignments(payload, schedule, crosswalk, target_date):
         matches = [g for g in same_teams
                    if abs((utc(event['kickoff_utc'])-utc(g['gameDate'])).total_seconds()) <= 90]
         if not matches and len(same_teams) == 1:
-            # Retained 2026-09-11 evidence: BBS CIN@MIL 23:40, MLB 23:45.
-            # Accept a bounded provider schedule lag only for one exact fixture
-            # in BOTH catalogues. Never choose among doubleheaders or guess IDs.
             game = same_teams[0]
             provider_fixtures = [e for e in data
                                  if str(day(e['kickoff_utc'])) == target_date
                                  and all(crosswalk.resolve(e[s]['name']) == sides[s] for s in sides)]
             delta = abs((utc(event['kickoff_utc'])-utc(game['gameDate'])).total_seconds())
-            # Identity survives scheduled -> live/final. The prediction loop
-            # separately enforces pregame status and preserves frozen rows.
             if (len(provider_fixtures) == 1 and delta <= 300
                     and game.get('doubleHeader') == 'N'
                     and game.get('status', {}).get('startTimeTBD') is False):
@@ -356,12 +351,6 @@ def preserve_frozen(current, previous, target_date, as_of):
 
 
 def validate_preservation(previous, current, as_of, withdrawals=()):
-    """Reject silent loss of published picks and any rewrite past stored T-10.
-
-    Before T-10 only an explicit postponement/cancellation permits removal.
-    A premature live state, missing fixture or revised start must fail closed;
-    it must not destroy the previous publication or create a replacement lock.
-    """
     keyed = {(r['date'], r['game_id']): r for r in current}
     if len(keyed) != len(current):
         raise ValueError('duplicate publication game IDs')
@@ -414,6 +403,7 @@ def predict(folder, output):
     engine = Features(history, inputs['history'].get('statcast', []),
                       statcast_complete=inputs['history'].get('statcast_coverage_complete') is True,
                       prior_statcast_profiles=inputs['history'].get('prior_statcast_profiles'),
+                      statcast_retained_dates=inputs['history'].get('statcast_retained_dates', []),
                       prior_statcast_year=inputs['history'].get('prior_statcast_year'))
     rows, feature_rows, exclusions = [], [], []
     previous = pq.ParquetFile(folder/'previous.parquet').read().to_pandas() if (folder/'previous.parquet').exists() else None
@@ -422,8 +412,6 @@ def predict(folder, output):
     prior_rows = {r['game_id']: r for r in pq.ParquetFile(folder/'previous.parquet').read().to_pylist()} if previous is not None else {}
     retained, changes, unchanged, withdrawals = [], [], [], []
     provider_status_disagreement_retained = []
-    # Frozen Phase 4 rows acquire only conservative status defaults; their
-    # predictions and original cutoff are retained, never rescored postgame.
     migrated_frozen = []
     for pk in sorted(frozen_ids):
         row = dict(prior_rows[pk])
@@ -453,22 +441,14 @@ def predict(folder, output):
             raise ValueError('scheduled official game missing from BBS: '+pk)
         bbs = assignments[pk]
         if bbs['status'].lower() != 'scheduled':
-            # BBS lifecycle state is supplemental identity evidence, not the
-            # official MLB game-state authority.  If the providers disagree,
-            # never score a new row or refresh an existing one.  A previously
-            # published pregame row can, however, be retained byte-for-byte so
-            # one early/incorrect BBS "live" transition does not abort every
-            # other game in the slate.  First publication still fails closed.
             old = prior_rows.get(pk)
             if old:
                 retained.append(old)
                 provider_status_disagreement_retained.append(pk)
-                exclusions.append({
-                    'game_id': pk,
-                    'reason': 'provider_pregame_status_disagreement_retained',
-                    'official_detailed_state': game.get('status', {}).get('detailedState'),
-                    'bbs_status': bbs.get('status'),
-                })
+                exclusions.append({'game_id': pk,
+                                   'reason': 'provider_pregame_status_disagreement_retained',
+                                   'official_detailed_state': game.get('status', {}).get('detailedState'),
+                                   'bbs_status': bbs.get('status')})
                 continue
             raise ValueError('BBS and official pregame status disagree: '+pk)
         row = {'date': target_date, 'game_id': pk, 'bbs_game_id': bbs['id'], 'commence_time': start.isoformat(),
@@ -490,34 +470,35 @@ def predict(folder, output):
                       and inputs['history'].get('prior_year_history_complete') is True
                       and inputs['history'].get('current_year_statcast_complete') is True
                       and inputs['history'].get('prior_year_statcast_complete') is True),
-            'current_season_context': (
-                inputs['history'].get('current_year_history_complete') is True),
+            'current_season_context': inputs['history'].get('current_year_history_complete') is True,
             'prior_year': (inputs['history'].get('prior_year_history_complete') is True
                            and inputs['history'].get('prior_year_statcast_complete') is True),
             'statcast_30d': inputs['history'].get('statcast_coverage_complete') is True,
+            'player_history_complete': (
+                inputs['history'].get('current_year_history_complete') is True
+                and inputs['history'].get('prior_year_history_complete') is True
+                and not any(day(g['gameDate']).year in (
+                    calendar_date.fromisoformat(target_date).year-1,
+                    calendar_date.fromisoformat(target_date).year) for g in missing_boxes)),
         }
         row['_pitcher_history_coverage'] = coverage
         if not all(coverage.values()):
             row['history_status'] = 'partial_pitcher_history_fail_closed'
         row.update(observe(game, inputs['feeds']['games'].get(pk), as_of))
-        features = {side+'_'+name: None for side in ('home', 'away')
-                    for name in LINEUP_BULLPEN_FEATURES}
+        features = {side+'_'+name: (1.0 if name.endswith('_missing') else None)
+                    for side in ('home', 'away') for name in LINEUP_BULLPEN_FEATURES}
         for side in ('home', 'away'):
             team = game['teams'][side]
             tid, name = team_identity(team)
             pid = row[side+'_starter_id']
             row.update({side+'_id': tid, side+'_team': name, 'bbs_'+side+'_id': str(bbs[side]['id'])})
-            side_values = mask_starter_sources(
-                engine.at(as_of, tid, pid, game_date=target_date), coverage)
-            # Derive context only after source-completeness masking.
-            side_values.update({'pitcher_context_'+key: value
-                                for key, value in pitcher_context(side_values).items()})
+            side_values = mask_starter_sources(engine.at(as_of, tid, pid, game_date=target_date), coverage)
+            side_values.update({'pitcher_context_'+key: value for key, value in pitcher_context(side_values).items()})
             features.update({side+'_'+k: v for k, v in side_values.items()})
             opposing = 'away' if side == 'home' else 'home'
-            bats = row.get('_'+opposing+'_lineup_bat_sides')
-            hand = row.get('_'+side+'_starter_pitch_hand')
             features.update({side+'_starter_'+key: value
-                             for key, value in starter_matchup(hand, bats).items()})
+                             for key, value in starter_matchup(row.get('_'+side+'_starter_pitch_hand'),
+                                                               row.get('_'+opposing+'_lineup_bat_sides')).items()})
             gaps = [g for g in missing_boxes if any(str(t['team']['id']) == tid for t in g['teams'].values())]
             for window in (1, 3, 5):
                 if any(0 < (calendar_date.fromisoformat(target_date)-day(g['gameDate'])).days <= window for g in gaps):
@@ -527,10 +508,9 @@ def predict(folder, output):
                 row['history_status'] = 'partial_known_missing_boxes'
         passive = inputs['passive_context'].get('games', {}).get(pk)
         if passive is None:
-            row['lineup_bullpen_profile_status'] = (
-                'SOURCE_UNAVAILABLE_FAIL_CLOSED'
-                if inputs['passive_context'].get('status') != 'READ'
-                else 'GAME_OBSERVATION_MISSING_FAIL_CLOSED')
+            row['lineup_bullpen_profile_status'] = ('SOURCE_UNAVAILABLE_FAIL_CLOSED'
+                                                    if inputs['passive_context'].get('status') != 'READ'
+                                                    else 'GAME_OBSERVATION_MISSING_FAIL_CLOSED')
         else:
             try:
                 context_profile, context_features = lineup_bullpen_profile(
@@ -541,8 +521,6 @@ def predict(folder, output):
                 reason = re.sub(r'[^A-Z0-9]+', '_', str(exc).upper()).strip('_')
                 row['lineup_bullpen_profile_status'] = 'INVALID_FAIL_CLOSED:'+reason[:120]
             else:
-                # Persist every supported signal now. Serving remains unchanged
-                # until a separately reviewed model explicitly names a feature.
                 features.update(context_features)
                 row.update(lineup_bullpen_profile_contract=LINEUP_BULLPEN_CONTRACT,
                            lineup_bullpen_profile_sha256=context_profile['sha256'],
@@ -553,8 +531,7 @@ def predict(folder, output):
                     row.update({side+'_lineup_status': 'confirmed',
                                 side+'_lineup_ids': encode(context_profile['sides'][side]['lineup_ids']).decode(),
                                 side+'_offense_source': 'persisted_MLB_lineup_season_batting'})
-                row.update(lineup_status='confirmed',
-                           lineup_source_status='verified_persisted_pregame_observation')
+                row.update(lineup_status='confirmed', lineup_source_status='verified_persisted_pregame_observation')
                 if all(row[side+'_starter_id'] is not None for side in ('home', 'away')):
                     row.update(status='confirmed_lineups', prediction_status='confirmed_lineups')
         row.update(market_for(game, inputs['odds']['payload'], crosswalk, as_of))
@@ -573,8 +550,7 @@ def predict(folder, output):
         row['input_fingerprint'] = fingerprint(row, features, needed)
         old = prior_rows.get(pk)
         if old and old.get('status') and old.get('input_fingerprint') == row['input_fingerprint']:
-            retained.append(old); unchanged.append(pk)
-            continue
+            retained.append(old); unchanged.append(pk); continue
         changes.append({'game_id': pk, 'reason': change_reason(old, row)})
         rows.append(row); feature_rows.append(features)
     if rows:
@@ -591,8 +567,7 @@ def predict(folder, output):
                        proj_total=float(h[i]+a[i]), p_home_poisson=float(p_poisson[i]),
                        edge_home=float(p_home[i]-row['market_home_prob']) if row['market_home_prob'] is not None else None,
                        edge_total=float(h[i]+a[i]-row['market_total']) if row['market_total'] is not None else None)
-            row['signal_contributions_json'] = (encode(contributions[i]).decode()
-                                                if contributions[i] is not None else None)
+            row['signal_contributions_json'] = encode(contributions[i]).decode() if contributions[i] is not None else None
     current = pa.Table.from_pylist(rows+retained, schema=SCHEMA).to_pandas()
     frame = current.sort_values(['commence_time', 'game_id']).reset_index(drop=True)
     table = pa.Table.from_pandas(frame, schema=SCHEMA, preserve_index=False)
@@ -623,17 +598,16 @@ def predict(folder, output):
             claimed = profile.pop('sha256')
             semantic_claimed = profile.pop('semantic_sha256')
             semantic = {key: value for key, value in profile.items() if key != 'as_of'}
-            if (record.lineup_bullpen_profile_contract != LINEUP_BULLPEN_CONTRACT
+            if (record.lineup_bullpen_profile_contract not in SUPPORTED_FROZEN_CONTRACTS
+                    or profile.get('contract') != record.lineup_bullpen_profile_contract
                     or record.lineup_bullpen_profile_sha256 != claimed
                     or record.lineup_bullpen_profile_semantic_sha256 != semantic_claimed
                     or hashlib.sha256(encode(semantic)).hexdigest() != semantic_claimed
                     or hashlib.sha256(encode({**profile, 'semantic_sha256': semantic_claimed})).hexdigest() != claimed
                     or profile['game_id'] != record.game_id
                     or utc(profile['as_of']) != utc(record.as_of)
-                    or (profile.get('history_as_of')
-                        and utc(profile['history_as_of']) > utc(profile['as_of']))
-                    or (profile.get('statcast_as_of')
-                        and utc(profile['statcast_as_of']) > utc(profile['as_of']))
+                    or (profile.get('history_as_of') and utc(profile['history_as_of']) > utc(profile['as_of']))
+                    or (profile.get('statcast_as_of') and utc(profile['statcast_as_of']) > utc(profile['as_of']))
                     or utc(profile['as_of']) > utc(record.commence_time)-timedelta(minutes=10)):
                 raise ValueError('lineup/bullpen profile binding failed')
     output = output / ('date='+target_date); output.mkdir(parents=True, exist_ok=True)
@@ -658,8 +632,7 @@ def predict(folder, output):
                                                                for feature in LINEUP_BULLPEN_FEATURES}],
               'lineup_bullpen_profile_rows': int(frame.lineup_bullpen_profile_json.notna().sum()),
               'lineup_bullpen_profile_status_counts': {
-                  str(key): int(value) for key, value in frame.lineup_bullpen_profile_status.value_counts(
-                      dropna=False).items()},
+                  str(key): int(value) for key, value in frame.lineup_bullpen_profile_status.value_counts(dropna=False).items()},
               'passive_context_capture_status': inputs['passive_context'].get('status'),
               'rows': len(frame), 'newly_scored': len(rows), 'preserved_pregame_rows': len(frozen_ids),
               'provider_status_disagreement_retained_rows': len(provider_status_disagreement_retained),
@@ -671,13 +644,13 @@ def predict(folder, output):
               'confirmed_lineups': int((frame.lineup_status == 'confirmed').sum()),
               'projected_lineups': int((frame.lineup_status == 'projected').sum()),
               'official_games': len(schedule), 'bbs_matched_games': len(assignments), 'exclusions': exclusions,
-              'schedule_observations': [
-                  {'game_id': str(g['gamePk']), 'commence_time': g['gameDate'], 'status': g['status']}
-                  for g in schedule],
+              'schedule_observations': [{'game_id': str(g['gamePk']), 'commence_time': g['gameDate'], 'status': g['status']}
+                                        for g in schedule],
               'bbs_time_adjustments': crosswalk.game_time_adjustments,
               'with_both_starters': int((frame.home_starter_id.notna() & frame.away_starter_id.notna()).sum()),
               'with_bound_starter_profiles': int(frame.starter_profile_json.notna().sum()),
-              'with_market_home_prob': int(frame.market_home_prob.notna().sum()), 'with_market_total': int(frame.market_total.notna().sum()),
+              'with_market_home_prob': int(frame.market_home_prob.notna().sum()),
+              'with_market_total': int(frame.market_total.notna().sum()),
               'parquet_sha256': hashlib.sha256(body).hexdigest(), 'parquet_readback_verified': True,
               'source_capture': manifest, 'provider_receipts': {k: inputs[k]['receipt'] for k in ('bbs', 'odds', 'official')},
               'lineup_receipts': {pk: entry['receipt'] for pk, entry in inputs['feeds']['games'].items()},
@@ -715,7 +688,6 @@ def publish(s3, bucket, table, report, output, *, calibration='temperature', pla
               'temperature': json.loads((temperature_model_path or TEMPERATURE_PATH).read_bytes())}
     if calibration not in models:
         raise ValueError('unknown publication calibration')
-    # The raw scorer and lock function are unchanged. Apply exactly once here.
     prepared, changed = prepare_rows(table.to_pylist(), models[calibration], report['as_of'], calibration)
     prepared_table = pa.Table.from_pylist(prepared, schema=table.schema) if changed else table
     if not (local_table.equals(table) or local_table.equals(prepared_table)):
@@ -726,8 +698,6 @@ def publish(s3, bucket, table, report, output, *, calibration='temperature', pla
         (output/'predictions.parquet').write_bytes(prediction_body)
         table.to_pandas().to_csv(output/'predictions.csv', index=False)
         report['parquet_sha256'] = hashlib.sha256(prediction_body).hexdigest()
-    # Preflight the actual stored rows before touching odds, lineups or models.
-    # ETag checks in the write loop still protect against a concurrent writer.
     try:
         existing = s3.get_object(Bucket=bucket, Key=prefix+'predictions.parquet')
     except Exception as exc:
@@ -736,8 +706,7 @@ def publish(s3, bucket, table, report, output, *, calibration='temperature', pla
         existing = None
     if existing:
         prior_bytes = existing['Body'].read()
-        if (prior_bytes != prediction_body
-                and report['source_capture'].get('previous_etag') != existing['ETag']):
+        if (prior_bytes != prediction_body and report['source_capture'].get('previous_etag') != existing['ETag']):
             raise ValueError('date predictions changed since input capture')
         prior_rows = pq.ParquetFile(io.BytesIO(prior_bytes)).read().to_pylist()
         validate_preservation(prior_rows, table.to_pylist(), report['as_of'], report.get('withdrawn_games', []))
