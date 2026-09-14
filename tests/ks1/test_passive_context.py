@@ -134,6 +134,14 @@ def test_rejects_swapped_persisted_team_identity():
         build_profile(stored, game, row, "2026-09-14T16:05:00+00:00", History())
 
 
+def test_missing_current_team_identity_fails_closed():
+    game, row = game_row()
+    row["home_id"] = None
+    with pytest.raises(ValueError, match="team identity mismatch"):
+        build_profile(stored_observation(), game, row,
+                      "2026-09-14T16:05:00+00:00", History())
+
+
 def test_frozen_reader_rejects_tampering_and_recovers_only_features():
     history = History(); game, row = game_row()
     profile, features = build_profile(stored_observation(), game, row,
