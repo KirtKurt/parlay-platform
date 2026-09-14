@@ -69,6 +69,20 @@ def split_recent(frame):
     return train, test
 
 
+def split_development(train):
+    """Purge labels unavailable at the earliest development prediction."""
+    count = min(EVALUATION_GAMES, max(100, len(train)//5), len(train)-MIN_TRAIN)
+    if count <= 0:
+        raise ValueError('insufficient games for recipe-selection development set')
+    development = train.iloc[-count:]
+    boundary = completion_times(development.as_of_timestamp).min()
+    fit = train.iloc[:-count]
+    fit = fit.loc[completion_times(fit.label_completed_at) < boundary]
+    if len(fit) < MIN_TRAIN:
+        raise ValueError('insufficient non-overlapping development training games')
+    return fit, development
+
+
 def individual_feature(column):
     return any(column.startswith(side+'_starter_') for side in ('home', 'away'))
 
@@ -351,12 +365,8 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
     }
     # Freeze the recipe on a chronological development tail before touching the
     # exact 300-game final holdout. Hyperparameters remain fixed.
-    development_games = min(EVALUATION_GAMES, max(100, len(train)//5))
-    if len(train)-development_games < MIN_TRAIN:
-        development_games = len(train)-MIN_TRAIN
-    if development_games <= 0:
-        raise ValueError('insufficient games for recipe-selection development set')
-    development_fit, development = train.iloc[:-development_games], train.iloc[-development_games:]
+    development_fit, development = split_development(train)
+    development_games = len(development)
     development_metrics = {}
     for name, columns in recipes.items():
         development_model = lgb.LGBMClassifier(**PARAMS).fit(

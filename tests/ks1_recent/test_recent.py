@@ -10,7 +10,7 @@ from ks1.retrain_recent import (accepted, choose_features, completion_times,
                                 lineup_performance_feature,
                                 pitcher_promotion_ready, prospective_context_coverage,
                                 qualification_basis, qualified_context_coverage,
-                                qualified_team_context_coverage, split_recent)
+                                qualified_team_context_coverage, split_recent, split_development)
 from ks1.train import artifact_write_authorized
 from tests.ks1.test_game_table import game
 
@@ -634,3 +634,16 @@ def test_promotion_usage_gate_distinguishes_quality_from_coverage_counts():
     assert bullpen_context_performance_feature('away_bullpen_context_fip_30d')
     assert not bullpen_context_performance_feature('away_bullpen_context_roster_count')
     assert not bullpen_context_performance_feature('away_bullpen_context_fatigue_score')
+
+
+def test_development_split_purges_overlapping_labels():
+    start = pd.Timestamp('2026-01-01T00:00:00Z')
+    frame = pd.DataFrame([{
+        'game_id': str(i),
+        'as_of_timestamp': (start+pd.Timedelta(hours=i)).isoformat(),
+        'label_completed_at': (start+pd.Timedelta(hours=i+3)).isoformat(),
+    } for i in range(1000)])
+    fit, development = split_development(frame)
+    assert len(development) == 200
+    assert len(fit) == 797
+    assert completion_times(fit.label_completed_at).max() < completion_times(development.as_of_timestamp).min()
