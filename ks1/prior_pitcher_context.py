@@ -89,7 +89,7 @@ class PriorPitcherContext:
         self.teams, self.pitchers = defaultdict(list), defaultdict(list)
         for row in rows:
             self.teams[row["team_id"]].append(row)
-            for player in row["players"]:
+            for player in row.get("context_players", row["players"]):
                 self.pitchers[player["id"]].append((row, player["stats"]))
 
     def at(self, row, side):

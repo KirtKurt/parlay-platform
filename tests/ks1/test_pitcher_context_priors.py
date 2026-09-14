@@ -70,3 +70,20 @@ def test_opening_day_league_prior_uses_only_previous_season_and_stays_missing_wi
     assert actual['pitcher_context_expected_innings'] == 6
     assert Features([]).at('2026-04-01T19:50:00Z', '1', '999')['pitcher_context_quality'] is None
 
+
+
+@pytest.mark.parametrize('bf', [None, 0])
+def test_incomplete_appearance_filtered_from_legacy_features_cannot_trigger_a_prior(bf):
+    row, identities = subject()
+    broken = {**STATS, 'battersFaced':bf}
+    games = history()+[full_game(98, '2026-08-05', 999, broken),
+                       full_game(97, '2025-08-01', 999, STATS)]
+    features = Features(games)
+    incomplete = next(g for g in features.rows if g['game_id'] == '98' and g['team_id'] == '1')
+    assert incomplete['players'] == []
+    assert incomplete['context_players'][0]['id'] == '999'
+    actual = features.at(row['as_of_timestamp'], '1', '999')
+    assert actual['starter_context_basis_code'] == 0.0
+    assert actual['pitcher_context_quality'] is None
+    assert actual['pitcher_context_command'] is None
+    assert PriorPitcherContext(features.rows, SOURCE, identities).at(row, 'home') is None

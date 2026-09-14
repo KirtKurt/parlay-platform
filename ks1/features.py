@@ -70,13 +70,13 @@ def context_history(completed, pitcher_id, year):
         return [], None
     for season, basis in ((year, "current_season_pitcher"), (year-1, "prior_year_pitcher")):
         entries = [(r, p["stats"]) for r in completed if r["day"].year == season
-                   for p in r["players"] if p["id"] == str(pitcher_id)]
+                   for p in r.get("context_players", r["players"]) if p["id"] == str(pitcher_id)]
         if entries:
             return entries, basis
     for season, basis in ((year, "current_season_league_prior"),
                           (year-1, "prior_year_league_prior")):
         entries = [(r, p["stats"]) for r in completed if r["day"].year == season
-                   for p in r["players"] if number(p["stats"].get("gamesStarted")) == 1]
+                   for p in r.get("context_players", r["players"]) if number(p["stats"].get("gamesStarted")) == 1]
         if entries:
             return entries, basis
     return [], None
@@ -103,7 +103,8 @@ def official_context_pitching(rows):
         return {"quality": None, "command": None}
     required = ("outs", "earnedRuns", "homeRuns", "baseOnBalls",
                 "hitBatsmen", "strikeOuts", "battersFaced")
-    if any(any(number(row.get(key)) is None for key in required) for row in rows):
+    if any(any(number(row.get(key)) is None for key in required)
+           or number(row.get("battersFaced")) == 0 for row in rows):
         return {"quality": None, "command": None}
     total = {key: sum(number(row[key]) for row in rows) for key in required}
     if not total["outs"]:
@@ -244,10 +245,16 @@ def normalize(games):
             team = game["teams"][side]
             full = "teamStats" in team
             starters, relief = [], []
-            players, batters = [], []
+            players, batters, context_players = [], [], []
             if full:
                 for player in team.get("players", {}).values():
                     stats = player.get("stats", {}).get("pitching", {})
+                    # A nonempty official pitching line is evidence of an
+                    # appearance even when BF is missing or zero. Retain it
+                    # for context so incomplete history cannot become a prior.
+                    # Keep legacy team/rolling feature membership unchanged.
+                    if stats:
+                        context_players.append({"id": str(player["person"]["id"]), "stats": stats})
                     if number(stats.get("battersFaced")) is not None and stats.get("battersFaced"):
                         players.append({"id": str(player["person"]["id"]), "stats": stats})
                         (starters if stats.get("gamesStarted") == 1 else relief).append(stats)
@@ -272,7 +279,7 @@ def normalize(games):
                          "batting": team["teamStats"].get("batting", {}) if full else team.get("batting", {}),
                          "starters": starter_total if full else team.get("priorStarters", {}),
                          "relief": usage if full else team.get("relief", {}),
-                         "players": players, "batters": batters})
+                         "players": players, "batters": batters, "context_players": context_players})
     return rows
 
 
