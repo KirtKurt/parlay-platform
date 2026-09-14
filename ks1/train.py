@@ -156,7 +156,9 @@ def artifact_write_authorized():
 def save_artifact(s3, bucket, output):
     if not artifact_write_authorized():
         raise ValueError('model artifact writes require the exact authorized KS1 challenger workflow')
-    files = sorted(p for p in output.iterdir() if p.is_file() and p.name != 'artifact.json')
+    # Progress is retained by Actions, but its wall clock is not experiment data.
+    files = sorted(p for p in output.iterdir()
+                   if p.is_file() and p.name not in ('artifact.json', 'progress.json'))
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
     run_id = hashlib.sha256(encode(hashes)).hexdigest()
     # This root is the existing artifact location discovered in Phase 1.

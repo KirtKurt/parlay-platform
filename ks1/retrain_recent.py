@@ -21,6 +21,8 @@ from ks1.passive_context import (LINEUP_FEATURES, LINEUP_VALUE_FEATURES,
                                  BULLPEN_PERFORMANCE_FEATURES,
                                  MODEL_FEATURES as LINEUP_BULLPEN_FEATURES)
 from ks1.sources import aws_clients, load_existing
+from ks1.progress import record_progress
+from ks1.statcast_history import load_training_statcast
 from ks1.table import build, contract
 from ks1.train import PARAMS, select_features, save_artifact
 from ks1.prior_pitcher_context import (PriorPitcherContext, pregame_identity_index,
@@ -112,6 +114,13 @@ def bullpen_context_value_feature(column):
 def lineup_performance_feature(column):
     return any(column == side+'_'+name
                for side in ('home', 'away') for name in LINEUP_PERFORMANCE_FEATURES)
+
+
+def matchup_performance_feature(column):
+    return column in {side+'_lineup_'+metric+'_'+window
+                      for side in ('home', 'away')
+                      for metric in ('platoon_xwoba', 'pitch_type_matchup_xwoba')
+                      for window in ('7d', '30d')}
 
 
 def bullpen_context_performance_feature(column):
@@ -305,11 +314,14 @@ def historical_team_context_mask(frame, source_receipts=None):
             binding = (str(receipt.get('bucket')), str(receipt.get('key')),
                        str(receipt.get('versionId') or receipt.get('version_id')),
                        str(receipt.get('sha256')))
+            identity = re.fullmatch(
+                r'mlb/development-data/ks1-historical-team-context-v1/'
+                r'game=([0-9]+)/timecode=[0-9]{8}_[0-9]{6}\.json',
+                str(receipt.get('key') or ''))
             return bool(receipt.get('source_type') == 'mlb_statsapi_timecoded_team_context'
                         and receipt.get('provider') == 'MLB Stats API'
                         and receipt.get('bucket') and receipt.get('versionId') not in (None, '', 'null')
-                        and str(receipt.get('key') or '').startswith(
-                            'mlb/development-data/ks1-historical-team-context-v1/')
+                        and identity is not None and identity.group(1) == str(row.get('game_id'))
                         and re.fullmatch('[0-9a-f]{64}', str(receipt.get('sha256') or ''))
                         and re.fullmatch('[0-9a-f]{64}', str(receipt.get('payload_sha256') or ''))
                         and all(t.tzinfo is not None and not pd.isna(t)
@@ -321,12 +333,39 @@ def historical_team_context_mask(frame, source_receipts=None):
     return frame.apply(verified, axis=1).astype(bool)
 
 
-def qualified_team_context_coverage(frame, features, *, source_receipts=None):
-    """Count complete point-in-time evidence, allowing explicit missing values."""
+def team_context_masks(frame, source_receipts=None):
     historical = historical_team_context_mask(frame, source_receipts)
     frozen = (frame.lineup_bullpen_context_evidence.eq('frozen_versioned_ks1_profile')
               & frame.get('lineup_bullpen_history_status',
                           pd.Series(None, index=frame.index, dtype=object)).eq('COMPLETE'))
+    return historical, frozen
+
+
+def qualified_training_population(train, source_receipts):
+    """Exclude unproven training sources before fitting any candidate recipe.
+
+    The final holdout is split first and is never filtered. This predicate does
+    not inspect outcomes, feature values, or model predictions. Explicitly
+    missing measurements with verified pregame evidence remain eligible.
+    """
+    historical, frozen = team_context_masks(train, source_receipts)
+    keep = historical | frozen
+    selected = train.loc[keep].copy()
+    if len(selected) < MIN_TRAIN:
+        raise ValueError('insufficient training games with verified team context')
+    return selected, {
+        'rule': 'verified_timecoded_or_complete_frozen_team_context',
+        'input_games': len(train), 'retained_games': len(selected),
+        'excluded_game_ids': train.loc[~keep, 'game_id'].astype(str).tolist(),
+        'outcomes_used_for_filtering': False,
+        'final_holdout_filtered': False,
+        'same_population_for_all_recipes': True,
+    }
+
+
+def qualified_team_context_coverage(frame, features, *, source_receipts=None):
+    """Count complete point-in-time evidence, allowing explicit missing values."""
+    historical, frozen = team_context_masks(frame, source_receipts)
     qualified = historical | frozen
     complete = pd.Series(True, index=frame.index)
     per_feature = {}
@@ -354,6 +393,8 @@ def qualified_team_context_coverage(frame, features, *, source_receipts=None):
 
 def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
     train, test = split_recent(frame)
+    train, training_population = qualified_training_population(
+        train, proof.get('source_receipts', []))
     features, omitted, coverage = choose_features(train)
     y_train, y_test = train.home_win.astype(int), test.home_win.astype(int)
     lineup_features = [c for c in features if lineup_feature(c)]
@@ -409,6 +450,9 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
                                                       if bullpen_context_value_feature(c)
                                                       and split_counts[c] > 0],
             'feature_split_counts': split_counts,
+            'matchup_value_features_used_in_splits': [c for c in columns
+                                                     if matchup_performance_feature(c)
+                                                     and split_counts[c] > 0],
             'model_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
             'model_reload_verified': True,
         }
@@ -445,7 +489,8 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
                 any(lineup_performance_feature(c)
                     for c in comparison['lineup_value_features_used_in_splits'])
                 and any(bullpen_context_performance_feature(c)
-                        for c in comparison['bullpen_value_features_used_in_splits']))
+                        for c in comparison['bullpen_value_features_used_in_splits'])
+                and comparison['matchup_value_features_used_in_splits'])
         comparison['qualified'] = bool(
             comparison['statistical_gate_passed']
             and used_pitcher_context
@@ -499,6 +544,7 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
               'split_completed_at': min(completion_times(test.label_completed_at)).isoformat(),
               'split_prediction_at': min(completion_times(test.as_of_timestamp)).isoformat(),
               'train': {'start': train.date.min(), 'end': train.date.max(), 'games': len(train)},
+              'training_population': training_population,
               'test': {'start': test.date.min(), 'end': test.date.max(), 'games': len(test)},
               'candidate': candidate_metrics, 'incumbent': incumbent_metrics,
               'candidate_comparison': comparisons,
@@ -555,7 +601,7 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
               'prospective_lineup_bullpen_feature_rows': prospective_team_feature_coverage,
               'prospective_lineup_bullpen_test_rows': prospective_team_rows,
               'lineup_bullpen_context_qualification': team_context_qualification,
-              'lineup_bullpen_promotion_rule': 'the full candidate must use substantive lineup and individual-bullpen value fields, not only missingness indicators, in tree splits; every consumed training and exact-300 holdout value must have frozen or MLB-timecoded pre-T10 evidence',
+              'lineup_bullpen_promotion_rule': 'the full candidate must use substantive lineup, matchup and individual-bullpen value fields, not only missingness indicators, in tree splits; every consumed training and exact-300 holdout value must have frozen or MLB-timecoded pre-T10 evidence',
               'minimum_individual_starter_rows_per_side': MIN_STARTER_ROWS,
               'parameters': PARAMS, 'test_used_for_tuning': False,
               'development_used_for_recipe_selection': True, 'holdout_refit': False,
@@ -629,18 +675,25 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args()
+    record_progress(args.output, 'loading_sources')
     cf, s3, bucket = aws_clients('us-east-1', 'parlay-platform-dev')
     bundle = load_existing(cf, s3, bucket)
+    record_progress(args.output, 'loading_historical_pitches')
+    statcast_report = load_training_statcast(bundle, s3, bucket)
+    (args.output/'historical_statcast_report.json').write_bytes(encode(statcast_report))
     args.output.mkdir(parents=True, exist_ok=True)
+    record_progress(args.output, 'collecting_starter_history')
     historical_feeds, feed_report = prepare_historical_feeds(bundle, s3, bucket)
     bundle['historical_pregame_feeds'] = historical_feeds
+    (args.output/'historical_feed_report.json').write_bytes(encode(feed_report))
+    record_progress(args.output, 'collecting_team_history')
     historical_team, team_report = prepare_historical_team_context(bundle, s3, bucket)
     bundle['historical_team_context'] = historical_team
     bundle['source_receipts'].extend(entry['receipt'] for entry in historical_feeds)
     bundle['source_receipts'].extend(entry['receipt'] for entry in historical_team)
-    (args.output/'historical_feed_report.json').write_bytes(encode(feed_report))
     (args.output/'historical_pregame_feeds.json').write_bytes(encode(historical_feeds))
     (args.output/'historical_team_context_report.json').write_bytes(encode(team_report))
+    record_progress(args.output, 'building_table', retained_team_games=len(historical_team))
     table, source_report, *_ = build(bundle)
     args.output.mkdir(parents=True, exist_ok=True)
     frame = table.to_pandas()
@@ -659,15 +712,18 @@ def main():
              'optional_reads': source_report['optional_reads'],
              'incumbent_ref': ref, 'historical_feed_report': feed_report,
              'historical_team_context_report': team_report,
+             'historical_statcast_report': statcast_report,
              'provider_calls': (feed_report['provider_requests']+
                                 team_report['provider_requests'])}
     proof['official_history_source'] = bundle.get('official_history_source')
     reconstruction = PriorPitcherContext(normalize(bundle.get('full', [])),
                                          bundle.get('official_history_source', {}),
                                          pregame_identity_index(bundle))
+    record_progress(args.output, 'evaluating_candidates', rows=len(frame))
     report = evaluate(frame, body, args.output, proof, reconstruction=reconstruction)
     # Only isolated experiment artifacts are saved. A separate reviewed model
     # reference change is required for serving; no authority or ledger write.
+    record_progress(args.output, 'saving_artifacts', accepted=report['accepted'])
     save_artifact(s3, bucket, args.output)
 
 

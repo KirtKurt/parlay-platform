@@ -12,6 +12,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 sys.path.insert(0,str(ROOT/'mlb_research'))
 from ks1.features import Features, number
+from ks1.statcast_history import pitch_complete_dates
 from mlb_research_store_v1 import now,utc,digest
 from mlb_research_dataset_v1 import publish_dataset
 import mlb_research_sources_v1 as source
@@ -103,40 +104,6 @@ def prior_year_profiles(sources, rows, prior_year):
         if profile['complete']==1:
             profiles[pitcher]=profile
     return profiles
-
-
-def pitch_complete_dates(sources, statcast_by_date, expected_by_date):
-    """Reconcile every pitcher's retained pitches to the official final box.
-
-    Matching game IDs cannot detect a truncated CSV. Missing official counts,
-    missing boxes, duplicate pitch identities, and extra pitchers fail closed.
-    This validates earlier completed data, never a target game's features.
-    """
-    expected = {}
-    invalid = set()
-    for game in Features(sources).rows:
-        game_id = str(game['game_id'])
-        counts = expected.setdefault(game_id, {})
-        if not game['context_players']:
-            invalid.add(game_id)
-        for player in game['context_players']:
-            count = number(player['stats'].get('numberOfPitches'))
-            if count is None or count < 0 or int(count) != count:
-                invalid.add(game_id)
-            else:
-                counts[(game_id, str(player['id']))] = int(count)
-    verified = []
-    for value, rows in statcast_by_date.items():
-        games = {str(pk) for pk in expected_by_date[value]}
-        if games & invalid or not games.issubset(expected):
-            continue
-        wanted = {key: count for pk in games for key, count in expected[pk].items() if count}
-        actual = Counter((str(row.get('game_pk')), str(row.get('pitcher'))) for row in rows)
-        identities = {tuple(str(row.get(key)) for key in (
-            'game_pk', 'at_bat_number', 'pitch_number')) for row in rows}
-        if len(identities) == len(rows) and dict(actual) == wanted:
-            verified.append(value)
-    return sorted(verified)
 
 
 def ingest(store,seconds=2400):
