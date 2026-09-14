@@ -152,7 +152,8 @@ def published_starter_index(entries):
                 sides[side] = {"id": str(pid), "name": row.get(side+"_starter_name")}
         if not sides:
             continue
-        value = {"game_id": pk, "commence_time": start, "as_of": observed,
+        value = {"game_id": pk, "date": row.get("date"),
+                 "commence_time": start, "as_of": observed,
                  "teams": {side: str(row.get(side+"_id") or "") for side in ("home", "away")},
                  "sides": sides, "contexts": frozen_profile_context(row),
                  "source": {**proof, "source_type": "versioned_ks1_t10_prediction"}}

@@ -217,3 +217,31 @@ def test_existing_table_join_rejects_rescheduled_starter_identity(start):
     assert result['home_starter_id'] is None and result['away_starter_id'] is None
     assert {'game_id': '3', 'reason': 'published_starter_start_mismatch'} in report['exclusions']
     assert bundle == before
+
+
+@pytest.mark.parametrize('prediction_date', ['2026-08-02', None])
+def test_existing_table_join_rejects_date_mismatch_despite_matching_id_and_start(prediction_date):
+    bundle = {'published_predictions': [proven(date=prediction_date)], 'schedule': [{
+        'gamePk': 3, 'gameDate': TARGET['commence_time'], 'season': '2026', 'gameType': 'R',
+        'status': {'abstractGameState': 'Preview'},
+        'teams': {side: {'team': {'id': tid, 'name': side.title()}}
+                  for side, tid in (('home', 1), ('away', 2))}}]}
+    if prediction_date is not None:
+        stored = version('v1', DATE + 'T19:45:00Z', rows=[row(date=prediction_date)],
+                         key=KS1_PREDICTION_PREFIX + 'date=' + prediction_date + '/predictions.parquet')
+        entries, _ = read_locked_predictions(VersionedS3([stored]), 'test', AFTER)
+        assert len(entries) == 1
+        bundle['published_predictions'] = entries
+    table, report, *_ = build(bundle)
+    result = table.to_pylist()[0]
+    assert result['home_starter_id'] is None and result['away_starter_id'] is None
+    assert result['pregame_version_id'] is None
+    assert {'game_id': '3', 'reason': 'published_starter_date_mismatch'} in report['exclusions']
+    assert utc(result['as_of_timestamp']) == utc(DATE + 'T19:50:00Z')
+
+    bundle['published_predictions'][0]['row']['date'] = DATE
+    table, report, *_ = build(bundle)
+    result = table.to_pylist()[0]
+    assert result['home_starter_id'] == '99' and result['away_starter_id'] == '199'
+    assert result['pregame_version_id'] == 'v1'
+    assert report['exclusions'] == []

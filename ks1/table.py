@@ -176,6 +176,8 @@ def build(bundle, selected_date=None):
         published_problem = None
         if published and utc(published["commence_time"]) != utc(start):
             published_problem, published = "published_starter_start_mismatch", {}
+        if published and published.get("date") != date:
+            published_problem, published = "published_starter_date_mismatch", {}
         if published:
             cutoff = (max(utc(cutoff), utc(published["as_of"])).isoformat()
                       if snapshot else published["as_of"])
