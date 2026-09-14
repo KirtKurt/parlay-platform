@@ -101,3 +101,52 @@ If it consumes batter or bullpen fields, those fields also need pregame evidence
 on every holdout game. Unused batter/bullpen groups do not block a starter-only
 candidate. Qualification produces experiment artifacts; serving still requires
 a separately reviewed, checksum-bound model-reference promotion.
+# Retrospective official pitcher reconstruction
+
+`KS1-prior-pitcher-reconstruction-v1` extends the retained historical context
+through the available official history. It binds each side to the versioned
+MLB box-score source, effective input games, retrieval time, pitcher identity
+mode, metrics, and checksum. Only a source with complete official year coverage
+is eligible. Same-day, target, future, and later-resumed games are excluded.
+
+Observed pregame pitcher IDs are preserved. Where historical pregame identities
+were not retained, a fixed rotation projection uses the last 18 prior team games
+within 120 days, selecting a prior starter with 4–10 days of rest closest to
+five. These projected IDs remain in the reconstruction proof; they are never
+reported as confirmed starter IDs. Missing projections and incomplete counts
+remain unavailable. Official historical scoring corrections are possible.
+
+The four available summary inputs use the same formulas as daily inference:
+current-season negative FIP, K-minus-BB percentage, recent three-start command,
+and expected innings from up to five starts. Velocity is left unavailable in
+this official-only summary. This does not claim that historical Statcast or
+proprietary pitching metrics have been recovered.
+
+Qualification admits the independently validated proofs for both teams on the
+unchanged trailing 300-game chronological test. The candidate must actually use
+pitcher context in a tree split, improve Brier score, and not worsen log loss.
+A fixed ablation without pitcher context is reported separately. Main-branch
+repairs trigger isolated candidate validation and AWS artifact readback;
+activation still requires a separate reviewed serving-reference change.
+
+## Timestamped MLB pregame feed backfill
+
+The authorized main challenger workflow now fills a versioned, write-once
+`mlb/development-data/ks1-historical-pregame-v1/` cache for the latest 1,000
+completed games, newest first. This prioritizes the unchanged 300-game test
+and then earlier training history. A 10-minute collection budget fails missing
+responses closed; later runs reuse verified cached responses.
+
+The MLB feed is requested with the target T-10 `timecode`. Its own metadata
+timestamp must precede that cutoff, its game/start/team identity must match,
+and it must be scheduled or warming up with no pitch events or final decisions.
+The identity remains an archived probable pitcher, never a postgame substitution.
+The provider response, request, retrieval time, content hash, S3 version and
+readback evidence are retained. Original snapshots separately require proof that
+their S3 version was stored before T-10. Historical feed retrieval today is
+explicitly distinguished from original pregame storage.
+
+Only IDs are admitted from this historical feed; season statistics in a feed
+are not trusted as point-in-time training values. Pitcher statistics continue
+to be recomputed from strictly earlier official games. Rotation projections
+remain a labeled fallback when a genuine archived identity is unavailable.

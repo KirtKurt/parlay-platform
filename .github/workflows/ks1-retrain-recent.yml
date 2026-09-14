@@ -1,5 +1,8 @@
 name: KS1 seven-day model validation
 on:
+  push:
+    branches: [main]
+    paths: ['ks1/**', 'tests/ks1/**', 'tests/ks1_recent/**', '.github/workflows/ks1-retrain-recent.yml']
   pull_request:
     paths: ['ks1/**', 'tests/ks1/**', 'tests/ks1_recent/**', '.github/workflows/ks1-retrain-recent.yml']
   workflow_dispatch:
@@ -15,12 +18,13 @@ concurrency:
 jobs:
   evaluate:
     # This job executes checked-out code after receiving long-lived AWS
-    # credentials. Only the explicitly controlled feature branch may run it.
+    # credentials. PR access stays restricted; reviewed main repairs also
+    # rebuild isolated candidate artifacts without changing serving references.
     if: >-
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository &&
        github.head_ref == 'codex/ks1-historical-starter-bridge-20260913') ||
-      ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
        github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -41,7 +45,7 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
-      - name: Rebuild retained features and compare on rolling holdout
+      - name: Backfill timestamped pregame starters and compare on rolling holdout
         run: python -m ks1.retrain_recent --output /tmp/ks1-recent
       - uses: actions/upload-artifact@v4
         if: always()

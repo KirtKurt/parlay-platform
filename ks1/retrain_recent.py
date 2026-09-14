@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
 
@@ -10,7 +11,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss
 
-from ks1.features import Features, MATCHUP_METRICS
+from ks1.features import Features, MATCHUP_METRICS, normalize
 from ks1.historical_starters import V8_MANIFEST_PREFIX
 from ks1.inventory import encode
 from ks1.passive_context import (LINEUP_FEATURES, BULLPEN_FEATURES,
@@ -18,6 +19,9 @@ from ks1.passive_context import (LINEUP_FEATURES, BULLPEN_FEATURES,
 from ks1.sources import aws_clients, load_existing
 from ks1.table import build, contract
 from ks1.train import PARAMS, select_features, save_artifact
+from ks1.prior_pitcher_context import (PriorPitcherContext, pregame_identity_index,
+                                      verified_reconstruction)
+from ks1.historical_feed import collect as collect_historical_feeds
 
 # Feature-contract construction needs a valid timestamp but does not inspect data.
 FEATURE_CONTRACT_DATE = '2026-09-01'
@@ -177,8 +181,9 @@ def historical_context_mask(frame):
     return frame.apply(verified, axis=1).astype(bool)
 
 
-def qualified_context_coverage(frame, context_features):
-    historical = historical_context_mask(frame)
+def qualified_context_coverage(frame, context_features, *, reconstruction=None):
+    reconstructed = frame.apply(lambda row: verified_reconstruction(row, reconstruction), axis=1).astype(bool)
+    historical = historical_context_mask(frame) | reconstructed
     prospective = (frame.pitcher_context_evidence.eq('frozen_versioned_ks1_profile')
                    & frame.historical_pitcher_context_mode.isna())
     values = frame[context_features].apply(pd.to_numeric, errors='coerce')
@@ -187,6 +192,7 @@ def qualified_context_coverage(frame, context_features):
     qualified = historical | prospective
     return {
         'historical_rows': int((historical & complete).sum()),
+        'reconstructed_official_rows': int((reconstructed & complete).sum()),
         'prospective_rows': int((prospective & complete).sum()),
         'qualified_rows': int((qualified & complete).sum()),
         'per_feature': {c: int((qualified & finite[c]).sum()) for c in context_features},
@@ -219,7 +225,7 @@ def prospective_team_context_coverage(frame, features):
     return per_feature, int((prospective & complete).sum())
 
 
-def evaluate(frame, incumbent_bytes, output, proof):
+def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
     train, test = split_recent(frame)
     features, omitted, coverage = choose_features(train)
     y_train, y_test = train.home_win.astype(int), test.home_win.astype(int)
@@ -242,15 +248,20 @@ def evaluate(frame, incumbent_bytes, output, proof):
     ablated = ablation.predict_proba(test[without_seven].astype(float))[:, 1]
     candidate_metrics, incumbent_metrics = metrics(y_test, predictions), metrics(y_test, old)
     context_features = [c for c in features if pitcher_context_feature(c)]
+    split_counts = dict(zip(features, map(int, candidate.booster_.feature_importance())))
+    used_context_features = [c for c in context_features if split_counts[c] > 0]
+    without_context = [c for c in features if not pitcher_context_feature(c)]
+    pitcher_ablation = lgb.LGBMClassifier(**PARAMS).fit(train[without_context].astype(float), y_train)
+    without_pitcher = pitcher_ablation.predict_proba(test[without_context].astype(float))[:, 1]
     prospective_feature_coverage, prospective_context_rows = prospective_context_coverage(
         test, context_features)
-    context_qualification = qualified_context_coverage(test, context_features)
+    context_qualification = qualified_context_coverage(test, context_features, reconstruction=reconstruction)
     team_features = lineup_features+bullpen_features
     prospective_team_feature_coverage, prospective_team_rows = prospective_team_context_coverage(
         test, team_features)
     statistical_gate = accepted(candidate_metrics, incumbent_metrics)
     promotion_ready = pitcher_promotion_ready(
-        candidate_metrics, incumbent_metrics, context_features,
+        candidate_metrics, incumbent_metrics, used_context_features,
         context_qualification['qualified_rows'])
     # Batter/bullpen evidence is required when the candidate consumes it.
     # A starter-only candidate must not wait for unrelated, unused groups.
@@ -270,6 +281,7 @@ def evaluate(frame, incumbent_bytes, output, proof):
               'ablation_baseline_plus_batters': metrics(y_test, batter_predictions),
               'ablation_baseline_plus_batters_and_bullpen': candidate_metrics,
               'without_seven_day': metrics(y_test, ablated),
+              'without_pitcher_context': metrics(y_test, without_pitcher),
               'accepted': promotion_ready,
               'statistical_gate_passed': statistical_gate,
               'promotion_rule': 'strictly lower Brier and no worse logloss than incumbent on identical trailing 300-game holdout',
@@ -282,12 +294,18 @@ def evaluate(frame, incumbent_bytes, output, proof):
               'features': features, 'omitted_features': omitted,
               'individual_starter_training_rows': coverage,
               'individual_starter_features_learned': [c for c in features if individual_feature(c)],
+              'individual_starter_features_used_in_splits': [c for c in features if individual_feature(c) and split_counts[c] > 0],
+              'heldout_starter_identity_statuses': {
+                  side: test[side+'_starter_status'].value_counts(dropna=False).to_dict()
+                  for side in ('home', 'away')},
               'individual_feature_training_rows': {
                   c: int(train[c].notna().sum()) for c in features if individual_feature(c)},
               'historical_pitcher_context_training_rows': {
                   side: int(train[side+'_pitcher_context_quality'].notna().sum())
                   for side in ('home', 'away')},
               'pitcher_context_features_learned': context_features,
+              'pitcher_context_features_used_in_splits': used_context_features,
+              'feature_split_counts': split_counts,
               'pitcher_context_feature_training_rows': {
                   c: int(train[c].notna().sum()) for c in context_features},
               'prospective_pitcher_context_feature_rows': prospective_feature_coverage,
@@ -303,7 +321,7 @@ def evaluate(frame, incumbent_bytes, output, proof):
               'model_sha256': hashlib.sha256((output/'model.txt').read_bytes()).hexdigest(),
               'incumbent_sha256': hashlib.sha256(incumbent_bytes).hexdigest(),
               'input_table_sha256': proof['input_table_sha256'],
-              'provider_calls': 0, 'prediction_writes': 0, 'official_ledger_writes': 0,
+              'provider_calls': proof.get('provider_calls', 0), 'prediction_writes': 0, 'official_ledger_writes': 0,
               'limitations': ['Rolling retrospective evaluation, not official live grades.',
                              'Prior box scores can include later scoring corrections.',
                              'Individual starter inputs require retained pregame identity and earlier pitcher boxes.',
@@ -315,9 +333,24 @@ def evaluate(frame, incumbent_bytes, output, proof):
     rows['candidate_p_home'], rows['incumbent_p_home'], rows['without_seven_p_home'] = predictions, old, ablated
     rows['baseline_without_lineup_or_bullpen_p_home'] = baseline_predictions
     rows['baseline_plus_batters_p_home'] = batter_predictions
+    rows['without_pitcher_context_p_home'] = without_pitcher
     rows.to_parquet(output/'test_predictions.parquet', index=False)
     print(json.dumps(report, indent=2))
     return report
+
+
+def prepare_historical_feeds(bundle, s3, bucket):
+    """PRs reuse retained inputs; main collects without discarding older history."""
+    existing = bundle.get('historical_pregame_feeds', [])
+    if os.environ.get('GITHUB_EVENT_NAME') == 'pull_request':
+        return existing, {'selected_games':0,'verified_games':len(existing),
+                          'provider_requests':0,'readback_verified_games':len(existing),
+                          'collection_skipped':'pull_request_read_only','errors':[]}
+    collected, report = collect_historical_feeds(s3, bucket, bundle.get('full', []))
+    retained = {(entry['game_id'], entry['timecode']):entry for entry in existing}
+    retained.update({(entry['game_id'], entry['timecode']):entry for entry in collected})
+    report['retained_total_games'] = len(retained)
+    return list(retained.values()), report
 
 
 def main():
@@ -326,6 +359,12 @@ def main():
     args = parser.parse_args()
     cf, s3, bucket = aws_clients('us-east-1', 'parlay-platform-dev')
     bundle = load_existing(cf, s3, bucket)
+    args.output.mkdir(parents=True, exist_ok=True)
+    historical_feeds, feed_report = prepare_historical_feeds(bundle, s3, bucket)
+    bundle['historical_pregame_feeds'] = historical_feeds
+    bundle['source_receipts'].extend(entry['receipt'] for entry in historical_feeds)
+    (args.output/'historical_feed_report.json').write_bytes(encode(feed_report))
+    (args.output/'historical_pregame_feeds.json').write_bytes(encode(historical_feeds))
     table, source_report, *_ = build(bundle)
     args.output.mkdir(parents=True, exist_ok=True)
     frame = table.to_pandas()
@@ -342,8 +381,13 @@ def main():
     proof = {'input_table_sha256': hashlib.sha256((args.output/'input_table.parquet').read_bytes()).hexdigest(),
              'source_receipts': source_report['source_receipts'], 'source_coverage': source_report['coverage'],
              'optional_reads': source_report['optional_reads'],
-             'incumbent_ref': ref, 'provider_calls': 0}
-    report = evaluate(frame, body, args.output, proof)
+             'incumbent_ref': ref, 'historical_feed_report': feed_report,
+             'provider_calls': feed_report['provider_requests']}
+    proof['official_history_source'] = bundle.get('official_history_source')
+    reconstruction = PriorPitcherContext(normalize(bundle.get('full', [])),
+                                         bundle.get('official_history_source', {}),
+                                         pregame_identity_index(bundle))
+    report = evaluate(frame, body, args.output, proof, reconstruction=reconstruction)
     # Only isolated experiment artifacts are saved. A separate reviewed model
     # reference change is required for serving; no authority or ledger write.
     save_artifact(s3, bucket, args.output)
