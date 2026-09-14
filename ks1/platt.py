@@ -241,7 +241,8 @@ def main():
     rows, admission = dataset(capture)
     if capture.get('committed_ledger'):
         from ks1.nightly import ledger_rows
-        rows = ledger_rows(capture['committed_ledger'], capture['as_of'])
+        rows = [r for r in ledger_rows(capture['committed_ledger'], capture['as_of'])
+                if r['raw_model_version'] == raw_model_version()]
         admission['eligible_graded_rows'] = len(rows)
         admission['source'] = 'committed_nightly_ledger'
     previous = capture.get('platt_model') or identity()

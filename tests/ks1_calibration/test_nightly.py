@@ -96,6 +96,17 @@ def test_reviewed_model_transition_preserves_old_grades_and_calibrates_only_new_
     captured = platt_inputs.capture(store, 'test', (utc(at)+timedelta(minutes=2)).isoformat(), {'games': []}, [])
     assert captured['temperature_model']['raw_model_version'] == new_version
     assert len(captured['committed_ledger']['rows']) == 37
+    # Exercise the hourly publish adapter too: it reads the committed ledger,
+    # which contains both models, before fitting the current model's Platt map.
+    capture_path = tmp_path/'capture.json'
+    capture_path.write_bytes(encode(captured))
+    monkeypatch.setattr('sys.argv', ['platt', '--inputs', str(capture_path),
+                        '--output', str(tmp_path/'hourly'),
+                        '--model', str(tmp_path/'hourly-platt.json'),
+                        '--temperature-model', str(tmp_path/'hourly-temperature.json')])
+    platt.main()
+    hourly = json.loads((tmp_path/'hourly/comparison.json').read_bytes())
+    assert hourly['admission']['eligible_graded_rows'] == 1
 
 
 def test_unreviewed_model_cannot_enter_grading_ledger():
