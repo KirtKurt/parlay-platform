@@ -436,6 +436,30 @@ def test_817_normalization_rejection_is_recorded_then_distinct_task_is_accepted(
     assert json.loads(kwargs["output_path"].read_text())["title"] == eligible["title"]
 
 
+def test_run55_initial_and_retry_prompts_supply_the_enforced_file_policy(monkeypatch, tmp_path):
+    from engineering_agent.planner import POLICY, validate
+
+    rejected = _acceptance_task("Inspect membership counts", "Read-only sample summaries.")
+    rejected["likelyFiles"] = ["scripts/mlb_metrics.py"]
+    eligible = _acceptance_task("Summarize residual bins", "Read-only numeric summaries.")
+    runtime, kwargs, prompts = _offline_cycle(
+        monkeypatch, tmp_path, [_acceptance_response(t) for t in (rejected, eligible)],
+    )
+    accepted = runtime.run(**kwargs)
+    assert accepted["plannerAttempt"] == len(prompts) == 2
+    for prompt in prompts:
+        # The provider must see the same constraints enforced locally, including
+        # forbidden paths. Run #55 supplied only a generic allowed/path.py hint.
+        assert prompt["policy"] == POLICY
+        assert prompt["requiredSafetyReceipts"] == prompt["policy"]["required_negative_authority_receipts"]
+        assert any(accepted["likelyFiles"][0].startswith(p) for p in prompt["policy"]["allowed_prefixes"])
+        assert not any(rejected["likelyFiles"][0].startswith(p) for p in prompt["policy"]["allowed_prefixes"])
+    assert prompts[1]["rejectedProposalsThisCycle"][0]["title"] == rejected["title"]
+    assert validate(accepted, decision_history={"decisions": []}) == accepted
+    for key in ("noDirectProductionDeploy", "noMainBranchWrite", "noModelPromotion", "noSecretMutation", "noOtherSportChange"):
+        assert accepted[key] is True
+
+
 def test_817_normalization_rejections_cannot_exceed_six_attempts_or_publish(monkeypatch, tmp_path):
     # Distinct, unclassified titles reach the real normalizer on every attempt;
     # neither duplicate-title nor focus-domain rejection supplies this proof.
@@ -459,3 +483,14 @@ def test_817_normalization_rejections_cannot_exceed_six_attempts_or_publish(monk
     assert all("accepted" not in attempt for attempt in ledger)
     assert not kwargs["output_path"].exists()
     assert not kwargs["response_path"].exists()
+    # Run #55's failure must not be hidden as a healthy NO_ACTION cycle when
+    # proposals still lack permitted implementation paths after normalization.
+    from engineering_agent.outcome import build_no_action_receipt
+
+    with pytest.raises(ValueError, match="non-policy planner rejection"):
+        build_no_action_receipt(
+            runtime_log="RuntimeError: no acceptable planner task after 6 bounded attempts (requested=999)",
+            attempts=ledger,
+            task_published=False,
+            response_published=False,
+        )

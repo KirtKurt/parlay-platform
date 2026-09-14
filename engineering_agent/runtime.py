@@ -285,6 +285,7 @@ def _planner_payload(
             "decisionHistory": history,
             "blockedTaskTitles": sorted(blocked_task_titles(history)),
             "rejectedProposalsThisCycle": rejected,
+            "policy": POLICY,
             "requiredSafetyReceipts": required_receipts,
             "requiredFocusDomain": required_focus_domain,
             "excludedFocusDomains": excluded_domains,
@@ -307,7 +308,11 @@ def _planner_payload(
                 "diagnostic errors. Do not weaken thresholds, chronology, immutable evidence, qualification, calibration, "
                 "promotion, or production authority merely to pass. Return ONE strict JSON object matching "
                 "requiredOutputSchema. implementation, likelyFiles, acceptanceTests, safetyReceipts, and evidenceBasis "
-                "MUST be JSON arrays of strings. safetyReceipts MUST contain every string in requiredSafetyReceipts "
+                "MUST be JSON arrays of strings. likelyFiles MUST contain at least one concrete repository-relative "
+                "implementation or test path permitted by policy.allowed_prefixes and excluded by neither "
+                "policy.forbidden_exact_paths nor policy.forbidden_path_fragments. Do not copy the schema's "
+                "allowed/path.py placeholder or treat evidence report paths as permitted implementation paths. "
+                "safetyReceipts MUST contain every string in requiredSafetyReceipts "
                 "exactly. Do not return prose outside the JSON object."
                 + focus_instruction
             ),
