@@ -2,7 +2,7 @@ name: KS1 seven-day model validation
 on:
   push:
     branches: [main]
-    paths: ['ks1/historical_feed.py', 'ks1/prior_pitcher_context.py', 'ks1/retrain_recent.py', 'ks1/table.py', 'ks1/sources.py', '.github/workflows/ks1-retrain-recent.yml']
+    paths: ['ks1/**', 'tests/ks1/**', 'tests/ks1_recent/**', '.github/workflows/ks1-retrain-recent.yml']
   pull_request:
     paths: ['ks1/**', 'tests/ks1/**', 'tests/ks1_recent/**', '.github/workflows/ks1-retrain-recent.yml']
   workflow_dispatch:

@@ -73,6 +73,7 @@ def collect(s3, bucket, games, *, limit=1000, seconds=600):
         pk, start = str(game['officialGamePk']), utc(game['startAtUtc'])
         code = (start-timedelta(minutes=10)).strftime('%Y%m%d_%H%M%S')
         key = PREFIX+'game='+pk+'/timecode='+code+'.json'
+        expected_sha = None
         try:
             response = s3.get_object(Bucket=bucket, Key=key)
         except Exception as exc:
@@ -98,26 +99,36 @@ def collect(s3, bucket, games, *, limit=1000, seconds=600):
                 if feed_identity(proposed) is None:
                     return None, {'game_id':pk,'reason':'historical_pregame_state_unavailable'}
                 try:
+                    expected_sha = hashlib.sha256(body).hexdigest()
                     put = s3.put_object(Bucket=bucket, Key=key, Body=body, IfNoneMatch='*',
                                         Metadata={'sha256':hashlib.sha256(body).hexdigest(),'system':'KS1'})
                     response = s3.get_object(Bucket=bucket, Key=key, VersionId=put['VersionId'])
                 except Exception as exc:
                     if getattr(exc,'response',{}).get('Error',{}).get('Code') != 'PreconditionFailed':
                         raise
+                    expected_sha = None  # Admit the independently verified winner of a concurrent write.
                     response = s3.get_object(Bucket=bucket, Key=key)
             except Exception as exc:
                 return None, {'game_id':pk,'reason':type(exc).__name__}
-        body = response['Body'].read()
-        value = json.loads(body)
-        if (str(value.get('game_id')) != pk or value.get('timecode') != code
-                or utc(value.get('commence_time')) != start):
-            return None, {'game_id':pk,'reason':'retained_feed_identity_mismatch'}
-        receipt = {'bucket':bucket,'key':key,'versionId':response.get('VersionId'),
-                   'sha256':hashlib.sha256(body).hexdigest()}
-        entry = {**value, 'receipt':receipt}
-        if feed_identity(entry) is None:
-            return None, {'game_id':pk,'reason':'invalid_retained_pregame_feed'}
-        return entry, None
+        try:
+            body = response['Body'].read()
+            actual_sha = hashlib.sha256(body).hexdigest()
+            metadata_sha = response.get('Metadata', {}).get('sha256')
+            if ((expected_sha and actual_sha != expected_sha)
+                    or (metadata_sha and actual_sha != metadata_sha)):
+                raise ValueError('historical feed readback mismatch')
+            value = json.loads(body)
+            if (str(value.get('game_id')) != pk or value.get('timecode') != code
+                    or utc(value.get('commence_time')) != start):
+                return None, {'game_id':pk,'reason':'retained_feed_identity_mismatch'}
+            receipt = {'bucket':bucket,'key':key,'versionId':response.get('VersionId'),
+                       'sha256':hashlib.sha256(body).hexdigest()}
+            entry = {**value, 'receipt':receipt}
+            if feed_identity(entry) is None:
+                return None, {'game_id':pk,'reason':'invalid_retained_pregame_feed'}
+            return entry, None
+        except Exception as exc:
+            return None, {'game_id':pk,'reason':'invalid_cached_feed_'+type(exc).__name__}
 
     entries, errors = [], []
     with ThreadPoolExecutor(max_workers=8) as pool:

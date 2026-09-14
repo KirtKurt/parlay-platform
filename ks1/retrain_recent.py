@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
 
@@ -338,6 +339,20 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
     return report
 
 
+def prepare_historical_feeds(bundle, s3, bucket):
+    """PRs reuse retained inputs; main collects without discarding older history."""
+    existing = bundle.get('historical_pregame_feeds', [])
+    if os.environ.get('GITHUB_EVENT_NAME') == 'pull_request':
+        return existing, {'selected_games':0,'verified_games':len(existing),
+                          'provider_requests':0,'readback_verified_games':len(existing),
+                          'collection_skipped':'pull_request_read_only','errors':[]}
+    collected, report = collect_historical_feeds(s3, bucket, bundle.get('full', []))
+    retained = {(entry['game_id'], entry['timecode']):entry for entry in existing}
+    retained.update({(entry['game_id'], entry['timecode']):entry for entry in collected})
+    report['retained_total_games'] = len(retained)
+    return list(retained.values()), report
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True, type=Path)
@@ -345,7 +360,7 @@ def main():
     cf, s3, bucket = aws_clients('us-east-1', 'parlay-platform-dev')
     bundle = load_existing(cf, s3, bucket)
     args.output.mkdir(parents=True, exist_ok=True)
-    historical_feeds, feed_report = collect_historical_feeds(s3, bucket, bundle.get('full', []))
+    historical_feeds, feed_report = prepare_historical_feeds(bundle, s3, bucket)
     bundle['historical_pregame_feeds'] = historical_feeds
     bundle['source_receipts'].extend(entry['receipt'] for entry in historical_feeds)
     (args.output/'historical_feed_report.json').write_bytes(encode(feed_report))

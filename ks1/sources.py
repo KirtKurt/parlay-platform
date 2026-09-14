@@ -120,10 +120,13 @@ def load_existing(cf, s3, bucket):
     historical_feeds = []
     try:
         def read_feed(key):
-            source = Reader(s3, bucket)
-            value = source.read(key)
-            entry = {**value, 'receipt': source.receipts[0]}
-            return entry if feed_identity(entry) is not None else None
+            try:
+                source = Reader(s3, bucket)
+                value = source.read(key)
+                entry = {**value, 'receipt': source.receipts[0]}
+                return entry if feed_identity(entry) is not None else None
+            except Exception:
+                return None  # A corrupt optional key cannot poison other games.
         with ThreadPoolExecutor(max_workers=8) as pool:
             historical_feeds = [entry for entry in pool.map(read_feed, sorted(reader.keys(HISTORICAL_FEED_PREFIX)))
                                 if entry is not None]
