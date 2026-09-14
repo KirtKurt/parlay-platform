@@ -467,7 +467,7 @@ def test_historical_failure_does_not_stop_current_source_ingestion(monkeypatch,s
     import run_mlb_research_ingestion as ingestion
     monkeypatch.setattr(ingestion,'now',lambda:AT)
     monkeypatch.setattr(ingestion,'publish_historical',lambda store:(_ for _ in ()).throw(ValueError('bad historical source')))
-    monkeypatch.setattr(source,'schedule',lambda *args:([],{}))
+    monkeypatch.setattr(source,'schedule',lambda *args:([],{'retrievedAtUtc':AT.isoformat()}))
     result=ingestion.ingest(store,seconds=60)
     assert result['status']=='PARTIAL' and result['statcastDays']==30
     assert result['errors']==[{'source':'historical','error':'ValueError'}]
@@ -482,7 +482,8 @@ def test_ingestion_versions_expanded_games_and_retains_prior_year_scope(monkeypa
     prior_game=game(11,day='2025-04-01',state='Final')
     current_game=game(12,day='2026-09-08',state='Final')
     def schedule(first,last):
-        return ([prior_game] if first.startswith('2025') else [current_game]), {'first':first,'last':last}
+        return ([prior_game] if first.startswith('2025') else [current_game]), {
+            'first':first,'last':last,'retrievedAtUtc':AT.isoformat()}
     monkeypatch.setattr(source,'schedule',schedule)
     def final_source(value):
         return {'officialGamePk':value['gamePk'],'startAtUtc':value['gameDate'],
@@ -502,6 +503,7 @@ def test_ingestion_versions_expanded_games_and_retains_prior_year_scope(monkeypa
     prior=store.load(store.get('prior-games.json')['artifact'])
     statcast=store.load(store.get('statcast.json')['artifact'])
     assert prior['priorYear']==2025 and prior['priorYearCoverageComplete'] is True
+    assert prior['receipt']['retrievedAtUtc']==AT.isoformat()
     assert statcast['priorYear']==2025 and statcast['current30CoverageComplete'] is True
     assert result['priorYearStatcastDays']==365
 

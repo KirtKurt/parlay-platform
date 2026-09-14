@@ -105,7 +105,10 @@ def ingest(store,seconds=2400):
         recent_games,recent_receipt=source.schedule(f'{day.year}-01-01',day.isoformat())
         prior_games,prior_receipt=source.schedule(f'{prior_year}-01-01',f'{prior_year}-12-31')
         games=list({g['gamePk']:g for g in [*prior_games,*recent_games]}.values())
-        receipt={'requests':[prior_receipt,recent_receipt],'uniqueGames':len(games),
+        receipt={'requests':[prior_receipt,recent_receipt],
+                 'retrievedAtUtc':max(prior_receipt['retrievedAtUtc'],
+                                      recent_receipt['retrievedAtUtc']),
+                 'uniqueGames':len(games),
                  'scopes':{'priorYear':prior_year,'currentDays':30}}
         completed=[g for g in games if source.final(g)]
         sources=[]
