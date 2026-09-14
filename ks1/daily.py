@@ -200,7 +200,7 @@ def signal_contributions(classifier, values):
                 entry['top_features'] = sorted(entry['top_features'],
                     key=lambda item: abs(item['score']), reverse=True)[:5]
         denominator = sum(grouped_abs.values())
-        result.append({'scale': 'raw_log_odds_SHAP', 'bias': float(vector[-1]),
+        result.append({'schema_version': 2, 'scale': 'raw_log_odds_SHAP', 'bias': float(vector[-1]),
                        'raw_score': float(raw_scores[row_number]), 'additivity_verified': True,
                        'performance_evidence': evidence,
                        'groups': {key: {'signal_score': value,
@@ -208,6 +208,21 @@ def signal_contributions(classifier, values):
                                   for key, value in sorted(grouped.items())},
                        'top_features': sorted(features, key=lambda item: abs(item['score']), reverse=True)[:10]})
     return result
+
+
+def upgrade_signal_evidence(classifier, features, previous):
+    """Explain identical pre-cutoff inputs without changing stored probabilities."""
+    existing = json.loads(previous['signal_contributions_json']) if previous.get('signal_contributions_json') else {}
+    if existing.get('schema_version') == 2 or previous.get('p_raw') is None:
+        return previous
+    values = pd.DataFrame([features])[classifier.feature_name()].astype(float)
+    proof = signal_contributions(classifier, values)[0]
+    if proof is None:
+        return previous
+    probability = float(classifier.predict(values)[0])
+    if not np.isclose(probability, float(previous['p_raw']), atol=1e-12, rtol=0):
+        raise ValueError('explanation upgrade does not match retained raw probability')
+    return {**previous, 'signal_contributions_json': encode(proof).decode()}
 
 
 class Crosswalk:
@@ -444,6 +459,7 @@ def predict(folder, output):
     prior_rows = {r['game_id']: r for r in pq.ParquetFile(folder/'previous.parquet').read().to_pylist()} if previous is not None else {}
     retained, changes, unchanged, withdrawals = [], [], [], []
     provider_status_disagreement_retained = []
+    upgraded_signal_evidence = []
     migrated_frozen = []
     for pk in sorted(frozen_ids):
         row = dict(prior_rows[pk])
@@ -582,7 +598,10 @@ def predict(folder, output):
         row['input_fingerprint'] = fingerprint(row, features, needed)
         old = prior_rows.get(pk)
         if old and old.get('status') and old.get('input_fingerprint') == row['input_fingerprint']:
-            retained.append(old); unchanged.append(pk); continue
+            upgraded = upgrade_signal_evidence(classifier, features, old)
+            if upgraded is not old:
+                upgraded_signal_evidence.append(pk)
+            retained.append(upgraded); unchanged.append(pk); continue
         changes.append({'game_id': pk, 'reason': change_reason(old, row)})
         rows.append(row); feature_rows.append(features)
     if rows:
@@ -663,6 +682,7 @@ def predict(folder, output):
                                                    if name in {side+'_'+feature for side in ('home', 'away')
                                                                for feature in LINEUP_BULLPEN_FEATURES}],
               'lineup_bullpen_profile_rows': int(frame.lineup_bullpen_profile_json.notna().sum()),
+              'upgraded_signal_evidence_game_ids': upgraded_signal_evidence,
               'lineup_bullpen_profile_status_counts': {
                   str(key): int(value) for key, value in frame.lineup_bullpen_profile_status.value_counts(dropna=False).items()},
               'passive_context_capture_status': inputs['passive_context'].get('status'),
@@ -795,6 +815,9 @@ def publication_proof(output, report):
         item = {key: row.get(key) for key in columns}
         item['signal_contributions'] = (json.loads(row['signal_contributions_json'])
                                          if row.get('signal_contributions_json') else None)
+        item['signal_evidence_status'] = ('observed_performance_separated'
+            if (item['signal_contributions'] or {}).get('schema_version') == 2
+            else 'legacy_or_unavailable')
         profile = json.loads(row['lineup_bullpen_profile_json']) if row.get('lineup_bullpen_profile_json') else {}
         item['team_context'] = {
             side: {key: value.get(key) for key in ('lineup_ids', 'bullpen_roster_ids',

@@ -416,8 +416,8 @@ class Features:
     def bullpen_roster_at(self, cutoff, team_id, roster_ids, *, game_date=None):
         """Summarize only listed relievers from strictly earlier games.
 
-        Availability is a conservative workload classification.  A player with
-        no retained earlier appearance is UNKNOWN, never assumed available.
+        Availability-named model fields are workload estimates, never confirmed
+        availability. A player with no retained earlier appearance is UNKNOWN.
         """
         target = calendar_date.fromisoformat(game_date) if game_date else day(cutoff)
         roster = {str(value) for value in roster_ids}
@@ -513,6 +513,8 @@ class Features:
             states[state] += 1
             state_by_pitcher[pid] = state
             pitcher_profile = {"player_id": pid, "availability_state": state,
+                               "actual_availability_status": "UNKNOWN_NO_CONFIRMED_SOURCE",
+                               "availability_state_basis": "strict_prior_workload_v1",
                                "consecutive_usage_days": consecutive,
                                "workload": {}}
             for days in (1, 3, 5, 7):

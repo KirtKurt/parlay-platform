@@ -1,12 +1,13 @@
 """Live proof must distinguish performance from missing-data effects."""
 import lightgbm as lgb
 import hashlib
+import json
 import numpy as np
 import pandas as pd
 import pytest
 import pyarrow as pa
 
-from ks1.daily import signal_contributions, publication_proof
+from ks1.daily import signal_contributions, publication_proof, upgrade_signal_evidence
 from ks1.publish import parquet_bytes
 
 
@@ -83,7 +84,24 @@ def test_publication_proof_uses_verified_post_calibration_bytes(tmp_path):
     assert proof['rows'][0]['as_of'] != proof['publication_as_of']
     assert proof['rows'][0]['team_context'] == {}
     assert proof['rows'][0]['signal_contributions'] is None
+    assert proof['rows'][0]['signal_evidence_status'] == 'legacy_or_unavailable'
     with pytest.raises(ValueError, match='requires successful AWS readback'):
         publication_proof(tmp_path, dict(report, published=False))
     with pytest.raises(ValueError, match='hash mismatch'):
         publication_proof(tmp_path, dict(report, parquet_sha256='0'*64))
+
+
+def test_upgrade_explains_retained_raw_probability_without_republishing_a_pick(fitted):
+    model, frame = fitted
+    features = frame.iloc[0].to_dict()
+    raw = float(model.predict(frame.iloc[:1])[0])
+    old = {'p_raw': raw, 'p_home': .57, 'as_of': '2026-09-14T12:00:00Z',
+           'signal_contributions_json': json.dumps({'scale': 'raw_log_odds_SHAP'})}
+    upgraded = upgrade_signal_evidence(model, features, old)
+    assert upgraded != old
+    assert {k: v for k, v in upgraded.items() if k != 'signal_contributions_json'} == {
+        k: v for k, v in old.items() if k != 'signal_contributions_json'}
+    assert json.loads(upgraded['signal_contributions_json'])['schema_version'] == 2
+    assert upgrade_signal_evidence(model, features, upgraded) is upgraded
+    with pytest.raises(ValueError, match='retained raw probability'):
+        upgrade_signal_evidence(model, features, dict(old, p_raw=raw/2))

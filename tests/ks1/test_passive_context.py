@@ -311,7 +311,7 @@ def test_reliever_history_survives_trade_and_missing_pitch_count_is_unknown():
     assert values["bullpen_context_era_7d"] == 0
 
 
-def test_rested_reliever_with_retained_history_is_available():
+def test_rested_reliever_has_low_workload_but_unconfirmed_availability():
     pitching = {"outs": 3, "earnedRuns": 0, "runs": 0, "hits": 1, "homeRuns": 0,
                 "baseOnBalls": 0, "hitBatsmen": 0, "strikeOuts": 2,
                 "battersFaced": 4, "wins": 0, "losses": 0, "gamesStarted": 0,
@@ -329,6 +329,10 @@ def test_rested_reliever_with_retained_history_is_available():
     assert values["bullpen_context_available_count"] == 1
     assert values["bullpen_context_unknown_count"] == 0
     assert values["bullpen_context_depth"] == 1
+    profile = values["_reliever_profiles"][0]
+    assert profile["availability_state"] == "AVAILABLE"
+    assert profile["availability_state_basis"] == "strict_prior_workload_v1"
+    assert profile["actual_availability_status"] == "UNKNOWN_NO_CONFIRMED_SOURCE"
 
 
 def test_zero_pitch_relief_window_keeps_statcast_rates_null():
