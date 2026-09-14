@@ -128,9 +128,11 @@ def _lineup(block, side):
 
 
 def _weighted(samples, metric, slots=range(1, 10)):
-    values = [(SLOT_WEIGHTS[s["slot"]-1], s[metric]) for s in samples
-              if s["slot"] in slots and s[metric] is not None]
-    return sum(weight*value for weight, value in values)/sum(weight for weight, _ in values) if values else None
+    selected = [s for s in samples if s["slot"] in slots]
+    if not selected or any(s[metric] is None for s in selected):
+        return None
+    values = [(SLOT_WEIGHTS[s["slot"]-1], s[metric]) for s in selected]
+    return sum(weight*value for weight, value in values)/sum(weight for weight, _ in values)
 
 
 def _lineup_features(samples):
@@ -206,6 +208,8 @@ def build_profile(stored, game, row, as_of, history, history_as_of=None,
         reliever_profiles = bullpen_values.pop("_reliever_profiles", [])
         features.update({side+"_"+key: value for key, value in {**lineup_values, **bullpen_values}.items()})
         sides[side] = {"team_id": row[side+"_id"], "lineup_ids": ids,
+                       "opposing_starter_id": row.get(opposing+"_starter_id"),
+                       "opposing_starter_pitch_hand": row.get("_"+opposing+"_starter_pitch_hand"),
                        "batter_samples": samples, "batter_history": batter_profiles,
                        "bullpen_roster_ids": roster_ids, "reliever_history": reliever_profiles,
                        "availability_status": "UNKNOWN_ROSTER_ONLY",
@@ -299,6 +303,8 @@ def frozen_profile_features(row):
         source = (profile.get("sides") or {}).get(side) or {}
         if str(source.get("team_id")) != str(row.get(side+"_id")):
             return None
+        if "opposing_starter_id" not in source:
+            return None
         for key, value in (source.get("features") or {}).items():
             if key != "bullpen_context_availability_method":
                 features[side+"_"+key] = value
@@ -307,6 +313,8 @@ def frozen_profile_features(row):
                       for side in ("home", "away")},
             "lineups": {side: list(profile["sides"][side]["lineup_ids"])
                         for side in ("home", "away")},
+            "matchup_starters": {side: profile["sides"][side].get("opposing_starter_id")
+                                 for side in ("home", "away")},
             "features": features,
             "coverage_status": profile.get("coverage_status")}
 

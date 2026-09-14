@@ -83,6 +83,9 @@ def test_starter_dictionary_separates_game_log_statcast_and_unavailable_sources(
     assert 'Baseball Savant' in fields['home_starter_xwoba_30d']['source']
     assert 'stored null' in fields['home_starter_xera_30d']['source']
     assert fields['home_starter_xera_30d']['role'] == 'feature'
+    assert 'official MLB game boxes' in fields['home_lineup_ops_7d']['source']
+    assert 'Baseball Savant' in fields['home_lineup_xwoba_7d']['source']
+    assert 'official MLB game boxes' in fields['home_lineup_ops_talent']['source']
 
 
 def test_conflicting_final_scores_fail():
@@ -247,8 +250,11 @@ def test_frozen_team_profile_restores_confirmed_lineup_metadata():
         "coverage_status": "SUPPORTED_V1_COMPLETE",
         "sides": {
             "home": {"team_id": "1", "lineup_ids": [str(i) for i in range(101, 110)],
-                     "features": {"lineup_quality_ops": .750}},
+                     "opposing_starter_id": "199",
+                     "features": {"lineup_quality_ops": .750,
+                                  "lineup_pitch_type_matchup_xwoba_30d": .550}},
             "away": {"team_id": "2", "lineup_ids": [str(i) for i in range(201, 210)],
+                     "opposing_starter_id": "99",
                      "features": {"lineup_quality_ops": .725}},
         },
     }
@@ -270,6 +276,7 @@ def test_frozen_team_profile_restores_confirmed_lineup_metadata():
     assert row["home_lineup_status"] == "confirmed"
     assert json.loads(row["home_lineup_ids"]) == list(range(101, 110))
     assert row["home_lineup_quality_ops"] == .750
+    assert row["home_lineup_pitch_type_matchup_xwoba_30d"] is None
     assert row["lineup_bullpen_context_evidence"] == "frozen_versioned_ks1_profile"
 
 

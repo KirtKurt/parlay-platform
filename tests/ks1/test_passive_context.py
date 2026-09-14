@@ -97,6 +97,17 @@ def test_incomplete_lineup_plate_appearances_stay_null():
     _, features = build_profile(stored, game, row,
                                 "2026-09-14T16:05:00+00:00", History())
     assert features["home_lineup_total_pa"] is None
+    assert features["home_lineup_quality_ops"] is None
+
+
+def test_profile_binds_matchup_to_opposing_starter_identity():
+    game, row = game_row()
+    row.update(home_starter_id="501", away_starter_id="601",
+               _home_starter_pitch_hand="R", _away_starter_pitch_hand="L")
+    profile, _ = build_profile(stored_observation(), game, row,
+                               "2026-09-14T16:05:00+00:00", History())
+    assert profile["sides"]["home"]["opposing_starter_id"] == "601"
+    assert profile["sides"]["away"]["opposing_starter_id"] == "501"
 
 
 def test_rejects_post_cutoff_or_mismatched_lineup():

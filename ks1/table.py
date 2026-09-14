@@ -327,7 +327,17 @@ def build(bundle, selected_date=None):
                                    "reason": "published_lineup_bullpen_lineup_mismatch"})
                 frozen_team_context = None
             else:
-                row.update(frozen_team_context["features"])
+                context_features = dict(frozen_team_context["features"])
+                for side in ("home", "away"):
+                    opposing = "away" if side == "home" else "home"
+                    expected = frozen_team_context["matchup_starters"].get(side)
+                    current = row.get(opposing+"_starter_id")
+                    if ((str(expected) if expected is not None else None)
+                            != (str(current) if current is not None else None)):
+                        for window in ("7d", "30d"):
+                            context_features[side+"_lineup_platoon_xwoba_"+window] = None
+                            context_features[side+"_lineup_pitch_type_matchup_xwoba_"+window] = None
+                row.update(context_features)
                 row["lineup_bullpen_context_evidence"] = "frozen_versioned_ks1_profile"
                 for side in ("home", "away"):
                     row[side+"_lineup_status"] = "confirmed"
@@ -496,7 +506,19 @@ def contract(example):
             dtype, role, source = pa.float64(), "feature", "strictly earlier completed compact/full game boxes"
             meaning += "; calendar-day windows; same-day excluded; current-season empirical prior; OPS/ISO 100 PA/AB, K-BB 100 BF, WHIP 75 outs shrinkage; *_games/*_pa/*_bf/*_appearances are observed counts"
             if lineup_bullpen_metric:
+                direct_lineup = any(column.endswith("_"+name) for name in (
+                    "lineup_quality_ops", "lineup_quality_obp", "lineup_quality_slg",
+                    "lineup_top4_ops", "lineup_2_5_ops", "lineup_observed_batters",
+                    "lineup_total_pa"))
+                statcast_lineup = "_lineup_" in column and any(token in column for token in (
+                    "_woba_", "_xwoba_", "_barrel_pct_", "_hard_hit_pct_",
+                    "_avg_exit_velocity_", "_contact_pct_", "_swstr_pct_", "_csw_pct_",
+                    "_platoon_xwoba_", "_pitch_type_matchup_xwoba_"))
                 source = ("immutable pre-T10 MLB Stats API lineup season-batting observation"
+                          if direct_lineup else
+                          "retained Baseball Savant pitch rows bound to strictly earlier completed official games"
+                          if statcast_lineup else
+                          "strictly earlier completed official MLB game boxes"
                           if "_lineup_" in column else
                           "immutable pre-T10 MLB roster plus strictly earlier official boxes/retained Statcast")
                 meaning += "; admitted only from checksum-bound KS1-lineup-bullpen-profile-v1"
@@ -531,7 +553,9 @@ def contract(example):
             if column.endswith("_prior_year"):
                 meaning += "; previous-season observation available before the cutoff"
             if column.endswith("_talent"):
-                source = "30-day and previous-season retained Baseball Savant pitch rows"
+                source = ("30-day and previous-season completed official MLB game boxes"
+                          if lineup_bullpen_metric and "_lineup_" in column
+                          else "30-day and previous-season retained Baseball Savant pitch rows")
                 meaning += "; pitch-count weighted with previous-season weight capped at 300 pitches"
         elif column.endswith("_missing_history_boxes_75d"):
             dtype, role, source = pa.int64(), "audit", "retained official finals lacking a compact or full box"
