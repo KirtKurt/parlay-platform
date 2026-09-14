@@ -24,8 +24,15 @@ AT=datetime(2026,9,9,18,tzinfo=timezone.utc)
 
 @pytest.mark.parametrize('defect', [None, 'truncated', 'duplicate', 'missing_count', 'extra_pitcher'])
 def test_retained_statcast_dates_require_official_pitch_counts(defect):
-    from tests.ks1.test_prior_pitcher_context import full_game, STATS
-    game = full_game(1, '2026-09-01', 100, {**STATS, 'numberOfPitches': 2})
+    game = {'officialGamePk': 1, 'startAtUtc': '2026-09-01T18:00:00Z',
+            'completedAtUtc': '2026-09-01T21:00:00Z', 'gameType': 'R',
+            'teams': {side: {'team': {'id': tid, 'name': side},
+                             'teamStats': {'batting': {}},
+                             'players': {'ID'+str(pid): {
+                                 'person': {'id': pid},
+                                 'stats': {'pitching': {'numberOfPitches': 2,
+                                                       'gamesStarted': 1}}}}}
+                      for side, tid, pid in (('home', 1, 100), ('away', 2, 101))}}
     rows = [{'game_pk': '1', 'pitcher': str(pid), 'at_bat_number': str(pid),
              'pitch_number': str(n)} for pid in (100, 101) for n in (1, 2)]
     if defect == 'truncated':

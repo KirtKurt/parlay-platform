@@ -117,9 +117,9 @@ def pitch_complete_dates(sources, statcast_by_date, expected_by_date):
     for game in Features(sources).rows:
         game_id = str(game['game_id'])
         counts = expected.setdefault(game_id, {})
-        if not game['players']:
+        if not game['context_players']:
             invalid.add(game_id)
-        for player in game['players']:
+        for player in game['context_players']:
             count = number(player['stats'].get('numberOfPitches'))
             if count is None or count < 0 or int(count) != count:
                 invalid.add(game_id)
