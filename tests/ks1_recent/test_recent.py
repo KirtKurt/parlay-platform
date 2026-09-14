@@ -645,6 +645,9 @@ def test_promotion_usage_gate_distinguishes_quality_from_coverage_counts():
     assert bullpen_context_performance_feature('away_bullpen_context_fip_30d')
     assert not bullpen_context_performance_feature('away_bullpen_context_roster_count')
     assert not bullpen_context_performance_feature('away_bullpen_context_fatigue_score')
+    for window in (7, 15, 30):
+        assert not bullpen_context_performance_feature(
+            f'home_bullpen_context_appearances_{window}d')
 
 
 def test_development_split_purges_overlapping_labels():

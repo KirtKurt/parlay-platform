@@ -22,6 +22,24 @@ import run_mlb_research_ingestion as ingestion
 AT=datetime(2026,9,9,18,tzinfo=timezone.utc)
 
 
+@pytest.mark.parametrize('defect', [None, 'truncated', 'duplicate', 'missing_count', 'extra_pitcher'])
+def test_retained_statcast_dates_require_official_pitch_counts(defect):
+    from tests.ks1.test_prior_pitcher_context import full_game, STATS
+    game = full_game(1, '2026-09-01', 100, {**STATS, 'numberOfPitches': 2})
+    rows = [{'game_pk': '1', 'pitcher': str(pid), 'at_bat_number': str(pid),
+             'pitch_number': str(n)} for pid in (100, 101) for n in (1, 2)]
+    if defect == 'truncated':
+        rows.pop()  # same game ID still present
+    elif defect == 'duplicate':
+        rows[-1] = rows[-2]
+    elif defect == 'missing_count':
+        game['teams']['home']['players']['ID100']['stats']['pitching'].pop('numberOfPitches')
+    elif defect == 'extra_pitcher':
+        rows[-1] = {**rows[-1], 'pitcher': '999'}
+    dates = ingestion.pitch_complete_dates([game], {'2026-09-01': rows}, {'2026-09-01': {1}})
+    assert dates == (['2026-09-01'] if defect is None else [])
+
+
 class MemoryS3:
     def __init__(self): self.items={};self.sequence=0
     def get_object(self,Bucket,Key,VersionId=None):

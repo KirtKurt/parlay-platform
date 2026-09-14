@@ -59,7 +59,8 @@ LINEUP_PERFORMANCE_FEATURES = tuple(
     if name not in ("lineup_observed_batters", "lineup_total_pa"))
 BULLPEN_PERFORMANCE_FEATURES = tuple(
     name for name in BULLPEN_VALUE_FEATURES
-    if name not in ("bullpen_context_roster_count", "bullpen_context_available_count",
+    if not name.startswith("bullpen_context_appearances_")
+    and name not in ("bullpen_context_roster_count", "bullpen_context_available_count",
                     "bullpen_context_limited_count",
                     "bullpen_context_likely_unavailable_count",
                     "bullpen_context_unknown_count", "bullpen_context_fatigue_score",

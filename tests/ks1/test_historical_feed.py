@@ -218,6 +218,28 @@ def test_archived_context_with_unresolved_team_is_excluded_without_crashing():
     assert {'game_id': '99', 'reason': 'missing_official_team_identity'} in report['exclusions']
 
 
+def test_historical_talent_requires_target_relative_prior_season(monkeypatch):
+    games = history()+[full_game(99, '2026-08-11', 999, STATS)]
+    bundle = {'full': games, 'historical_team_context': [team_entry()],
+              'official_history_source': {**SOURCE, 'complete_years': [2026, 2027]},
+              'schedule': [{'gamePk': 99, 'gameDate': '2026-08-11T20:00:00Z',
+                            'gameType': 'R', 'teams': {
+                                s: {'team': games[-1]['teams'][s]['team']} for s in ('home', 'away')},
+                            'status': {'abstractGameState': 'Preview'}}]}
+    bundle.update({key: True for key in ('current30_history_complete',
+        'current_year_history_complete', 'prior_year_history_complete',
+        'statcast_coverage_complete', 'current_year_statcast_complete',
+        'prior_year_statcast_complete')})
+    monkeypatch.setattr(Features, 'lineup_batters_at', lambda *args, **kwargs:
+                        ([], {'lineup_ops_talent': .7, 'lineup_ops_prior_year': .8,
+                              'lineup_ops_30d': .9}))
+    row = build(bundle)[0].to_pylist()[0]
+    assert row['home_lineup_ops_30d'] == .9
+    for name in ('home_lineup_ops_talent', 'home_lineup_ops_prior_year'):
+        assert row[name] is None
+        assert row[name+'_missing'] == 1
+
+
 @pytest.mark.parametrize('gap_date, gap_team, expected_incomplete', [
     (None, None, True),
     ('2026-04-01', 'home', True),  # outside the old 75-day check

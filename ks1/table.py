@@ -139,6 +139,7 @@ def build(bundle, selected_date=None):
         "current30_history_complete", "current_year_history_complete",
         "prior_year_history_complete", "statcast_coverage_complete",
         "current_year_statcast_complete", "prior_year_statcast_complete"))
+    complete_official_years = set(bundle.get("official_history_source", {}).get("complete_years", []))
     history = Features(list(games.values()), bundle.get("statcast", []),
                        statcast_retained_dates=bundle.get("statcast_retained_dates", []),
                        statcast_complete=bundle.get("statcast_coverage_complete") is True,
@@ -410,6 +411,7 @@ def build(bundle, selected_date=None):
                 f'{cutoff_day.year-1}-01-01' <= date < str(cutoff_day)
                 for date in missing_official_dates)
             incomplete_team_history = (not team_context_history_complete
+                                       or cutoff_day.year not in complete_official_years
                                        or missing_player_history
                                        or any(row.get(side+'_history_status')
                                               == 'partial_known_missing_boxes'
@@ -438,6 +440,13 @@ def build(bundle, selected_date=None):
                             historical_team['as_of'], source['lineup_ids'],
                             opposing_source['probable_pitcher_id'],
                             opposing_source['probable_pitcher_hand'], game_date=date)
+                        if cutoff_day.year-1 not in complete_official_years:
+                            # Run-relative prior-year flags do not certify the
+                            # target's prior season. Keep unsupported shrink
+                            # inputs missing, not silently equal to recent form.
+                            lineup_values = {key: None if key.endswith(
+                                ('_prior_year', '_talent')) else value
+                                for key, value in lineup_values.items()}
                     bullpen_values = {}
                     if source['bullpen_status'] == 'OBSERVED_ROSTER_ONLY':
                         bullpen_values = dict(history.bullpen_roster_at(

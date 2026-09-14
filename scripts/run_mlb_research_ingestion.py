@@ -1,6 +1,7 @@
 """Autonomous source preparation and original-snapshot settlement; no trainer invocation."""
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from collections import Counter
 from datetime import date as calendar_date, timedelta
 import json
 from pathlib import Path
@@ -104,6 +105,40 @@ def prior_year_profiles(sources, rows, prior_year):
     return profiles
 
 
+def pitch_complete_dates(sources, statcast_by_date, expected_by_date):
+    """Reconcile every pitcher's retained pitches to the official final box.
+
+    Matching game IDs cannot detect a truncated CSV. Missing official counts,
+    missing boxes, duplicate pitch identities, and extra pitchers fail closed.
+    This validates earlier completed data, never a target game's features.
+    """
+    expected = {}
+    invalid = set()
+    for game in Features(sources).rows:
+        game_id = str(game['game_id'])
+        counts = expected.setdefault(game_id, {})
+        if not game['players']:
+            invalid.add(game_id)
+        for player in game['players']:
+            count = number(player['stats'].get('numberOfPitches'))
+            if count is None or count < 0 or int(count) != count:
+                invalid.add(game_id)
+            else:
+                counts[(game_id, str(player['id']))] = int(count)
+    verified = []
+    for value, rows in statcast_by_date.items():
+        games = {str(pk) for pk in expected_by_date[value]}
+        if games & invalid or not games.issubset(expected):
+            continue
+        wanted = {key: count for pk in games for key, count in expected[pk].items() if count}
+        actual = Counter((str(row.get('game_pk')), str(row.get('pitcher'))) for row in rows)
+        identities = {tuple(str(row.get(key)) for key in (
+            'game_pk', 'at_bat_number', 'pitch_number')) for row in rows}
+        if len(identities) == len(rows) and dict(actual) == wanted:
+            verified.append(value)
+    return sorted(verified)
+
+
 def ingest(store,seconds=2400):
     started=now();deadline=time.monotonic()+seconds
     owner=store.acquire('ingestion',seconds+120)
@@ -204,8 +239,10 @@ def ingest(store,seconds=2400):
         for row in [*current_rows,*last_start_rows]:
             identity=tuple(str(row.get(key)) for key in ('game_pk','at_bat_number','pitch_number'))
             retained_rows[identity]=row
+        pitch_verified_dates = set(pitch_complete_dates(sources, statcast_by_date, expected_by_date))
         sc={'rows':current_rows,'coverageComplete':current_complete and current_year_complete and prior_complete,
-            'retainedCompleteDates':sorted({d.isoformat() for d in current_dates}&complete_dates),
+            'retainedCompleteDates':sorted({d.isoformat() for d in current_dates}&pitch_verified_dates),
+            'retainedPitchCoverageMethod':'official_box_pitcher_counts_v1',
             'current30CoverageComplete':current_complete,'priorYearCoverageComplete':prior_complete,
             'currentYearCoverageComplete':current_year_complete,
             'priorYear':prior_year,'priorYearProfiles':prior_profiles,
