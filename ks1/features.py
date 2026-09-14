@@ -294,10 +294,13 @@ def normalize(games):
 
 class Features:
     def __init__(self, games, statcast_rows=None, *, statcast_complete=True,
-                 prior_statcast_profiles=None, prior_statcast_year=None):
+                 prior_statcast_profiles=None, prior_statcast_year=None,
+                 statcast_retained_dates=None):
         self.rows = normalize(games)
         self.statcast_rows = list(statcast_rows or [])
         self.statcast_complete = bool(statcast_complete)
+        self.statcast_retained_dates = (None if statcast_retained_dates is None
+                                       else set(statcast_retained_dates))
         self.prior_statcast_profiles = dict(prior_statcast_profiles or {})
         self.prior_statcast_year = prior_statcast_year
         self.statcast_by_game = {}
@@ -310,6 +313,13 @@ class Features:
             self.statcast_by_batter_game.setdefault((str(row.get("batter")), game_id), []).append(row)
         self.cache = {}
         self.priors = {}
+
+    def team_statcast_window_complete(self, target, window):
+        """Archive completeness alone cannot prove compacted rows are loaded."""
+        return self.statcast_complete and (
+            self.statcast_retained_dates is None or all(
+                (target-timedelta(days=age)).isoformat() in self.statcast_retained_dates
+                for age in range(1, window+1)))
 
     @staticmethod
     def _finite(value):
@@ -442,7 +452,8 @@ class Features:
                                  and number(p["stats"].get("gamesStarted")) != 1}
             selected = [row for game_id, pitcher_id in relief_identities
                         for row in self.statcast_by_pitcher_game.get((pitcher_id, game_id), ())]
-            if expected is not None and selected and len(selected) == expected:
+            if (self.team_statcast_window_complete(target, window)
+                    and expected is not None and selected and len(selected) == expected):
                 descriptions = [str(row.get("description") or "").lower() for row in selected]
                 contacts = [row for row in selected if row.get("type") == "X"]
                 speeds = [self._finite(row.get("launch_speed")) for row in contacts]
@@ -627,7 +638,7 @@ class Features:
                 actual = [self._finite(pitch.get("woba_value")) for pitch in pitch_rows
                           if self._finite(pitch.get("woba_denom")) == 1]
                 descriptions = [str(pitch.get("description") or "").lower() for pitch in pitch_rows]
-                complete = self.statcast_complete
+                complete = self.team_statcast_window_complete(target, window)
                 summary.update({
                     "woba": sum(actual)/len(actual) if complete and actual and all(v is not None for v in actual) else None,
                     "xwoba": sum(expected)/len(expected) if complete and expected and all(v is not None for v in expected) else None,
@@ -667,7 +678,8 @@ class Features:
                 supported_pitches = sum(count for count, _ in supported_mix)
                 summary["pitch_type_matchup_xwoba"] = (
                     sum(count*value for count, value in supported_mix)/starter_total
-                    if (complete and starter_total > 0 and starter_total == len(starter_rows)
+                    if (complete and self.team_statcast_window_complete(target, 30)
+                        and starter_total > 0 and starter_total == len(starter_rows)
                         and supported_pitches == starter_total) else None)
                 summary["pitch_type_xwoba"] = by_type
                 profile["windows"][str(window)+"d"] = summary

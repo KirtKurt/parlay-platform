@@ -200,6 +200,24 @@ def test_historical_team_context_enters_table_with_explicit_missingness():
     assert row['home_bullpen_context_roster_count_missing'] == 0
 
 
+def test_archived_context_with_unresolved_team_is_excluded_without_crashing():
+    bundle = {'full': history(), 'historical_team_context': [team_entry()],
+              'schedule': [{'gamePk': 99, 'gameDate': '2026-08-11T20:00:00Z',
+                            'gameType': 'R', 'teams': {},
+                            'status': {'abstractGameState': 'Preview'}}],
+              'finals': [{'officialGamePk': 12345, 'officialDate': '2025-04-01',
+                          'completed': True}], 'official_history_source': SOURCE}
+    valid = full_game(999, '2026-08-12', 999, STATS)
+    bundle['full'].append(valid)
+    bundle['schedule'].append({'gamePk': 999, 'gameDate': '2026-08-12T20:00:00Z',
+                              'gameType': 'R', 'teams': {
+                                  side: {'team': valid['teams'][side]['team']}
+                                  for side in ('home', 'away')},
+                              'status': {'abstractGameState': 'Preview'}})
+    _, report, *_ = build(bundle)
+    assert {'game_id': '99', 'reason': 'missing_official_team_identity'} in report['exclusions']
+
+
 @pytest.mark.parametrize('gap_date, gap_team, expected_incomplete', [
     (None, None, True),
     ('2026-04-01', 'home', True),  # outside the old 75-day check

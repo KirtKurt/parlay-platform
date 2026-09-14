@@ -428,6 +428,28 @@ def test_frozen_rows_do_not_change_or_rescore_after_cutoff(capture):
     assert first.equals(second) and calls == [2] and report['preserved_pregame_rows'] == 2
 
 
+def test_former_team_missing_history_blocks_new_player_profile(capture):
+    folder, output, _, _ = capture
+    path = folder/'history.json.gz'
+    history = json.loads(gzip.decompress(path.read_bytes()))
+    history.update({key: True for key in ('current30_history_complete',
+        'current_year_history_complete', 'prior_year_history_complete',
+        'statcast_coverage_complete', 'current_year_statcast_complete',
+        'prior_year_statcast_complete')})
+    history['schedule'] = [{'gamePk': 99999, 'gameDate': '2025-04-01T20:00:00Z',
+                            'status': {'abstractGameState': 'Final'},
+                            'teams': {s: {'team': {'id': tid}} for s, tid in
+                                      (('home', 999), ('away', 998))}}]
+    path.write_bytes(gzip.compress(encode(history), mtime=0))
+    (folder/'passive_context.json').write_bytes(encode({
+        'status': 'READ', 'games': {'1': {'data': {}}, '2': {'data': {}}}}))
+    seal(folder)
+    table, _, _ = daily.predict(folder, output)
+    for row in table.to_pylist():
+        assert row['lineup_bullpen_profile_json'] is None
+        assert 'HISTORY_COVERAGE_INCOMPLETE' in row['lineup_bullpen_profile_status']
+
+
 @pytest.mark.parametrize('contract, embedded_contract, valid', [
     ('KS1-lineup-bullpen-profile-v1', 'KS1-lineup-bullpen-profile-v1', True),
     ('KS1-lineup-bullpen-profile-v2', 'KS1-lineup-bullpen-profile-v2', True),

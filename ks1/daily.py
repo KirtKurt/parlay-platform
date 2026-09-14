@@ -403,6 +403,7 @@ def predict(folder, output):
     engine = Features(history, inputs['history'].get('statcast', []),
                       statcast_complete=inputs['history'].get('statcast_coverage_complete') is True,
                       prior_statcast_profiles=inputs['history'].get('prior_statcast_profiles'),
+                      statcast_retained_dates=inputs['history'].get('statcast_retained_dates', []),
                       prior_statcast_year=inputs['history'].get('prior_statcast_year'))
     rows, feature_rows, exclusions = [], [], []
     previous = pq.ParquetFile(folder/'previous.parquet').read().to_pandas() if (folder/'previous.parquet').exists() else None
@@ -473,6 +474,12 @@ def predict(folder, output):
             'prior_year': (inputs['history'].get('prior_year_history_complete') is True
                            and inputs['history'].get('prior_year_statcast_complete') is True),
             'statcast_30d': inputs['history'].get('statcast_coverage_complete') is True,
+            'player_history_complete': (
+                inputs['history'].get('current_year_history_complete') is True
+                and inputs['history'].get('prior_year_history_complete') is True
+                and not any(day(g['gameDate']).year in (
+                    calendar_date.fromisoformat(target_date).year-1,
+                    calendar_date.fromisoformat(target_date).year) for g in missing_boxes)),
         }
         row['_pitcher_history_coverage'] = coverage
         if not all(coverage.values()):

@@ -165,6 +165,7 @@ def load_existing(cf, s3, bucket):
             "current_year_history_complete": prior.get("currentYearCoverageComplete") is True,
             "prior_year_history_complete": prior.get("priorYearCoverageComplete") is True,
             "statcast": statcast.get("rows", []),
+            "statcast_retained_dates": statcast.get("retainedCompleteDates", []),
             "statcast_coverage_complete": statcast.get("current30CoverageComplete",
                                                         statcast.get("coverageComplete")) is True,
             "current_year_statcast_complete": statcast.get("currentYearCoverageComplete") is True,

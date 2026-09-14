@@ -494,6 +494,17 @@ def test_timecoded_team_context_requires_receipt_in_qualification_inventory():
     assert not historical_team_context_mask(frame, []).any()
 
 
+def test_frozen_evidence_tag_alone_cannot_qualify_incomplete_history():
+    frame, _ = historical_team_context_frame()
+    frame['lineup_bullpen_context_evidence'] = 'frozen_versioned_ks1_profile'
+    features = ['home_lineup_ops_30d', 'home_lineup_ops_30d_missing']
+    assert qualified_team_context_coverage(frame, features)['qualified_rows'] == 0
+    frame['lineup_bullpen_history_status'] = 'COMPLETE'
+    assert qualified_team_context_coverage(frame, features)['qualified_rows'] == 300
+    frame.loc[0, 'lineup_bullpen_history_status'] = 'UNPROVEN'
+    assert qualified_team_context_coverage(frame, features)['qualified_rows'] == 299
+
+
 @pytest.mark.parametrize('side', ['home', 'away'])
 def test_partial_manifest_cannot_qualify_untouched_starter_side(side):
     frame = historical_qualification_frame()

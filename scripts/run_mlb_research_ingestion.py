@@ -205,6 +205,7 @@ def ingest(store,seconds=2400):
             identity=tuple(str(row.get(key)) for key in ('game_pk','at_bat_number','pitch_number'))
             retained_rows[identity]=row
         sc={'rows':current_rows,'coverageComplete':current_complete and current_year_complete and prior_complete,
+            'retainedCompleteDates':sorted({d.isoformat() for d in current_dates}&complete_dates),
             'current30CoverageComplete':current_complete,'priorYearCoverageComplete':prior_complete,
             'currentYearCoverageComplete':current_year_complete,
             'priorYear':prior_year,'priorYearProfiles':prior_profiles,

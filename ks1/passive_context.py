@@ -17,6 +17,14 @@ from ks1.inventory import encode
 
 CONTRACT = "KS1-lineup-bullpen-profile-v2"
 SUPPORTED_FROZEN_CONTRACTS = ("KS1-lineup-bullpen-profile-v1", CONTRACT)
+HISTORY_COVERAGE_KEYS = ("7d", "30d", "last3", "current_season_context",
+                         "prior_year", "statcast_30d", "player_history_complete")
+
+
+def history_coverage_complete(coverage):
+    return isinstance(coverage, dict) and all(
+        coverage.get(key) is True for key in HISTORY_COVERAGE_KEYS)
+
 TEAM_CONTEXT_VERSION = "MLB-STATSAPI-TEAM-CONTEXT-v1-prelock-observations"
 BATTING_VERSION = "MLB-LINEUP-SEASON-BATTING-v1-passive-observations"
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -177,8 +185,7 @@ def build_profile(stored, game, row, as_of, history, history_as_of=None,
     raw = stored.get("data", stored) if isinstance(stored, dict) else {}
     game_id, start, cutoff = str(game["gamePk"]), utc(game["gameDate"]), utc(game["gameDate"])-timedelta(minutes=10)
     observed = utc(as_of)
-    if history_coverage is not None and not all(history_coverage.get(key) is True for key in (
-            "7d", "30d", "last3", "current_season_context", "prior_year", "statcast_30d")):
+    if history_coverage is not None and not history_coverage_complete(history_coverage):
         raise ValueError("lineup bullpen history coverage incomplete")
     if any(value is not None and utc(value) > observed
            for value in (history_as_of, statcast_as_of)):
@@ -250,6 +257,8 @@ def build_profile(stored, game, row, as_of, history, history_as_of=None,
     if bullpen_block.get("bullpenRosterObservationStatus") != "OBSERVED_ROSTER_ONLY":
         raise ValueError("bullpen roster status invalid")
     profile = {"contract": CONTRACT, "as_of": observed.isoformat(),
+               "history_coverage": dict(history_coverage or {}),
+               "statcast_retained_dates": sorted(getattr(history, 'statcast_retained_dates', None) or []),
                "history_as_of": history_as_of,
                "statcast_as_of": statcast_as_of,
                "game_id": game_id, "commence_time": start.isoformat(),
@@ -345,6 +354,7 @@ def frozen_profile_features(row):
             "matchup_starters": {side: profile["sides"][side].get("opposing_starter_id")
                                  for side in ("home", "away")},
             "features": features,
+            "history_complete": history_coverage_complete(profile.get("history_coverage")),
             "coverage_status": profile.get("coverage_status"),
             "contract": recorded_contract}
 

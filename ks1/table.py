@@ -140,6 +140,7 @@ def build(bundle, selected_date=None):
         "prior_year_history_complete", "statcast_coverage_complete",
         "current_year_statcast_complete", "prior_year_statcast_complete"))
     history = Features(list(games.values()), bundle.get("statcast", []),
+                       statcast_retained_dates=bundle.get("statcast_retained_dates", []),
                        statcast_complete=bundle.get("statcast_coverage_complete") is True,
                        prior_statcast_profiles=bundle.get("prior_statcast_profiles"),
                        prior_statcast_year=bundle.get("prior_statcast_year"))
@@ -246,6 +247,7 @@ def build(bundle, selected_date=None):
                "historical_pitcher_context_mode": None,
                "pitcher_context_evidence": None,
                "lineup_bullpen_context_evidence": None,
+               "lineup_bullpen_history_status": "UNPROVEN",
                "historical_lineup_bullpen_context_status": "UNAVAILABLE_FAIL_CLOSED",
                "historical_lineup_bullpen_context_as_of": None,
                "historical_lineup_bullpen_context_source": None,
@@ -263,6 +265,10 @@ def build(bundle, selected_date=None):
                        pregame_stored_at=proof.get("stored_at"),
                        pregame_sha256=proof.get("sha256"))
         frozen_team_context = published_team_context.get(pk)
+        if frozen_team_context and not frozen_team_context.get("history_complete"):
+            exclusions.append({"game_id": pk,
+                               "reason": "published_lineup_bullpen_history_unproven"})
+            frozen_team_context = None
         if frozen_team_context:
             current_teams = {side: team_identity(
                 sch.get("teams", {}).get(side) or game.get("teams", {}).get(side))[0]
@@ -280,6 +286,7 @@ def build(bundle, selected_date=None):
         if published_problem:
             exclusions.append({"game_id": pk, "reason": published_problem})
         missing_identity = False
+        cutoff_day = day(cutoff)
         for side in ("home", "away"):
             team = sch.get("teams", {}).get(side) or game.get("teams", {}).get(side)
             identity_method = "official_game_team_id"
@@ -370,7 +377,6 @@ def build(bundle, selected_date=None):
             if captured:
                 row.update(captured)
                 row["rolling_feature_evidence"] = "immutable original snapshot starter profile"
-            cutoff_day = day(cutoff)
             relevant_gap_years = {str(cutoff_day.year), str(cutoff_day.year-1)}
             history_gaps = {key: calendar_date.fromisoformat(date)
                             for key, date in missing_boxes[tid]
@@ -480,6 +486,7 @@ def build(bundle, selected_date=None):
                             context_features[side+"_lineup_pitch_type_matchup_xwoba_"+window+"_missing"] = 1.0
                 row.update(context_features)
                 row["lineup_bullpen_context_evidence"] = "frozen_versioned_ks1_profile"
+                row["lineup_bullpen_history_status"] = "COMPLETE"
                 row["historical_lineup_bullpen_context_status"] = "SUPERSEDED_BY_FROZEN_PROFILE"
                 for side in ("home", "away"):
                     row[side+"_lineup_status"] = "confirmed"
@@ -652,6 +659,7 @@ def contract(example):
             column == side+"_"+feature for side in ("home", "away")
             for feature in LINEUP_BULLPEN_FEATURES)
         lineup_bullpen_audit = column in (
+            "lineup_bullpen_history_status",
             "lineup_bullpen_context_evidence",
             "historical_lineup_bullpen_context_status",
             "historical_lineup_bullpen_context_as_of",

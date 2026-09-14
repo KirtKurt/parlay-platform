@@ -324,7 +324,9 @@ def historical_team_context_mask(frame, source_receipts=None):
 def qualified_team_context_coverage(frame, features, *, source_receipts=None):
     """Count complete point-in-time evidence, allowing explicit missing values."""
     historical = historical_team_context_mask(frame, source_receipts)
-    frozen = frame.lineup_bullpen_context_evidence.eq('frozen_versioned_ks1_profile')
+    frozen = (frame.lineup_bullpen_context_evidence.eq('frozen_versioned_ks1_profile')
+              & frame.get('lineup_bullpen_history_status',
+                          pd.Series(None, index=frame.index, dtype=object)).eq('COMPLETE'))
     qualified = historical | frozen
     complete = pd.Series(True, index=frame.index)
     per_feature = {}
