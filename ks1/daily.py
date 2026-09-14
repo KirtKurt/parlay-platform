@@ -820,8 +820,14 @@ def publication_proof(output, report):
             else 'legacy_or_unavailable')
         profile = json.loads(row['lineup_bullpen_profile_json']) if row.get('lineup_bullpen_profile_json') else {}
         item['team_context'] = {
-            side: {key: value.get(key) for key in ('lineup_ids', 'bullpen_roster_ids',
-                   'opposing_starter_id', 'opposing_starter_pitch_hand', 'availability_status')}
+            side: {**{key: value.get(key) for key in ('lineup_ids', 'bullpen_roster_ids',
+                   'opposing_starter_id', 'opposing_starter_pitch_hand', 'availability_status')},
+                   'reliever_availability': [{
+                       'player_id': reliever.get('player_id'),
+                       'actual_availability_status': 'UNKNOWN_NO_CONFIRMED_SOURCE',
+                       'workload_classification': reliever.get('availability_state'),
+                       'workload_classification_basis': 'strict_prior_workload_v1'}
+                       for reliever in value.get('reliever_history', [])]}
             for side, value in profile.get('sides', {}).items()}
         proof_rows.append(item)
     return {'kind': 'KS1_verified_publication_rows', 'publication_as_of': report['as_of'],

@@ -513,8 +513,6 @@ class Features:
             states[state] += 1
             state_by_pitcher[pid] = state
             pitcher_profile = {"player_id": pid, "availability_state": state,
-                               "actual_availability_status": "UNKNOWN_NO_CONFIRMED_SOURCE",
-                               "availability_state_basis": "strict_prior_workload_v1",
                                "consecutive_usage_days": consecutive,
                                "workload": {}}
             for days in (1, 3, 5, 7):

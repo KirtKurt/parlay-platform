@@ -90,6 +90,19 @@ def test_publication_proof_uses_verified_post_calibration_bytes(tmp_path):
     with pytest.raises(ValueError, match='hash mismatch'):
         publication_proof(tmp_path, dict(report, parquet_sha256='0'*64))
 
+    # Explanatory labels belong in derived proof, outside the scoring profile.
+    row = {'date': '2026-09-14', 'game_id': '123', 'p_home': .57, 'p_raw': .6,
+           'lineup_bullpen_profile_json': json.dumps({'sides': {'home': {
+               'reliever_history': [{'player_id': '45', 'availability_state': 'AVAILABLE'}]}}})}
+    body = parquet_bytes(pa.Table.from_pylist([row]))
+    (tmp_path/'predictions.parquet').write_bytes(body)
+    report['parquet_sha256'] = hashlib.sha256(body).hexdigest()
+    proof = publication_proof(tmp_path, report)
+    reliever = proof['rows'][0]['team_context']['home']['reliever_availability'][0]
+    assert reliever['actual_availability_status'] == 'UNKNOWN_NO_CONFIRMED_SOURCE'
+    assert reliever['workload_classification'] == 'AVAILABLE'
+    assert (tmp_path/'predictions.parquet').read_bytes() == body
+
 
 def test_upgrade_explains_retained_raw_probability_without_republishing_a_pick(fitted):
     model, frame = fitted

@@ -331,8 +331,6 @@ def test_rested_reliever_has_low_workload_but_unconfirmed_availability():
     assert values["bullpen_context_depth"] == 1
     profile = values["_reliever_profiles"][0]
     assert profile["availability_state"] == "AVAILABLE"
-    assert profile["availability_state_basis"] == "strict_prior_workload_v1"
-    assert profile["actual_availability_status"] == "UNKNOWN_NO_CONFIRMED_SOURCE"
     assert values["bullpen_context_fatigue_score"] == 0
 
     partial = Features([game], []).bullpen_roster_at(
