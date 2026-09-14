@@ -3,6 +3,7 @@ from collections import Counter
 from datetime import date as calendar_date, datetime, timedelta
 from zoneinfo import ZoneInfo
 import math
+from ks1.statcast_events import is_thrown_pitch
 
 ET = ZoneInfo("America/New_York")
 WINDOWS = (7, 10, 30, 75)
@@ -344,8 +345,9 @@ class Features:
             return None
 
     def statcast(self, starter_id, game_ids, expected_pitches):
-        selected = [row for game_id in game_ids
-                    for row in self.statcast_by_pitcher_game.get((str(starter_id), str(game_id)), ())]
+        events = [row for game_id in game_ids
+                  for row in self.statcast_by_pitcher_game.get((str(starter_id), str(game_id)), ())]
+        selected = [row for row in events if is_thrown_pitch(row)]
         complete = bool(starter_id and game_ids and expected_pitches is not None and len(selected) == expected_pitches)
         def average(values):
             return sum(values)/len(values) if values and all(v is not None for v in values) else None
@@ -353,7 +355,7 @@ class Features:
         speeds = [self._finite(r.get("launch_speed")) for r in contacts]
         barrels = [self._finite(r.get("launch_speed_angle")) for r in contacts]
         descriptions = [str(r.get("description") or "").lower() for r in selected]
-        plate_appearances = [r for r in selected if self._finite(r.get("woba_denom")) == 1]
+        plate_appearances = [r for r in events if self._finite(r.get("woba_denom")) == 1]
         expected_woba = []
         for row in plate_appearances:
             value = (self._finite(row.get("estimated_woba_using_speedangle"))
@@ -471,15 +473,16 @@ class Features:
                                  for r, stats in pairs for p in r["players"]
                                  if p["id"] in roster and p["stats"] is stats
                                  and number(p["stats"].get("gamesStarted")) != 1}
-            selected = [row for game_id, pitcher_id in relief_identities
-                        for row in self.statcast_by_pitcher_game.get((pitcher_id, game_id), ())]
+            events = [row for game_id, pitcher_id in relief_identities
+                      for row in self.statcast_by_pitcher_game.get((pitcher_id, game_id), ())]
+            selected = [row for row in events if is_thrown_pitch(row)]
             if (self.team_statcast_window_complete(target, window)
                     and expected is not None and selected and len(selected) == expected):
                 descriptions = [str(row.get("description") or "").lower() for row in selected]
                 contacts = [row for row in selected if row.get("type") == "X"]
                 speeds = [self._finite(row.get("launch_speed")) for row in contacts]
                 barrels = [self._finite(row.get("launch_speed_angle")) for row in contacts]
-                pas = [row for row in selected if self._finite(row.get("woba_denom")) == 1]
+                pas = [row for row in events if self._finite(row.get("woba_denom")) == 1]
                 expected_woba = [(self._finite(row.get("estimated_woba_using_speedangle"))
                                   if row.get("type") == "X" else self._finite(row.get("woba_value")))
                                  for row in pas]
@@ -614,7 +617,7 @@ class Features:
         starter_rows = [row for game_id in self.statcast_by_pitcher_game
                         if game_id[0] == str(opposing_starter_id)
                         and game_id[1] in recent_game_ids
-                        for row in self.statcast_by_pitcher_game[game_id]]
+                        for row in self.statcast_by_pitcher_game[game_id] if is_thrown_pitch(row)]
         starter_mix = Counter(row.get("pitch_type") for row in starter_rows
                               if row.get("pitch_type") in PITCH_TYPES)
         starter_total = sum(starter_mix.values())
@@ -649,6 +652,7 @@ class Features:
                 summary = box([stats for _, stats in chosen])
                 pitch_rows = [pitch for r, _ in chosen
                               for pitch in self.statcast_by_batter_game.get((pid, r["game_id"]), ())]
+                thrown = [pitch for pitch in pitch_rows if is_thrown_pitch(pitch)]
                 contacts = [pitch for pitch in pitch_rows if pitch.get("type") == "X"]
                 speeds = [self._finite(pitch.get("launch_speed")) for pitch in contacts]
                 barrels = [self._finite(pitch.get("launch_speed_angle")) for pitch in contacts]
@@ -660,7 +664,7 @@ class Features:
                             if self._finite(pitch.get("woba_denom")) == 1]
                 actual = [self._finite(pitch.get("woba_value")) for pitch in pitch_rows
                           if self._finite(pitch.get("woba_denom")) == 1]
-                descriptions = [str(pitch.get("description") or "").lower() for pitch in pitch_rows]
+                descriptions = [str(pitch.get("description") or "").lower() for pitch in thrown]
                 complete = self.team_statcast_window_complete(target, window)
                 summary.update({
                     "woba": sum(actual)/len(actual) if complete and actual and all(v is not None for v in actual) else None,
@@ -669,8 +673,8 @@ class Features:
                     "hard_hit_pct": 100*sum(v >= 95 for v in speeds)/len(speeds) if complete and speeds and all(v is not None for v in speeds) else None,
                     "avg_exit_velocity": sum(speeds)/len(speeds) if complete and speeds and all(v is not None for v in speeds) else None,
                     "contact_pct": 100*len(contact_swings)/len(swings) if complete and swings else None,
-                    "swstr_pct": 100*sum(value in SWINGING_STRIKES for value in descriptions)/len(pitch_rows) if complete and pitch_rows else None,
-                    "csw_pct": 100*sum(value in SWINGING_STRIKES | CALLED_STRIKES for value in descriptions)/len(pitch_rows) if complete and pitch_rows else None,
+                    "swstr_pct": 100*sum(value in SWINGING_STRIKES for value in descriptions)/len(thrown) if complete and thrown else None,
+                    "csw_pct": 100*sum(value in SWINGING_STRIKES | CALLED_STRIKES for value in descriptions)/len(thrown) if complete and thrown else None,
                 })
                 versus = [pitch for pitch in pitch_rows if opposing_hand in ("L", "R")
                           and pitch.get("p_throws") == opposing_hand

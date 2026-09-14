@@ -6,6 +6,7 @@ import hashlib
 
 from ks1.features import day, normalize, number
 from ks1.inventory import Reader, RESEARCH, encode
+from ks1.statcast_events import is_thrown_pitch
 
 
 def official_pitch_counts(sources):
@@ -29,7 +30,14 @@ def pitches_complete(rows, games, expected, invalid):
     if games & invalid or not games.issubset(expected):
         return False
     wanted = {key: count for pk in games for key, count in expected[pk].items() if count}
-    actual = Counter((str(row.get('game_pk')), str(row.get('pitcher'))) for row in rows)
+    # An automatic ball/strike is a count event, not an official thrown pitch.
+    # Validate identities for every event, including zero-pitch appearances.
+    if any((str(row.get('game_pk')), str(row.get('pitcher')))
+           not in expected.get(str(row.get('game_pk')), {})
+           or str(row.get('game_pk')) not in games for row in rows):
+        return False
+    actual = Counter((str(row.get('game_pk')), str(row.get('pitcher')))
+                     for row in rows if is_thrown_pitch(row))
     identities = {tuple(str(row.get(key)) for key in (
         'game_pk', 'at_bat_number', 'pitch_number')) for row in rows}
     return len(identities) == len(rows) and dict(actual) == wanted
@@ -127,5 +135,5 @@ def load_training_statcast(bundle, s3, bucket):
             'complete_official_years': years, 'expected_dates': len(expected_dates),
             'verified_dates': len(verified), 'verified_pitch_objects': len(receipts),
             'retained_pitch_rows': len(rows), 'errors': errors,
-            'pitch_coverage_method': 'official_box_pitcher_counts_v1',
+            'pitch_coverage_method': 'official_box_thrown_pitch_counts_v2',
             'original_prospective_storage_claimed': False}
