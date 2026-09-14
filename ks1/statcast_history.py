@@ -6,7 +6,8 @@ import hashlib
 
 from ks1.features import day, normalize, number
 from ks1.inventory import Reader, RESEARCH, encode
-from ks1.statcast_events import complete_pa_outcome, is_plate_appearance, is_thrown_pitch
+from ks1.statcast_events import (complete_pa_outcome, credited_at_bat_ids,
+                                 is_plate_appearance, is_thrown_pitch)
 
 
 def official_pitch_counts(sources):
@@ -48,7 +49,10 @@ def official_physical_pitch_counts(sources):
             if (appearances is None or appearances < 0
                     or int(appearances) != appearances):
                 invalid.add(game_id)
-            elif appearances:
+            else:
+                # Keep zero-PA batting participants as valid identities. They
+                # may have genuine pitches in an at-bat explicitly ended by a
+                # baserunning out, but must never contribute a credited PA.
                 batter_counts[(game_id, str(player['id']))] = int(appearances)
     for game_id in expected:
         if not batters.get(game_id):
@@ -82,10 +86,11 @@ def physical_pitches_complete(rows, games, expected, batters, invalid):
         at_bat_batters.setdefault(
             (str(row.get('game_pk')), str(row.get('at_bat_number'))),
             set()).add(str(row.get('batter')))
+    credited = credited_at_bat_ids(rows)
     actual_batters = Counter(
         (game_id, next(iter(values)))
-        for (game_id, _), values in at_bat_batters.items()
-        if len(values) == 1)
+        for (game_id, at_bat), values in at_bat_batters.items()
+        if len(values) == 1 and (game_id, at_bat) in credited)
     wanted_batters = {key: count for pk in games
                       for key, count in batters[pk].items() if count}
     return (len(identities) == len(rows) and dict(actual) == wanted

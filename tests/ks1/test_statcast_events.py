@@ -3,7 +3,7 @@ from copy import deepcopy
 import pytest
 
 from ks1.features import Features
-from ks1.statcast_events import is_thrown_pitch
+from ks1.statcast_events import credited_at_bat_ids, is_thrown_pitch
 from ks1.statcast_history import (load_training_statcast, official_pitch_counts,
                                   pitches_complete)
 from tests.ks1.test_statcast_history import RetainedS3, fixture
@@ -26,6 +26,14 @@ def add_official_pa(bundle, batter_id):
                 batting['plateAppearances'] += 1
                 return
     raise AssertionError('test batter absent from official box')
+
+
+def test_explicit_baserunning_out_is_not_credited_as_batter_pa():
+    rows = [
+        {'game_pk': '1', 'at_bat_number': '9', 'events': 'caught_stealing_2b'},
+        {'game_pk': '1', 'at_bat_number': '10', 'events': ''},
+    ]
+    assert credited_at_bat_ids(rows) == {('1', '10')}
 
 
 @pytest.mark.parametrize('description', ['automatic_ball', 'automatic_strike'])
@@ -205,6 +213,25 @@ def test_physical_receipt_requires_official_batter_attribution(defect):
         bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
     assert report['verified_physical_pitch_objects'] == 0
     assert '2026-09-01' not in bundle['statcast_physical_dates']
+
+
+def test_physical_receipt_allows_explicit_non_pa_baserunning_at_bat():
+    bundle, payload, key = fixture()
+    participant = deepcopy(next(
+        player for player in bundle['full'][0]['teams']['away']['players'].values()
+        if player.get('stats', {}).get('batting')))
+    participant['person']['id'] = 999
+    participant['stats']['batting']['plateAppearances'] = 0
+    bundle['full'][0]['teams']['away']['players']['999'] = participant
+    extra = {**payload['rows'][0], 'batter': '999', 'at_bat_number': '999',
+             'pitch_number': '1', 'events': 'caught_stealing_2b'}
+    payload['rows'].append(extra)
+    bundle['full'][0]['teams']['home']['players']['151']['stats'][
+        'pitching']['numberOfPitches'] += 1
+    report = load_training_statcast(
+        bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
+    assert report['verified_physical_pitch_objects'] == 1
+    assert '2026-09-01' in bundle['statcast_physical_dates']
 
 
 def test_starter_windows_reject_unverified_pa_dates_but_keep_official_results():

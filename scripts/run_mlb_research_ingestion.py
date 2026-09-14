@@ -220,6 +220,9 @@ def ingest(store,seconds=2400):
         pitch_verified_dates = set(pitch_complete_dates(sources, statcast_by_date, expected_by_date))
         physical_verified_dates = set(physical_pitch_complete_dates(
             sources, statcast_by_date, expected_by_date))
+        # Outcome evidence is not safe for player attribution unless the same
+        # rows also pass the independent physical/batter identity proof.
+        pitch_verified_dates &= physical_verified_dates
         retained_verified_games=sorted({str(row.get('game_pk')) for row in retained_rows.values()
                                        if row.get('game_date') in pitch_verified_dates})
         retained_physical_games=sorted({str(row.get('game_pk')) for row in retained_rows.values()
