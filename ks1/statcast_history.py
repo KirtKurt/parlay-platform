@@ -153,8 +153,15 @@ def physical_validation_reason(payload, value, games, expected, batters, invalid
     return None
 
 
-def validation_reason(payload, value, games, expected, invalid):
+def validation_reason(payload, value, games, expected, invalid,
+                      completed_by_game=None, scheduled_by_game=None):
     """Explain rejection without changing the physical/PA/outcome predicate."""
+    if 'outcome_reconciliation' in payload or 'raw_statcast' in payload:
+        from ks1.official_outcomes import verify_reconciliation
+        try:
+            verify_reconciliation(payload, completed_by_game or {}, scheduled_by_game)
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return 'official_outcome_reconciliation_unverified'
     rows = payload.get('rows', [])
     if payload.get('date') != value or any(row.get('game_date') != value for row in rows):
         return 'date_mismatch'
@@ -203,6 +210,9 @@ def load_training_statcast(bundle, s3, bucket):
         else:
             unfinished.add(value)
     expected, invalid = official_pitch_counts(bundle['full'])
+    completed_by_game = {str(g['officialGamePk']): g.get('completedAtUtc') for g in bundle['full']}
+    from ks1.official_outcomes import schedule_times
+    scheduled_by_game = schedule_times(schedule)
     physical_expected, physical_batters, physical_invalid = official_physical_pitch_counts(
         bundle['full'])
 
@@ -225,7 +235,8 @@ def load_training_statcast(bundle, s3, bucket):
                 physical_reason = physical_validation_reason(
                     payload, value, games, physical_expected, physical_batters,
                     physical_invalid)
-                reason = validation_reason(payload, value, games, expected, invalid)
+                reason = validation_reason(payload, value, games, expected, invalid,
+                                           completed_by_game, scheduled_by_game)
                 if receipt.get('versionId') in (None, '', 'null'):
                     physical_reason = reason = 'unversioned_source'
                 if physical_reason:
@@ -247,7 +258,8 @@ def load_training_statcast(bundle, s3, bucket):
                     payload, value, games, physical_expected, physical_batters,
                     physical_invalid)
                 if reason is None:
-                    reason = validation_reason(payload, value, games, expected, invalid)
+                    reason = validation_reason(payload, value, games, expected, invalid,
+                                               completed_by_game, scheduled_by_game)
                 if reason is None:
                     return value, payload['rows'], recovery_receipts, None, True, None
                 reasons.append('recovered_' + reason)

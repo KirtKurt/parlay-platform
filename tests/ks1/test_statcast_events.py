@@ -200,6 +200,22 @@ def test_physical_only_receipt_enables_whiff_matchup_but_not_xwoba():
     assert all(profile['windows']['7d']['csw_pct'] == 50 for profile in profiles)
 
 
+def test_whiff_matchup_rejects_unclassified_pitch_description():
+    bundle, payload, key = fixture()
+    next(row for row in payload['rows'] if row['pitcher'] == '251')[
+        'description'] = ''
+    report = load_training_statcast(
+        bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
+    assert report['verified_physical_pitch_objects'] == 1
+    engine = Features(
+        bundle['full'], bundle['statcast'],
+        statcast_retained_dates=bundle['statcast_retained_dates'],
+        statcast_physical_dates=bundle['statcast_physical_dates'])
+    _, values = engine.lineup_batters_at(
+        '2026-09-02T17:50:00Z', list(range(101, 110)), '251', 'R')
+    assert values['lineup_pitch_type_matchup_whiff_pct_30d'] is None
+
+
 @pytest.mark.parametrize('defect', ['blank', 'foreign', 'inconsistent_at_bat'])
 def test_physical_receipt_requires_official_batter_attribution(defect):
     bundle, payload, key = fixture()

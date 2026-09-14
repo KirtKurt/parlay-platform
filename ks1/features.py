@@ -153,6 +153,8 @@ PITCH_BUCKETS = PITCH_TYPES + ("OTHER",)
 SWINGING_STRIKES = {"swinging_strike", "swinging_strike_blocked", "foul_tip", "missed_bunt"}
 CALLED_STRIKES = {"called_strike"}
 SWINGS = SWINGING_STRIKES | {"foul", "foul_bunt", "hit_into_play", "bunt_foul_tip"}
+NON_SWINGS = CALLED_STRIKES | {"ball", "blocked_ball", "pitchout", "hit_by_pitch",
+                              "automatic_ball", "automatic_strike"}
 UNAVAILABLE_EXACT = ("xera", "siera", "stuff_plus", "location_plus", "pitching_plus", "active_spin_pct")
 PRIOR_WEIGHT_CAP_PITCHES = 300
 LINEUP_SLOT_WEIGHTS = (1.00, .98, .96, .94, .92, .90, .88, .86, .84)
@@ -723,6 +725,11 @@ class Features:
                 by_type = {}
                 for pitch_type in PITCH_TYPES:
                     group = [pitch for pitch in pitch_rows if pitch.get("pitch_type") == pitch_type]
+                    descriptions_by_type = [
+                        str(pitch.get("description") or "").lower() for pitch in group]
+                    swing_classified = all(
+                        description in SWINGS | NON_SWINGS or pitch.get("type") == "X"
+                        for pitch, description in zip(group, descriptions_by_type))
                     values = [expected_woba(pitch) for pitch in group
                               if self._finite(pitch.get("woba_denom")) == 1]
                     actual_values = [self._finite(pitch.get("woba_value")) for pitch in group
@@ -735,7 +742,7 @@ class Features:
                         "woba": sum(actual_values)/len(actual_values) if outcome_complete and actual_values and all(v is not None for v in actual_values) else None,
                         "whiff_pct": (100*sum(str(pitch.get("description") or "").lower() in SWINGING_STRIKES
                                                for pitch in swings_by_type)/len(swings_by_type)
-                                      if complete and swings_by_type else None)}
+                                      if complete and swing_classified and swings_by_type else None)}
                 supported_mix = [(count, by_type.get(pitch_type, {}).get("xwoba"))
                                  for pitch_type, count in starter_mix.items()
                                  if by_type.get(pitch_type, {}).get("xwoba") is not None]
