@@ -24,6 +24,8 @@ from ks1.publish import parquet_bytes
 from ks1.refresh import change_reason, fingerprint, observe, pregame_status
 from ks1.passive_context import (CONTRACT as LINEUP_BULLPEN_CONTRACT,
                                  SUPPORTED_FROZEN_CONTRACTS,
+                                 LINEUP_PERFORMANCE_FEATURES,
+                                 BULLPEN_PERFORMANCE_FEATURES,
                                  MODEL_FEATURES as LINEUP_BULLPEN_FEATURES,
                                  build_profile as lineup_bullpen_profile)
 from ks1.table import american, team_identity
@@ -153,6 +155,14 @@ def signal_contributions(classifier, values):
     names = classifier.feature_name()
     if matrix.shape != (len(values), len(names)+1) or not np.isfinite(matrix).all():
         raise ValueError('invalid LightGBM contribution matrix')
+    raw_scores = np.asarray(classifier.predict(values, raw_score=True), dtype=float)
+    if (raw_scores.shape != (len(values),)
+            or not np.isfinite(raw_scores).all()
+            or not np.allclose(matrix.sum(axis=1), raw_scores, atol=1e-8, rtol=1e-8)):
+        raise ValueError('LightGBM contributions do not reconstruct raw prediction')
+    inputs = np.asarray(values, dtype=float)
+    performance_names = {side+'_'+name for side in ('home', 'away')
+                         for name in LINEUP_PERFORMANCE_FEATURES+BULLPEN_PERFORMANCE_FEATURES}
     def group(name):
         if name.startswith('market_'): return 'market'
         if '_lineup_' in name: return 'batters'
@@ -161,16 +171,38 @@ def signal_contributions(classifier, values):
         if '_offense_' in name or name.endswith(('_rest_days', '_history_games')): return 'team_form'
         return 'other'
     result = []
-    for vector in matrix:
+    for row_number, vector in enumerate(matrix):
         grouped, grouped_abs = {}, {}
+        evidence = {}
         features = []
-        for name, score in zip(names, vector[:-1]):
+        for column, (name, score) in enumerate(zip(names, vector[:-1])):
             bucket = group(name)
             grouped[bucket] = grouped.get(bucket, 0.0)+float(score)
             grouped_abs[bucket] = grouped_abs.get(bucket, 0.0)+abs(float(score))
             features.append({'feature': name, 'score': float(score)})
+            if bucket in ('batters', 'bullpen'):
+                value = inputs[row_number, column]
+                kind = ('missingness_indicator' if name.endswith('_missing')
+                        else 'missing_value' if not np.isfinite(value)
+                        else 'observed_performance' if name in performance_names
+                        else 'other_observed_context')
+                entry = evidence.setdefault(bucket, {}).setdefault(kind, {
+                    'signal_score': 0.0, 'absolute_contribution': 0.0,
+                    'nonzero_features': 0, 'top_features': []})
+                entry['signal_score'] += float(score)
+                entry['absolute_contribution'] += abs(float(score))
+                if score != 0:
+                    entry['nonzero_features'] += 1
+                    entry['top_features'].append({'feature': name, 'score': float(score),
+                                                  'value': float(value) if np.isfinite(value) else None})
+        for buckets in evidence.values():
+            for entry in buckets.values():
+                entry['top_features'] = sorted(entry['top_features'],
+                    key=lambda item: abs(item['score']), reverse=True)[:5]
         denominator = sum(grouped_abs.values())
         result.append({'scale': 'raw_log_odds_SHAP', 'bias': float(vector[-1]),
+                       'raw_score': float(raw_scores[row_number]), 'additivity_verified': True,
+                       'performance_evidence': evidence,
                        'groups': {key: {'signal_score': value,
                                         'decision_influence_pct': 100*grouped_abs[key]/denominator if denominator else 0.0}
                                   for key, value in sorted(grouped.items())},
@@ -658,7 +690,7 @@ def predict(folder, output):
               'limitations': ['Fixed research models; no model retraining or R8 authority change.',
                   'Probable pitchers come from the verified pregame MLB feed, falling back to the existing official schedule.',
                   'Individual pitcher features influence predictions only when present in the accepted model; missing history retains explicit counts and team priors.',
-                  'Confirmed batting orders are recorded; the accepted models still use shrunk team offense priors.',
+                  'Batter and individual-bullpen performance can influence predictions only through fields learned by the accepted model; SHAP evidence separates observed performance from missing inputs and indicators.',
                   'An identity-only scratch rebuilds the game but can leave the accepted model probabilities unchanged.',
                   'Unchanged rows retain their original as_of; this report records the latest poll. T-10 remains the cutoff.',
                   'Stored history can lag games completed since its last refresh.']}
