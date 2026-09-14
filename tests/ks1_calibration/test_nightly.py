@@ -479,7 +479,7 @@ def test_completed_nightly_cli_still_checks_fresh_finals(main_job, tmp_path, mon
         assert json.loads((tmp_path/'report.json').read_text())['status'] == 'completed_catchup'
 
 
-def test_catchup_keeps_main_only_guard_and_pre_0300_gate(main_job, tmp_path, monkeypatch):
+def test_catchup_keeps_main_only_guard_and_pre_0200_gate(main_job, tmp_path, monkeypatch):
     store = Store()
     run(source(2), tmp_path, store)
     old = checkpoint(store)
