@@ -11,6 +11,8 @@ from sklearn.metrics import accuracy_score, brier_score_loss, log_loss
 
 from ks1.features import Features, MATCHUP_METRICS
 from ks1.inventory import encode
+from ks1.passive_context import (LINEUP_FEATURES, BULLPEN_FEATURES,
+                                 MODEL_FEATURES as LINEUP_BULLPEN_FEATURES)
 from ks1.sources import aws_clients, load_existing
 from ks1.table import build, contract
 from ks1.train import PARAMS, select_features, save_artifact
@@ -63,6 +65,14 @@ def pitcher_context_feature(column):
     return any(column.startswith(side+'_pitcher_context_') for side in ('home', 'away'))
 
 
+def lineup_feature(column):
+    return any(column == side+'_'+name for side in ('home', 'away') for name in LINEUP_FEATURES)
+
+
+def bullpen_context_feature(column):
+    return any(column == side+'_'+name for side in ('home', 'away') for name in BULLPEN_FEATURES)
+
+
 def choose_features(train):
     _, dictionary = contract(train.iloc[0].to_dict())
     features, omitted = select_features(train, dictionary)
@@ -90,10 +100,16 @@ def choose_features(train):
                       and int(train[c].notna().sum()) < MIN_STARTER_ROWS]
     features = [c for c in features if c not in context_sparse]
     omitted = sorted(set(omitted) | set(context_sparse))
+    passive_sparse = [c for c in features if (lineup_feature(c) or bullpen_context_feature(c))
+                      and int(train[c].notna().sum()) < EVALUATION_GAMES]
+    features = [c for c in features if c not in passive_sparse]
+    omitted = sorted(set(omitted) | set(passive_sparse))
     supported = {side+'_'+key for side in ('home', 'away')
                  for key in Features([]).at(FEATURE_CONTRACT_DATE+'T04:00:00Z', '0')}
     supported.update(side+'_starter_'+metric for side in ('home', 'away') for metric in MATCHUP_METRICS)
     supported.update(('market_home_prob', 'market_total', 'market_spread'))
+    supported.update(side+'_'+name for side in ('home', 'away')
+                     for name in LINEUP_BULLPEN_FEATURES)
     if set(features) - supported:
         raise ValueError('training features missing from daily inference: '+','.join(sorted(set(features)-supported)))
     if not any(c.endswith('_7d') for c in features):
@@ -130,12 +146,27 @@ def prospective_context_coverage(frame, context_features):
     return per_feature, int((prospective & complete).sum())
 
 
+def prospective_team_context_coverage(frame, features):
+    prospective = frame.lineup_bullpen_context_evidence.eq('frozen_versioned_ks1_profile')
+    per_feature = {column: int((prospective & frame[column].notna()).sum()) for column in features}
+    complete = frame[features].notna().all(axis=1) if features else pd.Series(False, index=frame.index)
+    return per_feature, int((prospective & complete).sum())
+
+
 def evaluate(frame, incumbent_bytes, output, proof):
     train, test = split_recent(frame)
     features, omitted, coverage = choose_features(train)
     y_train, y_test = train.home_win.astype(int), test.home_win.astype(int)
+    lineup_features = [c for c in features if lineup_feature(c)]
+    bullpen_features = [c for c in features if bullpen_context_feature(c)]
+    baseline_features = [c for c in features if c not in lineup_features+bullpen_features]
+    batter_features = baseline_features+lineup_features
     candidate = lgb.LGBMClassifier(**PARAMS).fit(train[features].astype(float), y_train)
     predictions = candidate.predict_proba(test[features].astype(float))[:, 1]
+    baseline = lgb.LGBMClassifier(**PARAMS).fit(train[baseline_features].astype(float), y_train)
+    baseline_predictions = baseline.predict_proba(test[baseline_features].astype(float))[:, 1]
+    batter = lgb.LGBMClassifier(**PARAMS).fit(train[batter_features].astype(float), y_train)
+    batter_predictions = batter.predict_proba(test[batter_features].astype(float))[:, 1]
     incumbent = lgb.Booster(model_str=incumbent_bytes.decode())
     old = incumbent.predict(test[incumbent.feature_name()].astype(float))
     # One prespecified ablation isolates the seven-day contribution from the
@@ -147,9 +178,14 @@ def evaluate(frame, incumbent_bytes, output, proof):
     context_features = [c for c in features if pitcher_context_feature(c)]
     prospective_feature_coverage, prospective_context_rows = prospective_context_coverage(
         test, context_features)
+    team_features = lineup_features+bullpen_features
+    prospective_team_feature_coverage, prospective_team_rows = prospective_team_context_coverage(
+        test, team_features)
     statistical_gate = accepted(candidate_metrics, incumbent_metrics)
     promotion_ready = pitcher_promotion_ready(
         candidate_metrics, incumbent_metrics, context_features, prospective_context_rows)
+    promotion_ready = bool(promotion_ready and lineup_features and bullpen_features
+                           and prospective_team_rows == EVALUATION_GAMES)
     output.mkdir(parents=True, exist_ok=True)
     candidate.booster_.save_model(str(output/'model.txt'))
     loaded = lgb.Booster(model_file=str(output/'model.txt'))
@@ -160,6 +196,9 @@ def evaluate(frame, incumbent_bytes, output, proof):
               'train': {'start': train.date.min(), 'end': train.date.max(), 'games': len(train)},
               'test': {'start': test.date.min(), 'end': test.date.max(), 'games': len(test)},
               'candidate': candidate_metrics, 'incumbent': incumbent_metrics,
+              'ablation_baseline_without_lineup_or_bullpen': metrics(y_test, baseline_predictions),
+              'ablation_baseline_plus_batters': metrics(y_test, batter_predictions),
+              'ablation_baseline_plus_batters_and_bullpen': candidate_metrics,
               'without_seven_day': metrics(y_test, ablated),
               'accepted': promotion_ready,
               'statistical_gate_passed': statistical_gate,
@@ -179,6 +218,11 @@ def evaluate(frame, incumbent_bytes, output, proof):
                   c: int(train[c].notna().sum()) for c in context_features},
               'prospective_pitcher_context_feature_rows': prospective_feature_coverage,
               'prospective_pitcher_context_test_rows': prospective_context_rows,
+              'lineup_features_learned': lineup_features,
+              'bullpen_features_learned': bullpen_features,
+              'prospective_lineup_bullpen_feature_rows': prospective_team_feature_coverage,
+              'prospective_lineup_bullpen_test_rows': prospective_team_rows,
+              'lineup_bullpen_promotion_rule': 'exactly 300 identical prospective frozen pre-T10 games with all learned lineup and bullpen features present; lower Brier and no-worse logloss',
               'minimum_individual_starter_rows_per_side': MIN_STARTER_ROWS,
               'parameters': PARAMS, 'test_used_for_tuning': False, 'holdout_refit': False,
               'model_reload_verified': True,
@@ -195,6 +239,8 @@ def evaluate(frame, incumbent_bytes, output, proof):
     (output/'feature_list.json').write_bytes(encode(features))
     rows = test[['date', 'game_id', 'home_win']].copy()
     rows['candidate_p_home'], rows['incumbent_p_home'], rows['without_seven_p_home'] = predictions, old, ablated
+    rows['baseline_without_lineup_or_bullpen_p_home'] = baseline_predictions
+    rows['baseline_plus_batters_p_home'] = batter_predictions
     rows.to_parquet(output/'test_predictions.parquet', index=False)
     print(json.dumps(report, indent=2))
     return report

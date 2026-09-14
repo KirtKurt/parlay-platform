@@ -21,6 +21,9 @@ from ks1.inventory import encode
 from ks1.poisson import home_probability, predict_exported
 from ks1.publish import parquet_bytes
 from ks1.refresh import change_reason, fingerprint, observe, pregame_status
+from ks1.passive_context import (CONTRACT as LINEUP_BULLPEN_CONTRACT,
+                                 MODEL_FEATURES as LINEUP_BULLPEN_FEATURES,
+                                 build_profile as lineup_bullpen_profile)
 from ks1.table import american, team_identity
 
 PREFIX = 'mlb/ks1/predictions-v1/'
@@ -34,8 +37,12 @@ STRINGS = ['date', 'game_id', 'bbs_game_id', 'odds_event_id', 'home_team', 'away
            'environment_status', 'history_status', 'input_fingerprint', 'status',
            'home_lineup_status', 'away_lineup_status', 'home_lineup_ids', 'away_lineup_ids',
            'home_offense_source', 'away_offense_source', 'lineup_source_status', 'starter_feature_source', 'calibration_version', 'calibration_method']
+STRINGS += ['signal_contributions_json']
 STRINGS += ['starter_profile_contract', 'starter_profile_sha256',
             'starter_profile_semantic_sha256', 'starter_profile_json']
+STRINGS += ['lineup_bullpen_profile_contract', 'lineup_bullpen_profile_sha256',
+            'lineup_bullpen_profile_semantic_sha256', 'lineup_bullpen_profile_json',
+            'lineup_bullpen_profile_status']
 # Dictionary date also reads cleanly with Arrow's automatic Hive partitioning.
 SCHEMA = pa.schema([pa.field(k, pa.dictionary(pa.int32(), pa.string()) if k == 'date' else pa.string())
                     for k in STRINGS] + [pa.field(k, pa.float64()) for k in FLOATS])
@@ -98,6 +105,42 @@ def starter_profile(row, features, as_of, history_as_of):
 
 def name_key(name):
     return re.sub(r'[^a-z0-9]', '', str(name).lower())
+
+
+def signal_contributions(classifier, values):
+    """Return signed LightGBM log-odds contributions and absolute influence."""
+    if not classifier.__class__.__module__.startswith('lightgbm'):
+        return [None]*len(values)
+    try:
+        matrix = np.asarray(classifier.predict(values, pred_contrib=True), dtype=float)
+    except (TypeError, ValueError, AttributeError):
+        return [None]*len(values)
+    names = classifier.feature_name()
+    if matrix.shape != (len(values), len(names)+1) or not np.isfinite(matrix).all():
+        raise ValueError('invalid LightGBM contribution matrix')
+    def group(name):
+        if name.startswith('market_'): return 'market'
+        if '_lineup_' in name: return 'batters'
+        if '_bullpen_' in name: return 'bullpen'
+        if '_starter_' in name or '_pitcher_context_' in name: return 'starter'
+        if '_offense_' in name or name.endswith(('_rest_days', '_history_games')): return 'team_form'
+        return 'other'
+    result = []
+    for vector in matrix:
+        grouped, grouped_abs = {}, {}
+        features = []
+        for name, score in zip(names, vector[:-1]):
+            bucket = group(name)
+            grouped[bucket] = grouped.get(bucket, 0.0)+float(score)
+            grouped_abs[bucket] = grouped_abs.get(bucket, 0.0)+abs(float(score))
+            features.append({'feature': name, 'score': float(score)})
+        denominator = sum(grouped_abs.values())
+        result.append({'scale': 'raw_log_odds_SHAP', 'bias': float(vector[-1]),
+                       'groups': {key: {'signal_score': value,
+                                        'decision_influence_pct': 100*grouped_abs[key]/denominator if denominator else 0.0}
+                                  for key, value in sorted(grouped.items())},
+                       'top_features': sorted(features, key=lambda item: abs(item['score']), reverse=True)[:10]})
+    return result
 
 
 class Crosswalk:
@@ -241,7 +284,7 @@ def load_inputs(folder):
     required = {'bbs.json', 'odds.json', 'official.json', 'history.json.gz', 'model.txt'}
     if manifest.get('phase', 4) >= 5:
         required.add('feeds.json')
-    required.update(name for name in ('feeds.json', 'previous.parquet') if (folder/name).exists())
+    required.update(name for name in ('feeds.json', 'passive_context.json', 'previous.parquet') if (folder/name).exists())
     if required - set(manifest['files']):
         raise ValueError('unbound capture input')
     for name, expected in manifest['files'].items():
@@ -258,6 +301,9 @@ def load_inputs(folder):
         values[provider] = value
     values['history'] = json.loads(gzip.decompress((folder/'history.json.gz').read_bytes()))
     values['feeds'] = json.loads((folder/'feeds.json').read_bytes()) if (folder/'feeds.json').exists() else {'games': {}}
+    values['passive_context'] = (json.loads((folder/'passive_context.json').read_bytes())
+                                 if (folder/'passive_context.json').exists()
+                                 else {'status': 'UNAVAILABLE_FAIL_CLOSED', 'games': {}})
     return manifest, values
 
 
@@ -414,7 +460,8 @@ def predict(folder, output):
         if not all(coverage.values()):
             row['history_status'] = 'partial_pitcher_history_fail_closed'
         row.update(observe(game, inputs['feeds']['games'].get(pk), as_of))
-        features = {}
+        features = {side+'_'+name: None for side in ('home', 'away')
+                    for name in LINEUP_BULLPEN_FEATURES}
         for side in ('home', 'away'):
             team = game['teams'][side]
             tid, name = team_identity(team)
@@ -450,6 +497,38 @@ def predict(folder, output):
                         features[f'{side}_bullpen_{stat}_{window}d'] = None
             if gaps:
                 row['history_status'] = 'partial_known_missing_boxes'
+        passive = inputs['passive_context'].get('games', {}).get(pk)
+        if passive is None:
+            row['lineup_bullpen_profile_status'] = (
+                'SOURCE_UNAVAILABLE_FAIL_CLOSED'
+                if inputs['passive_context'].get('status') != 'READ'
+                else 'GAME_OBSERVATION_MISSING_FAIL_CLOSED')
+        else:
+            try:
+                context_profile, context_features = lineup_bullpen_profile(
+                    passive, game, row, as_of, engine,
+                    inputs['history'].get('prior_observed_at'),
+                    inputs['history'].get('statcast_observed_at'), coverage)
+            except (KeyError, TypeError, ValueError) as exc:
+                reason = re.sub(r'[^A-Z0-9]+', '_', str(exc).upper()).strip('_')
+                row['lineup_bullpen_profile_status'] = 'INVALID_FAIL_CLOSED:'+reason[:120]
+            else:
+                # Persist every supported signal now. Serving remains unchanged
+                # until a separately reviewed model explicitly names a feature.
+                features.update(context_features)
+                row.update(lineup_bullpen_profile_contract=LINEUP_BULLPEN_CONTRACT,
+                           lineup_bullpen_profile_sha256=context_profile['sha256'],
+                           lineup_bullpen_profile_semantic_sha256=context_profile['semantic_sha256'],
+                           lineup_bullpen_profile_json=encode(context_profile).decode(),
+                           lineup_bullpen_profile_status=context_profile['coverage_status'])
+                for side in ('home', 'away'):
+                    row.update({side+'_lineup_status': 'confirmed',
+                                side+'_lineup_ids': encode(context_profile['sides'][side]['lineup_ids']).decode(),
+                                side+'_offense_source': 'persisted_MLB_lineup_season_batting'})
+                row.update(lineup_status='confirmed',
+                           lineup_source_status='verified_persisted_pregame_observation')
+                if all(row[side+'_starter_id'] is not None for side in ('home', 'away')):
+                    row.update(status='confirmed_lineups', prediction_status='confirmed_lineups')
         row.update(market_for(game, inputs['odds']['payload'], crosswalk, as_of))
         features.update({key: row[key] for key in ('market_home_prob', 'market_total', 'market_spread')})
         if individual_learned:
@@ -474,6 +553,7 @@ def predict(folder, output):
         features = pd.DataFrame(feature_rows)
         x = features[classifier.feature_name()].astype(float)
         p_home = classifier.predict(x)
+        contributions = signal_contributions(classifier, x)
         h, a = [predict_exported(poisson[side], features) for side in ('home', 'away')]
         p_poisson, _ = home_probability(h, a)
         if not (np.isfinite(p_home).all() and (p_home >= 0).all() and (p_home <= 1).all()):
@@ -483,6 +563,8 @@ def predict(folder, output):
                        proj_total=float(h[i]+a[i]), p_home_poisson=float(p_poisson[i]),
                        edge_home=float(p_home[i]-row['market_home_prob']) if row['market_home_prob'] is not None else None,
                        edge_total=float(h[i]+a[i]-row['market_total']) if row['market_total'] is not None else None)
+            row['signal_contributions_json'] = (encode(contributions[i]).decode()
+                                                if contributions[i] is not None else None)
     current = pa.Table.from_pylist(rows+retained, schema=SCHEMA).to_pandas()
     frame = current.sort_values(['commence_time', 'game_id']).reset_index(drop=True)
     table = pa.Table.from_pandas(frame, schema=SCHEMA, preserve_index=False)
@@ -508,6 +590,24 @@ def predict(folder, output):
                     or hashlib.sha256(encode(semantic)).hexdigest() != semantic_claimed
                     or hashlib.sha256(encode(profile)).hexdigest() != claimed):
                 raise ValueError('starter profile binding failed')
+        for record in frame.loc[frame.lineup_bullpen_profile_json.notna()].itertuples():
+            profile = json.loads(record.lineup_bullpen_profile_json)
+            claimed = profile.pop('sha256')
+            semantic_claimed = profile.pop('semantic_sha256')
+            semantic = {key: value for key, value in profile.items() if key != 'as_of'}
+            if (record.lineup_bullpen_profile_contract != LINEUP_BULLPEN_CONTRACT
+                    or record.lineup_bullpen_profile_sha256 != claimed
+                    or record.lineup_bullpen_profile_semantic_sha256 != semantic_claimed
+                    or hashlib.sha256(encode(semantic)).hexdigest() != semantic_claimed
+                    or hashlib.sha256(encode({**profile, 'semantic_sha256': semantic_claimed})).hexdigest() != claimed
+                    or profile['game_id'] != record.game_id
+                    or utc(profile['as_of']) != utc(record.as_of)
+                    or (profile.get('history_as_of')
+                        and utc(profile['history_as_of']) > utc(profile['as_of']))
+                    or (profile.get('statcast_as_of')
+                        and utc(profile['statcast_as_of']) > utc(profile['as_of']))
+                    or utc(profile['as_of']) > utc(record.commence_time)-timedelta(minutes=10)):
+                raise ValueError('lineup/bullpen profile binding failed')
     output = output / ('date='+target_date); output.mkdir(parents=True, exist_ok=True)
     body = parquet_bytes(table)
     (output/'predictions.parquet').write_bytes(body)
@@ -525,6 +625,14 @@ def predict(folder, output):
               'learned_feature_names': classifier.feature_name(),
               'individual_starter_features_learned': individual_learned,
               'pitcher_context_features_learned': pitcher_context_learned,
+              'lineup_bullpen_features_learned': [name for name in classifier.feature_name()
+                                                   if name in {side+'_'+feature for side in ('home', 'away')
+                                                               for feature in LINEUP_BULLPEN_FEATURES}],
+              'lineup_bullpen_profile_rows': int(frame.lineup_bullpen_profile_json.notna().sum()),
+              'lineup_bullpen_profile_status_counts': {
+                  str(key): int(value) for key, value in frame.lineup_bullpen_profile_status.value_counts(
+                      dropna=False).items()},
+              'passive_context_capture_status': inputs['passive_context'].get('status'),
               'rows': len(frame), 'newly_scored': len(rows), 'preserved_pregame_rows': len(frozen_ids),
               'provider_status_disagreement_retained_rows': len(provider_status_disagreement_retained),
               'provider_status_disagreement_retained_game_ids': provider_status_disagreement_retained,
