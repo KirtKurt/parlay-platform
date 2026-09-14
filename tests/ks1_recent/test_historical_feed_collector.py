@@ -2,21 +2,32 @@ import io
 import json
 
 import pytest
+from botocore.exceptions import ClientError
 
 from ks1 import historical_feed, train
 from ks1 import retrain_recent
 from ks1.inventory import encode
 from tests.ks1.test_historical_feed import entry
-from tests.ks1_phase4.test_daily import MemoryS3
 
 
-class VersionedStore(MemoryS3):
-    def put_object(self, **kwargs):
-        super().put_object(**kwargs)
+class VersionedStore:
+    """Collector-only S3 fixture without serving-test dependencies."""
+    def __init__(self):
+        self.objects, self.writes, self.metadata = {}, [], {}
+
+    def put_object(self, Bucket, Key, Body, **kwargs):
+        if kwargs.get('IfNoneMatch') == '*' and Key in self.objects:
+            raise ClientError({'Error': {'Code': 'PreconditionFailed'}}, 'PutObject')
+        self.objects[Key] = Body
+        self.metadata[Key] = kwargs.get('Metadata', {})
+        self.writes.append(Key)
         return {'VersionId':'test-version-1'}
 
-    def get_object(self, **kwargs):
-        return {**super().get_object(**kwargs), 'VersionId':'test-version-1'}
+    def get_object(self, Bucket, Key, **kwargs):
+        if Key not in self.objects:
+            raise ClientError({'Error': {'Code': 'NoSuchKey'}}, 'GetObject')
+        return {'Body':io.BytesIO(self.objects[Key]), 'VersionId':'test-version-1',
+                'Metadata':self.metadata.get(Key, {})}
 
 
 def test_collector_checks_provider_timestamp_and_reuses_versioned_readback(monkeypatch):
@@ -51,7 +62,7 @@ def test_collector_never_persists_a_final_or_late_feed(monkeypatch):
     payload = entry()['payload']
     payload['metaData']['timeStamp'] = '20260811_235000'
     monkeypatch.setattr(historical_feed, 'urlopen', lambda *a, **k: io.BytesIO(encode(payload)))
-    store = MemoryS3()
+    store = VersionedStore()
     values, report = historical_feed.collect(store, 'retained', [
         {'officialGamePk':99,'startAtUtc':'2026-08-11T20:00:00Z','completedAtUtc':'2026-08-11T23:00:00Z'}])
     assert values == [] and report['errors'][0]['reason'] == 'historical_pregame_state_unavailable'
