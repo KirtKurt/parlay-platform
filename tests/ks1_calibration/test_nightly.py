@@ -62,15 +62,17 @@ def checkpoint(store, at=NOW):
 
 
 @pytest.mark.parametrize('at,due', [
-    ('2026-09-11T06:59:00Z', None), ('2026-09-11T07:00:00Z', '2026-09-11'),
+    ('2026-09-11T05:59:59Z', None), ('2026-09-11T06:00:00Z', '2026-09-11'),
+    ('2026-09-11T07:00:00Z', '2026-09-11'),
     ('2026-09-11T11:00:00Z', '2026-09-11'),  # delayed job catches up
-    ('2026-12-11T07:59:00Z', None), ('2026-12-11T08:00:00Z', '2026-12-11'),
+    ('2026-12-11T06:59:59Z', None), ('2026-12-11T07:00:00Z', '2026-12-11'),
     ('2026-11-01T05:00:00Z', None), ('2026-11-01T06:00:00Z', None),
-    ('2026-11-01T07:59:59Z', None), ('2026-11-01T08:00:00Z', '2026-11-01'),
+    ('2026-11-01T06:59:59Z', None), ('2026-11-01T07:00:00Z', '2026-11-01'),
+    # Spring-forward skips 02:00; the first real hour afterward is eligible.
     ('2026-03-08T06:59:59Z', None), ('2026-03-08T07:00:00Z', '2026-03-08'),
-    ('2026-09-11T05:00:00Z', None), ('2026-09-11T06:00:00Z', None),
+    ('2026-09-11T04:00:00Z', None), ('2026-09-11T05:00:00Z', None),
 ])
-def test_0300_eastern_due_with_dst_and_delayed_runs(at, due):
+def test_0200_eastern_due_with_dst_and_delayed_runs(at, due):
     assert nightly.due_date(at) == due
     if due:
         assert nightly.due_date(at, {'state': {'night_date': due}}) is None
@@ -488,7 +490,7 @@ def test_catchup_keeps_main_only_guard_and_pre_0300_gate(main_job, tmp_path, mon
     monkeypatch.setenv('GITHUB_REF', 'refs/heads/main')
     with pytest.raises(ValueError, match='verification'):
         run(dict(source(4, '2026-09-11T08:00:00Z'), verification_only=True), tmp_path, store, old)
-    result = run(source(4, '2026-09-12T06:59:00Z'), tmp_path, store, old)
+    result = run(source(4, '2026-09-12T05:59:00Z'), tmp_path, store, old)
     assert result['published'] is False and store.objects == original
 
 
