@@ -64,6 +64,22 @@ def pitch_complete_dates(sources, statcast_by_date, expected_by_date):
                   if pitches_complete(rows, expected_by_date[value], expected, invalid))
 
 
+def validation_reason(payload, value, games, expected, invalid):
+    """Explain rejection without changing the physical/PA/outcome predicate."""
+    rows = payload.get('rows', [])
+    if payload.get('date') != value or any(row.get('game_date') != value for row in rows):
+        return 'date_mismatch'
+    if {str(row.get('game_pk')) for row in rows} != {str(pk) for pk in games}:
+        return 'game_set_mismatch'
+    if {str(pk) for pk in games} & invalid or not {str(pk) for pk in games}.issubset(expected):
+        return 'official_evidence_incomplete'
+    if any(not complete_pa_outcome(row) for row in rows if is_plate_appearance(row)):
+        return 'incomplete_pa_outcome_fields'
+    if not pitches_complete(rows, games, expected, invalid):
+        return 'pitch_or_pa_identity_count_mismatch'
+    return None
+
+
 def load_training_statcast(bundle, s3, bucket):
     """Restore prior pitch windows from retained objects; never call a provider.
 
@@ -109,32 +125,45 @@ def load_training_statcast(bundle, s3, bucket):
         revision = hashlib.sha256(encode(sorted(games))).hexdigest()
         keys = [RESEARCH+f'sources/statcast-v2/{value}.json',
                 RESEARCH+f'sources/statcast-v2-revisions/{value}/{revision}.json']
+        reasons = []
         for key in keys:
             try:
                 payload = reader.read(key)
                 receipt = reader.receipts[-1]
-                rows = payload['rows']
-                if (receipt.get('versionId') in (None, '', 'null')
-                        or payload.get('date') != value
-                        or any(row.get('game_date') != value for row in rows)
-                        or {str(row.get('game_pk')) for row in rows} != {str(pk) for pk in games}
-                        or not pitches_complete(rows, games, expected, invalid)):
+                reason = validation_reason(payload, value, games, expected, invalid)
+                if receipt.get('versionId') in (None, '', 'null'):
+                    reason = 'unversioned_source'
+                if reason:
+                    reasons.append(reason)
                     continue
-                return value, rows, [receipt], None
-            except Exception:
+                return value, payload['rows'], [receipt], None
+            except Exception as exc:
                 # Missing or invalid immutable objects do not create coverage.
-                continue
-        return value, [], [], 'retained_pitches_unavailable_or_unverified'
+                reasons.append('source_read:' + type(exc).__name__)
+        try:
+            from ks1.statcast_recovery import read_recovery
+            payload, recovery_receipts = read_recovery(s3, bucket, value)
+            if payload is not None:
+                reason = validation_reason(payload, value, games, expected, invalid)
+                if reason is None:
+                    return value, payload['rows'], recovery_receipts, None
+                reasons.append('recovered_' + reason)
+        except Exception as exc:
+            reasons.append('recovery_read:' + type(exc).__name__)
+        return value, [], [], {'reason': 'retained_pitches_unavailable_or_unverified',
+                              'details': sorted(set(reasons))}
 
     rows, receipts, verified, errors = [], [], [], []
+    verified_pitch_objects = 0
     with ThreadPoolExecutor(max_workers=4) as pool:
         for value, daily_rows, daily_receipts, error in pool.map(read_date, sorted(expected_dates)):
             if error:
-                errors.append({'date': value, 'reason': error})
+                errors.append({'date': value, **(error if isinstance(error, dict) else {'reason': error})})
             else:
                 verified.append(value)
                 rows.extend(daily_rows)
                 receipts.extend(daily_receipts)
+                verified_pitch_objects += bool(daily_rows)
     loaded_games = {str(row['game_pk']) for row in rows}
     # Keep compact starter-only rows for other games, but give them no new
     # whole-date coverage. Verified daily objects supply all rows for their games.
@@ -165,7 +194,7 @@ def load_training_statcast(bundle, s3, bucket):
     bundle['source_receipts'].extend(receipts)
     return {'source': RESEARCH+'sources/statcast-v2/', 'provider_requests': 0,
             'complete_official_years': years, 'expected_dates': len(expected_dates),
-            'verified_dates': len(verified), 'verified_pitch_objects': len(receipts),
+            'verified_dates': len(verified), 'verified_pitch_objects': verified_pitch_objects,
             'retained_pitch_rows': len(rows), 'errors': errors,
             'pitch_coverage_method': 'official_box_thrown_pitches_and_pa_v3',
             'original_prospective_storage_claimed': False}

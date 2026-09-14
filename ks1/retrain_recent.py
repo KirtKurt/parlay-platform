@@ -391,11 +391,19 @@ def qualified_team_context_coverage(frame, features, *, source_receipts=None):
             'per_feature': per_feature}
 
 
-def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
-    train, test = split_recent(frame)
+def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None,
+             development_search=False, holdout_manifest=None):
+    if holdout_manifest is not None:
+        from ks1.development import frozen_split
+        if hashlib.sha256(incumbent_bytes).hexdigest() != holdout_manifest['incumbent_sha256']:
+            raise ValueError('frozen qualification incumbent changed')
+        train, test = frozen_split(frame, holdout_manifest)
+    else:
+        train, test = split_recent(frame)
     train, training_population = qualified_training_population(
         train, proof.get('source_receipts', []))
-    features, omitted, coverage = choose_features(train)
+    admission_frame = split_development(train)[0] if development_search else train
+    features, omitted, coverage = choose_features(admission_frame)
     y_train, y_test = train.home_win.astype(int), test.home_win.astype(int)
     lineup_features = [c for c in features if lineup_feature(c)]
     bullpen_features = [c for c in features if bullpen_context_feature(c)]
@@ -406,13 +414,43 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
         'starter_plus_batters': batter_features,
         'starter_plus_batters_and_bullpen': features,
     }
+    tuned_parameters = {name: dict(PARAMS) for name in recipes}
+    search_report = None
+    if development_search:
+        from ks1.development import select
+        tuned_parameters, search_report = select(train)
+        recipes = {name: evidence['features'] for name, evidence in search_report['trials'].items()}
+        output.mkdir(parents=True, exist_ok=True)
+        (output/'development_selection.json').write_bytes(encode(search_report))
+        full_trial = search_report['trials']['starter_plus_batters_and_bullpen']
+        full_used = full_trial['trials'][full_trial['selected_trial']]['features_used_in_splits']
+        defer_reason = None
+        if not any(matchup_performance_feature(c) for c in recipes['starter_plus_batters_and_bullpen']):
+            defer_reason = 'matchup_values_unavailable_in_development_fit'
+        elif search_report['selected'] != 'starter_plus_batters_and_bullpen':
+            defer_reason = 'full_recipe_not_selected_on_development'
+        elif not all(any(predicate(c) for c in full_used) for predicate in (
+                matchup_performance_feature, lineup_performance_feature, bullpen_context_performance_feature)):
+            defer_reason = 'requested_value_usage_absent_on_development'
+        if defer_reason:
+            # Do not repeatedly consume the final holdout while the requested
+            # matchup inputs are absent. Missingness alone cannot trigger it.
+            deferred = {'system': 'KS1', 'accepted': False, 'qualification_run': False,
+                        'reason': defer_reason,
+                        'train': {'games': len(train)}, 'reserved_holdout_games': len(test),
+                        'training_population': training_population,
+                        'recipe_selection': search_report, 'prediction_writes': 0,
+                        'official_ledger_writes': 0, 'input_table_sha256': proof['input_table_sha256']}
+            (output/'metrics.json').write_bytes(encode(deferred))
+            (output/'input_proof.json').write_bytes(encode(proof))
+            return deferred
     # Freeze the recipe on a chronological development tail before touching the
     # exact 300-game final holdout. Hyperparameters remain fixed.
     development_fit, development = split_development(train)
     development_games = len(development)
     development_metrics = {}
     for name, columns in recipes.items():
-        development_model = lgb.LGBMClassifier(**PARAMS).fit(
+        development_model = lgb.LGBMClassifier(**tuned_parameters[name]).fit(
             development_fit[columns].astype(float), development_fit.home_win.astype(int))
         probability = development_model.predict_proba(
             development[columns].astype(float))[:, 1]
@@ -423,10 +461,12 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
         if improves(development_metrics[name], development_baseline)]
     development_selected = min(
         development_eligible, key=lambda name: development_metrics[name]['brier'])
+    if search_report is not None:
+        development_selected = search_report['selected']
     models, predictions, comparisons = {}, {}, {}
     output.mkdir(parents=True, exist_ok=True)
     for name, columns in recipes.items():
-        model = lgb.LGBMClassifier(**PARAMS).fit(train[columns].astype(float), y_train)
+        model = lgb.LGBMClassifier(**tuned_parameters[name]).fit(train[columns].astype(float), y_train)
         probability = model.predict_proba(test[columns].astype(float))[:, 1]
         path = output/('model_'+name+'.txt')
         model.booster_.save_model(str(path))
@@ -436,6 +476,7 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
         split_counts = dict(zip(columns, map(int, model.booster_.feature_importance())))
         models[name], predictions[name] = model, probability
         comparisons[name] = {
+            'parameters': tuned_parameters[name],
             'metrics': metrics(y_test, probability),
             'features': columns,
             'features_used_in_splits': [c for c in columns if split_counts[c] > 0],
@@ -507,14 +548,14 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
     # expanded training period. It is reported, never used to tune the model.
     without_seven = [c for c in recipes[selected]
                      if not (c.endswith('_7d') or c.endswith('_7d_missing'))]
-    ablation = lgb.LGBMClassifier(**PARAMS).fit(train[without_seven].astype(float), y_train)
+    ablation = lgb.LGBMClassifier(**tuned_parameters[selected]).fit(train[without_seven].astype(float), y_train)
     ablated = ablation.predict_proba(test[without_seven].astype(float))[:, 1]
     selected_features = recipes[selected]
     split_counts = comparisons[selected]['feature_split_counts']
     context_features = [c for c in selected_features if pitcher_context_feature(c)]
     used_context_features = [c for c in context_features if split_counts[c] > 0]
     without_context = [c for c in selected_features if not pitcher_context_feature(c)]
-    pitcher_ablation = lgb.LGBMClassifier(**PARAMS).fit(train[without_context].astype(float), y_train)
+    pitcher_ablation = lgb.LGBMClassifier(**tuned_parameters[selected]).fit(train[without_context].astype(float), y_train)
     without_pitcher = pitcher_ablation.predict_proba(test[without_context].astype(float))[:, 1]
     prospective_feature_coverage, prospective_context_rows = prospective_context_coverage(
         test, context_features)
@@ -574,7 +615,12 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
               'evaluation_window_games': EVALUATION_GAMES,
               'features': selected_features, 'all_admitted_features': features,
               'omitted_features': omitted,
-              'individual_starter_training_rows': coverage,
+              'individual_starter_training_rows': {
+                  side: int((train[side+'_starter_id'].notna() &
+                             (pd.to_numeric(train[side+'_starter_bf_30d'], errors='coerce') > 0)).sum())
+                  for side in ('home', 'away')},
+              'feature_admission_games': len(admission_frame),
+              'feature_admission_starter_coverage': coverage,
               'individual_starter_features_learned': [c for c in selected_features if individual_feature(c)],
               'individual_starter_features_used_in_splits': [c for c in selected_features if individual_feature(c) and split_counts[c] > 0],
               'heldout_starter_identity_statuses': {
@@ -603,7 +649,10 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
               'lineup_bullpen_context_qualification': team_context_qualification,
               'lineup_bullpen_promotion_rule': 'the full candidate must use substantive lineup, matchup and individual-bullpen value fields, not only missingness indicators, in tree splits; every consumed training and exact-300 holdout value must have frozen or MLB-timecoded pre-T10 evidence',
               'minimum_individual_starter_rows_per_side': MIN_STARTER_ROWS,
-              'parameters': PARAMS, 'test_used_for_tuning': False,
+              'parameters': tuned_parameters[selected], 'test_used_for_tuning': False,
+              'development_search': search_report,
+              'qualification_run': True,
+              'holdout_manifest_sha256': hashlib.sha256(encode(holdout_manifest)).hexdigest() if holdout_manifest else None,
               'development_used_for_recipe_selection': True, 'holdout_refit': False,
               'model_reload_verified': True,
               'model_sha256': hashlib.sha256((output/'model.txt').read_bytes()).hexdigest(),
@@ -680,6 +729,15 @@ def main():
     bundle = load_existing(cf, s3, bucket)
     record_progress(args.output, 'loading_historical_pitches')
     statcast_report = load_training_statcast(bundle, s3, bucket)
+    recovery_report = {'provider_requests': 0, 'recovered_dates': []}
+    if (os.environ.get('GITHUB_REF') == 'refs/heads/main'
+            and os.environ.get('GITHUB_EVENT_NAME') in ('push', 'schedule', 'workflow_dispatch')):
+        from ks1.statcast_recovery import recover
+        record_progress(args.output, 'recovering_historical_pitches')
+        recovery_report = recover(bundle, s3, bucket, statcast_report)
+        (args.output/'statcast_recovery_report.json').write_bytes(encode(recovery_report))
+        if recovery_report['recovered_dates']:
+            statcast_report = load_training_statcast(bundle, s3, bucket)
     (args.output/'historical_statcast_report.json').write_bytes(encode(statcast_report))
     args.output.mkdir(parents=True, exist_ok=True)
     record_progress(args.output, 'collecting_starter_history')
@@ -713,14 +771,19 @@ def main():
              'incumbent_ref': ref, 'historical_feed_report': feed_report,
              'historical_team_context_report': team_report,
              'historical_statcast_report': statcast_report,
+             'statcast_recovery_report': recovery_report,
              'provider_calls': (feed_report['provider_requests']+
-                                team_report['provider_requests'])}
+                                team_report['provider_requests']+recovery_report['provider_requests'])}
     proof['official_history_source'] = bundle.get('official_history_source')
     reconstruction = PriorPitcherContext(normalize(bundle.get('full', [])),
                                          bundle.get('official_history_source', {}),
                                          pregame_identity_index(bundle))
     record_progress(args.output, 'evaluating_candidates', rows=len(frame))
-    report = evaluate(frame, body, args.output, proof, reconstruction=reconstruction)
+    from ks1.development import HOLDOUT
+    manifest = json.loads(HOLDOUT.read_bytes())
+    (args.output/'qualification_holdout.json').write_bytes(encode(manifest))
+    report = evaluate(frame, body, args.output, proof, reconstruction=reconstruction,
+                      development_search=True, holdout_manifest=manifest)
     # Only isolated experiment artifacts are saved. A separate reviewed model
     # reference change is required for serving; no authority or ledger write.
     record_progress(args.output, 'saving_artifacts', accepted=report['accepted'])
