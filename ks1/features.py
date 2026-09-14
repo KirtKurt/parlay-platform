@@ -91,6 +91,7 @@ def shrink(n, d, prior, strength):
 
 
 BAT = ("atBats", "hits", "baseOnBalls", "hitByPitch", "sacFlies", "doubles", "triples", "homeRuns")
+BATTER_RESULTS = BAT + ("strikeOuts",)
 PITCH = ("strikeOuts", "baseOnBalls", "battersFaced")
 PITCH_RESULTS = ("outs", "earnedRuns", "runs", "hits", "baseOnBalls")
 PITCH_FIP = ("outs", "homeRuns", "baseOnBalls", "hitBatsmen", "strikeOuts")
@@ -102,6 +103,7 @@ CALLED_STRIKES = {"called_strike"}
 SWINGS = SWINGING_STRIKES | {"foul", "foul_bunt", "hit_into_play", "bunt_foul_tip"}
 UNAVAILABLE_EXACT = ("xera", "siera", "stuff_plus", "location_plus", "pitching_plus", "active_spin_pct")
 PRIOR_WEIGHT_CAP_PITCHES = 300
+LINEUP_SLOT_WEIGHTS = (1.00, .98, .96, .94, .92, .90, .88, .86, .84)
 
 
 def statcast_metric_names():
@@ -201,14 +203,16 @@ def normalize(games):
             team = game["teams"][side]
             full = "teamStats" in team
             starters, relief = [], []
-            players = []
+            players, batters = [], []
             if full:
                 for player in team.get("players", {}).values():
                     stats = player.get("stats", {}).get("pitching", {})
-                    if number(stats.get("battersFaced")) is None or not stats.get("battersFaced"):
-                        continue
-                    players.append({"id": str(player["person"]["id"]), "stats": stats})
-                    (starters if stats.get("gamesStarted") == 1 else relief).append(stats)
+                    if number(stats.get("battersFaced")) is not None and stats.get("battersFaced"):
+                        players.append({"id": str(player["person"]["id"]), "stats": stats})
+                        (starters if stats.get("gamesStarted") == 1 else relief).append(stats)
+                    batting_stats = player.get("stats", {}).get("batting", {})
+                    if any(number(batting_stats.get(key)) is not None for key in BATTER_RESULTS):
+                        batters.append({"id": str(player["person"]["id"]), "stats": batting_stats})
                 starter_total, _ = counts(starters, PITCH)
                 # WHIP needs full boxes, not compact starter summaries.
                 if starters and all(all(number(p.get(k)) is not None for k in ("outs", "hits")) for p in starters):
@@ -226,7 +230,8 @@ def normalize(games):
                          "team_id": str(team["team"]["id"] if full else team["id"]),
                          "batting": team["teamStats"].get("batting", {}) if full else team.get("batting", {}),
                          "starters": starter_total if full else team.get("priorStarters", {}),
-                         "relief": usage if full else team.get("relief", {}), "players": players})
+                         "relief": usage if full else team.get("relief", {}),
+                         "players": players, "batters": batters})
     return rows
 
 
@@ -240,10 +245,12 @@ class Features:
         self.prior_statcast_year = prior_statcast_year
         self.statcast_by_game = {}
         self.statcast_by_pitcher_game = {}
+        self.statcast_by_batter_game = {}
         for row in self.statcast_rows:
             game_id, pitcher_id = str(row.get("game_pk")), str(row.get("pitcher"))
             self.statcast_by_game.setdefault(game_id, []).append(row)
             self.statcast_by_pitcher_game.setdefault((pitcher_id, game_id), []).append(row)
+            self.statcast_by_batter_game.setdefault((str(row.get("batter")), game_id), []).append(row)
         self.cache = {}
         self.priors = {}
 
@@ -392,6 +399,7 @@ class Features:
                            "hard_hit_pct", "avg_ev_allowed", "velocity"):
                 result[f"bullpen_context_{metric}_{window}d"] = statcast.get(metric)
         states = {"AVAILABLE": 0, "LIMITED": 0, "LIKELY_UNAVAILABLE": 0, "UNKNOWN": 0}
+        reliever_profiles, state_by_pitcher = [], {}
         workload_score = 0.0
         for pid in roster:
             recent = [(r, stats) for r, stats in appearances if any(
@@ -411,6 +419,49 @@ class Features:
                      if pitches1 >= 30 or consecutive >= 3 else "LIMITED"
                      if pitches1 >= 20 or pitches3 >= 45 or consecutive >= 2 else "AVAILABLE")
             states[state] += 1
+            state_by_pitcher[pid] = state
+            pitcher_profile = {"player_id": pid, "availability_state": state,
+                               "consecutive_usage_days": consecutive,
+                               "workload": {}}
+            for days in (1, 3, 5, 7):
+                selected_usage = [stats for r, stats in recent
+                                  if 1 <= (target-r["day"]).days <= days]
+                pitcher_profile["workload"][str(days)+"d"] = {
+                    "pitches": (sum(number(stats.get("numberOfPitches")) for stats in selected_usage)
+                                if selected_usage and all(number(stats.get("numberOfPitches")) is not None
+                                                          for stats in selected_usage) else None),
+                    "batters_faced": (sum(number(stats.get("battersFaced")) for stats in selected_usage)
+                                      if selected_usage and all(number(stats.get("battersFaced")) is not None
+                                                                for stats in selected_usage) else None),
+                    "outs": (sum(number(stats.get("outs")) for stats in selected_usage)
+                             if selected_usage and all(number(stats.get("outs")) is not None
+                                                       for stats in selected_usage) else None)}
+            pitcher_profile["windows"] = {}
+            for days in (7, 15, 30):
+                chosen = [(r, stats) for r, stats in recent
+                          if 1 <= (target-r["day"]).days <= days]
+                box_values = pitching([stats for _, stats in chosen], league)
+                game_ids = {r["game_id"] for r, _ in chosen}
+                expected = (sum(number(stats.get("numberOfPitches")) for _, stats in chosen)
+                            if chosen and all(number(stats.get("numberOfPitches")) is not None
+                                              for _, stats in chosen) else None)
+                statcast_values = self.statcast(pid, game_ids, expected)
+                pitcher_profile["windows"][str(days)+"d"] = {
+                    **{key: box_values.get(key) for key in ("era", "whip", "ra9", "wins", "losses",
+                                                           "fip", "k_pct", "bb_pct", "k_bb_pct",
+                                                           "appearances")},
+                    **{key: statcast_values.get(key) for key in ("swstr_pct", "csw_pct", "xwoba",
+                                                                 "barrel_pct", "hard_hit_pct",
+                                                                 "avg_ev_allowed", "velocity", "spin",
+                                                                 "horizontal_break_in", "vertical_break_in",
+                                                                 "extension", "active_spin_pct", "stuff_plus",
+                                                                 "location_plus", "pitching_plus")},
+                    "pitch_arsenal": {pitch: {key: statcast_values.get(
+                        pitch.lower()+"_"+key) for key in ("mix_pct", "velocity", "spin",
+                                                           "horizontal_break_in", "vertical_break_in",
+                                                           "extension", "whiff_pct", "xwoba_contact")}
+                                      for pitch in PITCH_BUCKETS}}
+            reliever_profiles.append(pitcher_profile)
         for state, count in states.items():
             result["bullpen_context_"+state.lower()+"_count"] = float(count)
         result["bullpen_context_fatigue_score"] = workload_score
@@ -418,7 +469,142 @@ class Features:
         result["bullpen_context_availability_method"] = "strict_prior_workload_v1"
         result["bullpen_context_high_leverage_quality"] = None
         result["bullpen_context_platoon_coverage"] = None
+        result["bullpen_context_quality"] = (-result["bullpen_context_fip_30d"]
+                                             if result.get("bullpen_context_fip_30d") is not None else None)
+        result["bullpen_context_command"] = result.get("bullpen_context_k_bb_pct_30d")
+        prior_30 = [(r, stats) for r, stats in appearances
+                    if r["day"] >= target-timedelta(days=30)]
+        outs = [number(stats.get("outs")) for _, stats in prior_30]
+        games = {r["game_id"] for r, _ in prior_30}
+        result["bullpen_context_expected_innings"] = (
+            sum(outs)/(3*len(games)) if games and all(value is not None for value in outs) else None)
+        available_stats = [stats for r, stats in prior_30
+                           if any(p["id"] in state_by_pitcher
+                                  and state_by_pitcher[p["id"]] == "AVAILABLE"
+                                  and p["stats"] is stats for p in r["players"])]
+        available_box = pitching(available_stats, league)
+        result["bullpen_context_available_quality"] = (
+            -available_box["fip"] if available_box.get("fip") is not None else None)
+        result["bullpen_context_early_exit_quality"] = result["bullpen_context_available_quality"]
+        result["_reliever_profiles"] = sorted(reliever_profiles, key=lambda item: item["player_id"])
         return result
+
+    def lineup_batters_at(self, cutoff, lineup_ids, opposing_starter_id=None,
+                          opposing_hand=None, *, game_date=None):
+        """Return batter-level prior boxes/Statcast and lineup aggregates."""
+        target = calendar_date.fromisoformat(game_date) if game_date else day(cutoff)
+        completed = [r for r in self.rows if r["completed"] < utc(cutoff) and r["day"] < target]
+        ids = [str(value) for value in lineup_ids]
+        starter_rows = [row for game_id in self.statcast_by_pitcher_game
+                        if game_id[0] == str(opposing_starter_id)
+                        and any(r["game_id"] == game_id[1] and r["day"] >= target-timedelta(days=30)
+                                for r in completed)
+                        for row in self.statcast_by_pitcher_game[game_id]]
+        starter_mix = Counter(row.get("pitch_type") for row in starter_rows
+                              if row.get("pitch_type") in PITCH_TYPES)
+        starter_total = sum(starter_mix.values())
+
+        def box(rows):
+            if not rows or any(any(number(row.get(key)) is None for key in BATTER_RESULTS) for row in rows):
+                return {key: None for key in ("pa", "ops", "obp", "slg", "iso", "k_pct", "bb_pct", "k_bb_pct")}
+            total = {key: sum(number(row[key]) for row in rows) for key in BATTER_RESULTS}
+            pa = total["atBats"]+total["baseOnBalls"]+total["hitByPitch"]+total["sacFlies"]
+            on = total["hits"]+total["baseOnBalls"]+total["hitByPitch"]
+            bases = total["hits"]+total["doubles"]+2*total["triples"]+3*total["homeRuns"]
+            obp, slg = rate(on, pa), rate(bases, total["atBats"])
+            iso = rate(bases-total["hits"], total["atBats"])
+            return {"pa": pa, "ops": obp+slg if obp is not None and slg is not None else None,
+                    "obp": obp, "slg": slg, "iso": iso,
+                    "k_pct": 100*rate(total["strikeOuts"], pa) if pa else None,
+                    "bb_pct": 100*rate(total["baseOnBalls"], pa) if pa else None,
+                    "k_bb_pct": 100*rate(total["strikeOuts"]-total["baseOnBalls"], pa) if pa else None}
+
+        def expected_woba(row):
+            return (self._finite(row.get("estimated_woba_using_speedangle"))
+                    if row.get("type") == "X" else self._finite(row.get("woba_value")))
+
+        profiles = []
+        for slot, pid in enumerate(ids, 1):
+            pairs = [(r, batter["stats"]) for r in completed for batter in r["batters"]
+                     if batter["id"] == pid]
+            profile = {"player_id": pid, "slot": slot, "windows": {}}
+            for window in (7, 30):
+                chosen = [(r, stats) for r, stats in pairs
+                          if r["day"] >= target-timedelta(days=window)]
+                summary = box([stats for _, stats in chosen])
+                pitch_rows = [pitch for r, _ in chosen
+                              for pitch in self.statcast_by_batter_game.get((pid, r["game_id"]), ())]
+                contacts = [pitch for pitch in pitch_rows if pitch.get("type") == "X"]
+                speeds = [self._finite(pitch.get("launch_speed")) for pitch in contacts]
+                barrels = [self._finite(pitch.get("launch_speed_angle")) for pitch in contacts]
+                swings = [pitch for pitch in pitch_rows if (str(pitch.get("description") or "").lower() in SWINGS
+                                                            or pitch.get("type") == "X")]
+                contact_swings = [pitch for pitch in swings
+                                  if str(pitch.get("description") or "").lower() not in SWINGING_STRIKES]
+                expected = [expected_woba(pitch) for pitch in pitch_rows
+                            if self._finite(pitch.get("woba_denom")) == 1]
+                actual = [self._finite(pitch.get("woba_value")) for pitch in pitch_rows
+                          if self._finite(pitch.get("woba_denom")) == 1]
+                descriptions = [str(pitch.get("description") or "").lower() for pitch in pitch_rows]
+                complete = self.statcast_complete
+                summary.update({
+                    "woba": sum(actual)/len(actual) if complete and actual and all(v is not None for v in actual) else None,
+                    "xwoba": sum(expected)/len(expected) if complete and expected and all(v is not None for v in expected) else None,
+                    "barrel_pct": 100*sum(v == 6 for v in barrels)/len(barrels) if complete and barrels and all(v is not None for v in barrels) else None,
+                    "hard_hit_pct": 100*sum(v >= 95 for v in speeds)/len(speeds) if complete and speeds and all(v is not None for v in speeds) else None,
+                    "avg_exit_velocity": sum(speeds)/len(speeds) if complete and speeds and all(v is not None for v in speeds) else None,
+                    "contact_pct": 100*len(contact_swings)/len(swings) if complete and swings else None,
+                    "swstr_pct": 100*sum(value in SWINGING_STRIKES for value in descriptions)/len(pitch_rows) if complete and pitch_rows else None,
+                    "csw_pct": 100*sum(value in SWINGING_STRIKES | CALLED_STRIKES for value in descriptions)/len(pitch_rows) if complete and pitch_rows else None,
+                })
+                versus = [pitch for pitch in pitch_rows if opposing_hand in ("L", "R")
+                          and pitch.get("p_throws") == opposing_hand
+                          and self._finite(pitch.get("woba_denom")) == 1]
+                versus_values = [expected_woba(pitch) for pitch in versus]
+                summary["platoon_xwoba"] = (sum(versus_values)/len(versus_values)
+                                             if complete and versus_values and all(v is not None for v in versus_values)
+                                             else None)
+                by_type = {}
+                for pitch_type in PITCH_TYPES:
+                    group = [pitch for pitch in pitch_rows if pitch.get("pitch_type") == pitch_type]
+                    values = [expected_woba(pitch) for pitch in group
+                              if self._finite(pitch.get("woba_denom")) == 1]
+                    actual_values = [self._finite(pitch.get("woba_value")) for pitch in group
+                                     if self._finite(pitch.get("woba_denom")) == 1]
+                    swings_by_type = [pitch for pitch in group
+                                      if str(pitch.get("description") or "").lower() in SWINGS
+                                      or pitch.get("type") == "X"]
+                    by_type[pitch_type] = {
+                        "xwoba": sum(values)/len(values) if complete and values and all(v is not None for v in values) else None,
+                        "woba": sum(actual_values)/len(actual_values) if complete and actual_values and all(v is not None for v in actual_values) else None,
+                        "whiff_pct": (100*sum(str(pitch.get("description") or "").lower() in SWINGING_STRIKES
+                                               for pitch in swings_by_type)/len(swings_by_type)
+                                      if complete and swings_by_type else None)}
+                supported_mix = [(count, by_type.get(pitch_type, {}).get("xwoba"))
+                                 for pitch_type, count in starter_mix.items()
+                                 if by_type.get(pitch_type, {}).get("xwoba") is not None]
+                summary["pitch_type_matchup_xwoba"] = (
+                    sum(count*value for count, value in supported_mix)/sum(count for count, _ in supported_mix)
+                    if complete and starter_total and supported_mix else None)
+                summary["pitch_type_xwoba"] = by_type
+                profile["windows"][str(window)+"d"] = summary
+            season = [stats for r, stats in pairs if r["day"].year == target.year]
+            profile["windows"]["season"] = box(season)
+            profiles.append(profile)
+
+        metrics = ("ops", "obp", "slg", "iso", "k_pct", "bb_pct", "k_bb_pct",
+                   "woba", "xwoba", "barrel_pct", "hard_hit_pct", "avg_exit_velocity",
+                   "contact_pct", "swstr_pct", "csw_pct", "platoon_xwoba",
+                   "pitch_type_matchup_xwoba")
+        features = {}
+        for window in ("7d", "30d"):
+            for metric in metrics:
+                values = [(LINEUP_SLOT_WEIGHTS[p["slot"]-1], p["windows"][window].get(metric)) for p in profiles
+                          if p["windows"][window].get(metric) is not None]
+                features[f"lineup_{metric}_{window}"] = (
+                    sum(weight*value for weight, value in values)/sum(weight for weight, _ in values)
+                    if values else None)
+        return profiles, features
 
     def at(self, cutoff, team_id, starter_id=None, *, game_date=None):
         # Conservative same-day exclusion also prevents game-one results from

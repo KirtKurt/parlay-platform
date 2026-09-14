@@ -22,7 +22,13 @@ HEX64 = re.compile(r"^[0-9a-f]{64}$")
 SLOT_WEIGHTS = (1.00, .98, .96, .94, .92, .90, .88, .86, .84)
 LINEUP_FEATURES = ("lineup_quality_ops", "lineup_quality_obp", "lineup_quality_slg",
                    "lineup_top4_ops", "lineup_2_5_ops", "lineup_observed_batters",
-                   "lineup_total_pa")
+                   "lineup_total_pa") + tuple(
+    f"lineup_{metric}_{window}"
+    for window in ("7d", "30d")
+    for metric in ("ops", "obp", "slg", "iso", "k_pct", "bb_pct", "k_bb_pct",
+                   "woba", "xwoba", "barrel_pct", "hard_hit_pct", "avg_exit_velocity",
+                   "contact_pct", "swstr_pct", "csw_pct", "platoon_xwoba",
+                   "pitch_type_matchup_xwoba"))
 BULLPEN_FEATURES = tuple(
     f"bullpen_context_{metric}_{window}d"
     for window in (7, 15, 30)
@@ -33,7 +39,9 @@ BULLPEN_FEATURES = tuple(
      "bullpen_context_limited_count", "bullpen_context_likely_unavailable_count",
      "bullpen_context_unknown_count", "bullpen_context_fatigue_score",
      "bullpen_context_depth", "bullpen_context_high_leverage_quality",
-     "bullpen_context_platoon_coverage")
+     "bullpen_context_platoon_coverage", "bullpen_context_available_quality",
+     "bullpen_context_quality", "bullpen_context_command",
+     "bullpen_context_expected_innings", "bullpen_context_early_exit_quality")
 MODEL_FEATURES = LINEUP_FEATURES + BULLPEN_FEATURES
 
 
@@ -135,11 +143,13 @@ def _lineup_features(samples):
     }
 
 
-def build_profile(stored, game, row, as_of, history):
+def build_profile(stored, game, row, as_of, history, history_as_of=None):
     """Validate one exact persisted observation and bind it to a KS1 game."""
     raw = stored.get("data", stored) if isinstance(stored, dict) else {}
     game_id, start, cutoff = str(game["gamePk"]), utc(game["gameDate"]), utc(game["gameDate"])-timedelta(minutes=10)
     observed = utc(as_of)
+    if history_as_of is not None and utc(history_as_of) > observed:
+        raise ValueError("historical source observed after profile")
     if str(raw.get("officialGamePk") or raw.get("official_game_pk") or "") != game_id:
         raise ValueError("passive context game identity mismatch")
     if utc(raw.get("commenceTime") or raw.get("commence_time")) != start:
@@ -172,10 +182,18 @@ def build_profile(stored, game, row, as_of, history):
                ("_available_relievers", "_unavailable_relievers")):
             raise ValueError("roster observation must not claim availability")
         lineup_values = _lineup_features(samples)
-        bullpen_values = history.bullpen_roster_at(as_of, row[side+"_id"], roster_ids)
+        opposing = "away" if side == "home" else "home"
+        batter_profiles, batter_features = (history.lineup_batters_at(
+            as_of, ids, row.get(opposing+"_starter_id"),
+            row.get("_"+opposing+"_starter_pitch_hand"))
+            if hasattr(history, "lineup_batters_at") else ([], {}))
+        lineup_values.update(batter_features)
+        bullpen_values = dict(history.bullpen_roster_at(as_of, row[side+"_id"], roster_ids))
+        reliever_profiles = bullpen_values.pop("_reliever_profiles", [])
         features.update({side+"_"+key: value for key, value in {**lineup_values, **bullpen_values}.items()})
         sides[side] = {"team_id": row[side+"_id"], "lineup_ids": ids,
-                       "batter_samples": samples, "bullpen_roster_ids": roster_ids,
+                       "batter_samples": samples, "batter_history": batter_profiles,
+                       "bullpen_roster_ids": roster_ids, "reliever_history": reliever_profiles,
                        "availability_status": "UNKNOWN_ROSTER_ONLY",
                        "features": {**lineup_values, **bullpen_values}}
     home_people = set(sides["home"]["lineup_ids"]+sides["home"]["bullpen_roster_ids"])
@@ -186,16 +204,25 @@ def build_profile(stored, game, row, as_of, history):
     if bullpen_block.get("bullpenRosterObservationStatus") != "OBSERVED_ROSTER_ONLY":
         raise ValueError("bullpen roster status invalid")
     profile = {"contract": CONTRACT, "as_of": observed.isoformat(),
+               "history_as_of": history_as_of,
                "game_id": game_id, "commence_time": start.isoformat(),
                "source_roles": {"lineup_and_season_batting": lineup_source,
                                 "bullpen_roster_only": bullpen_source,
-                                "bullpen_prior_performance": "official_MLB_completed_game_logs",
-                                "market_context": "The_Odds_API_only",
-                                "BBD": "fixture_crosscheck_only"},
+                                "batter_and_bullpen_results": {
+                                    "provider": "MLB Stats API retained completed game logs",
+                                    "as_of": history_as_of},
+                                "contact_plate_discipline_and_pitch_arsenal": {
+                                    "provider": "Baseball Savant retained Statcast pitch rows",
+                                    "as_of": history_as_of},
+                                "market_context": {"provider": "The Odds API", "role": "markets only"},
+                                "BBD": {"role": "fixture crosscheck only", "player_stats_claimed": False}},
                "coverage_status": "SUPPORTED_V1_COMPLETE", "sides": sides,
-               "unavailable_fields": ["ISO", "K%", "BB%", "contact_rate", "wOBA", "xwOBA",
-                                      "barrel%", "hard_hit%", "average_exit_velocity", "platoon_splits",
-                                      "pitch_type_matchup", "reliever_availability", "leverage_role"]}
+               "unavailable_fields": ["batter_expected_lineup_availability",
+                                      "confirmed_lineup_change_from_projection", "batter_prior_year_shrink",
+                                      "bullpen_xERA", "bullpen_xFIP", "bullpen_SIERA",
+                                      "bullpen_Stuff+", "bullpen_Location+", "bullpen_Pitching+",
+                                      "bullpen_active_spin", "bullpen_leverage_role",
+                                      "bullpen_pitch_mix", "bullpen_platoon_splits"]}
     semantic = {key: value for key, value in profile.items() if key != "as_of"}
     profile["semantic_sha256"] = hashlib.sha256(encode(semantic)).hexdigest()
     profile["sha256"] = hashlib.sha256(encode(profile)).hexdigest()
@@ -245,6 +272,8 @@ def frozen_profile_features(row):
              and hashlib.sha256(encode({**profile, "semantic_sha256": semantic_claimed})).hexdigest() == claimed
              and str(profile.get("game_id")) == str(row.get("game_id"))
              and utc(profile["as_of"]) == utc(row["as_of"])
+             and (not profile.get("history_as_of")
+                  or utc(profile["history_as_of"]) <= utc(profile["as_of"]))
              and utc(profile["as_of"]) <= utc(row["commence_time"])-timedelta(minutes=10))
     if not valid:
         return None

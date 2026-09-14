@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import pytest
 
+from ks1.features import Features
 from ks1.inventory import encode
 from ks1.passive_context import (BATTING_VERSION, CONTRACT, TEAM_CONTEXT_VERSION,
                                  build_profile, frozen_profile_features)
@@ -66,7 +67,7 @@ def test_builds_checksum_bound_profile_and_supported_features():
     assert profile["contract"] == CONTRACT
     assert profile["coverage_status"] == "SUPPORTED_V1_COMPLETE"
     assert profile["sides"]["home"]["availability_status"] == "UNKNOWN_ROSTER_ONLY"
-    assert "xwOBA" in profile["unavailable_fields"]
+    assert "bullpen_SIERA" in profile["unavailable_fields"]
     assert features["home_lineup_observed_batters"] == 9
     assert features["away_bullpen_context_unknown_count"] == 5
     claimed = profile.pop("sha256")
@@ -117,3 +118,60 @@ def test_frozen_reader_rejects_tampering_and_recovers_only_features():
     body["sides"]["home"]["features"]["lineup_quality_ops"] = 9.9
     tampered["lineup_bullpen_profile_json"] = json.dumps(body)
     assert frozen_profile_features(tampered) is None
+
+
+def test_batter_windows_and_pitch_matchup_use_only_earlier_games():
+    batting = {"atBats": 4, "hits": 2, "baseOnBalls": 1, "hitByPitch": 0,
+               "sacFlies": 0, "doubles": 1, "triples": 0, "homeRuns": 0,
+               "strikeOuts": 1}
+    def prior_game(pk, day, stats):
+        return {"officialGamePk": pk, "startAtUtc": day+"T18:00:00Z",
+                "completedAtUtc": day+"T21:00:00Z", "gameType": "R",
+                "teams": {side: {"team": {"id": tid, "name": side},
+                                  "teamStats": {"batting": batting},
+                                  "players": ({"ID101": {"person": {"id": 101},
+                                                           "stats": {"batting": stats}}}
+                                              if side == "home" else {})}
+                          for side, tid in (("home", 10), ("away", 20))}}
+    rows = [{"game_pk": "1", "batter": "101", "pitcher": "500", "p_throws": "R",
+             "pitch_type": "FF", "type": "X", "description": "hit_into_play",
+             "woba_denom": "1", "woba_value": ".9",
+             "estimated_woba_using_speedangle": ".8", "launch_speed": "100",
+             "launch_speed_angle": "6"}]
+    engine = Features([prior_game(1, "2026-09-01", batting),
+                       prior_game(2, "2026-09-15", {**batting, "hits": 0})], rows)
+    profiles, features = engine.lineup_batters_at(
+        "2026-09-10T17:50:00Z", list(range(101, 110)), "500", "R",
+        game_date="2026-09-10")
+    assert profiles[0]["windows"]["30d"]["pa"] == 5
+    assert features["lineup_ops_30d"] == pytest.approx(.6+.75)
+    assert features["lineup_xwoba_30d"] == pytest.approx(.8)
+    assert features["lineup_barrel_pct_30d"] == 100
+    assert features["lineup_pitch_type_matchup_xwoba_30d"] == pytest.approx(.8)
+
+
+def test_reliever_profile_has_strict_prior_workload_quality_and_arsenal():
+    pitching = {"outs": 3, "earnedRuns": 0, "runs": 0, "hits": 1, "homeRuns": 0,
+                "baseOnBalls": 0, "hitBatsmen": 0, "strikeOuts": 2,
+                "battersFaced": 4, "wins": 0, "losses": 0, "gamesStarted": 0,
+                "numberOfPitches": 25}
+    game = {"officialGamePk": 8, "startAtUtc": "2026-09-09T18:00:00Z",
+            "completedAtUtc": "2026-09-09T21:00:00Z", "gameType": "R",
+            "teams": {side: {"team": {"id": tid, "name": side},
+                              "teamStats": {"batting": {}},
+                              "players": ({"ID151": {"person": {"id": 151},
+                                                       "stats": {"pitching": pitching}}}
+                                          if side == "home" else {})}
+                      for side, tid in (("home", 10), ("away", 20))}}
+    pitches = [{"game_pk": "8", "pitcher": "151", "type": "S", "pitch_type": "FF",
+                "description": "swinging_strike", "release_speed": "96",
+                "release_spin_rate": "2400", "release_extension": "6.5",
+                "pfx_x": "-.5", "pfx_z": "1.2"} for _ in range(25)]
+    values = Features([game], pitches).bullpen_roster_at(
+        "2026-09-10T17:50:00Z", "10", ["151"])
+    assert values["bullpen_context_limited_count"] == 1
+    assert values["bullpen_context_k_bb_pct_7d"] is not None
+    reliever = values["_reliever_profiles"][0]
+    assert reliever["workload"]["1d"]["pitches"] == 25
+    assert reliever["windows"]["7d"]["velocity"] == 96
+    assert reliever["windows"]["7d"]["pitch_arsenal"]["FF"]["mix_pct"] == 100
