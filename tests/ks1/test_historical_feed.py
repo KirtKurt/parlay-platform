@@ -5,7 +5,10 @@ import pytest
 
 from ks1.historical_feed import PREFIX, feed_identity
 from ks1.inventory import encode
-from ks1.prior_pitcher_context import pregame_identity_index
+from ks1.prior_pitcher_context import PriorPitcherContext, pregame_identity_index, verified_reconstruction
+from ks1.features import Features
+from ks1.table import build
+from tests.ks1.test_prior_pitcher_context import history, full_game, STATS, SOURCE
 
 
 def entry():
@@ -68,3 +71,28 @@ def test_original_snapshot_needs_actual_pregame_storage_time():
     assert not pregame_identity_index(bundle)
     source['stored_at'] = '2026-08-11T19:31:00Z'
     assert pregame_identity_index(bundle)[('99','home')][0]['pitcher_id'] == '104'
+
+
+def test_latest_archive_replaces_earlier_snapshot_before_both_sides_are_computed():
+    games = history()+[full_game(99, '2026-08-11', 999, STATS)]
+    features = {'home_starter_era_30d':999., 'away_starter_era_30d':888.}
+    snapshot = {'officialGamePk':99,'originalObservation':True,'outcomeKnownAtCapture':False,
+                'capturedAtUtc':'2026-08-11T19:00:00Z','featureCutoffUtc':'2026-08-11T19:50:00Z',
+                'commenceTime':'2026-08-11T20:00:00Z','source_key':'snapshot.json',
+                'features':features,'featureFingerprint':hashlib.sha256(encode(features)).hexdigest(),
+                'playerWindows':{'teams':{s:{'teamId':tid,'starterId':pid,'players':[{'id':pid}]}
+                                           for s,tid,pid in [('home',1,100),('away',2,101)]}}}
+    schedule = {'gamePk':99,'gameDate':'2026-08-11T20:00:00Z','gameType':'R',
+                'teams':{s:{'team':games[-1]['teams'][s]['team']} for s in ('home','away')},
+                'status':{'abstractGameState':'Preview'}}
+    bundle = {'full':games,'schedule':[schedule],'snapshots':[snapshot],
+              'historical_pregame_feeds':[entry()], 'official_history_source':SOURCE,
+              'source_receipts':[{'key':'snapshot.json','bucket':'retained','versionId':'v1',
+                                  'sha256':'a'*64,'stored_at':'2026-08-11T19:01:00Z'}]}
+    row = build(bundle)[0].to_pylist()[0]
+    assert row['as_of_timestamp'] == '2026-08-11T19:30:00+00:00'
+    assert row['home_starter_id'] == '104' and row['away_starter_id'] == '105'
+    assert row['home_starter_status'] == row['away_starter_status'] == 'observed_archived_pregame'
+    assert row['home_starter_era_30d'] == row['away_starter_era_30d'] == 3
+    engine = PriorPitcherContext(Features(games).rows, SOURCE, pregame_identity_index(bundle))
+    assert verified_reconstruction(row, engine)

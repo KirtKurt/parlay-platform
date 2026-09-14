@@ -114,8 +114,10 @@ def build(bundle, selected_date=None):
     published_starters = published_starter_index(bundle.get("published_predictions", []))
     published_team_context = published_profile_index(bundle.get("published_predictions", []))
     historical_context = bundle.get("historical_pitcher_context", {})
-    archived_identities = {value['game_id']: value for entry in bundle.get('historical_pregame_feeds', [])
-                           if (value := feed_identity(entry)) is not None}
+    archived_identities = defaultdict(list)
+    for entry in bundle.get('historical_pregame_feeds', []):
+        if (value := feed_identity(entry)) is not None:
+            archived_identities[value['game_id']].append(value)
     history = Features(list(games.values()), bundle.get("statcast", []),
                        statcast_complete=bundle.get("statcast_coverage_complete") is True,
                        prior_statcast_profiles=bundle.get("prior_statcast_profiles"),
@@ -186,6 +188,16 @@ def build(bundle, selected_date=None):
         if published:
             cutoff = (max(utc(cutoff), utc(published["as_of"])).isoformat()
                       if snapshot else published["as_of"])
+        # Select the latest matching archived observations before computing
+        # either side's features, so both sides share the final safe cutoff.
+        archived_for_game = {}
+        for side in ('home', 'away'):
+            candidates = [entry['sides'][side] for entry in archived_identities.get(pk, [])
+                          if utc(entry['sides'][side]['commence_time']) == utc(start)
+                          and utc(entry['sides'][side]['as_of']) <= utc(start)-timedelta(minutes=10)]
+            if candidates:
+                archived_for_game[side] = max(candidates, key=lambda entry: utc(entry['as_of']))
+                cutoff = max(utc(cutoff), utc(archived_for_game[side]['as_of'])).isoformat()
         row = {"game_id": pk, "date": date, "season": int(sch.get("season") or date[:4]),
                "commence_time": start, "as_of_timestamp": cutoff, "table_version": VERSION,
                "pregame_evidence": ("original_snapshot+versioned_ks1_t10_prediction"
@@ -267,6 +279,7 @@ def build(bundle, selected_date=None):
                             "pitch_hand_left", "opponent_lhb_pct", "opponent_rhb_pct",
                             "opponent_switch_pct")}})
             observed = snapshot.get("playerWindows", {}).get("teams", {}).get(side, {})
+            observed_starter_at = None
             if observed and str(observed.get("teamId")) != tid:
                 raise ValueError(f"snapshot team ID conflict: {pk}")
             if observed.get("starterId"):
@@ -276,6 +289,7 @@ def build(bundle, selected_date=None):
                     raise ValueError("snapshot starter lacks unique player identity")
                 row[f"{side}_starter_id"], row[f"{side}_starter_name"] = pid, players[0].get("name")
                 row[f"{side}_starter_status"] = "observed_pregame"
+                observed_starter_at = snapshot['capturedAtUtc']
             locked = published.get("sides", {}).get(side, {})
             locked_team = published.get("teams", {}).get(side)
             if published and locked_team and str(locked_team) != tid:
@@ -288,6 +302,7 @@ def build(bundle, selected_date=None):
             if locked_is_latest:
                 row[f"{side}_starter_id"] = str(locked["id"])
                 row[f"{side}_starter_name"] = locked.get("name")
+                observed_starter_at = published['as_of']
                 row[f"{side}_starter_status"] = ("observed_versioned_t10_replacement"
                                                   if snapshot_starter_replaced
                                                   else "observed_versioned_t10")
@@ -302,11 +317,17 @@ def build(bundle, selected_date=None):
                     row[f"{side}_starter_id"] = str(probable["id"])
                     row[f"{side}_starter_name"] = probable.get("fullName")
                     row[f"{side}_starter_status"] = "observed_probable"
-            archived = archived_identities.get(pk, {}).get('sides', {}).get(side)
-            if (not row[f"{side}_starter_id"] and archived
+                    observed_starter_at = schedule_at
+            archived = archived_for_game.get(side)
+            archive_used = False
+            if (archived
                     and archived['team_id'] == tid
                     and utc(archived['commence_time']) == utc(start)
-                    and utc(archived['as_of']) <= utc(cutoff)):
+                    and utc(archived['as_of']) <= utc(cutoff)
+                    and (observed_starter_at is None or utc(archived['as_of']) >= utc(observed_starter_at))):
+                archive_used = True
+                snapshot_starter_replaced = snapshot_starter_replaced or bool(
+                    row[f"{side}_starter_id"] and row[f"{side}_starter_id"] != archived['pitcher_id'])
                 row[f"{side}_starter_id"] = archived['pitcher_id']
                 row[f"{side}_starter_name"] = archived['name']
                 row[f"{side}_starter_status"] = 'observed_archived_pregame'
@@ -317,7 +338,7 @@ def build(bundle, selected_date=None):
                 row[f"{side}_actual_starter_name"] = actuals[0]["person"].get("fullName")
             row.update({f"{side}_{k}": v for k, v in history.at(cutoff, tid, row[f"{side}_starter_id"]).items()})
             captured = {key: value for key, value in snapshot.get("features", {}).items()
-                        if key.startswith(f"{side}_starter_") and not snapshot_starter_replaced}
+                        if key.startswith(f"{side}_starter_") and not snapshot_starter_replaced and not archive_used}
             if captured:
                 row.update(captured)
                 row["rolling_feature_evidence"] = "immutable original snapshot starter profile"
