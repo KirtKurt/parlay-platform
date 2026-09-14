@@ -24,3 +24,8 @@ The profile explicitly stores `context_basis`. Historical reconstruction v2 bind
 These are model priors, not observed current-season form. The original 7-day, 30-day, last-three-start and previous-year result fields retain their existing observed counts, missingness and shrinkage rules. In particular, a pitcher with no appearances does not receive an invented ERA or game result.
 
 The exact 300-game chronological holdout, lower-Brier/no-worse-log-loss requirement, independent evidence validation, and actual model feature-use requirement are unchanged. Reports separately count each context basis. A fresh comparison must pass before a separate reviewed serving-reference change. Historical evidence remains retrospective. T-10 records and the 2 AM Eastern audit are preserved.
+
+League priors use only prior starter appearances with complete required counts
+and positive batters faced. Incomplete unrelated lines are excluded from that
+population; the reconstruction receipt binds the actual included game IDs and
+counts. An incomplete line belonging to the named pitcher still blocks fallback.

@@ -56,6 +56,15 @@ def pitcher_context(values):
     }
 
 
+CONTEXT_REQUIRED_COUNTS = ("outs", "earnedRuns", "homeRuns", "baseOnBalls",
+                           "hitBatsmen", "strikeOuts", "battersFaced")
+
+
+def complete_context_counts(stats):
+    return (all(number(stats.get(key)) is not None for key in CONTEXT_REQUIRED_COUNTS)
+            and number(stats.get("battersFaced")) > 0)
+
+
 CONTEXT_BASES = {"current_season_pitcher": 0.0, "prior_year_pitcher": 1.0,
                  "current_season_league_prior": 2.0, "prior_year_league_prior": 3.0}
 
@@ -76,7 +85,9 @@ def context_history(completed, pitcher_id, year):
     for season, basis in ((year, "current_season_league_prior"),
                           (year-1, "prior_year_league_prior")):
         entries = [(r, p["stats"]) for r in completed if r["day"].year == season
-                   for p in r.get("context_players", r["players"]) if number(p["stats"].get("gamesStarted")) == 1]
+                   for p in r.get("context_players", r["players"])
+                   if number(p["stats"].get("gamesStarted")) == 1
+                   and complete_context_counts(p["stats"])]
         if entries:
             return entries, basis
     return [], None
@@ -101,10 +112,8 @@ def official_context_pitching(rows):
     """Mirror V8's unshrunk official game-log summary contract."""
     if not rows:
         return {"quality": None, "command": None}
-    required = ("outs", "earnedRuns", "homeRuns", "baseOnBalls",
-                "hitBatsmen", "strikeOuts", "battersFaced")
-    if any(any(number(row.get(key)) is None for key in required)
-           or number(row.get("battersFaced")) == 0 for row in rows):
+    required = CONTEXT_REQUIRED_COUNTS
+    if any(not complete_context_counts(row) for row in rows):
         return {"quality": None, "command": None}
     total = {key: sum(number(row[key]) for row in rows) for key in required}
     if not total["outs"]:

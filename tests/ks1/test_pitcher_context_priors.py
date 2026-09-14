@@ -87,3 +87,19 @@ def test_incomplete_appearance_filtered_from_legacy_features_cannot_trigger_a_pr
     assert actual['pitcher_context_quality'] is None
     assert actual['pitcher_context_command'] is None
     assert PriorPitcherContext(features.rows, SOURCE, identities).at(row, 'home') is None
+
+
+@pytest.mark.parametrize('missing', ['battersFaced', 'hitBatsmen', 'zero_bf'])
+def test_league_prior_isolates_unrelated_incomplete_starts(missing):
+    row, identities = subject()
+    before = PriorPitcherContext(Features(history()).rows, SOURCE, identities).at(row, 'home')
+    broken = {**STATS, 'battersFaced':0} if missing == 'zero_bf' else {
+        k:v for k,v in STATS.items() if k != missing}
+    games = history()+[full_game(98, '2026-08-05', 777, broken)]
+    features = Features(games)
+    after = PriorPitcherContext(features.rows, SOURCE, identities).at(row, 'home')
+    assert before == after
+    assert '98' not in {x['game_id'] for x in after['inputs']}
+    actual = features.at(row['as_of_timestamp'], '1', '999')
+    assert actual['starter_context_basis_code'] == 2.0
+    assert {key:actual['pitcher_context_'+key] for key in after['metrics']} == after['metrics']
