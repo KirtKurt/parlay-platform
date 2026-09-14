@@ -104,7 +104,8 @@ class IsolationTests(unittest.TestCase):
             for name, resource in template["Resources"].items()
             if resource.get("Type") in durable_types
         }
-        self.assertEqual(len(durable), 11)
+        self.assertEqual(len(durable), 12)
+        self.assertEqual(durable["SoccerBbdApiSecret"]["Condition"], "BbdConfigured")
         for name, resource in durable.items():
             self.assertEqual(
                 resource.get("DeletionPolicy"),

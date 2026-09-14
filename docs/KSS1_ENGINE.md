@@ -61,10 +61,14 @@ competition, kickoff and UUID mapping. Newly collected historical statistics
 are timestamped at collection; their availability is never backdated. No
 same-match final statistics enter pregame features.
 
-The optional existing `BBD_API_KEY` deployment secret is passed only to the
-new goals Lambda. Each run queries at most one match list per competition
+The optional existing `BBD_API_KEY` deployment secret is stored in an isolated
+Secrets Manager secret. Only its ARN enters the new goals Lambda's environment;
+the existing soccer role receives GetSecretValue access to that exact secret.
+Each run queries at most one match list per competition
 and 20 mapped stats requests, reuses retained receipts, and records missing
-credentials, missing xG, mapping failures and provider errors. This bounded
+credentials, missing xG, mapping failures and provider errors. Persisted attempt
+timestamps rotate failed/missing observations behind unattempted games, so
+permanent gaps cannot consume every run's stats budget. This bounded
 recent-match endpoint does not provide a complete historical xG backfill.
 Without usable xG, the goals-only candidate can train; xG coverage is never
 invented. Retained production history is capped at 5,000 matches.

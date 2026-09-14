@@ -8,6 +8,7 @@ import json
 import os
 from typing import Any
 
+import boto3
 from botocore.exceptions import ClientError
 
 from .canonical import digest, iso_utc, parse_utc
@@ -70,6 +71,8 @@ def enrich_xg(store, rows, previous, token, *, limit=20):
     cached = {r["event_key"]: r for r in (previous or {}).get("history", [])}
     for row in rows:
         old = cached.get(row["event_key"])
+        if old and old["source_receipt"] == row["source_receipt"] and old.get("xg_last_attempt_at"):
+            row["xg_last_attempt_at"] = old["xg_last_attempt_at"]
         if old and old["source_receipt"] == row["source_receipt"] and old.get("home_xg") is not None:
             for key in ("home_xg", "away_xg", "xg_available_at", "xg_source_receipt", "xg_receipt_uri"):
                 if key in old:
@@ -81,9 +84,11 @@ def enrich_xg(store, rows, previous, token, *, limit=20):
     client = BbdClient(token)
     competitions = {}
     attempted = 0
-    # Oldest remaining rows are not repeatedly allowed to starve recent games.
-    # Existing retained receipts are reused; every new receipt is timestamped now.
-    for row in reversed(rows):
+    # Unattempted games first, newest among ties; then least recently attempted.
+    # Persist attempts even for errors/missing xG so the same failures cannot
+    # consume every run's budget and starve older available statistics.
+    pending = sorted(rows, key=lambda r: (r.get("xg_last_attempt_at") or "", -parse_utc(r["commence_time"]).timestamp(), r["event_key"]))
+    for row in pending:
         if row.get("home_xg") is not None:
             continue
         if attempted >= limit:
@@ -100,6 +105,7 @@ def enrich_xg(store, rows, previous, token, *, limit=20):
                 status["unmapped"] += 1
                 continue
             attempted += 1
+            row["xg_last_attempt_at"] = iso_utc(now_utc())
             payload = client.match_stats(match["bbd_match_id"])
             observed = iso_utc(now_utc())
             xg = extract_match_xg(payload)
@@ -160,9 +166,16 @@ def train_goals_shadow(store, *, token="") -> dict[str, Any]:
             "model_digest": pointer["model_digest"], "automatic_prediction_allowed": False}
 
 
+def _bbd_token():
+    arn = os.getenv("SOCCER_AUTO_BBD_SECRET_ARN", "").strip()
+    if not arn:
+        return ""
+    return (boto3.client("secretsmanager").get_secret_value(SecretId=arn).get("SecretString") or "").strip()
+
+
 def trainer_handler(event, context):
     # Separate scheduled Lambda: a market-trainer timeout cannot starve goals.
-    result = train_goals_shadow(SoccerStore(), token=os.getenv("SOCCER_AUTO_BBD_API_KEY", ""))
+    result = train_goals_shadow(SoccerStore(), token=_bbd_token())
     return {"ok": True, "system": "soccer_auto", "goals_training": result}
 
 

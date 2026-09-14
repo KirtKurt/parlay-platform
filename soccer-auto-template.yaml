@@ -42,6 +42,7 @@ Parameters:
 
 Conditions:
   HistoricalBackfillEnabled: !Equals [!Ref EnableHistoricalBackfill, 'true']
+  BbdConfigured: !Not [!Equals [!Ref BbdApiKey, '']]
 
 Globals:
   Function:
@@ -85,6 +86,15 @@ Globals:
         SOCCER_AUTO_HISTORICAL_MATERIALIZATION_EVENTS_PER_INVOCATION: '5'
 
 Resources:
+  SoccerBbdApiSecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: BbdConfigured
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Isolated BBD credential for KSS1 prior-match xG collection
+      SecretString: !Ref BbdApiKey
+
   SoccerOddsApiSecret:
     Type: AWS::SecretsManager::Secret
     DeletionPolicy: RetainExceptOnCreate
@@ -346,7 +356,9 @@ Resources:
                   - !GetAtt SoccerCollectionDeadLetterQueue.Arn
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
-                Resource: !Ref SoccerOddsApiSecret
+                Resource:
+                  - !Ref SoccerOddsApiSecret
+                  - !If [BbdConfigured, !Ref SoccerBbdApiSecret, !Ref 'AWS::NoValue']
               - Effect: Allow
                 Action: cloudwatch:GetMetricStatistics
                 Resource: '*'
@@ -668,7 +680,7 @@ Resources:
       MemorySize: 3008
       Environment:
         Variables:
-          SOCCER_AUTO_BBD_API_KEY: !Ref BbdApiKey
+          SOCCER_AUTO_BBD_SECRET_ARN: !If [BbdConfigured, !Ref SoccerBbdApiSecret, '']
       Events:
         TrainGoalsEverySixHours:
           Type: Schedule
