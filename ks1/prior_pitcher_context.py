@@ -12,6 +12,7 @@ import re
 
 from ks1.features import day, number, official_context_pitching, utc
 from ks1.inventory import encode, RESEARCH
+from ks1.historical_starters import published_starter_index
 
 VERSION = "KS1-prior-pitcher-reconstruction-v1"
 FIELDS = ("quality", "recent_form", "velocity", "command", "expected_innings")
@@ -48,9 +49,45 @@ def summarize(entries):
             if outs and all(x is not None for x in outs) else None}
 
 
+def pregame_identity_index(bundle):
+    """Independent pregame identities from the retained source observations."""
+    result = defaultdict(list)
+    for pk, entry in published_starter_index(bundle.get('published_predictions', [])).items():
+        for side, pitcher in entry['sides'].items():
+            result[(pk, side)].append({
+                'pitcher_id': pitcher['id'], 'team_id': entry['teams'][side],
+                'as_of': entry['as_of'], 'commence_time': entry['commence_time'],
+                'source': entry['source']})
+    receipts = {r['key']: r for r in bundle.get('source_receipts', [])}
+    for snapshot in bundle.get('snapshots', []):
+        try:
+            at, cutoff, start = (utc(snapshot[k]) for k in
+                                 ('capturedAtUtc', 'featureCutoffUtc', 'commenceTime'))
+            source = receipts.get(snapshot.get('source_key'))
+            if (snapshot.get('originalObservation') is not True
+                    or snapshot.get('outcomeKnownAtCapture') is not False
+                    or not at <= cutoff <= start-timedelta(minutes=10)
+                    or not source or not source.get('versionId')
+                    or source['versionId'] == 'null'
+                    or digest(snapshot['features']) != snapshot['featureFingerprint']):
+                continue
+            for side, team in snapshot.get('playerWindows', {}).get('teams', {}).items():
+                pid = team.get('starterId')
+                players = [p for p in team.get('players', []) if str(p['id']) == str(pid)]
+                if side in ('home', 'away') and pid and len(players) == 1:
+                    result[(str(snapshot['officialGamePk']), side)].append({
+                        'pitcher_id': str(pid), 'team_id': str(team['teamId']),
+                        'as_of': snapshot['capturedAtUtc'], 'commence_time': snapshot['commenceTime'],
+                        'source': source})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return result
+
+
 class PriorPitcherContext:
-    def __init__(self, rows, source):
+    def __init__(self, rows, source, pregame=None):
         self.source = source if valid_source(source) else None
+        self.pregame = pregame or {}
         self.teams, self.pitchers = defaultdict(list), defaultdict(list)
         for row in rows:
             self.teams[row["team_id"]].append(row)
@@ -68,8 +105,21 @@ class PriorPitcherContext:
                     and game["completed"] < cutoff)
 
         pitcher_id = row.get(side+"_starter_id")
+        if str(pitcher_id) in ('nan', '<NA>'):
+            pitcher_id = None
         identity_mode = "observed_pregame_identity_reconstructed_stats"
+        identity_evidence = None
         selection_games = []
+        if pitcher_id is not None:
+            identities = [entry for entry in self.pregame.get((game_id, side), [])
+                          if entry['team_id'] == team_id
+                          and utc(entry['commence_time']) == utc(row['commence_time'])
+                          and utc(entry['as_of']) <= cutoff]
+            if not identities:
+                return None
+            identity_evidence = max(identities, key=lambda entry: utc(entry['as_of']))
+            if str(pitcher_id) != identity_evidence['pitcher_id']:
+                return None
         if pitcher_id is None:
             # Fixed, outcome-independent cadence rule used by the retained V8
             # reconstruction: last 18 team games, 4-10 days rest, closest to 5.
@@ -105,6 +155,7 @@ class PriorPitcherContext:
         evidence = {
             "version": VERSION, "game_id": game_id, "team_id": team_id, "side": side,
             "pitcher_id": str(pitcher_id), "identity_mode": identity_mode,
+            "identity_evidence": identity_evidence,
             "as_of": row["as_of_timestamp"], "target_date": row["date"],
             "source": self.source, "metrics": metrics,
             "inputs": [{"game_id": key, "date": str(g["day"]),

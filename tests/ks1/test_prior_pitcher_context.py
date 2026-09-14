@@ -43,8 +43,14 @@ def target():
                 away_starter_status="missing_pregame_evidence")
 
 
+def identities():
+    return {('99', 'home'): [dict(pitcher_id='104', team_id='1',
+            as_of='2026-08-11T19:30:00Z', commence_time='2026-08-11T20:00:00Z',
+            source={'version_id':'test-original', 'sha256':'b'*64})]}
+
+
 def verify(row):
-    return verified_reconstruction(row, PriorPitcherContext(Features(history()).rows, SOURCE))
+    return verified_reconstruction(row, PriorPitcherContext(Features(history()).rows, SOURCE, identities()))
 
 
 def attach(engine, row):
@@ -85,7 +91,7 @@ def test_target_future_same_day_and_later_completed_games_cannot_change_projecti
 def test_observed_identity_wins_over_rotation_projection():
     row = target()
     row.update(home_starter_id="104", home_starter_status="observed_versioned_t10")
-    row = attach(PriorPitcherContext(Features(history()).rows, SOURCE), row)
+    row = attach(PriorPitcherContext(Features(history()).rows, SOURCE, identities()), row)
     assert verify(row)
     proof = json.loads(row["reconstructed_pitcher_context_proof"])["home"]
     assert proof["pitcher_id"] == "104"
@@ -161,3 +167,12 @@ def test_table_reconstructs_two_sides_without_using_target_box_identity():
 def test_proof_cannot_qualify_without_independently_loaded_official_source():
     row = attach(PriorPitcherContext(Features(history()).rows, SOURCE), target())
     assert not verified_reconstruction(row)
+
+
+def test_observed_label_without_independent_identity_cannot_qualify():
+    row = target()
+    row.update(home_starter_id='104', home_starter_status='observed_versioned_t10')
+    assert PriorPitcherContext(Features(history()).rows, SOURCE).at(row, 'home') is None
+    # An independently observed different ID also prevents copied actual IDs.
+    row['home_starter_id'] = '106'
+    assert PriorPitcherContext(Features(history()).rows, SOURCE, identities()).at(row, 'home') is None

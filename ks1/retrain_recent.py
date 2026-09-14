@@ -18,7 +18,8 @@ from ks1.passive_context import (LINEUP_FEATURES, BULLPEN_FEATURES,
 from ks1.sources import aws_clients, load_existing
 from ks1.table import build, contract
 from ks1.train import PARAMS, select_features, save_artifact
-from ks1.prior_pitcher_context import PriorPitcherContext, verified_reconstruction
+from ks1.prior_pitcher_context import (PriorPitcherContext, pregame_identity_index,
+                                      verified_reconstruction)
 
 # Feature-contract construction needs a valid timestamp but does not inspect data.
 FEATURE_CONTRACT_DATE = '2026-09-01'
@@ -357,7 +358,8 @@ def main():
              'incumbent_ref': ref, 'provider_calls': 0}
     proof['official_history_source'] = bundle.get('official_history_source')
     reconstruction = PriorPitcherContext(normalize(bundle.get('full', [])),
-                                         bundle.get('official_history_source', {}))
+                                         bundle.get('official_history_source', {}),
+                                         pregame_identity_index(bundle))
     report = evaluate(frame, body, args.output, proof, reconstruction=reconstruction)
     # Only isolated experiment artifacts are saved. A separate reviewed model
     # reference change is required for serving; no authority or ledger write.

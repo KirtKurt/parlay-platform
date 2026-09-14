@@ -12,7 +12,7 @@ from ks1.features import Features, day, number, starter_matchup, utc
 from ks1.historical_starters import published_starter_index
 from ks1.inventory import encode
 from ks1.passive_context import MODEL_FEATURES as LINEUP_BULLPEN_FEATURES, published_profile_index
-from ks1.prior_pitcher_context import PriorPitcherContext
+from ks1.prior_pitcher_context import PriorPitcherContext, pregame_identity_index
 
 VERSION = "KS1-game-table-v1"
 
@@ -120,7 +120,7 @@ def build(bundle, selected_date=None):
     markets = market_index(bundle.get("odds", []))
     reconstruction = PriorPitcherContext(
         [r for r in history.rows if r["game_id"] in full],
-        bundle.get("official_history_source", {}))
+        bundle.get("official_history_source", {}), pregame_identity_index(bundle))
     crosswalk = defaultdict(set)
     player_names = defaultdict(set)
     for game in games.values():
