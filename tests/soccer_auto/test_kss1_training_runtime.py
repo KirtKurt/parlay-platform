@@ -68,7 +68,7 @@ def test_only_valid_signed_scores_enter_history(monkeypatch):
 
 def test_small_history_persists_receipts_without_claiming_training(monkeypatch):
     store = Store()
-    monkeypatch.setattr("soccer_auto.kss1_training_runtime.source_history", lambda store: history(40))
+    monkeypatch.setattr("soccer_auto.kss1_training_runtime.source_history", lambda store, **kwargs: history(40))
     result = train_goals_shadow(store)
     assert result["trained"] is False
     assert result["bbd"]["reason"] == "BBD_CREDENTIAL_NOT_CONFIGURED"

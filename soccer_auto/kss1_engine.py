@@ -141,6 +141,11 @@ def predict_match(payload: dict[str, Any], *, goals_model=None, goals_features=N
     if observation.get("action") == "reject":
         for key in ("1x2_published", "double_chance_published", "ou25_published", "btts_published"):
             markets[key] = "ABSTAIN"
+    # The same minimum team history required for training applies to fitted
+    # selections. A fitted global model does not make defaulted teams ready.
+    if goals_model is not None and not goals_features["team_strength_complete"]:
+        for key in ("1x2_published", "double_chance_published", "ou25_published", "btts_published"):
+            markets[key] = "ABSTAIN"
     return {
         "engine_id": ENGINE_ID,
         "engine_lock_version": ENGINE_LOCK_VERSION,

@@ -145,3 +145,15 @@ def test_holdout_labels_never_choose_or_fit_the_model():
 
 def test_empty_data_never_reports_a_trained_model():
     assert train_and_validate([])["trained"] is False
+
+
+def test_fitted_model_cannot_publish_selections_for_teams_without_history():
+    rows = history(45)
+    table = [r for r in build_training_table(HistoryIndex(rows)) if r["features"]["team_strength_complete"]]
+    model = fit(table, use_xg=False, ridge=.1, fitted_as_of="2025-03-01T00:00:00Z")
+    target = fixture() | {"home_team": "Unknown team", "away_team": "Another unknown team"}
+    context = {"context_as_of": "2025-09-30T00:00:00Z", "created_at": "2025-09-30T00:00:00Z", "history": rows, "model": model}
+    item = build_kss1_shadow_item(target, "2025-10-01T15:00:00Z", goals_context=context)
+    assert item["kss1"]["input_coverage"]["team_strength_complete"] is False
+    for key in ("1x2_published", "double_chance_published", "ou25_published", "btts_published"):
+        assert item["kss1"]["markets"][key] == "ABSTAIN"

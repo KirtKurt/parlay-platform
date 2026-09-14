@@ -13,25 +13,37 @@ from botocore.exceptions import ClientError
 
 from .canonical import digest, iso_utc, parse_utc
 from .kss1_bbd import BbdClient, BbdError, extract_match_xg
-from .kss1_features import HistoryIndex, build_training_table, normalize_history
+from .kss1_features import MIN_TEAM_GAMES, HistoryIndex, build_training_table, normalize_history
 from .kss1_goals_model import train_and_validate
 from .kss1_identity import classify_competition, map_event
-from .settlement import settlement_training_admissible, settlement_training_views
+from .settlement import settlement_training_admissible, settlement_training_evidence_valid, settlement_training_views
 from .storage import SoccerStore, ddb_safe, now_utc, plain
 
 MODEL_PK = "MODEL#kss1_goals#global"
 CONTEXT_KEY = {"PK": MODEL_PK, "SK": "SHADOW_CONTEXT"}
 
 
-def source_history(store) -> list[dict[str, Any]]:
+def source_history(store, *, audit=None) -> list[dict[str, Any]]:
     from .trainer import _settlement_conflict_events
     conflicts = _settlement_conflict_events(store)
     rows = []
     signed = settlement_training_views(list(store.scan_all(store.settlements, ConsistentRead=True)))
+    counts = {"final_score_rows": len(signed), "invalid_score_evidence": 0,
+              "conflicted_scores": 0, "regulation_ineligible": 0,
+              "competition_ineligible": 0, "accepted_scores": 0}
+    competitions = {}
     for row in signed:
-        if row["event_key"] in conflicts or not settlement_training_admissible(row):
+        if not settlement_training_evidence_valid(row):
+            counts["invalid_score_evidence"] += 1
+            continue
+        if row["event_key"] in conflicts:
+            counts["conflicted_scores"] += 1
+            continue
+        if not settlement_training_admissible(row):
+            counts["regulation_ineligible"] += 1
             continue
         if not classify_competition(row["sport_key"])["goals_model_eligible"]:
+            counts["competition_ineligible"] += 1
             continue
         certificate = row.get("training_admissibility_certificate") or {}
         available = max(parse_utc(row["observed_at"]), parse_utc(row.get("completed_at") or row["observed_at"]), parse_utc(certificate.get("observed_at") or row["observed_at"]))
@@ -40,7 +52,17 @@ def source_history(store) -> list[dict[str, Any]]:
             "source": "the_odds_api_signed_settlement", "provenance_mode": "VERIFIED_RECEIPT",
             "home_xg": None, "away_xg": None,
         })
-    return normalize_history(rows)
+        counts["accepted_scores"] += 1
+        competitions[row["sport_key"]] = competitions.get(row["sport_key"], 0) + 1
+    result = normalize_history(rows)
+    if audit is not None:
+        audit.update(counts, accepted_by_competition=competitions,
+                     unique_history_rows=len(result),
+                     source="the_odds_api_signed_settlement",
+                     availability_policy="verified score and certificate receipts; never kickoff-derived",
+                     oldest_kickoff=result[0]["commence_time"] if result else None,
+                     newest_kickoff=result[-1]["commence_time"] if result else None)
+    return result
 
 
 def load_context(store) -> dict[str, Any] | None:
@@ -126,12 +148,25 @@ def enrich_xg(store, rows, previous, token, *, limit=20):
 def train_goals_shadow(store, *, token="") -> dict[str, Any]:
     started = iso_utc(now_utc())
     previous = load_context(store)
-    history = source_history(store)
+    source_audit = {}
+    history = source_history(store, audit=source_audit)
     history, bbd = enrich_xg(store, history, previous, token)
     history = history[-5000:]
     index = HistoryIndex(history)
     table = build_training_table(index)
     report = train_and_validate(table, min_train=500, min_test=100)
+    readiness = {key: report[key] for key in (
+        "input_rows", "eligible_rows", "excluded_insufficient_team_history",
+        "required_minimum", "additional_eligible_rows_lower_bound",
+        "required_split_counts", "split_counts", "split_boundaries", "xg_required",
+    ) if key in report}
+    readiness["source_audit"] = source_audit
+    readiness["minimum_prior_games_per_team"] = MIN_TEAM_GAMES
+    readiness["eligible_by_competition"] = {}
+    for row in table:
+        if row["features"]["team_strength_complete"]:
+            sport = row["features"]["sport_key"]
+            readiness["eligible_by_competition"][sport] = readiness["eligible_by_competition"].get(sport, 0) + 1
     feature_digest = digest({"rows": table})
     table_uri = store.write_artifact("kss1/training_tables", {"rows": table}, feature_digest)
     model = report.get("model")
@@ -142,7 +177,7 @@ def train_goals_shadow(store, *, token="") -> dict[str, Any]:
         model = (previous or {}).get("model")
     context = {"context_as_of": started, "created_at": iso_utc(now_utc()),
                "history": history, "model": model, "training_report": report,
-               "bbd": bbd, "training_table_uri": table_uri,
+               "bbd": bbd, "training_table_uri": table_uri, "readiness": readiness,
                "automatic_prediction_allowed": False}
     context_digest = digest(context)
     uri = store.write_artifact("kss1/contexts", context, context_digest)
@@ -153,6 +188,8 @@ def train_goals_shadow(store, *, token="") -> dict[str, Any]:
                "candidate_model_digest": report.get("model", {}).get("model_digest"),
                "candidate_holdout": report.get("holdout"),
                "candidate_baseline": report.get("baseline"),
+               "candidate_passed_retrospective": bool(report.get("lower_brier_no_worse_log_loss") and not report.get("research_only")),
+               "readiness": readiness,
                "qualification_blockers": report.get("qualification_blockers", [report.get("reason")]),
                "automatic_prediction_allowed": False}
     try:
@@ -162,7 +199,7 @@ def train_goals_shadow(store, *, token="") -> dict[str, Any]:
             raise
         return {"trained": report["trained"], "published_context": False, "reason": "NEWER_GOALS_CONTEXT_EXISTS"}
     return {"trained": report["trained"], "published_context": True, "training_rows": len(table),
-            "reason": report.get("reason"), "bbd": bbd, "artifact_uri": uri,
+            "reason": report.get("reason"), "bbd": bbd, "artifact_uri": uri, "readiness": readiness,
             "model_digest": pointer["model_digest"], "automatic_prediction_allowed": False}
 
 
