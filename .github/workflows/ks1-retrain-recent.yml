@@ -2,9 +2,9 @@ name: KS1 seven-day model validation
 on:
   push:
     branches: [main]
-    paths: ['ks1/**', 'tests/ks1/**', 'tests/ks1_recent/**', '.github/workflows/ks1-retrain-recent.yml']
+    paths: ['ks1/**', 'tests/ks1/**', 'tests/ks1_phase2/**', 'tests/ks1_recent/**', '.github/workflows/ks1-retrain-recent.yml']
   pull_request:
-    paths: ['ks1/**', 'tests/ks1/**', 'tests/ks1_recent/**', '.github/workflows/ks1-retrain-recent.yml']
+    paths: ['ks1/**', 'tests/ks1/**', 'tests/ks1_phase2/**', 'tests/ks1_recent/**', '.github/workflows/ks1-retrain-recent.yml']
   workflow_dispatch:
   schedule:
     - cron: '35 7 * * 1'
