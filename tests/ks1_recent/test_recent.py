@@ -444,6 +444,7 @@ def historical_team_context_frame(status='SUPPORTED_V1_COMPLETE'):
                'versionId': 'immutable-version', 'sha256': 'b'*64,
                'payload_sha256': 'c'*64}
     frame = pd.DataFrame({
+        'game_id': ['1']*300,
         'lineup_bullpen_context_evidence': ['historical_timecoded_mlb_feed']*300,
         'historical_lineup_bullpen_context_status': [status]*300,
         'historical_lineup_bullpen_context_source': [json.dumps(receipt)]*300,
@@ -470,6 +471,7 @@ def test_timecoded_team_context_qualifies_explicit_missing_values_with_receipts(
 
 
 @pytest.mark.parametrize(('column', 'bad'), [
+    ('game_id', '2'),
     ('historical_lineup_bullpen_context_status', 'UNAVAILABLE_FAIL_CLOSED'),
     ('historical_lineup_bullpen_context_source', '{}'),
     ('historical_lineup_bullpen_context_as_of', '2025-05-01T19:51:00Z'),
@@ -510,16 +512,19 @@ def test_training_source_filter_is_outcome_blind_and_keeps_explicit_missing():
     base, receipt = historical_team_context_frame('SUPPORTED_V1_EXPLICIT_MISSING')
     frame = pd.concat([base, base, base], ignore_index=True)
     frame['game_id'] = frame.index.astype(str)
+    receipts = [{**receipt, 'key': receipt['key'].replace('game=1/', f'game={pk}/')}
+                for pk in frame.game_id]
+    frame['historical_lineup_bullpen_context_source'] = [json.dumps(r) for r in receipts]
     frame['home_win'] = frame.index % 2
     frame.loc[0, 'historical_lineup_bullpen_context_source'] = '{}'
     frame.loc[1, 'historical_lineup_bullpen_context_as_of'] = '2025-05-01T19:51:00Z'
     frame.loc[2, 'historical_lineup_bullpen_context_status'] = 'UNAVAILABLE_FAIL_CLOSED'
-    selected, report = qualified_training_population(frame, [receipt])
+    selected, report = qualified_training_population(frame, receipts)
     assert len(selected) == 897
     assert report['excluded_game_ids'] == ['0', '1', '2']
     assert selected.away_bullpen_context_fip_30d.isna().all()
     reversed_labels = frame.assign(home_win=1-frame.home_win)
-    other, other_report = qualified_training_population(reversed_labels, [receipt])
+    other, other_report = qualified_training_population(reversed_labels, receipts)
     assert selected.game_id.tolist() == other.game_id.tolist()
     assert report == other_report
     with pytest.raises(ValueError, match='verified team context'):

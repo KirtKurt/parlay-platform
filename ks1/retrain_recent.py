@@ -314,11 +314,14 @@ def historical_team_context_mask(frame, source_receipts=None):
             binding = (str(receipt.get('bucket')), str(receipt.get('key')),
                        str(receipt.get('versionId') or receipt.get('version_id')),
                        str(receipt.get('sha256')))
+            identity = re.fullmatch(
+                r'mlb/development-data/ks1-historical-team-context-v1/'
+                r'game=([0-9]+)/timecode=[0-9]{8}_[0-9]{6}\.json',
+                str(receipt.get('key') or ''))
             return bool(receipt.get('source_type') == 'mlb_statsapi_timecoded_team_context'
                         and receipt.get('provider') == 'MLB Stats API'
                         and receipt.get('bucket') and receipt.get('versionId') not in (None, '', 'null')
-                        and str(receipt.get('key') or '').startswith(
-                            'mlb/development-data/ks1-historical-team-context-v1/')
+                        and identity is not None and identity.group(1) == str(row.get('game_id'))
                         and re.fullmatch('[0-9a-f]{64}', str(receipt.get('sha256') or ''))
                         and re.fullmatch('[0-9a-f]{64}', str(receipt.get('payload_sha256') or ''))
                         and all(t.tzinfo is not None and not pd.isna(t)
