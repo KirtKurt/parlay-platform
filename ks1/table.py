@@ -142,6 +142,7 @@ def build(bundle, selected_date=None):
     complete_official_years = set(bundle.get("official_history_source", {}).get("complete_years", []))
     history = Features(list(games.values()), bundle.get("statcast", []),
                        statcast_retained_dates=bundle.get("statcast_retained_dates", []),
+                       statcast_verified_games=bundle.get("statcast_verified_games", []),
                        statcast_complete=bundle.get("statcast_coverage_complete") is True,
                        prior_statcast_profiles=bundle.get("prior_statcast_profiles"),
                        prior_statcast_year=bundle.get("prior_statcast_year"))

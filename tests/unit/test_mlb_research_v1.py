@@ -30,11 +30,13 @@ def test_retained_statcast_dates_require_official_pitch_counts(defect):
                              'teamStats': {'batting': {}},
                              'players': {'ID'+str(pid): {
                                  'person': {'id': pid},
-                                 'stats': {'pitching': {'numberOfPitches': 2,
+                                 'stats': {'pitching': {'numberOfPitches': 2, 'battersFaced': 1,
                                                        'gamesStarted': 1}}}}}
                       for side, tid, pid in (('home', 1, 100), ('away', 2, 101))}}
     rows = [{'game_pk': '1', 'pitcher': str(pid), 'at_bat_number': str(pid),
-             'pitch_number': str(n)} for pid in (100, 101) for n in (1, 2)]
+             'pitch_number': str(n), 'events': 'field_out' if n == 2 else '',
+             'woba_denom': '1' if n == 2 else '', 'woba_value': '0' if n == 2 else ''}
+            for pid in (100, 101) for n in (1, 2)]
     if defect == 'truncated':
         rows.pop()  # same game ID still present
     elif defect == 'duplicate':
@@ -283,6 +285,29 @@ def test_statcast_pitch_quality_physics_and_arsenal_are_explicit():
     assert batter['averageExitVelocity'] == 101
 
 
+def test_research_statcast_shares_physical_counts_and_requires_game_evidence():
+    pitch = {'game_pk':'1','game_date':'2026-08-01','pitcher':'10','batter':'20',
+             'type':'S','pitch_type':'FF','description':'called_strike',
+             'launch_speed':'','release_speed':'95','events':''}
+    automatic = {**pitch, 'pitch_type':'','release_speed':'',
+                 'description':'automatic_strike','events':'strikeout'}
+    window = {'gameIds':[1], 'stats':{'numberOfPitches':1,'plateAppearances':1}}
+    pitcher = {'id':'10','probableStarter':True,'lineupSlot':None,
+               'pitching':{key:window for key in ('7d','15d','30d','last3Starts')}}
+    batter = {'id':'20','probableStarter':False,'lineupSlot':1,
+              'hitting':{key:window for key in ('7d','15d','30d')}}
+    observation = {'teams':{'home':{'players':[pitcher]},'away':{'players':[batter]}}}
+    bundle = {'rows':[pitch,automatic], 'retainedCompleteDates':[], 'retainedCompleteGames':['1']}
+    result = signals.statcast_features(observation, bundle, AT)
+    assert result['homeStarterStatcastCompleteLast3'] == 1
+    assert result['awayLineupStatcastComplete7d'] == 1
+    assert result['homeStarterCswRateLast3'] == result['awayLineupCswRate7d'] == 1
+    assert source.statcast_player([automatic], '10', 'pitcher')['cswRate'] is None
+    unverified = signals.statcast_features(observation, {'rows':[pitch,automatic]}, AT)
+    assert unverified['homeStarterStatcastCompleteLast3'] == 0
+    assert unverified['homeStarterCswRateLast3'] is None
+
+
 def test_research_starter_values_fail_closed_before_snapshot_binding():
     values={'starter_era_7d':2.5,'starter_xwoba_30d':.3,
             'starter_csw_pct_last3':31,'starter_ff_velocity_prior_year':95,
@@ -511,16 +536,18 @@ def test_ingestion_versions_expanded_games_and_retains_prior_year_scope(monkeypa
             'first':first,'last':last,'retrievedAtUtc':AT.isoformat()}
     monkeypatch.setattr(source,'schedule',schedule)
     def final_source(value):
+        stats = {'numberOfPitches':1, 'battersFaced':1, 'gamesStarted':1}
         return {'officialGamePk':value['gamePk'],'startAtUtc':value['gameDate'],
                 'completedAtUtc':value['gameDate'],'gameType':'R',
-                'teams':{side:{'id':team['team']['id'],'name':team['team']['name'],
-                               'batting':{},'priorStarters':{},'relief':{}}
-                         for side,team in value['teams'].items()}}
+                'teams':{side:{'team':team['team'],'teamStats':{},'players':{
+                    str(pid):{'person':{'id':pid},'stats':{'pitching':dict(stats)}}}}
+                         for (side,team),pid in zip(value['teams'].items(), (99,100))}}
     monkeypatch.setattr(source,'final_source',final_source)
     ids={'2025-04-01':11,'2026-09-08':12}
     monkeypatch.setattr(source,'statcast',lambda value:{'date':value,'rows':[
-        {'game_pk':str(ids[value]),'at_bat_number':'1','pitch_number':'1',
-         'pitcher':'99','type':'S','pitch_type':'FF'}]})
+        {'game_pk':str(ids[value]),'game_date':value,'at_bat_number':str(pid),'pitch_number':'1',
+         'pitcher':str(pid),'type':'S','pitch_type':'FF','events':'strikeout',
+         'woba_denom':'1','woba_value':'0'} for pid in (99,100)]})
     result=ingestion.ingest(store,seconds=60)
     keys=set(store.keys('sources/'))
     assert {'sources/games-v2/11.json','sources/games-v2/12.json'}.issubset(keys)
@@ -530,26 +557,43 @@ def test_ingestion_versions_expanded_games_and_retains_prior_year_scope(monkeypa
     assert prior['priorYear']==2025 and prior['priorYearCoverageComplete'] is True
     assert prior['receipt']['retrievedAtUtc']==AT.isoformat()
     assert statcast['priorYear']==2025 and statcast['current30CoverageComplete'] is True
+    assert statcast['retainedCompleteGames'] == ['11','12']
+    assert '2025-04-01' not in statcast['retainedCompleteDates']
+    assert {r['pitcher'] for r in statcast['rows'] if r['game_pk']=='11'} == {'99','100'}
     assert result['priorYearStatcastDays']==365
 
 
 def test_prior_year_profiles_survive_current_year_statcast_lag():
     stats = dict(outs=3, earnedRuns=0, runs=0, hits=0, homeRuns=0,
-                 baseOnBalls=0, hitBatsmen=0, strikeOuts=2, battersFaced=3,
+                 baseOnBalls=0, hitBatsmen=0, strikeOuts=1, battersFaced=1,
                  numberOfPitches=1, wins=1, losses=0, gamesStarted=1)
     prior = {'officialGamePk':'11','startAtUtc':'2025-04-01T18:18:00+00:00',
              'completedAtUtc':'2025-04-01T20:18:00+00:00','gameType':'R','teams':{
                  'home':{'team':{'id':10},'teamStats':{'batting':{}},'players':{
                      'ID99':{'person':{'id':99},'stats':{'pitching':stats}}}},
                  'away':{'team':{'id':20},'teamStats':{'batting':{}},'players':{}}}}
+    prior['teams']['away']['players']['ID100'] = {
+        'person': {'id': 100}, 'stats': {'pitching': dict(stats)}}
     pitch = {'game_pk':'11','pitcher':'99','batter':'1','type':'S',
+             'at_bat_number':'1','pitch_number':'1','events':'strikeout',
+             'woba_denom':'1','woba_value':'0',
              'pitch_type':'FF','description':'swinging_strike','release_speed':'95',
              'release_spin_rate':'2400','release_extension':'6.5','pfx_x':'-.5','pfx_z':'1.2'}
 
-    profiles = ingestion.prior_year_profiles([prior], [pitch], 2025)
+    rows = [pitch, {**pitch, 'pitcher':'100', 'at_bat_number':'2'}]
+    profiles = ingestion.prior_year_profiles([prior], rows, 2025)
 
     assert profiles['99']['complete'] == 1
     assert profiles['99']['pitches'] == 1
+    # A missing automatic outcome leaves every physical pitch intact.
+    prior['teams']['home']['players']['ID99']['stats']['pitching']['battersFaced'] = 2
+    automatic = {**pitch, 'at_bat_number':'3','pitch_type':'','release_speed':'',
+                 'description':'automatic_strike'}
+    assert ingestion.prior_year_profiles([prior], rows, 2025) == {}
+    assert ingestion.prior_year_profiles([prior], rows+[automatic], 2025)['99']['xwoba_pa'] == 2
+    for field in ('woba_denom', 'woba_value'):
+        incomplete = {**automatic, field: ''}
+        assert ingestion.prior_year_profiles([prior], rows+[incomplete], 2025) == {}
 
 
 def test_new_deployment_refreshes_training_from_existing_capture_owner(monkeypatch,store):
@@ -648,6 +692,13 @@ def test_market_movement_keeps_old_history_with_fresh_latest_baseline():
 
 @pytest.mark.parametrize('collection_seconds',[0,31])
 def test_snapshot_rechecks_quote_age_after_source_collection(store,monkeypatch,collection_seconds):
+    import ks1.features
+    real_features = ks1.features.Features
+    supplied = []
+    def checked_features(*args, **kwargs):
+        supplied.append(kwargs)
+        return real_features(*args, **kwargs)
+    monkeypatch.setattr(ks1.features, 'Features', checked_features)
     times=iter([AT,AT,AT+timedelta(seconds=collection_seconds)])
     monkeypatch.setattr(runtime,'now',lambda:next(times))
     monkeypatch.setattr(source,'feed',lambda game:({},{}))
@@ -664,3 +715,5 @@ def test_snapshot_rechecks_quote_age_after_source_collection(store,monkeypatch,c
         result=runtime.snapshot(*args)
         assert result['features']['marketHomeProbability']==.55
         assert result['capturedAtUtc']==AT.isoformat()
+    assert supplied[0]['statcast_retained_dates'] == []
+    assert supplied[0]['statcast_verified_games'] == []

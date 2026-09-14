@@ -451,6 +451,7 @@ def predict(folder, output):
                       statcast_complete=inputs['history'].get('statcast_coverage_complete') is True,
                       prior_statcast_profiles=inputs['history'].get('prior_statcast_profiles'),
                       statcast_retained_dates=inputs['history'].get('statcast_retained_dates', []),
+                      statcast_verified_games=inputs['history'].get('statcast_verified_games', []),
                       prior_statcast_year=inputs['history'].get('prior_statcast_year'))
     rows, feature_rows, exclusions = [], [], []
     previous = pq.ParquetFile(folder/'previous.parquet').read().to_pandas() if (folder/'previous.parquet').exists() else None

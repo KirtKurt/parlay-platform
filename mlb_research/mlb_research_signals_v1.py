@@ -78,8 +78,12 @@ def prior_features(game, sources, schedule, cutoff):
 
 
 def statcast_features(observation, bundle, cutoff):
+    from ks1.statcast_events import is_plate_appearance, is_thrown_pitch
     result = {}
     rows = bundle.get('rows', [])
+    verified_dates = set(bundle.get('retainedCompleteDates', []))
+    verified_games = {str(pk) for pk in bundle.get('retainedCompleteGames', [])}
+    game_dates = {str(row.get('game_pk')): row.get('game_date') for row in rows}
     for side, team in observation['teams'].items():
         for group, members, role in (('Starter',[p for p in team['players'] if p['probableStarter']], 'pitcher'),
                 ('Lineup',[p for p in team['players'] if p['lineupSlot']], 'batter')):
@@ -94,8 +98,10 @@ def statcast_features(observation, bundle, cutoff):
                     selected = [r for r in rows if source.count(r['game_pk']) in ids and str(r[role])==str(player['id'])]
                     selected_sets.append(selected)
                     expected = (window.get('stats') or {}).get('numberOfPitches' if role=='pitcher' else 'plateAppearances')
-                    actual = len(selected) if role=='pitcher' else sum(bool(r.get('events')) for r in selected)
-                    if expected is None or actual != expected:
+                    actual = sum(is_thrown_pitch(r) for r in selected) if role=='pitcher' else sum(is_plate_appearance(r) for r in selected)
+                    source_complete = all(str(pk) in verified_games or game_dates.get(str(pk)) in verified_dates
+                                          for pk in ids)
+                    if expected is None or actual != expected or not source_complete:
                         complete = False
                     summaries.append(source.statcast_player(selected,player['id'],role))
                 result[f'{side}{group}StatcastComplete{label}'] = float(complete)

@@ -191,6 +191,7 @@ def capture(target_date, output):
     history = {'games': games, 'source_receipts': reader.receipts, 'schedule': prior.get('schedule', []),
                'statcast': statcast.get('rows', []),
                'statcast_retained_dates': statcast.get('retainedCompleteDates', []),
+               'statcast_verified_games': statcast.get('retainedCompleteGames', []),
                'coverage_complete': prior.get('coverageComplete'),
                'current30_history_complete': prior.get('current30CoverageComplete'),
                'current_year_history_complete': prior.get('currentYearCoverageComplete'),

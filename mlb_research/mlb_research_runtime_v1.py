@@ -65,6 +65,8 @@ def snapshot(store,game,checkpoint,market,history,prior,statcast):
     conditions=signals.conditions(game,payload,list(completed.values()),observed)
     from ks1.features import Features, starter_matchup
     engine=Features(list(completed.values()),statcast.get('rows',[]),
+                    statcast_retained_dates=statcast.get('retainedCompleteDates', []),
+                    statcast_verified_games=statcast.get('retainedCompleteGames', []),
                     statcast_complete=statcast.get('current30CoverageComplete',
                                                    statcast.get('coverageComplete')) is True,
                     prior_statcast_profiles=statcast.get('priorYearProfiles'),
