@@ -278,6 +278,7 @@ def test_frozen_team_profile_restores_confirmed_lineup_metadata():
     assert json.loads(row["home_lineup_ids"]) == list(range(101, 110))
     assert row["home_lineup_quality_ops"] == .750
     assert row["home_lineup_pitch_type_matchup_xwoba_30d"] is None
+    assert row["home_lineup_pitch_type_matchup_xwoba_30d_missing"] == 1
     assert row["lineup_bullpen_context_evidence"] == "frozen_versioned_ks1_profile"
 
 

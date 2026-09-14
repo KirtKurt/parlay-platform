@@ -16,7 +16,9 @@ from ks1.features import Features, MATCHUP_METRICS, normalize
 from ks1.historical_starters import V8_MANIFEST_PREFIX
 from ks1.inventory import encode
 from ks1.passive_context import (LINEUP_FEATURES, LINEUP_VALUE_FEATURES,
+                                 LINEUP_PERFORMANCE_FEATURES,
                                  BULLPEN_FEATURES, BULLPEN_VALUE_FEATURES,
+                                 BULLPEN_PERFORMANCE_FEATURES,
                                  MODEL_FEATURES as LINEUP_BULLPEN_FEATURES)
 from ks1.sources import aws_clients, load_existing
 from ks1.table import build, contract
@@ -93,6 +95,16 @@ def bullpen_context_value_feature(column):
                for side in ('home', 'away') for name in BULLPEN_VALUE_FEATURES)
 
 
+def lineup_performance_feature(column):
+    return any(column == side+'_'+name
+               for side in ('home', 'away') for name in LINEUP_PERFORMANCE_FEATURES)
+
+
+def bullpen_context_performance_feature(column):
+    return any(column == side+'_'+name
+               for side in ('home', 'away') for name in BULLPEN_PERFORMANCE_FEATURES)
+
+
 def choose_features(train):
     _, dictionary = contract(train.iloc[0].to_dict())
     features, omitted = select_features(train, dictionary)
@@ -148,6 +160,12 @@ def metrics(y, p):
 
 def accepted(candidate, incumbent):
     return (candidate['games'] == EVALUATION_GAMES and candidate['games'] == incumbent['games']
+            and candidate['brier'] < incumbent['brier']
+            and candidate['logloss'] <= incumbent['logloss'])
+
+
+def improves(candidate, incumbent):
+    return (candidate['games'] == incumbent['games']
             and candidate['brier'] < incumbent['brier']
             and candidate['logloss'] <= incumbent['logloss'])
 
@@ -331,6 +349,27 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
         'starter_plus_batters': batter_features,
         'starter_plus_batters_and_bullpen': features,
     }
+    # Freeze the recipe on a chronological development tail before touching the
+    # exact 300-game final holdout. Hyperparameters remain fixed.
+    development_games = min(EVALUATION_GAMES, max(100, len(train)//5))
+    if len(train)-development_games < MIN_TRAIN:
+        development_games = len(train)-MIN_TRAIN
+    if development_games <= 0:
+        raise ValueError('insufficient games for recipe-selection development set')
+    development_fit, development = train.iloc[:-development_games], train.iloc[-development_games:]
+    development_metrics = {}
+    for name, columns in recipes.items():
+        development_model = lgb.LGBMClassifier(**PARAMS).fit(
+            development_fit[columns].astype(float), development_fit.home_win.astype(int))
+        probability = development_model.predict_proba(
+            development[columns].astype(float))[:, 1]
+        development_metrics[name] = metrics(development.home_win.astype(int), probability)
+    development_baseline = development_metrics['starter']
+    development_eligible = ['starter'] + [
+        name for name in ('starter_plus_batters', 'starter_plus_batters_and_bullpen')
+        if improves(development_metrics[name], development_baseline)]
+    development_selected = min(
+        development_eligible, key=lambda name: development_metrics[name]['brier'])
     models, predictions, comparisons = {}, {}, {}
     output.mkdir(parents=True, exist_ok=True)
     for name, columns in recipes.items():
@@ -387,20 +426,24 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
             comparison['requested_group_usage_passed'] = True
         elif name == 'starter_plus_batters':
             comparison['requested_group_usage_passed'] = bool(
-                comparison['lineup_value_features_used_in_splits'])
+                any(lineup_performance_feature(c)
+                    for c in comparison['lineup_value_features_used_in_splits']))
         else:
             comparison['requested_group_usage_passed'] = bool(
-                comparison['lineup_value_features_used_in_splits']
-                and comparison['bullpen_value_features_used_in_splits'])
+                any(lineup_performance_feature(c)
+                    for c in comparison['lineup_value_features_used_in_splits'])
+                and any(bullpen_context_performance_feature(c)
+                        for c in comparison['bullpen_value_features_used_in_splits']))
         comparison['qualified'] = bool(
             comparison['statistical_gate_passed']
             and used_pitcher_context
             and pitcher_qualification['qualified_rows'] == EVALUATION_GAMES
             and comparison['point_in_time_gate_passed']
             and comparison['requested_group_usage_passed'])
-    eligible = [name for name, result in comparisons.items() if result['qualified']]
-    winning = min(eligible, key=lambda name: comparisons[name]['metrics']['brier']) if eligible else None
-    selected = winning or min(comparisons, key=lambda name: comparisons[name]['metrics']['brier'])
+    # The final holdout is evaluation-only: it may accept or reject the recipe
+    # frozen on development data, but it never changes which recipe is selected.
+    selected = development_selected
+    winning = selected if comparisons[selected]['qualified'] else None
     candidate, candidate_predictions = models[selected], predictions[selected]
     candidate_metrics = comparisons[selected]['metrics']
     # One prespecified ablation isolates the seven-day contribution from the
@@ -448,6 +491,12 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
               'candidate_comparison': comparisons,
               'selected_candidate': selected,
               'winning_qualified_candidate': winning,
+              'recipe_selection': {'method': 'chronological_development_tail',
+                                   'games': development_games,
+                                   'fit_games': len(development_fit),
+                                   'selected': development_selected,
+                                   'metrics': development_metrics,
+                                   'final_holdout_used_for_selection': False},
               'ablation_baseline_without_lineup_or_bullpen': comparisons['starter']['metrics'],
               'ablation_baseline_plus_batters': comparisons['starter_plus_batters']['metrics'],
               'ablation_baseline_plus_batters_and_bullpen': comparisons['starter_plus_batters_and_bullpen']['metrics'],
@@ -495,7 +544,8 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
               'lineup_bullpen_context_qualification': team_context_qualification,
               'lineup_bullpen_promotion_rule': 'the full candidate must use substantive lineup and individual-bullpen value fields, not only missingness indicators, in tree splits; every consumed training and exact-300 holdout value must have frozen or MLB-timecoded pre-T10 evidence',
               'minimum_individual_starter_rows_per_side': MIN_STARTER_ROWS,
-              'parameters': PARAMS, 'test_used_for_tuning': False, 'holdout_refit': False,
+              'parameters': PARAMS, 'test_used_for_tuning': False,
+              'development_used_for_recipe_selection': True, 'holdout_refit': False,
               'model_reload_verified': True,
               'model_sha256': hashlib.sha256((output/'model.txt').read_bytes()).hexdigest(),
               'incumbent_sha256': hashlib.sha256(incumbent_bytes).hexdigest(),

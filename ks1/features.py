@@ -667,7 +667,7 @@ class Features:
                 supported_pitches = sum(count for count, _ in supported_mix)
                 summary["pitch_type_matchup_xwoba"] = (
                     sum(count*value for count, value in supported_mix)/starter_total
-                    if (complete and starter_total == len(starter_rows)
+                    if (complete and starter_total > 0 and starter_total == len(starter_rows)
                         and supported_pitches == starter_total) else None)
                 summary["pitch_type_xwoba"] = by_type
                 profile["windows"][str(window)+"d"] = summary

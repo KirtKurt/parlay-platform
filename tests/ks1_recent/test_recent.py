@@ -5,7 +5,9 @@ import pandas as pd
 import pytest
 from ks1.features import Features, pitching
 from ks1.retrain_recent import (accepted, choose_features, completion_times,
+                                bullpen_context_performance_feature,
                                 historical_team_context_mask,
+                                lineup_performance_feature,
                                 pitcher_promotion_ready, prospective_context_coverage,
                                 qualification_basis, qualified_context_coverage,
                                 qualified_team_context_coverage, split_recent)
@@ -624,3 +626,11 @@ def test_training_rejects_features_unavailable_at_serving():
                           'home_starter_bf_30d': [0., 0.], 'away_starter_bf_30d': [0., 0.]})
     with pytest.raises(ValueError, match='missing from daily inference: temp'):
         choose_features(frame)
+
+
+def test_promotion_usage_gate_distinguishes_quality_from_coverage_counts():
+    assert lineup_performance_feature('home_lineup_ops_30d')
+    assert not lineup_performance_feature('home_lineup_observed_batters')
+    assert bullpen_context_performance_feature('away_bullpen_context_fip_30d')
+    assert not bullpen_context_performance_feature('away_bullpen_context_roster_count')
+    assert not bullpen_context_performance_feature('away_bullpen_context_fatigue_score')

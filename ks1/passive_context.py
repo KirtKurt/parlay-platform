@@ -45,6 +45,16 @@ BULLPEN_VALUE_FEATURES = tuple(
      "bullpen_context_platoon_coverage", "bullpen_context_available_quality",
      "bullpen_context_quality", "bullpen_context_command",
      "bullpen_context_expected_innings", "bullpen_context_early_exit_quality")
+LINEUP_PERFORMANCE_FEATURES = tuple(
+    name for name in LINEUP_VALUE_FEATURES
+    if name not in ("lineup_observed_batters", "lineup_total_pa"))
+BULLPEN_PERFORMANCE_FEATURES = tuple(
+    name for name in BULLPEN_VALUE_FEATURES
+    if name not in ("bullpen_context_roster_count", "bullpen_context_available_count",
+                    "bullpen_context_limited_count",
+                    "bullpen_context_likely_unavailable_count",
+                    "bullpen_context_unknown_count", "bullpen_context_fatigue_score",
+                    "bullpen_context_depth", "bullpen_context_expected_innings"))
 LINEUP_MISSING_FEATURES = tuple(name+"_missing" for name in LINEUP_VALUE_FEATURES)
 BULLPEN_MISSING_FEATURES = tuple(name+"_missing" for name in BULLPEN_VALUE_FEATURES)
 LINEUP_FEATURES = LINEUP_VALUE_FEATURES + LINEUP_MISSING_FEATURES

@@ -135,6 +135,10 @@ def build(bundle, selected_date=None):
                         'source': value['source'],
                         'side': side,
                     })
+    team_context_history_complete = all(bundle.get(key) is True for key in (
+        "current30_history_complete", "current_year_history_complete",
+        "prior_year_history_complete", "statcast_coverage_complete",
+        "current_year_statcast_complete", "prior_year_statcast_complete"))
     history = Features(list(games.values()), bundle.get("statcast", []),
                        statcast_complete=bundle.get("statcast_coverage_complete") is True,
                        prior_statcast_profiles=bundle.get("prior_statcast_profiles"),
@@ -392,6 +396,10 @@ def build(bundle, selected_date=None):
                 historical_team['sides'][side]['probable_pitcher_id'] in (
                     None, row.get(side+'_starter_id'))
                 for side in ('home', 'away'))
+            incomplete_team_history = (not team_context_history_complete
+                                       or any(row.get(side+'_history_status')
+                                              == 'partial_known_missing_boxes'
+                                              for side in ('home', 'away')))
             if not teams_match:
                 exclusions.append({'game_id': pk,
                                    'reason': 'historical_lineup_bullpen_team_identity_mismatch'})
@@ -399,6 +407,11 @@ def build(bundle, selected_date=None):
                 exclusions.append({'game_id': pk,
                                    'reason': 'historical_lineup_bullpen_starter_identity_mismatch'})
                 row['historical_lineup_bullpen_context_status'] = 'STARTER_MISMATCH_FAIL_CLOSED'
+            elif incomplete_team_history:
+                exclusions.append({'game_id': pk,
+                                   'reason': 'historical_lineup_bullpen_history_incomplete'})
+                row['historical_lineup_bullpen_context_status'] = (
+                    'HISTORY_INCOMPLETE_FAIL_CLOSED')
             else:
                 context_features = {}
                 for side in ('home', 'away'):
@@ -455,6 +468,8 @@ def build(bundle, selected_date=None):
                         for window in ("7d", "30d"):
                             context_features[side+"_lineup_platoon_xwoba_"+window] = None
                             context_features[side+"_lineup_pitch_type_matchup_xwoba_"+window] = None
+                            context_features[side+"_lineup_platoon_xwoba_"+window+"_missing"] = 1.0
+                            context_features[side+"_lineup_pitch_type_matchup_xwoba_"+window+"_missing"] = 1.0
                 row.update(context_features)
                 row["lineup_bullpen_context_evidence"] = "frozen_versioned_ks1_profile"
                 row["historical_lineup_bullpen_context_status"] = "SUPERSEDED_BY_FROZEN_PROFILE"
