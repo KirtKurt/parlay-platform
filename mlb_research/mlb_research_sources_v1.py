@@ -97,7 +97,14 @@ def feed(game,fields=None):
     if fields:url+='?'+urlencode({'fields':fields})
     data, receipt = fetch(url)
     identity = data['gameData']
-    if (identity['game']['pk'] != game['gamePk'] or utc(identity['datetime']['dateTime']) != utc(game['gameDate'])
+    # MLB replaces gameData.datetime.dateTime with resumeDate after a
+    # suspended game is completed.  Bind only to the schedule's explicit
+    # original/resume timestamps; never accept an unrelated time change.
+    scheduled_times = {utc(game['gameDate'])}
+    if game.get('resumeDate'):
+        scheduled_times.add(utc(game['resumeDate']))
+    if (identity['game']['pk'] != game['gamePk']
+            or utc(identity['datetime']['dateTime']) not in scheduled_times
             or any(identity['teams'][s]['id'] != game['teams'][s]['team']['id'] for s in ('home', 'away'))):
         raise ValueError('official feed identity changed')
     return data, receipt
