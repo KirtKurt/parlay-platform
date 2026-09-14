@@ -148,7 +148,7 @@ def artifact_write_authorized():
     event = os.environ.get('GITHUB_EVENT_NAME')
     trusted_pr = (event == 'pull_request' and
                   os.environ.get('GITHUB_HEAD_REF') == KS1_RECENT_TRUSTED_PR_BRANCH)
-    trusted_main = (event in ('schedule', 'workflow_dispatch') and
+    trusted_main = (event in ('schedule', 'workflow_dispatch', 'push') and
                     os.environ.get('GITHUB_REF') == 'refs/heads/main')
     return common and (trusted_pr or trusted_main)
 

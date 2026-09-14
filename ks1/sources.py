@@ -30,7 +30,18 @@ def load_existing(cf, s3, bucket):
         raise ValueError("historical pointer is outside discovered source scope")
     reconstructed = reader.pointer(pointer)["rows"]
     research = reader.pointer(reader.read(RESEARCH + "dataset.json")["artifact"])["rows"]
-    prior = reader.pointer(reader.read(RESEARCH + "prior-games.json")["artifact"])
+    prior_pointer = reader.read(RESEARCH + "prior-games.json")["artifact"]
+    prior = reader.pointer(prior_pointer)
+    prior_receipt = dict(reader.receipts[-1])
+    retrieved = datetime.now(timezone.utc).isoformat()
+    source_year = int(prior["priorYear"])+1 if prior.get("priorYear") else None
+    prior_receipt.update(provider="MLB Stats API", retrieved_at=retrieved,
+                         provider_requests=prior.get("receipt", {}).get("requests", []),
+                         complete_years=[year for year, complete in (
+                             (source_year, prior.get("currentYearCoverageComplete")),
+                             (source_year-1 if source_year else None,
+                              prior.get("priorYearCoverageComplete")))
+                             if year is not None and complete is True])
     statcast = reader.pointer(reader.read(RESEARCH + "statcast.json")["artifact"])
     with ThreadPoolExecutor(max_workers=8) as pool:
         compact = list(pool.map(reader.read, sorted(reader.keys(RECONSTRUCTED + "source-games/"))))
@@ -119,5 +130,6 @@ def load_existing(cf, s3, bucket):
             "snapshots": snapshots, "finals": finals, "odds": odds,
             "published_predictions": published_predictions,
             "historical_pitcher_context": historical_pitcher_context,
+            "official_history_source": prior_receipt,
             "source_receipts": sorted(reader.receipts, key=lambda r: (r["bucket"], r["key"])),
             "optional_reads": optional_reads}

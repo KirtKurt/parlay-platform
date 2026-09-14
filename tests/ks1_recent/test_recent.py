@@ -24,7 +24,8 @@ def test_recent_validation_credentials_are_restricted_to_trusted_branch():
 @pytest.mark.parametrize(('event', 'ref', 'head', 'authorized'), [
     ('schedule', 'refs/heads/main', '', True),
     ('workflow_dispatch', 'refs/heads/main', '', True),
-    ('push', 'refs/heads/main', '', False),
+    ('push', 'refs/heads/main', '', True),
+    ('push', 'refs/heads/untrusted', '', False),
     ('pull_request', 'refs/pull/1/merge',
      'codex/ks1-historical-starter-bridge-20260913', True),
     ('pull_request', 'refs/pull/2/merge', 'untrusted', False),

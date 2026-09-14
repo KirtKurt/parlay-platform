@@ -12,6 +12,7 @@ from ks1.features import Features, day, number, starter_matchup, utc
 from ks1.historical_starters import published_starter_index
 from ks1.inventory import encode
 from ks1.passive_context import MODEL_FEATURES as LINEUP_BULLPEN_FEATURES, published_profile_index
+from ks1.prior_pitcher_context import PriorPitcherContext
 
 VERSION = "KS1-game-table-v1"
 
@@ -117,6 +118,9 @@ def build(bundle, selected_date=None):
                        prior_statcast_profiles=bundle.get("prior_statcast_profiles"),
                        prior_statcast_year=bundle.get("prior_statcast_year"))
     markets = market_index(bundle.get("odds", []))
+    reconstruction = PriorPitcherContext(
+        [r for r in history.rows if r["game_id"] in full],
+        bundle.get("official_history_source", {}))
     crosswalk = defaultdict(set)
     player_names = defaultdict(set)
     for game in games.values():
@@ -205,6 +209,7 @@ def build(bundle, selected_date=None):
                "lineup_bullpen_context_evidence": None,
                "historical_pitcher_context_as_of": None,
                "historical_pitcher_context_source": None,
+               "reconstructed_pitcher_context_proof": None,
                "reconstructed_source": json.dumps(r.get("sourceArtifact"), sort_keys=True) if r else None}
         row.update({side+"_"+feature: None for side in ("home", "away")
                     for feature in LINEUP_BULLPEN_FEATURES})
@@ -388,6 +393,17 @@ def build(bundle, selected_date=None):
                 row.update(historical_pitcher_context_mode=context["identity_mode"],
                            historical_pitcher_context_as_of=context["as_of"],
                            historical_pitcher_context_source=json.dumps(context["source"], sort_keys=True))
+        if not missing_identity and row["pitcher_context_evidence"] != "frozen_versioned_ks1_profile":
+            proofs = {side: reconstruction.at(row, side) for side in ("home", "away")}
+            if all(proofs.values()):
+                for side, proof in proofs.items():
+                    row.update({side+"_pitcher_context_"+key: value
+                                for key, value in proof["metrics"].items()})
+                row.update(reconstructed_pitcher_context_proof=json.dumps(proofs, sort_keys=True),
+                           pitcher_context_evidence="reconstructed_prior_official_pitcher_context",
+                           historical_pitcher_context_mode=None,
+                           historical_pitcher_context_as_of=None,
+                           historical_pitcher_context_source=None)
         if missing_identity:
             exclusions.append({"game_id": pk, "reason": "missing_official_team_identity"})
             continue

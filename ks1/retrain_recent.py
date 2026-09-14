@@ -18,6 +18,7 @@ from ks1.passive_context import (LINEUP_FEATURES, BULLPEN_FEATURES,
 from ks1.sources import aws_clients, load_existing
 from ks1.table import build, contract
 from ks1.train import PARAMS, select_features, save_artifact
+from ks1.prior_pitcher_context import verified_reconstruction
 
 # Feature-contract construction needs a valid timestamp but does not inspect data.
 FEATURE_CONTRACT_DATE = '2026-09-01'
@@ -178,7 +179,8 @@ def historical_context_mask(frame):
 
 
 def qualified_context_coverage(frame, context_features):
-    historical = historical_context_mask(frame)
+    reconstruction = frame.apply(verified_reconstruction, axis=1).astype(bool)
+    historical = historical_context_mask(frame) | reconstruction
     prospective = (frame.pitcher_context_evidence.eq('frozen_versioned_ks1_profile')
                    & frame.historical_pitcher_context_mode.isna())
     values = frame[context_features].apply(pd.to_numeric, errors='coerce')
@@ -187,6 +189,7 @@ def qualified_context_coverage(frame, context_features):
     qualified = historical | prospective
     return {
         'historical_rows': int((historical & complete).sum()),
+        'reconstructed_official_rows': int((reconstruction & complete).sum()),
         'prospective_rows': int((prospective & complete).sum()),
         'qualified_rows': int((qualified & complete).sum()),
         'per_feature': {c: int((qualified & finite[c]).sum()) for c in context_features},
@@ -242,6 +245,11 @@ def evaluate(frame, incumbent_bytes, output, proof):
     ablated = ablation.predict_proba(test[without_seven].astype(float))[:, 1]
     candidate_metrics, incumbent_metrics = metrics(y_test, predictions), metrics(y_test, old)
     context_features = [c for c in features if pitcher_context_feature(c)]
+    split_counts = dict(zip(features, map(int, candidate.booster_.feature_importance())))
+    used_context_features = [c for c in context_features if split_counts[c] > 0]
+    without_context = [c for c in features if not pitcher_context_feature(c)]
+    pitcher_ablation = lgb.LGBMClassifier(**PARAMS).fit(train[without_context].astype(float), y_train)
+    without_pitcher = pitcher_ablation.predict_proba(test[without_context].astype(float))[:, 1]
     prospective_feature_coverage, prospective_context_rows = prospective_context_coverage(
         test, context_features)
     context_qualification = qualified_context_coverage(test, context_features)
@@ -250,7 +258,7 @@ def evaluate(frame, incumbent_bytes, output, proof):
         test, team_features)
     statistical_gate = accepted(candidate_metrics, incumbent_metrics)
     promotion_ready = pitcher_promotion_ready(
-        candidate_metrics, incumbent_metrics, context_features,
+        candidate_metrics, incumbent_metrics, used_context_features,
         context_qualification['qualified_rows'])
     # Batter/bullpen evidence is required when the candidate consumes it.
     # A starter-only candidate must not wait for unrelated, unused groups.
@@ -270,6 +278,7 @@ def evaluate(frame, incumbent_bytes, output, proof):
               'ablation_baseline_plus_batters': metrics(y_test, batter_predictions),
               'ablation_baseline_plus_batters_and_bullpen': candidate_metrics,
               'without_seven_day': metrics(y_test, ablated),
+              'without_pitcher_context': metrics(y_test, without_pitcher),
               'accepted': promotion_ready,
               'statistical_gate_passed': statistical_gate,
               'promotion_rule': 'strictly lower Brier and no worse logloss than incumbent on identical trailing 300-game holdout',
@@ -288,6 +297,8 @@ def evaluate(frame, incumbent_bytes, output, proof):
                   side: int(train[side+'_pitcher_context_quality'].notna().sum())
                   for side in ('home', 'away')},
               'pitcher_context_features_learned': context_features,
+              'pitcher_context_features_used_in_splits': used_context_features,
+              'feature_split_counts': split_counts,
               'pitcher_context_feature_training_rows': {
                   c: int(train[c].notna().sum()) for c in context_features},
               'prospective_pitcher_context_feature_rows': prospective_feature_coverage,
@@ -315,6 +326,7 @@ def evaluate(frame, incumbent_bytes, output, proof):
     rows['candidate_p_home'], rows['incumbent_p_home'], rows['without_seven_p_home'] = predictions, old, ablated
     rows['baseline_without_lineup_or_bullpen_p_home'] = baseline_predictions
     rows['baseline_plus_batters_p_home'] = batter_predictions
+    rows['without_pitcher_context_p_home'] = without_pitcher
     rows.to_parquet(output/'test_predictions.parquet', index=False)
     print(json.dumps(report, indent=2))
     return report
