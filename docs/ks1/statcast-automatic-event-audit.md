@@ -80,11 +80,20 @@ it illustrates automatic-event classification, not qualified regular-season
 training coverage. No missing fields were synthesized to make either pass.
 
 Rolling and last-three starter calculations also require every contributing
-game's date to be present in the retained verified-date set. Physically matching
+game to have a verified whole-date or complete-game receipt. Physically matching
 compact rows alone cannot admit incomplete PA outcomes. Official ERA/WHIP and
 other result windows remain independent and persist when this Statcast gate
-fails. Older compact last-start rows without a loaded whole-date receipt remain
-unavailable until historical verification supplies that evidence.
+fails. The compact payload now retains whole games for older last starts and
+records `retainedCompleteGames` only after the same physical/PA/outcome audit.
+This does not claim whole-date coverage when other games on that date are absent.
+Historical revalidation clears overlapping rejected game receipts, while
+preserving verified compact games outside its scope.
+
+Research snapshots receive explicit retained date/game proof, defaulting to
+empty proof rather than treating an omitted argument as verified coverage.
+Their pitch summaries use the same thrown-pitch classifier, while terminal
+automatic outcomes remain available for independent PA accounting. Research
+windows without retained game/date proof fail closed.
 
 All raw events remain available for plate-appearance outcomes, including an
 automatic event ending a walk or strikeout. Starter, bullpen, and batter

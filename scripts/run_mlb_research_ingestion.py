@@ -208,15 +208,20 @@ def ingest(store,seconds=2400):
                         appearances.setdefault(player['id'],[]).append((row['start'],row['game_id']))
             for pitcher,pairs in appearances.items():
                 last_pairs.update((pitcher,game_id) for _,game_id in sorted(pairs,reverse=True)[:3])
-            last_start_rows=[row for row in all_rows
-                             if (str(row.get('pitcher')),str(row.get('game_pk'))) in last_pairs]
+            # Retain complete games for last starts, not partial pitcher-only
+            # dates. Game proof must never imply whole-calendar-date coverage.
+            last_games={game_id for _,game_id in last_pairs}
+            last_start_rows=[row for row in all_rows if str(row.get('game_pk')) in last_games]
         retained_rows={}
         for row in [*current_rows,*last_start_rows]:
             identity=tuple(str(row.get(key)) for key in ('game_pk','at_bat_number','pitch_number'))
             retained_rows[identity]=row
         pitch_verified_dates = set(pitch_complete_dates(sources, statcast_by_date, expected_by_date))
+        retained_verified_games=sorted({str(row.get('game_pk')) for row in retained_rows.values()
+                                       if row.get('game_date') in pitch_verified_dates})
         sc={'rows':current_rows,'coverageComplete':current_complete and current_year_complete and prior_complete,
             'retainedCompleteDates':sorted({d.isoformat() for d in current_dates}&pitch_verified_dates),
+            'retainedCompleteGames':retained_verified_games,
             'retainedPitchCoverageMethod':'official_box_thrown_pitches_and_pa_v3',
             'current30CoverageComplete':current_complete,'priorYearCoverageComplete':prior_complete,
             'currentYearCoverageComplete':current_year_complete,

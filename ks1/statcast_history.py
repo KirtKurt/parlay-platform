@@ -154,6 +154,12 @@ def load_training_statcast(bundle, s3, bucket):
         set(bundle.get('statcast_retained_dates', ())) - set(expected_dates))
     bundle['statcast_retained_dates'] = sorted(
         existing_outside_range | set(verified))
+    existing_game_dates = {str(row.get('game_pk')): row.get('game_date')
+                           for row in bundle['statcast']}
+    outside_games = {str(pk) for pk in bundle.get('statcast_verified_games', [])
+                     if existing_game_dates.get(str(pk))
+                     and existing_game_dates[str(pk)] not in expected_dates}
+    bundle['statcast_verified_games'] = sorted(outside_games | loaded_games)
     # Preserve the existing global source-completeness gates. Individual
     # windows additionally require every date in statcast_retained_dates.
     bundle['source_receipts'].extend(receipts)

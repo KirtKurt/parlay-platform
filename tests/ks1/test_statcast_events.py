@@ -182,3 +182,9 @@ def test_starter_last_three_requires_every_contributing_date_verified():
     assert partial['starter_era_last3'] == complete['starter_era_last3'] == 0
     assert partial['starter_xwoba_last3'] is None
     assert complete['starter_xwoba_last3'] == .5
+    game_verified = Features(games, rows, statcast_retained_dates=dates[1:],
+                             statcast_verified_games=['1'])
+    assert game_verified.at('2026-09-02T17:50:00Z', '10', '151')['starter_xwoba_last3'] == .5
+    # One retained game must not certify every other club's games that day.
+    from datetime import date as calendar_date
+    assert not game_verified.team_statcast_window_complete(calendar_date(2026, 9, 2), 30)

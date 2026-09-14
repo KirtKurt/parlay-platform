@@ -296,13 +296,14 @@ def normalize(games):
 class Features:
     def __init__(self, games, statcast_rows=None, *, statcast_complete=True,
                  prior_statcast_profiles=None, prior_statcast_year=None,
-                 statcast_retained_dates=None):
+                 statcast_retained_dates=None, statcast_verified_games=None):
         self.rows = normalize(games)
         self.game_dates = {row['game_id']: row['day'].isoformat() for row in self.rows}
         self.statcast_rows = list(statcast_rows or [])
         self.statcast_complete = bool(statcast_complete)
         self.statcast_retained_dates = (None if statcast_retained_dates is None
                                        else set(statcast_retained_dates))
+        self.statcast_verified_games = {str(pk) for pk in (statcast_verified_games or [])}
         self.prior_statcast_profiles = dict(prior_statcast_profiles or {})
         self.prior_statcast_year = prior_statcast_year
         self.statcast_by_game = {}
@@ -350,7 +351,8 @@ class Features:
                   for row in self.statcast_by_pitcher_game.get((str(starter_id), str(game_id)), ())]
         selected = [row for row in events if is_thrown_pitch(row)]
         verified_dates = (self.statcast_retained_dates is None or all(
-            self.game_dates.get(str(game_id)) in self.statcast_retained_dates
+            (self.game_dates.get(str(game_id)) in self.statcast_retained_dates
+             or str(game_id) in self.statcast_verified_games)
             for game_id in game_ids))
         complete = bool(starter_id and game_ids and verified_dates
                         and expected_pitches is not None and len(selected) == expected_pitches)

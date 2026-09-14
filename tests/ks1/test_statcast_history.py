@@ -72,6 +72,7 @@ def test_historical_archive_restores_matchup_values_with_prior_only_boundaries()
 def test_unverified_daily_pitches_never_create_window_coverage(defect):
     bundle, payload, key = fixture()
     bundle['statcast_retained_dates'] = ['2026-09-01']
+    bundle['statcast_verified_games'] = ['1']
     bundle['statcast'] = deepcopy(payload['rows'])
     version, checksum = 'v1', None
     if defect == 'truncated':
@@ -90,6 +91,7 @@ def test_unverified_daily_pitches_never_create_window_coverage(defect):
         checksum = '0'*64
     report = load_training_statcast(bundle, RetainedS3({key: (payload, version, checksum)}), 'bucket')
     assert '2026-09-01' not in bundle['statcast_retained_dates']
+    assert '1' not in bundle['statcast_verified_games']
     assert report['verified_pitch_objects'] == 0 and len(report['errors']) == 1
     assert bundle['source_receipts'] == []
 
@@ -110,12 +112,14 @@ def test_valid_game_set_revision_and_global_gate_are_preserved():
 def test_existing_verified_compact_dates_survive_partial_historical_load():
     bundle, payload, key = fixture()
     bundle['statcast_retained_dates'] = ['2025-08-31']
+    bundle['statcast_verified_games'] = ['2']
     bundle['statcast'].append({'game_pk': '2', 'game_date': '2025-08-31',
                                'pitcher': '351', 'batter': '401',
                                'at_bat_number': '1', 'pitch_number': '1'})
     load_training_statcast(bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
     assert '2025-08-31' in bundle['statcast_retained_dates']
     assert '2026-09-01' in bundle['statcast_retained_dates']
+    assert bundle['statcast_verified_games'] == ['1', '2']
     assert bundle['statcast_retained_dates'] == sorted(bundle['statcast_retained_dates'])
     assert any(row.get('game_pk') == '2' for row in bundle['statcast'])
 

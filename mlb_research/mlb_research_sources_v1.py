@@ -152,7 +152,10 @@ def statcast(day):
 
 
 def statcast_player(rows, identity, role):
-    chosen = [r for r in rows if str(r[role]) == str(identity)]
+    from ks1.statcast_events import is_thrown_pitch
+    # Callers retain all rows for outcome accounting. These summaries contain
+    # physical-pitch/contact denominators only.
+    chosen = [r for r in rows if str(r[role]) == str(identity) and is_thrown_pitch(r)]
     contacts = [r for r in chosen if r['type'] == 'X']
     speed = [number(r['launch_speed']) for r in contacts]
     xwoba = [number(r.get('estimated_woba_using_speedangle')) for r in contacts]
