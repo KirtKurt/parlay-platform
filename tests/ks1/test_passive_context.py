@@ -16,8 +16,8 @@ class History:
     def __init__(self):
         self.calls = []
 
-    def bullpen_roster_at(self, as_of, team_id, roster_ids):
-        self.calls.append((as_of, team_id, roster_ids))
+    def bullpen_roster_at(self, as_of, team_id, roster_ids, *, game_date=None):
+        self.calls.append((as_of, team_id, roster_ids, game_date))
         return {"bullpen_context_roster_count": float(len(roster_ids)),
                 "bullpen_context_available_count": 0.0,
                 "bullpen_context_unknown_count": float(len(roster_ids))}
@@ -77,6 +77,30 @@ def test_builds_checksum_bound_profile_and_supported_features():
     claimed = profile.pop("sha256")
     assert hashlib.sha256(encode(profile)).hexdigest() == claimed
     assert len(history.calls) == 2
+    assert {call[3] for call in history.calls} == {"2026-09-14"}
+
+
+def test_passive_history_uses_official_scheduled_date_for_advance_capture():
+    class DateHistory(History):
+        def lineup_batters_at(self, as_of, lineup_ids, opposing_starter_id=None,
+                              opposing_hand=None, *, game_date=None):
+            self.calls.append((as_of, lineup_ids, opposing_starter_id,
+                               opposing_hand, game_date))
+            return [], {}
+
+    history = DateHistory(); game, row = game_row()
+    game["officialDate"] = "2026-09-15"
+    game["gameDate"] = "2026-09-16T01:00:00+00:00"
+    stored = stored_observation()
+    stored["data"]["commenceTime"] = game["gameDate"]
+    for block, key in ((stored["data"]["passiveTeamContext"]["confirmed_lineups"],
+                        "sourceProvenance"),
+                       (stored["data"]["passiveTeamContext"]["bullpen_fatigue"],
+                        "bullpenRosterSourceProvenance")):
+        block[key] = provenance(900001, "2026-09-15T22:00:00+00:00")
+    build_profile(stored, game, row, "2026-09-15T22:05:00+00:00", history)
+    assert len(history.calls) == 4
+    assert {call[-1] for call in history.calls} == {"2026-09-15"}
 
 
 def test_incomplete_history_coverage_fails_closed():
@@ -266,6 +290,45 @@ def test_reliever_history_survives_trade_and_missing_pitch_count_is_unknown():
     assert values["bullpen_context_unknown_count"] == 1
     assert values["bullpen_context_fatigue_score"] is None
     assert values["bullpen_context_era_7d"] == 0
+
+
+def test_rested_reliever_with_retained_history_is_available():
+    pitching = {"outs": 3, "earnedRuns": 0, "runs": 0, "hits": 1, "homeRuns": 0,
+                "baseOnBalls": 0, "hitBatsmen": 0, "strikeOuts": 2,
+                "battersFaced": 4, "wins": 0, "losses": 0, "gamesStarted": 0,
+                "numberOfPitches": 12}
+    game = {"officialGamePk": 13, "startAtUtc": "2026-09-01T18:00:00Z",
+            "completedAtUtc": "2026-09-01T21:00:00Z", "gameType": "R",
+            "teams": {side: {"team": {"id": tid, "name": side},
+                              "teamStats": {"batting": {}},
+                              "players": ({"ID151": {"person": {"id": 151},
+                                                       "stats": {"pitching": pitching}}}
+                                          if side == "home" else {})}
+                      for side, tid in (("home", 10), ("away", 20))}}
+    values = Features([game], []).bullpen_roster_at(
+        "2026-09-10T17:50:00Z", "10", ["151"], game_date="2026-09-10")
+    assert values["bullpen_context_available_count"] == 1
+    assert values["bullpen_context_unknown_count"] == 0
+    assert values["bullpen_context_depth"] == 1
+
+
+def test_zero_pitch_relief_window_keeps_statcast_rates_null():
+    pitching = {"outs": 0, "earnedRuns": 0, "runs": 0, "hits": 0, "homeRuns": 0,
+                "baseOnBalls": 1, "hitBatsmen": 0, "strikeOuts": 0,
+                "battersFaced": 1, "wins": 0, "losses": 0, "gamesStarted": 0,
+                "numberOfPitches": 0}
+    game = {"officialGamePk": 14, "startAtUtc": "2026-09-09T18:00:00Z",
+            "completedAtUtc": "2026-09-09T21:00:00Z", "gameType": "R",
+            "teams": {side: {"team": {"id": tid, "name": side},
+                              "teamStats": {"batting": {}},
+                              "players": ({"ID151": {"person": {"id": 151},
+                                                       "stats": {"pitching": pitching}}}
+                                          if side == "home" else {})}
+                      for side, tid in (("home", 10), ("away", 20))}}
+    values = Features([game], []).bullpen_roster_at(
+        "2026-09-10T17:50:00Z", "10", ["151"], game_date="2026-09-10")
+    assert values["bullpen_context_swstr_pct_7d"] is None
+    assert values["bullpen_context_csw_pct_7d"] is None
 
 
 def test_bullpen_contact_rates_use_pooled_contact_denominators():

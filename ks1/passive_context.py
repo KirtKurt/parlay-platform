@@ -178,6 +178,7 @@ def build_profile(stored, game, row, as_of, history, history_as_of=None,
     bullpen_source = _provenance(bullpen_block.get("bullpenRosterSourceProvenance"), game_id, start, cutoff)
     if observed > cutoff:
         raise ValueError("profile cannot be created after T-10")
+    scheduled_game_date = str(game.get("officialDate") or start.date().isoformat())
     sides = {}
     features = {}
     for side in ("home", "away"):
@@ -202,10 +203,12 @@ def build_profile(stored, game, row, as_of, history, history_as_of=None,
         opposing = "away" if side == "home" else "home"
         batter_profiles, batter_features = (history.lineup_batters_at(
             as_of, ids, row.get(opposing+"_starter_id"),
-            row.get("_"+opposing+"_starter_pitch_hand"))
+            row.get("_"+opposing+"_starter_pitch_hand"),
+            game_date=scheduled_game_date)
             if hasattr(history, "lineup_batters_at") else ([], {}))
         lineup_values.update(batter_features)
-        bullpen_values = dict(history.bullpen_roster_at(as_of, row[side+"_id"], roster_ids))
+        bullpen_values = dict(history.bullpen_roster_at(
+            as_of, row[side+"_id"], roster_ids, game_date=scheduled_game_date))
         reliever_profiles = bullpen_values.pop("_reliever_profiles", [])
         features.update({side+"_"+key: value for key, value in {**lineup_values, **bullpen_values}.items()})
         sides[side] = {"team_id": row[side+"_id"], "lineup_ids": ids,

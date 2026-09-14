@@ -385,7 +385,7 @@ class Features:
                                  and number(p["stats"].get("gamesStarted")) != 1}
             selected = [row for game_id, pitcher_id in relief_identities
                         for row in self.statcast_by_pitcher_game.get((pitcher_id, game_id), ())]
-            if expected is not None and len(selected) == expected:
+            if expected is not None and selected and len(selected) == expected:
                 descriptions = [str(row.get("description") or "").lower() for row in selected]
                 contacts = [row for row in selected if row.get("type") == "X"]
                 speeds = [self._finite(row.get("launch_speed")) for row in contacts]
@@ -421,7 +421,10 @@ class Features:
                 p["id"] == pid and p["stats"] is stats for p in r["players"])]
             by_age = {age: [stats for r, stats in recent if (target-r["day"]).days == age]
                       for age in range(1, 8)}
-            known = any(by_age.values())
+            # A retained prior appearance establishes the pitcher's identity.
+            # Complete history plus no use in the last seven days is positive
+            # evidence of rest, not an unknown workload state.
+            known = bool(recent)
             usage1 = [s for s in by_age[1]]
             usage3 = [s for age in range(1, 4) for s in by_age[age]]
             counts1 = [number(s.get("numberOfPitches")) for s in usage1]
