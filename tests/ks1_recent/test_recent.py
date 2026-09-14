@@ -5,7 +5,7 @@ import pytest
 from ks1.features import Features, pitching
 from ks1.retrain_recent import (accepted, choose_features, completion_times,
                                 pitcher_promotion_ready, prospective_context_coverage,
-                                qualified_context_coverage, split_recent)
+                                qualification_basis, qualified_context_coverage, split_recent)
 from ks1.train import artifact_write_authorized
 from tests.ks1.test_game_table import game
 
@@ -364,6 +364,7 @@ def historical_qualification_frame():
                'key': 'mlb/v8/historical-context/manifests/verified.json',
                'version_id': 'immutable-version', 'sha256': 'a'*64}
     return pd.DataFrame({
+        'home_starter_id': [None]*300, 'away_starter_id': [None]*300,
         'pitcher_context_evidence': [None]*300,
         'historical_pitcher_context_mode': ['strict_prior_projection']*300,
         'historical_pitcher_context_source': [json.dumps(receipt)]*300,
@@ -381,6 +382,7 @@ def test_verified_history_can_qualify_without_becoming_prospective():
     coverage = qualified_context_coverage(frame, features)
     assert coverage['historical_rows'] == coverage['qualified_rows'] == 300
     assert coverage['prospective_rows'] == 0
+    assert qualification_basis(coverage) == 'historical_point_in_time_300'
     assert prospective_context_coverage(frame, features)[1] == 0
     old = {'games': 300, 'brier': .24, 'logloss': .68}
     better = {'games': 300, 'brier': .23, 'logloss': .67}
@@ -420,6 +422,21 @@ def test_mixed_history_and_frozen_evidence_counts_each_game_once():
     assert coverage['qualified_rows'] == 300
     assert coverage['historical_rows'] == 299
     assert coverage['prospective_rows'] == 1
+    assert qualification_basis(coverage) == 'mixed_historical_and_frozen_pregame_300'
+    frame['historical_pitcher_context_mode'] = None
+    frame['pitcher_context_evidence'] = 'frozen_versioned_ks1_profile'
+    coverage = qualified_context_coverage(frame, ['home_pitcher_context_quality'])
+    assert qualification_basis(coverage) == 'frozen_pregame_profiles_300'
+
+
+@pytest.mark.parametrize('side', ['home', 'away'])
+def test_partial_manifest_cannot_qualify_untouched_starter_side(side):
+    frame = historical_qualification_frame()
+    frame.loc[0, side+'_starter_id'] = '12345'
+    coverage = qualified_context_coverage(
+        frame, ['home_pitcher_context_quality', 'away_pitcher_context_command'])
+    assert coverage['qualified_rows'] == 299
+    assert qualification_basis(coverage) == 'insufficient_point_in_time_coverage'
 
 
 def test_historical_projection_is_not_prospective_promotion_coverage():

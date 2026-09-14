@@ -151,6 +151,13 @@ def historical_context_mask(frame):
         if row.get('historical_pitcher_context_mode') not in (
                 'confirmed_archive', 'strict_prior_projection'):
             return False
+        # table.build applies manifest values only to a side with no observed
+        # starter ID. A row-level receipt cannot prove an untouched other side.
+        # Until side-specific receipts exist, qualify historical rows only when
+        # both sides were populated from that manifest.
+        if any(side+'_starter_id' not in row or not pd.isna(row[side+'_starter_id'])
+               for side in ('home', 'away')):
+            return False
         try:
             receipt = json.loads(row['historical_pitcher_context_source'])
             observed = pd.Timestamp(row['historical_pitcher_context_as_of'])
@@ -184,6 +191,16 @@ def qualified_context_coverage(frame, context_features):
         'qualified_rows': int((qualified & complete).sum()),
         'per_feature': {c: int((qualified & finite[c]).sum()) for c in context_features},
     }
+
+
+def qualification_basis(coverage):
+    if coverage['qualified_rows'] != EVALUATION_GAMES:
+        return 'insufficient_point_in_time_coverage'
+    if coverage['historical_rows'] == EVALUATION_GAMES:
+        return 'historical_point_in_time_300'
+    if coverage['prospective_rows'] == EVALUATION_GAMES:
+        return 'frozen_pregame_profiles_300'
+    return 'mixed_historical_and_frozen_pregame_300'
 
 
 def prospective_context_coverage(frame, context_features):
@@ -257,7 +274,8 @@ def evaluate(frame, incumbent_bytes, output, proof):
               'statistical_gate_passed': statistical_gate,
               'promotion_rule': 'strictly lower Brier and no worse logloss than incumbent on identical trailing 300-game holdout',
               'pitcher_promotion_rule': 'all 300 chronological holdout games must carry every learned pitcher context field with verified historical point-in-time or frozen pregame evidence',
-              'qualification_basis': 'historical_point_in_time_300',
+              'qualification_basis': qualification_basis(context_qualification),
+              'evaluation_kind': 'retrospective_chronological_holdout',
               'historical_evaluation_is_prospective': False,
               'pitcher_context_qualification': context_qualification,
               'evaluation_window_games': EVALUATION_GAMES,
