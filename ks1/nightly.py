@@ -2,7 +2,7 @@
 
 Runs inside the existing hourly GitHub job. No prediction, lock, other sport's
 audit, model engine, or AWS infrastructure is modified. Same-day catch-ups append
-immutable ledger revisions; calibration fitting remains on the 03:00 ET gate.
+immutable ledger revisions; calibration fitting remains on the 02:00 ET gate.
 """
 import argparse
 from copy import deepcopy
@@ -39,9 +39,9 @@ def attach_team_pick_audit(report, source, rows, output):
 def due_date(as_of, checkpoint=None):
     local = utc(as_of).astimezone(ET)
     date = local.date().isoformat()
-    if local.hour < 3 or (checkpoint and checkpoint['state']['night_date'] >= date):
+    if local.hour < 2 or (checkpoint and checkpoint['state']['night_date'] >= date):
         return None
-    return date  # Catch delayed/failed 03:00 runs on the next existing hourly tick.
+    return date  # Catch delayed/failed 02:00 runs on the next existing hourly tick.
 
 
 def require_main_workflow():
