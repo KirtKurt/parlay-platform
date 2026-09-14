@@ -119,7 +119,8 @@ def lineup_performance_feature(column):
 def matchup_performance_feature(column):
     return column in {side+'_lineup_'+metric+'_'+window
                       for side in ('home', 'away')
-                      for metric in ('platoon_xwoba', 'pitch_type_matchup_xwoba')
+                      for metric in ('platoon_xwoba', 'pitch_type_matchup_xwoba',
+                                     'pitch_type_matchup_whiff_pct')
                       for window in ('7d', '30d')}
 
 

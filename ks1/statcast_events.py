@@ -14,6 +14,12 @@ PLATE_APPEARANCE_EVENTS = frozenset((
 ))
 WOBA_EXCLUDED_EVENTS = frozenset(('intent_walk', 'catcher_interf', 'sac_bunt',
                                   'sac_bunt_double_play'))
+NON_PA_AT_BAT_END_EVENTS = frozenset((
+    'caught_stealing_2b', 'caught_stealing_3b', 'caught_stealing_home',
+    'pickoff_1b', 'pickoff_2b', 'pickoff_3b',
+    'pickoff_caught_stealing_2b', 'pickoff_caught_stealing_3b',
+    'pickoff_caught_stealing_home', 'other_out',
+))
 
 
 def is_plate_appearance(row):
@@ -35,6 +41,25 @@ def complete_pa_outcome(row):
         return denom == 1 and math.isfinite(value) and value >= 0
     except (TypeError, ValueError):
         return False
+
+
+def credited_at_bat_ids(rows):
+    """Return provider at-bats that can correspond to official batter PAs.
+
+    A blank outcome remains counted: physical evidence must not depend on the
+    outcome fields it was introduced to separate. Only an explicit, known
+    baserunning out can prove that a pitched at-bat ended without charging the
+    batter a plate appearance.
+    """
+    grouped = {}
+    for row in rows:
+        identity = (str(row.get('game_pk')), str(row.get('at_bat_number')))
+        state = grouped.setdefault(identity, {'pa': False, 'non_pa': False})
+        event = str(row.get('events') or '').lower()
+        state['pa'] = state['pa'] or is_plate_appearance(row)
+        state['non_pa'] = state['non_pa'] or event in NON_PA_AT_BAT_END_EVENTS
+    return {identity for identity, state in grouped.items()
+            if state['pa'] or not state['non_pa']}
 
 
 def is_thrown_pitch(row):

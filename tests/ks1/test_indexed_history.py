@@ -4,13 +4,13 @@ from ks1.features import Features
 
 
 def game(pk, played, completed, *, team=10, hits=1, strikeouts=2):
-    batting = dict(atBats=4, hits=hits, baseOnBalls=1, hitByPitch=0,
+    batting = dict(atBats=4, plateAppearances=5, hits=hits, baseOnBalls=1, hitByPitch=0,
                    sacFlies=0, doubles=0, triples=0, homeRuns=0, strikeOuts=1)
     pitching = dict(outs=3, earnedRuns=0, runs=0, hits=hits, homeRuns=0,
                     baseOnBalls=1, hitBatsmen=0, strikeOuts=strikeouts,
                     battersFaced=5, wins=0, losses=0, gamesStarted=0,
                     numberOfPitches=20)
-    players = {str(pid): {'person': {'id': pid}, 'stats': {'batting': batting}}
+    players = {str(pid): {'person': {'id': pid}, 'stats': {'batting': dict(batting)}}
                for pid in range(101, 110)}
     players['151'] = {'person': {'id': 151}, 'stats': {'pitching': pitching}}
     return {'officialGamePk': pk, 'startAtUtc': played+'T18:00:00Z',

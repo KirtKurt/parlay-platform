@@ -70,20 +70,24 @@ def test_invalid_same_game_cache_recovers_without_editing_raw_source(monkeypatch
     assert bundle['statcast'] == valid['rows']
     assert s3.objects[key] == original
     assert all(x.startswith(RESEARCH) for x in s3.writes)
-    assert len(bundle['source_receipts']) == 2  # pointer and exact payload version
+    # The final bundle keeps its prior receipt and adds the immutable recovery
+    # pointer plus exact payload version for outcome-safe features.
+    assert len(bundle['source_receipts']) == 3
     # A stale recovery pointer cannot qualify a changed official game set.
     bundle['schedule'].append({**bundle['schedule'][0], 'gamePk': 2})
     assert load_training_statcast(bundle, s3, 'b')['errors']
     assert '2026-09-01' not in bundle['statcast_retained_dates']
 
 
-@pytest.mark.parametrize('defect', ['missing_woba', 'missing_pitch', 'duplicate', 'wrong_date'])
+@pytest.mark.parametrize('defect', ['missing_woba', 'missing_pitch', 'duplicate',
+                                   'wrong_date', 'blank_batter'])
 def test_incomplete_provider_response_stays_unqualified_and_is_not_synthesized(monkeypatch, defect):
     authorize(monkeypatch)
     bundle, value, _ = fixture()
     if defect == 'missing_woba': value['rows'][-1]['woba_denom'] = ''
     elif defect == 'missing_pitch': value['rows'].pop()
     elif defect == 'duplicate': value['rows'].append(value['rows'][0])
+    elif defect == 'blank_batter': value['rows'][0]['batter'] = ''
     else: value['date'] = '2026-08-31'
     s3 = MemoryS3()
     initial = load_training_statcast(bundle, s3, 'b')

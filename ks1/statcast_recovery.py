@@ -11,7 +11,10 @@ import sys
 import time
 
 from ks1.inventory import RESEARCH, Reader, encode
-from ks1.statcast_history import official_pitch_counts, validation_reason
+from ks1.statcast_history import (official_physical_pitch_counts,
+                                  official_pitch_counts,
+                                  physical_validation_reason,
+                                  validation_reason)
 
 PREFIX = 'sources/statcast-recovery-v1/'
 MAX_DATES = 64
@@ -65,6 +68,8 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
     expected, invalid = official_pitch_counts(bundle['full'])
     completed_by_game = {str(g['officialGamePk']): g.get('completedAtUtc') for g in bundle['full']}
     scheduled_by_game = schedule_times(bundle['schedule'])
+    physical_expected, physical_batters, physical_invalid = official_physical_pitch_counts(
+        bundle['full'])
     scheduled = {}
     from ks1.features import day
     for game in bundle['schedule']:
@@ -142,6 +147,9 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                         raw_reader = Reader(s3, bucket)
                         retained = raw_reader.read(RESEARCH + raw_name)
                         if (raw_reader.receipts[-1].get('versionId') not in (None, '', 'null')
+                                and physical_validation_reason(
+                                    retained, value, games, physical_expected,
+                                    physical_batters, physical_invalid) is None
                                 and validation_reason(retained, value, games, expected, invalid,
                                                       completed_by_game, scheduled_by_game)
                                 in (None, 'incomplete_pa_outcome_fields')):
@@ -157,7 +165,12 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
             # independent official game set, exactly as the existing collector.
             payload = {**payload, 'rows': [row for row in payload['rows']
                        if str(row.get('game_pk')) in {str(pk) for pk in games}]}
-            reason = validation_reason(payload, value, games, expected, invalid, completed_by_game, scheduled_by_game)
+            reason = physical_validation_reason(
+                payload, value, games, physical_expected, physical_batters,
+                physical_invalid)
+            if reason is None:
+                reason = validation_reason(payload, value, games, expected, invalid,
+                                           completed_by_game, scheduled_by_game)
             diagnostics = outcome_diagnostics(payload)
             if reason == 'incomplete_pa_outcome_fields' and reconcile_official:
                 # Retain the selected raw records separately. This object is
@@ -170,7 +183,12 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                 raw_pointer = {'name': raw_name, 'versionId': receipt['versionId'],
                                'sha256': receipt['sha256']}
                 payload = reconcile(raw, official_source, raw_pointer, scheduled_by_game)
-                reason = validation_reason(payload, value, games, expected, invalid, completed_by_game, scheduled_by_game)
+                reason = physical_validation_reason(
+                    payload, value, games, physical_expected, physical_batters,
+                    physical_invalid)
+                if reason is None:
+                    reason = validation_reason(payload, value, games, expected, invalid,
+                                               completed_by_game, scheduled_by_game)
                 diagnostics['derived_fields'] = sum(len(item['fields']) for item in
                     payload.get('outcome_reconciliation', {}).get('derivations', []))
                 diagnostics['remaining'] = outcome_diagnostics(payload)
@@ -195,7 +213,11 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
             receipt = reader.receipts[-1]
             read_retained_evidence(retained, reader)
             if (receipt.get('versionId') in (None, '', 'null')
-                    or validation_reason(retained, value, games, expected, invalid, completed_by_game, scheduled_by_game) is not None):
+                    or physical_validation_reason(
+                        retained, value, games, physical_expected, physical_batters,
+                        physical_invalid) is not None
+                    or validation_reason(retained, value, games, expected, invalid,
+                                         completed_by_game, scheduled_by_game) is not None):
                 raise ValueError('recovered source readback failed')
             pointer = {'name': object_name, 'versionId': receipt['versionId'], 'sha256': content_hash}
             report['recovered_dates'].append(value)

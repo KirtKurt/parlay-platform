@@ -192,6 +192,10 @@ def capture(target_date, output):
                'statcast': statcast.get('rows', []),
                'statcast_retained_dates': statcast.get('retainedCompleteDates', []),
                'statcast_verified_games': statcast.get('retainedCompleteGames', []),
+               'statcast_physical_dates': statcast.get(
+                   'retainedPhysicalDates', statcast.get('retainedCompleteDates', [])),
+               'statcast_physical_games': statcast.get(
+                   'retainedPhysicalGames', statcast.get('retainedCompleteGames', [])),
                'coverage_complete': prior.get('coverageComplete'),
                'current30_history_complete': prior.get('current30CoverageComplete'),
                'current_year_history_complete': prior.get('currentYearCoverageComplete'),

@@ -167,6 +167,10 @@ def load_existing(cf, s3, bucket):
             "statcast": statcast.get("rows", []),
             "statcast_retained_dates": statcast.get("retainedCompleteDates", []),
             "statcast_verified_games": statcast.get("retainedCompleteGames", []),
+            "statcast_physical_dates": statcast.get(
+                "retainedPhysicalDates", statcast.get("retainedCompleteDates", [])),
+            "statcast_physical_games": statcast.get(
+                "retainedPhysicalGames", statcast.get("retainedCompleteGames", [])),
             "statcast_coverage_complete": statcast.get("current30CoverageComplete",
                                                         statcast.get("coverageComplete")) is True,
             "current_year_statcast_complete": statcast.get("currentYearCoverageComplete") is True,

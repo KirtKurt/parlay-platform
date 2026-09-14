@@ -67,6 +67,10 @@ def snapshot(store,game,checkpoint,market,history,prior,statcast):
     engine=Features(list(completed.values()),statcast.get('rows',[]),
                     statcast_retained_dates=statcast.get('retainedCompleteDates', []),
                     statcast_verified_games=statcast.get('retainedCompleteGames', []),
+                    statcast_physical_dates=statcast.get(
+                        'retainedPhysicalDates', statcast.get('retainedCompleteDates', [])),
+                    statcast_physical_games=statcast.get(
+                        'retainedPhysicalGames', statcast.get('retainedCompleteGames', [])),
                     statcast_complete=statcast.get('current30CoverageComplete',
                                                    statcast.get('coverageComplete')) is True,
                     prior_statcast_profiles=statcast.get('priorYearProfiles'),

@@ -15,8 +15,9 @@ from decimal import Decimal
 from ks1.features import utc
 from ks1.inventory import encode
 
-CONTRACT = "KS1-lineup-bullpen-profile-v2"
-SUPPORTED_FROZEN_CONTRACTS = ("KS1-lineup-bullpen-profile-v1", CONTRACT)
+CONTRACT = "KS1-lineup-bullpen-profile-v3"
+SUPPORTED_FROZEN_CONTRACTS = ("KS1-lineup-bullpen-profile-v1",
+                              "KS1-lineup-bullpen-profile-v2", CONTRACT)
 HISTORY_COVERAGE_KEYS = ("7d", "30d", "last3", "current_season_context",
                          "prior_year", "statcast_30d", "player_history_complete")
 
@@ -37,7 +38,7 @@ LINEUP_VALUE_FEATURES = ("lineup_quality_ops", "lineup_quality_obp", "lineup_qua
     for metric in ("ops", "obp", "slg", "iso", "k_pct", "bb_pct", "k_bb_pct",
                    "woba", "xwoba", "barrel_pct", "hard_hit_pct", "avg_exit_velocity",
                    "contact_pct", "swstr_pct", "csw_pct", "platoon_xwoba",
-                   "pitch_type_matchup_xwoba")) + tuple(
+                   "pitch_type_matchup_xwoba", "pitch_type_matchup_whiff_pct")) + tuple(
     f"lineup_{metric}_{label}"
     for label in ("prior_year", "talent")
     for metric in ("ops", "obp", "slg", "iso", "k_pct", "bb_pct", "k_bb_pct"))
@@ -261,6 +262,8 @@ def build_profile(stored, game, row, as_of, history, history_as_of=None,
                "history_coverage": dict(history_coverage or {}),
                "statcast_retained_dates": sorted(getattr(history, 'statcast_retained_dates', None) or []),
                "statcast_verified_games": sorted(getattr(history, 'statcast_verified_games', None) or []),
+               "statcast_physical_dates": sorted(getattr(history, 'statcast_physical_dates', None) or []),
+               "statcast_physical_games": sorted(getattr(history, 'statcast_physical_games', None) or []),
                "history_as_of": history_as_of,
                "statcast_as_of": statcast_as_of,
                "game_id": game_id, "commence_time": start.isoformat(),
