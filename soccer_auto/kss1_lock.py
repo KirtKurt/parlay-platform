@@ -7,6 +7,7 @@ This module is the contract the goals engine must obey.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -69,7 +70,7 @@ def classify_observation(commence_time: str, observed_at: str) -> dict[str, Any]
 
 def void_for_postponement(existing_lock: dict[str, Any], new_commence_time: str) -> dict[str, Any]:
     old = str(existing_lock.get("commence_time") or "")
-    if old == new_commence_time:
+    if parse_utc(old) == parse_utc(new_commence_time):
         return {"void": False, "reason": "KICKOFF_UNCHANGED"}
     return {
         "void": True,
@@ -84,6 +85,22 @@ def void_for_postponement(existing_lock: dict[str, Any], new_commence_time: str)
 
 
 def first_bind_wins(existing: dict[str, Any] | None, candidate: dict[str, Any]) -> dict[str, Any]:
-    if existing and existing.get("horizon") == PUBLIC_HORIZON and existing.get("immutable"):
+    existing_observation = (existing or {}).get("observation") or {}
+    if existing and (
+        (existing.get("public_horizon") == PUBLIC_HORIZON
+         and existing_observation.get("action") == "public_eligible"
+         and existing_observation.get("horizon") == PUBLIC_HORIZON)
+        or (existing.get("horizon") == PUBLIC_HORIZON and existing.get("immutable"))
+    ):
         return {"accepted": False, "reason": "FIRST_T60_BIND_IMMUTABLE", "authority": existing}
-    return {"accepted": True, "reason": "FIRST_VALID_T60_BIND", "authority": candidate}
+    observation = candidate.get("observation") or {}
+    if (
+        candidate.get("public_horizon") != PUBLIC_HORIZON
+        or observation.get("action") != "public_eligible"
+        or observation.get("horizon") != PUBLIC_HORIZON
+    ):
+        return {"accepted": False, "reason": "CANDIDATE_NOT_T60_ELIGIBLE", "authority": existing}
+    bound = deepcopy(candidate)
+    bound["horizon"] = PUBLIC_HORIZON
+    bound["immutable"] = True
+    return {"accepted": True, "reason": "FIRST_VALID_T60_BIND", "authority": bound}

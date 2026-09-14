@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -51,13 +52,18 @@ class BbdClient:
                 status = getattr(response, "status", 200)
         except urllib.error.HTTPError as exc:
             raise BbdError(f"BBD HTTP {exc.code} for {path}") from exc
-        except urllib.error.URLError as exc:
+        except (urllib.error.URLError, TimeoutError) as exc:
             raise BbdError(f"BBD transport error for {path}") from exc
         if status >= 400:
             raise BbdError(f"BBD HTTP {status} for {path}")
         payload = json.loads(raw.decode("utf-8") or "{}")
         if not isinstance(payload, dict):
             raise BbdError("BBD payload must be an object")
+        envelope = payload
+        while isinstance(envelope, dict):
+            if envelope.get("error") is not None:
+                raise BbdError("BBD error envelope")
+            envelope = envelope.get("data")
         return payload
 
     def list_matches(self, league: str, *, limit: int = 50) -> list[dict[str, Any]]:
@@ -88,8 +94,18 @@ class BbdClient:
 
 def extract_match_xg(stats_payload: dict[str, Any]) -> dict[str, Any]:
     data = stats_payload.get("data") if isinstance(stats_payload.get("data"), dict) else stats_payload
-    home = _first_float(data, ("home_xg", "xg_home", "home.xg"))
-    away = _first_float(data, ("away_xg", "xg_away", "away.xg"))
+    home = _first_float(data, ("home_xg", "xg_home", "home.xg", "home.expected_goals"))
+    away = _first_float(data, ("away_xg", "xg_away", "away.xg", "away.expected_goals"))
+    if home is None or away is None:
+        items = data.get("statistics") or data.get("stats") or []
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or item.get("type") or "").casefold().replace(" ", "_")
+            if name in {"xg", "expected_goals", "expected_goals_(xg)"}:
+                home = home if home is not None else _first_float(item, ("home", "home_value"))
+                away = away if away is not None else _first_float(item, ("away", "away_value"))
+                break
     return {
         "has_xg": home is not None and away is not None,
         "xg_home": home,
@@ -109,10 +125,12 @@ def _first_float(payload: dict[str, Any], keys: tuple[str, ...]) -> float | None
             value = current
         else:
             value = payload.get(key)
-        if value is None or value == "":
+        if value is None or value == "" or isinstance(value, bool):
             continue
         try:
-            return float(value)
+            number = float(value)
+            if math.isfinite(number) and number >= 0:
+                return number
         except (TypeError, ValueError):
             continue
     return None

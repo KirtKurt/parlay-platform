@@ -8,6 +8,8 @@ import re
 import unicodedata
 from typing import Any
 
+from soccer_auto.kss1_lock import parse_utc
+
 SPORT_SLUG = "football"
 
 ODDS_KEY_TO_BBD_LEAGUE = {
@@ -108,11 +110,13 @@ def map_event(
     away_n = normalize_name(away_team)
     candidates = []
     for row in bbd_matches or []:
+        if not isinstance(row, dict) or not home_n or not away_n:
+            continue
         bbd_id = str(row.get("id") or "")
         if not is_bbd_uuid(bbd_id):
             continue
         if normalize_name(row.get("home")) == home_n and normalize_name(row.get("away")) == away_n:
-            if not commence_time or not row.get("kickoff_utc") or _same_kickoff(commence_time, row["kickoff_utc"]):
+            if commence_time and row.get("kickoff_utc") and _same_kickoff(commence_time, row["kickoff_utc"]):
                 candidates.append(bbd_id)
     unique = list(dict.fromkeys(candidates))
     if len(unique) == 1:
@@ -141,7 +145,7 @@ def map_event(
 
 
 def _same_kickoff(left: str, right: str) -> bool:
-    def clip(value: str) -> str:
-        return str(value).replace("Z", "+00:00")[:16]
-
-    return clip(left) == clip(right)
+    try:
+        return parse_utc(left) == parse_utc(right)
+    except (TypeError, ValueError):
+        return False

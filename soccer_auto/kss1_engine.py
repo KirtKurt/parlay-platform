@@ -6,6 +6,7 @@ soccer_auto promotion gate passes.
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from soccer_auto.kss1_identity import map_event
@@ -19,10 +20,24 @@ from soccer_auto.kss1_markets import apply_abstain, markets_from_grid, score_mat
 
 ENGINE_ID = "kss1-goals-v1"
 AUTHORITY = "SHADOW_LEARNING"
+GOAL_INPUT_DEFAULTS = {
+    "home_attack": 1.0, "away_attack": 1.0,
+    "home_defence": 1.0, "away_defence": 1.0,
+    "league_home": 1.45, "league_away": 1.15,
+}
 
 
 def _clip(value: float, low: float, high: float) -> float:
     return max(low, min(high, float(value)))
+
+
+def _goal_input(value: Any) -> float:
+    if isinstance(value, bool):
+        raise ValueError("goal inputs must be finite nonnegative numbers")
+    number = float(value)
+    if not math.isfinite(number) or number < 0:
+        raise ValueError("goal inputs must be finite nonnegative numbers")
+    return number
 
 
 def expected_goals(
@@ -37,12 +52,12 @@ def expected_goals(
     xg_away: float | None = None,
     xg_weight: float = 0.35,
 ) -> tuple[float, float, bool]:
-    dc_home = league_home * home_attack * away_defence
-    dc_away = league_away * away_attack * home_defence
+    dc_home = _goal_input(league_home) * _goal_input(home_attack) * _goal_input(away_defence)
+    dc_away = _goal_input(league_away) * _goal_input(away_attack) * _goal_input(home_defence)
     has_xg = xg_home is not None and xg_away is not None
     if has_xg:
-        lam = (1.0 - xg_weight) * dc_home + xg_weight * float(xg_home)
-        mu = (1.0 - xg_weight) * dc_away + xg_weight * float(xg_away)
+        lam = (1.0 - xg_weight) * dc_home + xg_weight * _goal_input(xg_home)
+        mu = (1.0 - xg_weight) * dc_away + xg_weight * _goal_input(xg_away)
     else:
         lam, mu = dc_home, dc_away
     return _clip(lam, 0.05, 5.5), _clip(mu, 0.05, 5.5), bool(has_xg)
@@ -82,7 +97,7 @@ def blend_with_market(grid: list[list[float]], market_1x2: dict[str, float] | No
     return [[cell / total for cell in row] for row in out]
 
 
-def predict_match(payload: dict[str, Any]) -> dict[str, Any]:
+def predict_match(payload: dict[str, Any], *, goals_model=None, goals_features=None) -> dict[str, Any]:
     mapping = map_event(
         odds_event_id=str(payload.get("odds_event_id") or payload.get("event_id") or ""),
         sport_key=str(payload.get("sport_key") or ""),
@@ -95,19 +110,30 @@ def predict_match(payload: dict[str, Any]) -> dict[str, Any]:
         str(payload.get("commence_time") or ""),
         str(payload.get("observed_at") or payload.get("commence_time") or ""),
     )
+    defaulted = [key for key in GOAL_INPUT_DEFAULTS if payload.get(key) is None]
+    goal_inputs = {
+        key: default if payload.get(key) is None else _goal_input(payload[key])
+        for key, default in GOAL_INPUT_DEFAULTS.items()
+    }
     lam, mu, has_xg = expected_goals(
-        home_attack=float(payload.get("home_attack") or 1.0),
-        away_attack=float(payload.get("away_attack") or 1.0),
-        home_defence=float(payload.get("home_defence") or 1.0),
-        away_defence=float(payload.get("away_defence") or 1.0),
-        league_home=float(payload.get("league_home") or 1.45),
-        league_away=float(payload.get("league_away") or 1.15),
+        **goal_inputs,
         xg_home=payload.get("xg_home"),
         xg_away=payload.get("xg_away"),
     )
+    if goals_model is not None:
+        from .kss1_goals_model import rates
+        if goals_features is None:
+            raise ValueError("trained goals model requires frozen features")
+        lam, mu = rates(goals_model, goals_features)
+        has_xg = bool(goals_model["use_xg"] and goals_features["xg_complete"])
     grid = score_matrix(lam, mu)
-    grid = blend_with_market(grid, payload.get("market_1x2"))
+    # A fitted model must use exactly the inference evaluated on its holdout.
+    if goals_model is None:
+        grid = blend_with_market(grid, payload.get("market_1x2"))
     markets = apply_abstain(markets_from_grid(grid), min_1x2=0.40, min_other=0.51)
+    if mapping.get("publish_ou_btts") is not True:
+        markets["ou25_published"] = "ABSTAIN"
+        markets["btts_published"] = "ABSTAIN"
     # Quarantined cups stay off. Missing BBD does not blank a shadow book.
     if mapping.get("tier") == "Q" or mapping.get("goals_model_eligible") is False:
         for key in ("1x2_published", "double_chance_published", "ou25_published", "btts_published"):
@@ -118,11 +144,21 @@ def predict_match(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "engine_id": ENGINE_ID,
         "engine_lock_version": ENGINE_LOCK_VERSION,
+        "goals_model_digest": goals_model["model_digest"] if goals_model else None,
         "authority": AUTHORITY,
         "public_horizon": PUBLIC_HORIZON,
         "lambda_home": lam,
         "lambda_away": mu,
         "has_xg": has_xg,
+        # Learned coverage comes from the shared receipt-bearing feature set.
+        # Legacy callers only report the numeric values they supplied.
+        "input_coverage": {
+            "defaulted_fields": defaulted,
+            "team_strength_complete": goals_features["team_strength_complete"] if goals_features else not any(
+                key in defaulted for key in ("home_attack", "away_attack", "home_defence", "away_defence")
+            ),
+            "xg_complete": has_xg,
+        },
         "mapping": mapping,
         "observation": observation,
         "markets": markets,

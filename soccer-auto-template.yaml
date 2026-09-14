@@ -3,6 +3,11 @@ Transform: AWS::Serverless-2016-10-31
 Description: Fully isolated autonomous soccer market collection and ML prediction stack
 
 Parameters:
+  BbdApiKey:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: Optional existing BBD credential for prior-match goals context
   OddsApiKey:
     Type: String
     NoEcho: true
@@ -37,6 +42,7 @@ Parameters:
 
 Conditions:
   HistoricalBackfillEnabled: !Equals [!Ref EnableHistoricalBackfill, 'true']
+  BbdConfigured: !Not [!Equals [!Ref BbdApiKey, '']]
 
 Globals:
   Function:
@@ -80,6 +86,15 @@ Globals:
         SOCCER_AUTO_HISTORICAL_MATERIALIZATION_EVENTS_PER_INVOCATION: '5'
 
 Resources:
+  SoccerBbdApiSecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: BbdConfigured
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Isolated BBD credential for KSS1 prior-match xG collection
+      SecretString: !Ref BbdApiKey
+
   SoccerOddsApiSecret:
     Type: AWS::SecretsManager::Secret
     DeletionPolicy: RetainExceptOnCreate
@@ -341,7 +356,9 @@ Resources:
                   - !GetAtt SoccerCollectionDeadLetterQueue.Arn
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
-                Resource: !Ref SoccerOddsApiSecret
+                Resource:
+                  - !Ref SoccerOddsApiSecret
+                  - !If [BbdConfigured, !Ref SoccerBbdApiSecret, !Ref 'AWS::NoValue']
               - Effect: Allow
                 Action: cloudwatch:GetMetricStatistics
                 Resource: '*'
@@ -652,6 +669,26 @@ Resources:
             Input: '{"action":"train_evaluate_promote"}'
             RetryPolicy: {MaximumEventAgeInSeconds: 1800, MaximumRetryAttempts: 0}
 
+  SoccerGoalsTrainerFunction:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: makefile}
+    Properties:
+      CodeUri: soccer_auto/
+      Handler: soccer_auto.kss1_training_runtime.trainer_handler
+      Role: !GetAtt SoccerAutoRuntimeRole.Arn
+      Timeout: 900
+      MemorySize: 3008
+      Environment:
+        Variables:
+          SOCCER_AUTO_BBD_SECRET_ARN: !If [BbdConfigured, !Ref SoccerBbdApiSecret, '']
+      Events:
+        TrainGoalsEverySixHours:
+          Type: Schedule
+          Properties:
+            Schedule: cron(43 1/6 * * ? *)
+            Input: '{"action":"train_kss1_goals_shadow"}'
+            RetryPolicy: {MaximumEventAgeInSeconds: 1800, MaximumRetryAttempts: 0}
+
   SoccerLlmAnalystFunction:
     Type: AWS::Serverless::Function
     Metadata: {BuildMethod: makefile}
@@ -750,6 +787,9 @@ Resources:
         Models:
           Type: Api
           Properties: {Path: /v1/soccer-auto/models, Method: GET}
+        Kss1Goals:
+          Type: Api
+          Properties: {Path: /v1/soccer-auto/kss1, Method: GET}
 
   SoccerCollectionDlqAlarm:
     Type: AWS::CloudWatch::Alarm

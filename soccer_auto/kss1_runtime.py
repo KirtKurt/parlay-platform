@@ -6,9 +6,11 @@ existing lock/prediction contract tests stay on the original function.
 from __future__ import annotations
 
 from datetime import timedelta
+import json
 from typing import Any, Mapping
 
-from soccer_auto.canonical import iso_utc
+from soccer_auto.canonical import digest, iso_utc, parse_utc
+from soccer_auto.kss1_features import HistoryIndex
 from soccer_auto.inference import freeze_handler as _freeze_handler
 from soccer_auto.kss1_engine import ENGINE_ID, predict_match
 from soccer_auto.kss1_markets import settle_regulation
@@ -27,10 +29,10 @@ def market_prior_from_lock(lock: Mapping[str, Any]) -> dict[str, float] | None:
     }
 
 
-def kss1_prediction_sk(lock: Mapping[str, Any]) -> str:
+def kss1_prediction_sk(lock: Mapping[str, Any], model_digest: str = ENGINE_ID) -> str:
     return (
         f"PRED#KSS1#REV#{int(lock.get('schedule_revision') or 0)}"
-        f"#TARGET#kss1_book#MODEL#{ENGINE_ID}"
+        f"#TARGET#kss1_book#MODEL#{model_digest}"
     )
 
 
@@ -50,7 +52,23 @@ def shadow_source_from_event(row: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_kss1_shadow_item(lock: Mapping[str, Any], observed_at: str) -> dict[str, Any]:
+def build_kss1_shadow_item(lock: Mapping[str, Any], observed_at: str, *, goals_context=None, history_index=None) -> dict[str, Any]:
+    features = None
+    model = None
+    goal_inputs = {}
+    if goals_context is not None:
+        deadline = parse_utc(lock["commence_time"]) - timedelta(minutes=60)
+        cutoff = min(parse_utc(observed_at), deadline)
+        if parse_utc(goals_context["created_at"]) > cutoff:
+            raise ValueError("goals context unavailable at prediction cutoff")
+        index = history_index or HistoryIndex(goals_context["history"])
+        if any(row["provenance_mode"] != "VERIFIED_RECEIPT" for row in index.rows):
+            raise ValueError("research-only history cannot serve live predictions")
+        features = index.features(lock, iso_utc(cutoff))
+        model = goals_context.get("model")
+        if model and model.get("research_only"):
+            raise ValueError("research model cannot serve live predictions")
+        goal_inputs = features["values"]
     book = predict_match(
         {
             "odds_event_id": lock.get("event_id"),
@@ -60,11 +78,15 @@ def build_kss1_shadow_item(lock: Mapping[str, Any], observed_at: str) -> dict[st
             "commence_time": lock.get("commence_time"),
             "observed_at": observed_at,
             "market_1x2": market_prior_from_lock(lock),
-        }
+            **goal_inputs,
+        },
+        goals_model=model,
+        goals_features=features,
     )
+    model_digest = model["model_digest"] if model else ENGINE_ID
     return {
         "PK": lock["event_key"],
-        "SK": kss1_prediction_sk(lock),
+        "SK": kss1_prediction_sk(lock, model_digest),
         "entity_type": "SOCCER_MODEL_PREDICTION",
         "event_key": lock["event_key"],
         "event_id": lock.get("event_id"),
@@ -77,20 +99,30 @@ def build_kss1_shadow_item(lock: Mapping[str, Any], observed_at: str) -> dict[st
         "horizon": book.get("public_horizon"),
         "lock_at": lock.get("lock_at"),
         "feature_hash": lock.get("feature_hash"),
-        "model_digest": ENGINE_ID,
+        "model_digest": model_digest,
         "model_authority": "SHADOW",
         "prediction_status": "SHADOW",
         "automatic_prediction_allowed": False,
         "kss1": book,
+        "goals_features": features,
+        "goals_context_as_of": goals_context["context_as_of"] if goals_context else None,
         "immutable": True,
         "created_at": observed_at,
     }
 
 
-def write_kss1_shadow(store: SoccerStore, lock: Mapping[str, Any], observed_at: str) -> dict[str, Any]:
+def write_kss1_shadow(store: SoccerStore, lock: Mapping[str, Any], observed_at: str, *, goals_context=None, history_index=None) -> dict[str, Any]:
     if not lock.get("event_key") or not lock.get("home_team") or not lock.get("away_team"):
         return {"written": False, "reason": "EVENT_IDENTITY_INCOMPLETE"}
-    item = build_kss1_shadow_item(lock, observed_at)
+    if goals_context is not None and parse_utc(observed_at) > parse_utc(lock["commence_time"]) - timedelta(minutes=60):
+        return {"written": False, "reason": "MISSED_T60_GOALS_SHADOW"}
+    item = build_kss1_shadow_item(lock, observed_at, goals_context=goals_context, history_index=history_index)
+    # Retain the complete digest-bound evidence in S3 when a large competition
+    # history would otherwise exceed DynamoDB's item limit.
+    if len(json.dumps(item, ensure_ascii=False).encode("utf-8")) > 300_000:
+        features = item.pop("goals_features")
+        item["goals_features_uri"] = store.write_artifact("kss1/prediction_features", features, digest(features))
+        item["goals_feature_digest"] = features["feature_digest"]
     return {"written": bool(store.put_prediction(item)), "sk": item["SK"]}
 
 
@@ -125,10 +157,19 @@ def freeze_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, A
     observed_at = iso_utc(observed)
     written = 0
     skipped = 0
+    from soccer_auto.kss1_training_runtime import load_context
+    goals_context = None
+    history_index = None
+    try:
+        goals_context = load_context(store)
+        if goals_context:
+            history_index = HistoryIndex(goals_context["history"])
+    except Exception as exc:
+        result["kss1_context_error"] = type(exc).__name__
     try:
         events = store.active_events_between(
             iso_utc(observed),
-            iso_utc(observed + timedelta(minutes=50)),
+            iso_utc(observed + timedelta(minutes=90)),
         )
         for row in events:
             revision = int(row.get("schedule_revision") or 0)
@@ -140,7 +181,12 @@ def freeze_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, A
                     horizon="T10",
                 )
             source = lock or shadow_source_from_event(row)
-            outcome = write_kss1_shadow(store, source, observed_at)
+            try:
+                outcome = write_kss1_shadow(store, source, observed_at, goals_context=goals_context, history_index=history_index)
+            except (TypeError, ValueError) as exc:
+                result["kss1_feature_errors"] = result.get("kss1_feature_errors", 0) + 1
+                skipped += 1
+                continue
             written += int(bool(outcome.get("written")))
             skipped += int(not outcome.get("written"))
     except Exception as exc:
