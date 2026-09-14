@@ -16,6 +16,7 @@ from ks1.features import utc
 from ks1.inventory import encode
 
 CONTRACT = "KS1-lineup-bullpen-profile-v2"
+SUPPORTED_FROZEN_CONTRACTS = ("KS1-lineup-bullpen-profile-v1", CONTRACT)
 TEAM_CONTEXT_VERSION = "MLB-STATSAPI-TEAM-CONTEXT-v1-prelock-observations"
 BATTING_VERSION = "MLB-LINEUP-SEASON-BATTING-v1-passive-observations"
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -299,7 +300,7 @@ def read_date(table, target_date):
 
 
 def frozen_profile_features(row):
-    """Recover only checksum-bound values from an immutable KS1 row."""
+    """Recover checksum-bound immutable profiles under their recorded contract."""
     raw = row.get("lineup_bullpen_profile_json")
     if not raw:
         return None
@@ -310,8 +311,9 @@ def frozen_profile_features(row):
     claimed = profile.pop("sha256", None)
     semantic_claimed = profile.pop("semantic_sha256", None)
     semantic = {key: value for key, value in profile.items() if key != "as_of"}
-    valid = (row.get("lineup_bullpen_profile_contract") == CONTRACT
-             and profile.get("contract") == CONTRACT
+    recorded_contract = row.get("lineup_bullpen_profile_contract")
+    valid = (recorded_contract in SUPPORTED_FROZEN_CONTRACTS
+             and profile.get("contract") == recorded_contract
              and row.get("lineup_bullpen_profile_sha256") == claimed
              and row.get("lineup_bullpen_profile_semantic_sha256") == semantic_claimed
              and hashlib.sha256(encode(semantic)).hexdigest() == semantic_claimed
@@ -343,7 +345,8 @@ def frozen_profile_features(row):
             "matchup_starters": {side: profile["sides"][side].get("opposing_starter_id")
                                  for side in ("home", "away")},
             "features": features,
-            "coverage_status": profile.get("coverage_status")}
+            "coverage_status": profile.get("coverage_status"),
+            "contract": recorded_contract}
 
 
 def published_profile_index(entries):
