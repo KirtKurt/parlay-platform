@@ -16,7 +16,8 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from ks1.features import Features, day, pitcher_context, starter_matchup, utc
+from ks1.features import (Features, STATCAST_METRIC_NAMES, day, pitcher_context,
+                          starter_matchup, utc)
 from ks1.inventory import encode
 from ks1.poisson import home_probability, predict_exported
 from ks1.publish import parquet_bytes
@@ -51,6 +52,28 @@ STATCAST_METRICS = ('complete', 'pitches', 'hard_hit_pct', 'barrel_pct', 'avg_ev
                     'xwoba_contact', 'xwoba', 'xwoba_pa', 'swstr_pct', 'csw_pct', 'velocity',
                     'spin', 'horizontal_break_in', 'vertical_break_in', 'extension', 'fly_balls',
                     'active_spin_pct', 'stuff_plus', 'location_plus', 'pitching_plus')
+
+
+def mask_starter_sources(values, coverage):
+    """Preserve proven official results independently of Savant availability."""
+    values = dict(values)
+    pitch_metrics = set(STATCAST_METRIC_NAMES) | {'xfip'}
+    for window in ('7d', '10d', '30d', 'last3', 'prior_year'):
+        source_window = '30d' if window == '10d' else window
+        for key in values:
+            if key.startswith('starter_') and key.endswith('_'+window):
+                metric = key.removeprefix('starter_').removesuffix('_'+window)
+                source = source_window if metric in pitch_metrics else 'results_'+source_window
+                if not coverage.get(source):
+                    values[key] = None
+    if not coverage.get('current_season_context'):
+        values.update({key: None for key in values if key.startswith('starter_context_')})
+        values['starter_expected_innings_last5'] = None
+    recent = {name: values.get('starter_'+name+'_30d') for name in STATCAST_METRIC_NAMES}
+    prior = {name: values.get('starter_'+name+'_prior_year') for name in STATCAST_METRIC_NAMES}
+    for metric in ('velocity', 'spin', 'extension', 'ff_velocity', 'ff_spin'):
+        values['starter_'+metric+'_talent'] = Features.talent(recent, prior, metric)
+    return values
 
 
 def starter_profile(row, features, as_of, history_as_of):
@@ -95,6 +118,12 @@ def starter_profile(row, features, as_of, history_as_of):
             'metrics': metrics,
             'window_statuses': {window: window_status(window)
                                 for window in ('7d', '30d', 'last3', 'prior_year')},
+            'results_window_statuses': {
+                window: ('MISSING_STARTER' if row[side+'_starter_id'] is None
+                         else 'SOURCE_INCOMPLETE' if not profile['coverage'].get('results_'+window)
+                         else 'COMPLETE' if metrics.get('era_'+window) is not None
+                         else 'NO_APPEARANCES_OR_INCOMPLETE')
+                for window in ('7d', '30d', 'last3', 'prior_year')},
             'unavailable_exact_metrics': unavailable,
         }
     semantic = {key: value for key, value in profile.items() if key not in ('as_of', 'history_as_of')}
@@ -442,6 +471,11 @@ def predict(folder, output):
                'history_status': 'available_retained_history',
                'history_source_as_of': inputs['history'].get('prior_observed_at')}
         coverage = {
+            'results_7d': inputs['history'].get('current30_history_complete') is True,
+            'results_30d': inputs['history'].get('current30_history_complete') is True,
+            'results_last3': (inputs['history'].get('current_year_history_complete') is True
+                              and inputs['history'].get('prior_year_history_complete') is True),
+            'results_prior_year': inputs['history'].get('prior_year_history_complete') is True,
             '7d': (inputs['history'].get('current30_history_complete') is True
                    and inputs['history'].get('statcast_coverage_complete') is True),
             '30d': (inputs['history'].get('current30_history_complete') is True
@@ -467,20 +501,8 @@ def predict(folder, output):
             tid, name = team_identity(team)
             pid = row[side+'_starter_id']
             row.update({side+'_id': tid, side+'_team': name, 'bbs_'+side+'_id': str(bbs[side]['id'])})
-            side_values = engine.at(as_of, tid, pid, game_date=target_date)
-            if not coverage['30d']:
-                side_values.update({key: None for key in side_values if key.startswith('starter_')
-                                    and key.endswith(('_7d', '_10d', '_30d'))})
-            if not coverage['last3']:
-                side_values.update({key: None for key in side_values if key.startswith('starter_')
-                                    and key.endswith('_last3')})
-            if not coverage['current_season_context']:
-                side_values.update({key: None for key in side_values
-                                    if key.startswith('starter_context_')})
-                side_values['starter_expected_innings_last5'] = None
-            if not coverage['prior_year']:
-                side_values.update({key: None for key in side_values if key.startswith('starter_')
-                                    and (key.endswith('_prior_year') or key.endswith('_talent'))})
+            side_values = mask_starter_sources(
+                engine.at(as_of, tid, pid, game_date=target_date), coverage)
             # Derive context only after source-completeness masking.
             side_values.update({'pitcher_context_'+key: value
                                 for key, value in pitcher_context(side_values).items()})

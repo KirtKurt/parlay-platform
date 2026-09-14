@@ -64,6 +64,12 @@ starter fields. Training-table rebuilds restore those immutable captured
 values instead of recalculating them from a later rolling Statcast cache, so
 prospective coverage cannot disappear as pitches age out.
 
+Official results have separate `results_window_statuses` for 7-day, 30-day,
+last-three-start and prior-year windows. A Savant delay no longer clears ERA,
+WHIP, RA9, decisions, FIP or strikeout/walk counts when the official box-score
+history is complete. Contact and pitch metrics keep their stricter independent
+coverage checks; `window_statuses` still describes the combined profile.
+
 ## Explicitly unavailable fields
 
 xERA, SIERA, Stuff+, Location+, Pitching+, and active-spin percentage remain
@@ -81,7 +87,17 @@ which prevents game-one information leaking into game two of a doubleheader.
 Research snapshots may include a same-day result only when its independently
 recorded completion time is earlier than the snapshot.
 
-These columns become eligible for candidate training only after sufficient
-prospective starter coverage. They do not affect published probabilities until
-a chronological candidate beats the incumbent on Brier score without worsening
-log loss and its model reference is separately reviewed and promoted.
+On September 14, 2026, the user authorized verified historical point-in-time
+values in place of waiting for 300 prospective games. Qualification now requires
+the same exact trailing 300-game chronological holdout, with every learned
+pitcher-context field covered by a validated historical manifest or an immutable
+pregame profile. Training labels must predate the earliest holdout prediction.
+Unverified values, postgame starter identities and missing feature values do not
+qualify. Historical results remain labeled retrospective; prospective coverage
+is reported separately. The holdout is not filtered to select easier games.
+
+A candidate must beat the incumbent on Brier score without worsening log loss.
+If it consumes batter or bullpen fields, those fields also need pregame evidence
+on every holdout game. Unused batter/bullpen groups do not block a starter-only
+candidate. Qualification produces experiment artifacts; serving still requires
+a separately reviewed, checksum-bound model-reference promotion.
