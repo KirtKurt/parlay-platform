@@ -13,6 +13,7 @@ import re
 from ks1.features import day, number, official_context_pitching, utc
 from ks1.inventory import encode, RESEARCH
 from ks1.historical_starters import published_starter_index
+from ks1.historical_feed import feed_identity
 
 VERSION = "KS1-prior-pitcher-reconstruction-v1"
 FIELDS = ("quality", "recent_form", "velocity", "command", "expected_innings")
@@ -52,6 +53,11 @@ def summarize(entries):
 def pregame_identity_index(bundle):
     """Independent pregame identities from the retained source observations."""
     result = defaultdict(list)
+    for entry in bundle.get('historical_pregame_feeds', []):
+        identity = feed_identity(entry)
+        if identity:
+            for side, proof in identity['sides'].items():
+                result[(identity['game_id'], side)].append(proof)
     for pk, entry in published_starter_index(bundle.get('published_predictions', [])).items():
         for side, pitcher in entry['sides'].items():
             result[(pk, side)].append({
@@ -69,6 +75,8 @@ def pregame_identity_index(bundle):
                     or not at <= cutoff <= start-timedelta(minutes=10)
                     or not source or not source.get('versionId')
                     or source['versionId'] == 'null'
+                    or not source.get('stored_at')
+                    or not at <= utc(source['stored_at']) <= start-timedelta(minutes=10)
                     or digest(snapshot['features']) != snapshot['featureFingerprint']):
                 continue
             for side, team in snapshot.get('playerWindows', {}).get('teams', {}).items():

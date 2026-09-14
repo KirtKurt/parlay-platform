@@ -42,7 +42,9 @@ class Reader:
         if expected and actual != expected:
             raise ValueError("stored source checksum mismatch")
         self.receipts.append({"bucket": kwargs["Bucket"], "key": key,
-                              "versionId": response.get("VersionId"), "sha256": actual})
+                              "versionId": response.get("VersionId"), "sha256": actual,
+                              "stored_at": response["LastModified"].isoformat()
+                              if response.get("LastModified") else None})
         return json.loads(body)
 
     def pointer(self, pointer):

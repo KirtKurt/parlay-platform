@@ -13,6 +13,7 @@ from ks1.historical_starters import published_starter_index
 from ks1.inventory import encode
 from ks1.passive_context import MODEL_FEATURES as LINEUP_BULLPEN_FEATURES, published_profile_index
 from ks1.prior_pitcher_context import PriorPitcherContext, pregame_identity_index
+from ks1.historical_feed import feed_identity
 
 VERSION = "KS1-game-table-v1"
 
@@ -113,6 +114,8 @@ def build(bundle, selected_date=None):
     published_starters = published_starter_index(bundle.get("published_predictions", []))
     published_team_context = published_profile_index(bundle.get("published_predictions", []))
     historical_context = bundle.get("historical_pitcher_context", {})
+    archived_identities = {value['game_id']: value for entry in bundle.get('historical_pregame_feeds', [])
+                           if (value := feed_identity(entry)) is not None}
     history = Features(list(games.values()), bundle.get("statcast", []),
                        statcast_complete=bundle.get("statcast_coverage_complete") is True,
                        prior_statcast_profiles=bundle.get("prior_statcast_profiles"),
@@ -299,6 +302,14 @@ def build(bundle, selected_date=None):
                     row[f"{side}_starter_id"] = str(probable["id"])
                     row[f"{side}_starter_name"] = probable.get("fullName")
                     row[f"{side}_starter_status"] = "observed_probable"
+            archived = archived_identities.get(pk, {}).get('sides', {}).get(side)
+            if (not row[f"{side}_starter_id"] and archived
+                    and archived['team_id'] == tid
+                    and utc(archived['commence_time']) == utc(start)
+                    and utc(archived['as_of']) <= utc(cutoff)):
+                row[f"{side}_starter_id"] = archived['pitcher_id']
+                row[f"{side}_starter_name"] = archived['name']
+                row[f"{side}_starter_status"] = 'observed_archived_pregame'
             actuals = [p for p in full.get(pk, {}).get("teams", {}).get(side, {}).get("players", {}).values()
                        if p.get("stats", {}).get("pitching", {}).get("gamesStarted") == 1]
             if len(actuals) == 1:

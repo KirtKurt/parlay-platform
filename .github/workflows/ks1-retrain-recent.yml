@@ -2,7 +2,7 @@ name: KS1 seven-day model validation
 on:
   push:
     branches: [main]
-    paths: ['ks1/prior_pitcher_context.py', 'ks1/retrain_recent.py', 'ks1/table.py', 'ks1/sources.py', '.github/workflows/ks1-retrain-recent.yml']
+    paths: ['ks1/historical_feed.py', 'ks1/prior_pitcher_context.py', 'ks1/retrain_recent.py', 'ks1/table.py', 'ks1/sources.py', '.github/workflows/ks1-retrain-recent.yml']
   pull_request:
     paths: ['ks1/**', 'tests/ks1/**', 'tests/ks1_recent/**', '.github/workflows/ks1-retrain-recent.yml']
   workflow_dispatch:
@@ -45,7 +45,7 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
-      - name: Rebuild retained features and compare on rolling holdout
+      - name: Backfill timestamped pregame starters and compare on rolling holdout
         run: python -m ks1.retrain_recent --output /tmp/ks1-recent
       - uses: actions/upload-artifact@v4
         if: always()

@@ -128,3 +128,25 @@ pitcher context in a tree split, improve Brier score, and not worsen log loss.
 A fixed ablation without pitcher context is reported separately. Main-branch
 repairs trigger isolated candidate validation and AWS artifact readback;
 activation still requires a separate reviewed serving-reference change.
+
+## Timestamped MLB pregame feed backfill
+
+The authorized main challenger workflow now fills a versioned, write-once
+`mlb/development-data/ks1-historical-pregame-v1/` cache for the latest 1,000
+completed games, newest first. This prioritizes the unchanged 300-game test
+and then earlier training history. A 10-minute collection budget fails missing
+responses closed; later runs reuse verified cached responses.
+
+The MLB feed is requested with the target T-10 `timecode`. Its own metadata
+timestamp must precede that cutoff, its game/start/team identity must match,
+and it must be scheduled or warming up with no pitch events or final decisions.
+The identity remains an archived probable pitcher, never a postgame substitution.
+The provider response, request, retrieval time, content hash, S3 version and
+readback evidence are retained. Original snapshots separately require proof that
+their S3 version was stored before T-10. Historical feed retrieval today is
+explicitly distinguished from original pregame storage.
+
+Only IDs are admitted from this historical feed; season statistics in a feed
+are not trusted as point-in-time training values. Pitcher statistics continue
+to be recomputed from strictly earlier official games. Rotation projections
+remain a labeled fallback when a genuine archived identity is unavailable.

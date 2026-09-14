@@ -5,6 +5,7 @@ import json
 
 from ks1.historical_starters import load_active_historical_context, read_locked_predictions
 from ks1.inventory import Reader, RESEARCH, RECONSTRUCTED, ROOT
+from ks1.historical_feed import PREFIX as HISTORICAL_FEED_PREFIX, feed_identity
 
 FINALS = "mlb/historical-daily-v1/official-finals/"
 ODDS = "mlb/odds-v8-shadow/"
@@ -116,6 +117,22 @@ def load_existing(cf, s3, bucket):
                                "status": "unavailable",
                                "error_code": getattr(exc, "response", {}).get(
                                    "Error", {}).get("Code", type(exc).__name__)})
+    historical_feeds = []
+    try:
+        def read_feed(key):
+            source = Reader(s3, bucket)
+            value = source.read(key)
+            entry = {**value, 'receipt': source.receipts[0]}
+            return entry if feed_identity(entry) is not None else None
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            historical_feeds = [entry for entry in pool.map(read_feed, sorted(reader.keys(HISTORICAL_FEED_PREFIX)))
+                                if entry is not None]
+        reader.receipts.extend(entry['receipt'] for entry in historical_feeds)
+        optional_reads.append({'source':HISTORICAL_FEED_PREFIX,'status':'read','rows':len(historical_feeds)})
+    except Exception as exc:
+        historical_feeds = []
+        optional_reads.append({'source':HISTORICAL_FEED_PREFIX,'status':'unavailable',
+                               'error_code':type(exc).__name__})
     return {"reconstructed": reconstructed, "research": research,
             "compact": compact, "full": prior["games"], "schedule": prior["schedule"],
             "current30_history_complete": prior.get("current30CoverageComplete") is True,
@@ -131,5 +148,6 @@ def load_existing(cf, s3, bucket):
             "published_predictions": published_predictions,
             "historical_pitcher_context": historical_pitcher_context,
             "official_history_source": prior_receipt,
+            "historical_pregame_feeds": historical_feeds,
             "source_receipts": sorted(reader.receipts, key=lambda r: (r["bucket"], r["key"])),
             "optional_reads": optional_reads}

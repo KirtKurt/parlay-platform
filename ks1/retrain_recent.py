@@ -20,6 +20,7 @@ from ks1.table import build, contract
 from ks1.train import PARAMS, select_features, save_artifact
 from ks1.prior_pitcher_context import (PriorPitcherContext, pregame_identity_index,
                                       verified_reconstruction)
+from ks1.historical_feed import collect as collect_historical_feeds
 
 # Feature-contract construction needs a valid timestamp but does not inspect data.
 FEATURE_CONTRACT_DATE = '2026-09-01'
@@ -292,6 +293,10 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
               'features': features, 'omitted_features': omitted,
               'individual_starter_training_rows': coverage,
               'individual_starter_features_learned': [c for c in features if individual_feature(c)],
+              'individual_starter_features_used_in_splits': [c for c in features if individual_feature(c) and split_counts[c] > 0],
+              'heldout_starter_identity_statuses': {
+                  side: test[side+'_starter_status'].value_counts(dropna=False).to_dict()
+                  for side in ('home', 'away')},
               'individual_feature_training_rows': {
                   c: int(train[c].notna().sum()) for c in features if individual_feature(c)},
               'historical_pitcher_context_training_rows': {
@@ -315,7 +320,7 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
               'model_sha256': hashlib.sha256((output/'model.txt').read_bytes()).hexdigest(),
               'incumbent_sha256': hashlib.sha256(incumbent_bytes).hexdigest(),
               'input_table_sha256': proof['input_table_sha256'],
-              'provider_calls': 0, 'prediction_writes': 0, 'official_ledger_writes': 0,
+              'provider_calls': proof.get('provider_calls', 0), 'prediction_writes': 0, 'official_ledger_writes': 0,
               'limitations': ['Rolling retrospective evaluation, not official live grades.',
                              'Prior box scores can include later scoring corrections.',
                              'Individual starter inputs require retained pregame identity and earlier pitcher boxes.',
@@ -339,6 +344,12 @@ def main():
     args = parser.parse_args()
     cf, s3, bucket = aws_clients('us-east-1', 'parlay-platform-dev')
     bundle = load_existing(cf, s3, bucket)
+    args.output.mkdir(parents=True, exist_ok=True)
+    historical_feeds, feed_report = collect_historical_feeds(s3, bucket, bundle.get('full', []))
+    bundle['historical_pregame_feeds'] = historical_feeds
+    bundle['source_receipts'].extend(entry['receipt'] for entry in historical_feeds)
+    (args.output/'historical_feed_report.json').write_bytes(encode(feed_report))
+    (args.output/'historical_pregame_feeds.json').write_bytes(encode(historical_feeds))
     table, source_report, *_ = build(bundle)
     args.output.mkdir(parents=True, exist_ok=True)
     frame = table.to_pandas()
@@ -355,7 +366,8 @@ def main():
     proof = {'input_table_sha256': hashlib.sha256((args.output/'input_table.parquet').read_bytes()).hexdigest(),
              'source_receipts': source_report['source_receipts'], 'source_coverage': source_report['coverage'],
              'optional_reads': source_report['optional_reads'],
-             'incumbent_ref': ref, 'provider_calls': 0}
+             'incumbent_ref': ref, 'historical_feed_report': feed_report,
+             'provider_calls': feed_report['provider_requests']}
     proof['official_history_source'] = bundle.get('official_history_source')
     reconstruction = PriorPitcherContext(normalize(bundle.get('full', [])),
                                          bundle.get('official_history_source', {}),
