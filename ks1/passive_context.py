@@ -328,7 +328,7 @@ def published_profile_index(entries):
         if recovered is None:
             continue
         game_id = str(row.get("game_id") or "")
-        if game_id in result:
-            raise ValueError("duplicate frozen lineup/bullpen profile")
-        result[game_id] = recovered
+        previous = result.get(game_id)
+        if previous is None or utc(recovered["as_of"]) >= utc(previous["as_of"]):
+            result[game_id] = recovered
     return result

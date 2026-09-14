@@ -636,7 +636,7 @@ class Features:
                           if p["windows"][window].get(metric) is not None]
                 features[f"lineup_{metric}_{window}"] = (
                     sum(weight*value for weight, value in values)/sum(weight for weight, _ in values)
-                    if values else None)
+                    if len(values) == len(profiles) == 9 else None)
         for metric in ("ops", "obp", "slg", "iso", "k_pct", "bb_pct", "k_bb_pct"):
             for label, getter in (("prior_year", lambda p: p["windows"]["prior_year"].get(metric)),
                                   ("talent", lambda p: p["talent"].get(metric))):
@@ -644,7 +644,7 @@ class Features:
                           if getter(p) is not None]
                 features[f"lineup_{metric}_{label}"] = (
                     sum(weight*value for weight, value in values)/sum(weight for weight, _ in values)
-                    if values else None)
+                    if len(values) == len(profiles) == 9 else None)
         return profiles, features
 
     def at(self, cutoff, team_id, starter_id=None, *, game_date=None):

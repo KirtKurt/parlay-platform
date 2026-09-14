@@ -8,7 +8,8 @@ import pytest
 from ks1.features import Features
 from ks1.inventory import encode
 from ks1.passive_context import (BATTING_VERSION, CONTRACT, TEAM_CONTEXT_VERSION,
-                                 build_profile, frozen_profile_features)
+                                 build_profile, frozen_profile_features,
+                                 published_profile_index)
 
 
 class History:
@@ -179,6 +180,15 @@ def test_frozen_reader_rejects_tampering_and_recovers_only_features():
     tampered["lineup_bullpen_profile_json"] = json.dumps(body)
     assert frozen_profile_features(tampered) is None
 
+    older_profile, _ = build_profile(stored_observation(), game, row,
+                                     "2026-09-14T16:00:00+00:00", History())
+    older = {**locked, "as_of": older_profile["as_of"],
+             "lineup_bullpen_profile_sha256": older_profile["sha256"],
+             "lineup_bullpen_profile_semantic_sha256": older_profile["semantic_sha256"],
+             "lineup_bullpen_profile_json": encode(older_profile).decode()}
+    recovered = published_profile_index([{"row": locked}, {"row": older}])
+    assert recovered["900001"]["as_of"] == profile["as_of"]
+
 
 def test_batter_windows_and_pitch_matchup_use_only_earlier_games():
     batting = {"atBats": 4, "hits": 2, "baseOnBalls": 1, "hitByPitch": 0,
@@ -204,11 +214,11 @@ def test_batter_windows_and_pitch_matchup_use_only_earlier_games():
         "2026-09-10T17:50:00Z", list(range(101, 110)), "500", "R",
         game_date="2026-09-10")
     assert profiles[0]["windows"]["30d"]["pa"] == 5
-    assert features["lineup_ops_30d"] == pytest.approx(.6+.75)
-    assert features["lineup_xwoba_30d"] == pytest.approx(.8)
-    assert features["lineup_barrel_pct_30d"] == 100
-    assert features["lineup_pitch_type_matchup_xwoba_30d"] == pytest.approx(.8)
-    assert features["lineup_ops_talent"] == pytest.approx(.6+.75)
+    assert features["lineup_ops_30d"] is None
+    assert features["lineup_xwoba_30d"] is None
+    assert features["lineup_barrel_pct_30d"] is None
+    assert features["lineup_pitch_type_matchup_xwoba_30d"] is None
+    assert features["lineup_ops_talent"] is None
 
 
 def test_reliever_profile_has_strict_prior_workload_quality_and_arsenal():
