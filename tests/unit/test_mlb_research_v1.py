@@ -30,11 +30,12 @@ def test_retained_statcast_dates_require_official_pitch_counts(defect):
                              'teamStats': {'batting': {}},
                              'players': {'ID'+str(pid): {
                                  'person': {'id': pid},
-                                 'stats': {'pitching': {'numberOfPitches': 2,
+                                 'stats': {'pitching': {'numberOfPitches': 2, 'battersFaced': 1,
                                                        'gamesStarted': 1}}}}}
                       for side, tid, pid in (('home', 1, 100), ('away', 2, 101))}}
     rows = [{'game_pk': '1', 'pitcher': str(pid), 'at_bat_number': str(pid),
-             'pitch_number': str(n)} for pid in (100, 101) for n in (1, 2)]
+             'pitch_number': str(n), 'events': 'field_out' if n == 2 else ''}
+            for pid in (100, 101) for n in (1, 2)]
     if defect == 'truncated':
         rows.pop()  # same game ID still present
     elif defect == 'duplicate':

@@ -6,10 +6,11 @@ import hashlib
 
 from ks1.features import day, normalize, number
 from ks1.inventory import Reader, RESEARCH, encode
-from ks1.statcast_events import is_thrown_pitch
+from ks1.statcast_events import is_plate_appearance, is_thrown_pitch
 
 
 def official_pitch_counts(sources):
+    """Bind physical pitches and batters faced to the same official boxes."""
     expected, invalid = {}, set()
     for game in normalize(sources):
         game_id = str(game['game_id'])
@@ -18,10 +19,12 @@ def official_pitch_counts(sources):
             invalid.add(game_id)
         for player in game['context_players']:
             count = number(player['stats'].get('numberOfPitches'))
-            if count is None or count < 0 or int(count) != count:
+            faced = number(player['stats'].get('battersFaced'))
+            if any(value is None or value < 0 or int(value) != value
+                   for value in (count, faced)):
                 invalid.add(game_id)
             else:
-                counts[(game_id, str(player['id']))] = int(count)
+                counts[(game_id, str(player['id']))] = (int(count), int(faced))
     return expected, invalid
 
 
@@ -29,7 +32,7 @@ def pitches_complete(rows, games, expected, invalid):
     games = {str(pk) for pk in games}
     if games & invalid or not games.issubset(expected):
         return False
-    wanted = {key: count for pk in games for key, count in expected[pk].items() if count}
+    wanted = {key: count[0] for pk in games for key, count in expected[pk].items() if count[0]}
     # An automatic ball/strike is a count event, not an official thrown pitch.
     # Validate identities for every event, including zero-pitch appearances.
     if any((str(row.get('game_pk')), str(row.get('pitcher')))
@@ -40,7 +43,17 @@ def pitches_complete(rows, games, expected, invalid):
                      for row in rows if is_thrown_pitch(row))
     identities = {tuple(str(row.get(key)) for key in (
         'game_pk', 'at_bat_number', 'pitch_number')) for row in rows}
-    return len(identities) == len(rows) and dict(actual) == wanted
+    # Exact physical counts alone cannot detect a lost automatic terminal
+    # event. Reconcile every game's PA outcomes independently to batters faced.
+    # Aggregate across pitchers because inherited counts can attribute a walk
+    # to a different pitcher from the one throwing the terminal pitch.
+    pas = [row for row in rows if is_plate_appearance(row)]
+    pa_ids = {(str(row.get('game_pk')), str(row.get('at_bat_number'))) for row in pas}
+    actual_pas = Counter(str(row.get('game_pk')) for row in pas)
+    wanted_pas = {pk: sum(count[1] for count in expected[pk].values()) for pk in games}
+    return (len(identities) == len(rows) and dict(actual) == wanted
+            and len(pa_ids) == len(pas)
+            and all(actual_pas[pk] == count for pk, count in wanted_pas.items()))
 
 
 def pitch_complete_dates(sources, statcast_by_date, expected_by_date):
@@ -127,7 +140,19 @@ def load_training_statcast(bundle, s3, bucket):
     rows.extend(row for row in bundle.get('statcast', [])
                 if str(row.get('game_pk')) not in loaded_games)
     bundle['statcast'] = rows
-    bundle['statcast_retained_dates'] = verified
+    # The compact source can already contain recent dates whose complete pitch
+    # rows were reconciled by ingestion.  A historical load may cover only a
+    # subset of seasons (for example, when the current official season is not
+    # globally complete), so replacing this set would discard valid coverage
+    # for rows that remain in ``bundle['statcast']`` above.
+    # For dates in the historical range, this load is authoritative: do not
+    # restore a compact date that was rejected against the current schedule or
+    # official pitch counts. Dates outside the range were not examined here and
+    # retain their ingestion-time verification.
+    existing_outside_range = (
+        set(bundle.get('statcast_retained_dates', ())) - set(expected_dates))
+    bundle['statcast_retained_dates'] = sorted(
+        existing_outside_range | set(verified))
     # Preserve the existing global source-completeness gates. Individual
     # windows additionally require every date in statcast_retained_dates.
     bundle['source_receipts'].extend(receipts)
@@ -135,5 +160,5 @@ def load_training_statcast(bundle, s3, bucket):
             'complete_official_years': years, 'expected_dates': len(expected_dates),
             'verified_dates': len(verified), 'verified_pitch_objects': len(receipts),
             'retained_pitch_rows': len(rows), 'errors': errors,
-            'pitch_coverage_method': 'official_box_thrown_pitch_counts_v2',
+            'pitch_coverage_method': 'official_box_thrown_pitches_and_pa_v3',
             'original_prospective_storage_claimed': False}

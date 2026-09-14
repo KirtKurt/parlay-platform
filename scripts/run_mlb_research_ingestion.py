@@ -209,7 +209,7 @@ def ingest(store,seconds=2400):
         pitch_verified_dates = set(pitch_complete_dates(sources, statcast_by_date, expected_by_date))
         sc={'rows':current_rows,'coverageComplete':current_complete and current_year_complete and prior_complete,
             'retainedCompleteDates':sorted({d.isoformat() for d in current_dates}&pitch_verified_dates),
-            'retainedPitchCoverageMethod':'official_box_thrown_pitch_counts_v2',
+            'retainedPitchCoverageMethod':'official_box_thrown_pitches_and_pa_v3',
             'current30CoverageComplete':current_complete,'priorYearCoverageComplete':prior_complete,
             'currentYearCoverageComplete':current_year_complete,
             'priorYear':prior_year,'priorYearProfiles':prior_profiles,

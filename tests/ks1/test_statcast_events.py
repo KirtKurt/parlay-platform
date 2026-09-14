@@ -9,19 +9,24 @@ from tests.ks1.test_statcast_history import RetainedS3, fixture
 
 
 def automatic(row, description='automatic_strike'):
-    return {**row, 'pitch_number': '3', 'description': description,
+    return {**row, 'at_bat_number': str(10000+int(row['at_bat_number'])),
+            'pitch_number': '1', 'description': description,
             'pitch_type': '', 'release_speed': '', 'type': 'S',
-            'events': 'strikeout', 'woba_denom': '1', 'woba_value': '0',
+            'events': 'walk' if description == 'automatic_ball' else 'strikeout',
+            'woba_denom': '1', 'woba_value': '.7' if description == 'automatic_ball' else '0',
             'estimated_woba_using_speedangle': ''}
 
 
 @pytest.mark.parametrize('description', ['automatic_ball', 'automatic_strike'])
 def test_automatic_events_reconcile_without_relaxing_pitch_counts(description):
     bundle, payload, _ = fixture()
+    bundle['full'][0]['teams']['home']['players']['151']['stats']['pitching']['battersFaced'] = 10
     expected, invalid = official_pitch_counts(bundle['full'])
     rows = payload['rows']
     event = automatic(rows[0], description)
     assert pitches_complete(rows+[event], {1}, expected, invalid)
+    # Physical counts still match if only the automatic outcome is lost.
+    assert not pitches_complete(rows, {1}, expected, invalid)
     assert not pitches_complete(rows[1:]+[event], {1}, expected, invalid)
     assert not pitches_complete(rows+[event, event], {1}, expected, invalid)
     assert not pitches_complete(rows+[dict(event, pitcher='999')], {1}, expected, invalid)
@@ -36,6 +41,8 @@ def test_automatic_events_reconcile_without_relaxing_pitch_counts(description):
 
 def test_automatic_outcomes_survive_but_do_not_dilute_physical_pitch_features():
     bundle, payload, key = fixture()
+    for side, pid in [('home', '151'), ('away', '151')]:
+        bundle['full'][0]['teams'][side]['players'][pid]['stats']['pitching']['battersFaced'] = 18
     rows = payload['rows']
     for row in rows:
         row['release_speed'] = '95'
@@ -45,7 +52,7 @@ def test_automatic_outcomes_survive_but_do_not_dilute_physical_pitch_features():
     payload['rows'] = rows+events
     report = load_training_statcast(bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
     assert report['verified_pitch_objects'] == 1
-    assert report['pitch_coverage_method'] == 'official_box_thrown_pitch_counts_v2'
+    assert report['pitch_coverage_method'] == 'official_box_thrown_pitches_and_pa_v3'
     engine = Features(bundle['full'], bundle['statcast'],
                       statcast_retained_dates=bundle['statcast_retained_dates'])
     profiles, values = engine.lineup_batters_at(
@@ -68,10 +75,40 @@ def test_automatic_outcomes_survive_but_do_not_dilute_physical_pitch_features():
 
 
 def test_zero_pitch_official_appearance_can_contain_automatic_outcome():
-    bundle, payload, _ = fixture()
+    bundle, payload, key = fixture()
     source = deepcopy(bundle['full'])
     source[0]['teams']['home']['players']['151']['stats']['pitching']['numberOfPitches'] = 0
+    source[0]['teams']['home']['players']['151']['stats']['pitching']['battersFaced'] = 1
     expected, invalid = official_pitch_counts(source)
     rows = [r for r in payload['rows'] if r['pitcher'] != '151']
     rows.append(automatic(payload['rows'][0]))
     assert pitches_complete(rows, {1}, expected, invalid)
+    bundle['full'], payload['rows'] = source, rows
+    report = load_training_statcast(bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
+    assert report['verified_pitch_objects'] == 1
+    engine = Features(source, bundle['statcast'], statcast_retained_dates=bundle['statcast_retained_dates'])
+    bullpen = engine.bullpen_roster_at('2026-09-02T17:50:00Z', '10', ['151'])
+    assert bullpen['bullpen_context_xwoba_7d'] == 0
+    for metric in ('csw_pct', 'swstr_pct', 'velocity', 'avg_ev_allowed', 'barrel_pct'):
+        assert bullpen[f'bullpen_context_{metric}_7d'] is None
+
+
+@pytest.mark.parametrize('defect', ['missing_pa_count', 'duplicate_pa', 'missing_terminal', 'unknown_outcome'])
+def test_outcomes_need_independent_official_completeness(defect):
+    bundle, payload, key = fixture()
+    if defect == 'missing_pa_count':
+        bundle['full'][0]['teams']['home']['players']['151']['stats']['pitching'].pop('battersFaced')
+    elif defect == 'duplicate_pa':
+        payload['rows'][0]['events'] = 'walk'
+    else:
+        payload['rows'][1]['events'] = '' if defect == 'missing_terminal' else 'unsupported_event'
+    report = load_training_statcast(bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
+    assert report['verified_pitch_objects'] == 0
+    assert '2026-09-01' not in bundle['statcast_retained_dates']
+
+
+def test_sacrifice_pa_is_counted_without_woba_denominator():
+    bundle, payload, _ = fixture()
+    payload['rows'][1].update(events='sac_bunt', woba_denom='0')
+    expected, invalid = official_pitch_counts(bundle['full'])
+    assert pitches_complete(payload['rows'], {1}, expected, invalid)

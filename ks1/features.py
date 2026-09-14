@@ -477,7 +477,7 @@ class Features:
                       for row in self.statcast_by_pitcher_game.get((pitcher_id, game_id), ())]
             selected = [row for row in events if is_thrown_pitch(row)]
             if (self.team_statcast_window_complete(target, window)
-                    and expected is not None and selected and len(selected) == expected):
+                    and expected is not None and len(selected) == expected):
                 descriptions = [str(row.get("description") or "").lower() for row in selected]
                 contacts = [row for row in selected if row.get("type") == "X"]
                 speeds = [self._finite(row.get("launch_speed")) for row in contacts]
@@ -488,8 +488,10 @@ class Features:
                                  for row in pas]
                 release = [self._finite(row.get("release_speed")) for row in selected]
                 statcast.update({
-                    "swstr_pct": 100*sum(d in SWINGING_STRIKES for d in descriptions)/len(selected),
-                    "csw_pct": 100*sum(d in SWINGING_STRIKES | CALLED_STRIKES for d in descriptions)/len(selected),
+                    "swstr_pct": (100*sum(d in SWINGING_STRIKES for d in descriptions)/len(selected)
+                                  if selected else None),
+                    "csw_pct": (100*sum(d in SWINGING_STRIKES | CALLED_STRIKES for d in descriptions)/len(selected)
+                                if selected else None),
                     "xwoba": (sum(expected_woba)/len(expected_woba)
                               if expected_woba and all(v is not None for v in expected_woba) else None),
                     "barrel_pct": (100*sum(v == 6 for v in barrels)/len(barrels)

@@ -26,6 +26,7 @@ class RetainedS3:
 def fixture():
     source = game(1, '2026-09-01', '2026-09-01T21:00:00Z')
     source['teams']['home']['players']['151']['stats']['pitching']['numberOfPitches'] = 18
+    source['teams']['home']['players']['151']['stats']['pitching']['battersFaced'] = 9
     source['teams']['away']['players'] = deepcopy(source['teams']['home']['players'])
     for player in source['teams']['away']['players'].values():
         player['person']['id'] += 100
@@ -36,8 +37,10 @@ def fixture():
                 rows.append({'game_pk': '1', 'game_date': '2026-09-01',
                              'pitcher': str(pitcher), 'batter': str(batter),
                              'at_bat_number': str(batter), 'pitch_number': str(pitch),
-                             'pitch_type': 'FF', 'p_throws': 'R', 'type': 'X',
-                             'description': 'hit_into_play', 'woba_denom': '1',
+                             'pitch_type': 'FF', 'p_throws': 'R', 'type': 'X' if pitch == 2 else 'S',
+                             'description': 'hit_into_play' if pitch == 2 else 'called_strike',
+                             'events': 'single' if pitch == 2 else '',
+                             'woba_denom': '1' if pitch == 2 else '0',
                              'estimated_woba_using_speedangle': '.5'})
     bundle = {'full': [source], 'official_history_source': {'complete_years': [2026]},
               'schedule': [{'gamePk': 1, 'gameDate': source['startAtUtc'], 'gameType': 'R',
@@ -67,6 +70,8 @@ def test_historical_archive_restores_matchup_values_with_prior_only_boundaries()
                                    'foreign_pitcher', 'wrong_date', 'unversioned', 'checksum'])
 def test_unverified_daily_pitches_never_create_window_coverage(defect):
     bundle, payload, key = fixture()
+    bundle['statcast_retained_dates'] = ['2026-09-01']
+    bundle['statcast'] = deepcopy(payload['rows'])
     version, checksum = 'v1', None
     if defect == 'truncated':
         payload['rows'].pop()
@@ -99,6 +104,19 @@ def test_valid_game_set_revision_and_global_gate_are_preserved():
     assert bundle['source_receipts'][0]['key'] == revision
     assert bundle['source_receipts'][0]['versionId'] == 'v2'
     assert bundle['statcast_coverage_complete'] is False
+
+
+def test_existing_verified_compact_dates_survive_partial_historical_load():
+    bundle, payload, key = fixture()
+    bundle['statcast_retained_dates'] = ['2025-08-31']
+    bundle['statcast'].append({'game_pk': '2', 'game_date': '2025-08-31',
+                               'pitcher': '351', 'batter': '401',
+                               'at_bat_number': '1', 'pitch_number': '1'})
+    load_training_statcast(bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
+    assert '2025-08-31' in bundle['statcast_retained_dates']
+    assert '2026-09-01' in bundle['statcast_retained_dates']
+    assert bundle['statcast_retained_dates'] == sorted(bundle['statcast_retained_dates'])
+    assert any(row.get('game_pk') == '2' for row in bundle['statcast'])
 
 
 def test_unfinished_scheduled_game_is_not_an_empty_verified_day():
