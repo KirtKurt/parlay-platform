@@ -23,6 +23,9 @@ recovery path; it does not reinterpret incomplete fields as observations.
   version and checksum after verified readback.
 - Reapply the existing exact physical-pitch, PA identity/count, outcome-field,
   date, and official-game-set rules on every read. A pointer is not admission.
+- Failed retries preserve a previously verified pointer for an unchanged game
+  set. A transient read error cannot strand the retained source; changed game
+  sets still require new verification.
 - Emit specific rejection reasons. Missing provider fields are never filled,
   counts are never given a tolerance, and incomplete windows remain unknown.
 
@@ -43,7 +46,9 @@ Four prespecified LightGBM configurations are tried for each of the three
 recipes on a purged 300-game development tail. The search uses 4,091 fit games
 from 4,395 source-qualified training games. Each recipe may replace its original
 configuration only with lower development Brier and no worse development log
-loss. Final holdout rows never enter the selector. The baseline training module,
+loss. All feature-admission rules, including non-null coverage thresholds, are
+recomputed on the development fit partition. Invalid training labels fail before
+fitting. Final holdout rows never enter the selector. The baseline training module,
 native probability model format, and serving references are unchanged.
 
 On the original incomplete input table, all recipes selected the shallow

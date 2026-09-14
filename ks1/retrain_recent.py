@@ -402,7 +402,8 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None,
         train, test = split_recent(frame)
     train, training_population = qualified_training_population(
         train, proof.get('source_receipts', []))
-    features, omitted, coverage = choose_features(train)
+    admission_frame = split_development(train)[0] if development_search else train
+    features, omitted, coverage = choose_features(admission_frame)
     y_train, y_test = train.home_win.astype(int), test.home_win.astype(int)
     lineup_features = [c for c in features if lineup_feature(c)]
     bullpen_features = [c for c in features if bullpen_context_feature(c)]
@@ -417,7 +418,7 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None,
     search_report = None
     if development_search:
         from ks1.development import select
-        tuned_parameters, search_report = select(train, recipes)
+        tuned_parameters, search_report = select(train)
         recipes = {name: evidence['features'] for name, evidence in search_report['trials'].items()}
         output.mkdir(parents=True, exist_ok=True)
         (output/'development_selection.json').write_bytes(encode(search_report))
@@ -614,7 +615,12 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None,
               'evaluation_window_games': EVALUATION_GAMES,
               'features': selected_features, 'all_admitted_features': features,
               'omitted_features': omitted,
-              'individual_starter_training_rows': coverage,
+              'individual_starter_training_rows': {
+                  side: int((train[side+'_starter_id'].notna() &
+                             (pd.to_numeric(train[side+'_starter_bf_30d'], errors='coerce') > 0)).sum())
+                  for side in ('home', 'away')},
+              'feature_admission_games': len(admission_frame),
+              'feature_admission_starter_coverage': coverage,
               'individual_starter_features_learned': [c for c in selected_features if individual_feature(c)],
               'individual_starter_features_used_in_splits': [c for c in selected_features if individual_feature(c) and split_counts[c] > 0],
               'heldout_starter_identity_statuses': {

@@ -121,3 +121,27 @@ def test_provider_access_rejection_stops_recovery(monkeypatch):
     assert result['provider_requests'] == 1
     assert result['stopped_reason'] == 'provider_error:HTTPError:403'
     assert not result['recovered_dates']
+
+
+def test_failed_retry_keeps_existing_pointer_for_unchanged_game_set(monkeypatch):
+    from urllib.error import HTTPError
+    authorize(monkeypatch)
+    bundle, valid, _ = fixture()
+    s3 = MemoryS3()
+    initial = load_training_statcast(bundle, s3, 'b')
+    recover(bundle, s3, 'b', initial, fetch=lambda day: valid)
+    key = recovery_pointer_key('2026-09-01')
+    state = json.loads(s3.objects[key][0])
+    pointer = state['verified_artifact']
+    state['attempt_date'] = '2020-01-01'
+    s3.seed(key, state)
+    def forbidden(day):
+        raise HTTPError('https://baseballsavant.mlb.com/', 403, 'Forbidden', {}, None)
+    # Reuse the initial rejection to represent a transient pointer/object read
+    # failure. A failed refresh must not make the valid version unreachable.
+    recover(bundle, s3, 'b', initial, fetch=forbidden)
+    assert json.loads(s3.objects[key][0])['verified_artifact'] == pointer
+    assert load_training_statcast(bundle, s3, 'b')['errors'] == []
+    bundle['schedule'].append({**bundle['schedule'][0], 'gamePk': 2})
+    recover(bundle, s3, 'b', initial, fetch=forbidden)
+    assert json.loads(s3.objects[key][0])['verified_artifact'] is None

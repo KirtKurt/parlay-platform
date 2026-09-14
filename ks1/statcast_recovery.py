@@ -79,16 +79,20 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
         if state.get('attempt_date') == today and state.get('game_set_sha256') == game_set_hash:
             report['deferred_dates'].append({'date': value, 'reason': 'already_attempted_today'})
             continue
+        previous = state.get('verified_artifact') if state.get('game_set_sha256') == game_set_hash else None
         candidates.append((state.get('attempt_date', ''), -date.fromisoformat(value).toordinal(),
-                           value, games, name, game_set_hash))
+                           value, games, name, game_set_hash, previous))
     # Never-attempted dates first, recent first within that group. This advances
     # through older gaps across days as well as multiple runs on the same day.
-    for _, _, value, games, name, game_set_hash in sorted(candidates):
+    for _, _, value, games, name, game_set_hash, previous in sorted(candidates):
         if report['provider_requests'] >= max_dates or time.monotonic() >= deadline:
             report['deferred_dates'].append({'date': value, 'reason': 'recovery_budget'})
             continue
         report['provider_requests'] += 1
-        pointer = None
+        # A transient object read failure is not evidence that a retained
+        # version disappeared. Keep it reachable after a failed provider retry;
+        # load_training_statcast still revalidates it before any admission.
+        pointer = previous
         stop_provider = False
         try:
             payload = fetch(value)

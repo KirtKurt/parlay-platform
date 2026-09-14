@@ -54,20 +54,28 @@ def frozen_split(frame, manifest):
     labeled = frame.home_win.notna() & frame.home_score.notna() & frame.away_score.notna()
     valid = labeled & completed.notna() & predicted.notna() & (predicted < completed)
     train = frame.loc[valid & (completed < boundary) & ~frame.game_id.isin(ids)].copy()
+    if not set(train.home_win.unique()).issubset({0, 1, True, False}):
+        raise ValueError('frozen training labels must be binary')
     train = train.assign(_completed=completed.loc[train.index]).sort_values(['_completed', 'game_id'])
     if len(train) < MIN_TRAIN:
         raise ValueError('insufficient frozen-cohort training history')
     return train.drop(columns='_completed'), test
 
 
-def select(train, recipes):
+def select(train):
     """This interface intentionally accepts no final evaluation frame."""
-    from ks1.retrain_recent import split_development
+    from ks1.retrain_recent import (split_development, choose_features,
+                                    lineup_feature, bullpen_context_feature)
     fit, validation = split_development(train)
+    admitted, omitted, coverage = choose_features(fit)
+    baseline = [c for c in admitted if not lineup_feature(c) and not bullpen_context_feature(c)]
+    recipes = {'starter': baseline,
+               'starter_plus_batters': baseline + [c for c in admitted if lineup_feature(c)],
+               'starter_plus_batters_and_bullpen': admitted}
     selected, evidence = {}, {}
     for name, columns in recipes.items():
-        # Feature discovery must itself use only the development fit partition.
-        columns = [c for c in columns if fit[c].nunique(dropna=True) > 1]
+        # All admission rules, including non-null coverage thresholds, were
+        # recomputed on fit above. Validation covariates cannot admit a feature.
         if not columns:
             raise ValueError('no varying development fit features')
         trials = {}
@@ -97,6 +105,8 @@ def select(train, recipes):
               'metrics': {name: {key: value[key] for key in ('brier', 'logloss')}
                           for name, value in best.items()},
               'trials': evidence, 'final_holdout_used_for_selection': False,
+              'feature_admission_games': len(fit), 'omitted_features': omitted,
+              'feature_admission_starter_coverage': coverage,
               'fit_game_ids_sha256': digest(fit.game_id.tolist()),
               'development_game_ids_sha256': digest(validation.game_id.tolist()),
               'search_space_sha256': digest(TRIALS)}
@@ -109,17 +119,13 @@ def main():
     parser.add_argument('--proof', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args()
-    from ks1.retrain_recent import choose_features, qualified_training_population, lineup_feature, bullpen_context_feature
+    from ks1.retrain_recent import qualified_training_population
     proof = json.loads(args.proof.read_bytes())
     if hashlib.sha256(args.input.read_bytes()).hexdigest() != proof['input_table_sha256']:
         raise ValueError('input table checksum mismatch')
     train, _ = frozen_split(pd.read_parquet(args.input), json.loads(HOLDOUT.read_bytes()))
     train, population = qualified_training_population(train, proof['source_receipts'])
-    features, _, _ = choose_features(train)
-    baseline = [c for c in features if not lineup_feature(c) and not bullpen_context_feature(c)]
-    recipes = {'starter': baseline, 'starter_plus_batters': [c for c in features if not bullpen_context_feature(c)],
-               'starter_plus_batters_and_bullpen': features}
-    _, report = select(train, recipes)
+    _, report = select(train)
     report.update(training_population=population, input_table_sha256=proof['input_table_sha256'],
                   holdout_manifest_sha256=hashlib.sha256(HOLDOUT.read_bytes()).hexdigest(),
                   qualification_run=False, accepted=False)
