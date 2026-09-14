@@ -148,6 +148,7 @@ def test_batter_windows_and_pitch_matchup_use_only_earlier_games():
     assert features["lineup_xwoba_30d"] == pytest.approx(.8)
     assert features["lineup_barrel_pct_30d"] == 100
     assert features["lineup_pitch_type_matchup_xwoba_30d"] == pytest.approx(.8)
+    assert features["lineup_ops_talent"] == pytest.approx(.6+.75)
 
 
 def test_reliever_profile_has_strict_prior_workload_quality_and_arsenal():

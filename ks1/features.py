@@ -590,6 +590,16 @@ class Features:
                 profile["windows"][str(window)+"d"] = summary
             season = [stats for r, stats in pairs if r["day"].year == target.year]
             profile["windows"]["season"] = box(season)
+            prior = [stats for r, stats in pairs if r["day"].year == target.year-1]
+            profile["windows"]["prior_year"] = box(prior)
+            recent_box, prior_box = profile["windows"]["30d"], profile["windows"]["prior_year"]
+            profile["talent"] = {}
+            for metric in ("ops", "obp", "slg", "iso", "k_pct", "bb_pct", "k_bb_pct"):
+                now, old = recent_box.get(metric), prior_box.get(metric)
+                now_n, old_n = recent_box.get("pa") or 0, min(prior_box.get("pa") or 0, 300)
+                profile["talent"][metric] = (
+                    (now*now_n+old*old_n)/(now_n+old_n) if now is not None and old is not None and now_n+old_n
+                    else now if now is not None else old)
             profiles.append(profile)
 
         metrics = ("ops", "obp", "slg", "iso", "k_pct", "bb_pct", "k_bb_pct",
@@ -602,6 +612,14 @@ class Features:
                 values = [(LINEUP_SLOT_WEIGHTS[p["slot"]-1], p["windows"][window].get(metric)) for p in profiles
                           if p["windows"][window].get(metric) is not None]
                 features[f"lineup_{metric}_{window}"] = (
+                    sum(weight*value for weight, value in values)/sum(weight for weight, _ in values)
+                    if values else None)
+        for metric in ("ops", "obp", "slg", "iso", "k_pct", "bb_pct", "k_bb_pct"):
+            for label, getter in (("prior_year", lambda p: p["windows"]["prior_year"].get(metric)),
+                                  ("talent", lambda p: p["talent"].get(metric))):
+                values = [(LINEUP_SLOT_WEIGHTS[p["slot"]-1], getter(p)) for p in profiles
+                          if getter(p) is not None]
+                features[f"lineup_{metric}_{label}"] = (
                     sum(weight*value for weight, value in values)/sum(weight for weight, _ in values)
                     if values else None)
         return profiles, features

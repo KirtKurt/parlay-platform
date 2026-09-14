@@ -28,7 +28,10 @@ LINEUP_FEATURES = ("lineup_quality_ops", "lineup_quality_obp", "lineup_quality_s
     for metric in ("ops", "obp", "slg", "iso", "k_pct", "bb_pct", "k_bb_pct",
                    "woba", "xwoba", "barrel_pct", "hard_hit_pct", "avg_exit_velocity",
                    "contact_pct", "swstr_pct", "csw_pct", "platoon_xwoba",
-                   "pitch_type_matchup_xwoba"))
+                   "pitch_type_matchup_xwoba")) + tuple(
+    f"lineup_{metric}_{label}"
+    for label in ("prior_year", "talent")
+    for metric in ("ops", "obp", "slg", "iso", "k_pct", "bb_pct", "k_bb_pct"))
 BULLPEN_FEATURES = tuple(
     f"bullpen_context_{metric}_{window}d"
     for window in (7, 15, 30)
@@ -218,7 +221,7 @@ def build_profile(stored, game, row, as_of, history, history_as_of=None):
                                 "BBD": {"role": "fixture crosscheck only", "player_stats_claimed": False}},
                "coverage_status": "SUPPORTED_V1_COMPLETE", "sides": sides,
                "unavailable_fields": ["batter_expected_lineup_availability",
-                                      "confirmed_lineup_change_from_projection", "batter_prior_year_shrink",
+                                      "confirmed_lineup_change_from_projection",
                                       "bullpen_xERA", "bullpen_xFIP", "bullpen_SIERA",
                                       "bullpen_Stuff+", "bullpen_Location+", "bullpen_Pitching+",
                                       "bullpen_active_spin", "bullpen_leverage_role",
