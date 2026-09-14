@@ -298,6 +298,7 @@ class Features:
                  prior_statcast_profiles=None, prior_statcast_year=None,
                  statcast_retained_dates=None):
         self.rows = normalize(games)
+        self.game_dates = {row['game_id']: row['day'].isoformat() for row in self.rows}
         self.statcast_rows = list(statcast_rows or [])
         self.statcast_complete = bool(statcast_complete)
         self.statcast_retained_dates = (None if statcast_retained_dates is None
@@ -348,7 +349,11 @@ class Features:
         events = [row for game_id in game_ids
                   for row in self.statcast_by_pitcher_game.get((str(starter_id), str(game_id)), ())]
         selected = [row for row in events if is_thrown_pitch(row)]
-        complete = bool(starter_id and game_ids and expected_pitches is not None and len(selected) == expected_pitches)
+        verified_dates = (self.statcast_retained_dates is None or all(
+            self.game_dates.get(str(game_id)) in self.statcast_retained_dates
+            for game_id in game_ids))
+        complete = bool(starter_id and game_ids and verified_dates
+                        and expected_pitches is not None and len(selected) == expected_pitches)
         def average(values):
             return sum(values)/len(values) if values and all(v is not None for v in values) else None
         contacts = [r for r in selected if r.get("type") == "X"]

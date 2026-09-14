@@ -143,3 +143,42 @@ def test_pending_official_scoring_is_not_a_complete_outcome():
     payload['rows'][1]['events'] = 'os_ruling_pending_primary'
     expected, invalid = official_pitch_counts(bundle['full'])
     assert not pitches_complete(payload['rows'], {1}, expected, invalid)
+
+
+def test_starter_windows_reject_unverified_pa_dates_but_keep_official_results():
+    bundle, payload, key = fixture()
+    bundle['full'][0]['teams']['home']['players']['151']['stats']['pitching']['battersFaced'] = 10
+    # Compact rows remain loaded, but are missing the automatic terminal PA.
+    bundle['statcast'] = deepcopy(payload['rows'])
+    load_training_statcast(bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
+    engine = Features(bundle['full'], bundle['statcast'],
+                      statcast_retained_dates=bundle['statcast_retained_dates'])
+    values = engine.at('2026-09-02T17:50:00Z', '10', '151')
+    for window in ('7d', '30d'):
+        assert values[f'starter_era_{window}'] == 0
+        assert values[f'starter_complete_{window}'] == 0
+        assert values[f'starter_xwoba_{window}'] is None
+        assert values[f'starter_csw_pct_{window}'] is None
+    # Restoring genuine provider evidence re-enables the same windows.
+    payload['rows'].append(automatic(payload['rows'][0]))
+    load_training_statcast(bundle, RetainedS3({key: (payload, 'v2', None)}), 'bucket')
+    repaired = Features(bundle['full'], bundle['statcast'],
+                        statcast_retained_dates=bundle['statcast_retained_dates'])
+    assert repaired.at('2026-09-02T17:50:00Z', '10', '151')['starter_xwoba_7d'] == .45
+
+
+def test_starter_last_three_requires_every_contributing_date_verified():
+    bundle, payload, _ = fixture()
+    games, rows, dates = [], [], []
+    for pk, date in ((1, '2026-08-20'), (2, '2026-08-25'), (3, '2026-09-01')):
+        game = deepcopy(bundle['full'][0])
+        game.update(officialGamePk=pk, startAtUtc=date+'T18:00:00Z', completedAtUtc=date+'T21:00:00Z')
+        game['teams']['home']['players']['151']['stats']['pitching']['gamesStarted'] = 1
+        games.append(game)
+        rows.extend({**row, 'game_pk':str(pk), 'game_date':date} for row in payload['rows'])
+        dates.append(date)
+    partial = Features(games, rows, statcast_retained_dates=dates[1:]).at('2026-09-02T17:50:00Z', '10', '151')
+    complete = Features(games, rows, statcast_retained_dates=dates).at('2026-09-02T17:50:00Z', '10', '151')
+    assert partial['starter_era_last3'] == complete['starter_era_last3'] == 0
+    assert partial['starter_xwoba_last3'] is None
+    assert complete['starter_xwoba_last3'] == .5

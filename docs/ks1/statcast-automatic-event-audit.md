@@ -79,6 +79,13 @@ fields are available. The 778921 sample also has missing denominator fields;
 it illustrates automatic-event classification, not qualified regular-season
 training coverage. No missing fields were synthesized to make either pass.
 
+Rolling and last-three starter calculations also require every contributing
+game's date to be present in the retained verified-date set. Physically matching
+compact rows alone cannot admit incomplete PA outcomes. Official ERA/WHIP and
+other result windows remain independent and persist when this Statcast gate
+fails. Older compact last-start rows without a loaded whole-date receipt remain
+unavailable until historical verification supplies that evidence.
+
 All raw events remain available for plate-appearance outcomes, including an
 automatic event ending a walk or strikeout. Starter, bullpen, and batter
 pitch-based denominators and starter pitch mixes use thrown pitches. Overall
