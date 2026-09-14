@@ -458,7 +458,8 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
     candidate_metrics = comparisons[selected]['metrics']
     # One prespecified ablation isolates the seven-day contribution from the
     # expanded training period. It is reported, never used to tune the model.
-    without_seven = [c for c in recipes[selected] if not c.endswith('_7d')]
+    without_seven = [c for c in recipes[selected]
+                     if not (c.endswith('_7d') or c.endswith('_7d_missing'))]
     ablation = lgb.LGBMClassifier(**PARAMS).fit(train[without_seven].astype(float), y_train)
     ablated = ablation.predict_proba(test[without_seven].astype(float))[:, 1]
     selected_features = recipes[selected]
