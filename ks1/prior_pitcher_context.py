@@ -10,12 +10,12 @@ import hashlib
 import json
 import re
 
-from ks1.features import day, number, official_context_pitching, utc
+from ks1.features import context_history, day, number, summarize_context, utc
 from ks1.inventory import encode, RESEARCH
 from ks1.historical_starters import published_starter_index
 from ks1.historical_feed import feed_identity
 
-VERSION = "KS1-prior-pitcher-reconstruction-v1"
+VERSION = "KS1-prior-pitcher-reconstruction-v2"
 FIELDS = ("quality", "recent_form", "velocity", "command", "expected_innings")
 
 
@@ -35,19 +35,8 @@ def valid_source(source):
         return False
 
 
-def summarize(entries):
-    # Same current-season starts (or appearances) and formulas as Features.at.
-    ordered = sorted(entries, key=lambda x: (x[0]["start"], x[0]["game_id"]))
-    starts = [x for x in ordered if number(x[1].get("gamesStarted")) == 1]
-    ordered = starts or ordered
-    season = official_context_pitching([stats for _, stats in ordered])
-    recent = official_context_pitching([stats for _, stats in ordered[-3:]])
-    outs = [number(stats.get("outs")) for _, stats in ordered[-5:]]
-    return {"quality": season["quality"], "command": season["command"],
-            "recent_form": recent["command"] if recent["command"] is not None else recent["quality"],
-            "velocity": None,
-            "expected_innings": round(sum(outs)/(3*len(outs)), 3)
-            if outs and all(x is not None for x in outs) else None}
+def summarize(entries, basis="current_season_pitcher"):
+    return summarize_context(entries, basis)
 
 
 def pregame_identity_index(bundle):
@@ -94,12 +83,13 @@ def pregame_identity_index(bundle):
 
 class PriorPitcherContext:
     def __init__(self, rows, source, pregame=None):
+        self.rows = rows
         self.source = source if valid_source(source) else None
         self.pregame = pregame or {}
         self.teams, self.pitchers = defaultdict(list), defaultdict(list)
         for row in rows:
             self.teams[row["team_id"]].append(row)
-            for player in row["players"]:
+            for player in row.get("context_players", row["players"]):
                 self.pitchers[player["id"]].append((row, player["stats"]))
 
     def at(self, row, side):
@@ -152,9 +142,15 @@ class PriorPitcherContext:
                 return None
             pitcher_id = min(ranked)[-1]
             selection_games = games
-        entries = [(g, stats) for g, stats in self.pitchers[str(pitcher_id)]
-                   if prior(g) and g["day"].year == target.year]
-        metrics = summarize(entries)
+        owned = [g for g, _ in self.pitchers[str(pitcher_id)]
+                 if prior(g) and g["day"].year in (target.year, target.year-1)]
+        population = owned if owned else [g for g in self.rows if prior(g)]
+        entries, statistical_basis = context_history(population, str(pitcher_id), target.year)
+        # A prior also requires complete previous-season history, including
+        # proof of its absence before selecting a league prior for a debut.
+        if statistical_basis != "current_season_pitcher" and target.year-1 not in self.source["complete_years"]:
+            return None
+        metrics = summarize(entries, statistical_basis)
         if any(metrics[key] is None for key in FIELDS if key != "velocity"):
             return None
         source_games = {g["game_id"]: g for g, _ in entries}
@@ -164,6 +160,7 @@ class PriorPitcherContext:
             "version": VERSION, "game_id": game_id, "team_id": team_id, "side": side,
             "pitcher_id": str(pitcher_id), "identity_mode": identity_mode,
             "identity_evidence": identity_evidence,
+            "statistical_basis": statistical_basis,
             "as_of": row["as_of_timestamp"], "target_date": row["date"],
             "source": self.source, "metrics": metrics,
             "inputs": [{"game_id": key, "date": str(g["day"]),

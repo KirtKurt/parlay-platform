@@ -587,6 +587,7 @@ def contract(example):
             elif pitcher_context_metric:
                 source = "verified V8 point-in-time pitcher summary or same-contract observed KS1 starter profile"
                 meaning += "; historical projections remain explicitly marked and are never counted as confirmed starter identity"
+                meaning += "; season-debut context may use an explicitly marked prior-year pitcher or prior league-starter population; observed window results remain unchanged"
             elif context_intermediate:
                 role = "audit"
                 source = "strictly earlier official game logs; intermediate for frozen pitcher-context derivation"

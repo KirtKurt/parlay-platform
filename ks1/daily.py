@@ -66,7 +66,9 @@ def mask_starter_sources(values, coverage):
                 source = source_window if metric in pitch_metrics else 'results_'+source_window
                 if not coverage.get(source):
                     values[key] = None
-    if not coverage.get('current_season_context'):
+    context_prior = values.get('starter_context_basis_code') in (1.0, 2.0, 3.0)
+    if (not coverage.get('current_season_context')
+            or (context_prior and not coverage.get('results_prior_year'))):
         values.update({key: None for key in values if key.startswith('starter_context_')})
         values['starter_expected_innings_last5'] = None
     recent = {name: values.get('starter_'+name+'_30d') for name in STATCAST_METRIC_NAMES}
@@ -85,6 +87,7 @@ def starter_profile(row, features, as_of, history_as_of):
         'source_roles': {
             'starter_identity': row['starter_source'],
             'results_and_counts': 'official_MLB_completed_game_logs',
+            'cold_start_context': 'explicit_prior_year_pitcher_or_pregame_league_starter_prior',
             'contact_physics_and_arsenal': 'retained_Baseball_Savant_pitch_rows',
             'fixture_crosscheck': 'Big_Balls_Data_matches_only',
             'market_context': 'The_Odds_API_only',
@@ -112,6 +115,9 @@ def starter_profile(row, features, as_of, history_as_of):
             return ('COMPLETE' if metrics.get('complete_'+window) == 1
                     else 'SOURCE_INCOMPLETE')
         profile['sides'][side] = {
+            'context_basis': {0.0: 'current_season_pitcher', 1.0: 'prior_year_pitcher',
+                              2.0: 'current_season_league_prior', 3.0: 'prior_year_league_prior'}.get(
+                                  metrics.get('context_basis_code'), 'unavailable'),
             'starter_id': row[side+'_starter_id'],
             'starter_name': row[side+'_starter_name'],
             'starter_status': row[side+'_starter_status'],
