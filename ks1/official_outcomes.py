@@ -52,7 +52,15 @@ def needed_games(raw):
                             and missing(row.get('woba_value'))))})
 
 
-def official_index(evidence, game_id, value, raw_rows, *, require_retained=True):
+def schedule_times(schedule):
+    """Keep original/resume times from the independently retained schedule."""
+    return {str(game['gamePk']): [game['gameDate']] +
+            ([game['resumeDate']] if game.get('resumeDate') else [])
+            for game in schedule if not game.get('resumedFrom')}
+
+
+def official_index(evidence, game_id, value, raw_rows, *, require_retained=True,
+                   scheduled_times=None):
     body, receipt = evidence['data'], evidence['receipt']
     if (receipt['endpoint'] != endpoint(game_id)
             or receipt['sha256'] != digest(body)):
@@ -66,8 +74,12 @@ def official_index(evidence, game_id, value, raw_rows, *, require_retained=True)
             raise ValueError('retained official PA receipt mismatch')
     utc(receipt['retrievedAtUtc'])
     identity = body['gameData']
+    feed_start = utc(identity['datetime']['dateTime'])
+    allowed = [utc(t) for t in scheduled_times] if scheduled_times is not None else [feed_start]
+    original_start = allowed[0]
     if (positive_id(identity['game']['pk']) != game_id
-            or day(identity['datetime']['dateTime']).isoformat() != value
+            or day(original_start.isoformat()).isoformat() != value
+            or feed_start not in allowed
             or identity['status']['abstractGameState'] != 'Final'):
         raise ValueError('official PA game/date/finality mismatch')
     result = {}
@@ -80,7 +92,7 @@ def official_index(evidence, game_id, value, raw_rows, *, require_retained=True)
         if (isinstance(index, bool) or not isinstance(index, int) or index < 0
                 or play['atBatIndex'] != index or about['isComplete'] is not True
                 or event == 'os_ruling_pending_primary'
-                or utc(about['endTime']) < utc(identity['datetime']['dateTime'])):
+                or utc(about['endTime']) < original_start):
             raise ValueError('official PA incomplete or ambiguous')
         key = str(index + 1)
         if key in result:
@@ -101,12 +113,13 @@ def official_index(evidence, game_id, value, raw_rows, *, require_retained=True)
     return result
 
 
-def reconciled_rows(raw, evidence):
+def reconciled_rows(raw, evidence, scheduled_by_game=None):
     if set(evidence) != set(needed_games(raw)):
         raise ValueError('official PA evidence set mismatch')
     for pk, source in evidence.items():
         official_index(source, pk, raw['date'],
-                       [row for row in raw['rows'] if str(row['game_pk']) == pk])
+                       [row for row in raw['rows'] if str(row['game_pk']) == pk],
+                       scheduled_times=scheduled_by_game[pk] if scheduled_by_game is not None else None)
     rows, changes = deepcopy(raw['rows']), []
     for index, row in enumerate(rows):
         pk = str(row['game_pk'])
@@ -129,10 +142,10 @@ def reconciled_rows(raw, evidence):
     return rows, changes
 
 
-def reconcile(raw, get_official, raw_receipt):
+def reconcile(raw, get_official, raw_receipt, scheduled_by_game=None):
     evidence = {pk: get_official(pk, [row for row in raw['rows'] if str(row['game_pk']) == pk])
                 for pk in needed_games(raw)}
-    rows, changes = reconciled_rows(raw, evidence)
+    rows, changes = reconciled_rows(raw, evidence, scheduled_by_game)
     if not changes:
         return raw
     return {'date': raw['date'], 'rows': rows, 'raw_statcast': raw,
@@ -148,7 +161,7 @@ def verify_official_time(evidence, completed_at):
         raise ValueError('official PA exceeds independently retained completion boundary')
 
 
-def verify_reconciliation(payload, completed_by_game):
+def verify_reconciliation(payload, completed_by_game, scheduled_by_game=None):
     proof = payload['outcome_reconciliation']
     raw = payload['raw_statcast']
     if (proof['method'] != METHOD or raw['date'] != payload['date']
@@ -160,7 +173,7 @@ def verify_reconciliation(payload, completed_by_game):
             or pointer['name'] != f"sources/statcast-recovery-v1/{raw['date']}/raw/{digest(raw)}.json"
             or pointer['versionId'] in (None, '', 'null')):
         raise ValueError('retained raw Statcast receipt mismatch')
-    rows, changes = reconciled_rows(raw, proof['official_sources'])
+    rows, changes = reconciled_rows(raw, proof['official_sources'], scheduled_by_game)
     if not changes or rows != payload['rows'] or changes != proof['derivations']:
         raise ValueError('derived PA accounting cannot be reproduced')
     for pk, evidence in proof['official_sources'].items():

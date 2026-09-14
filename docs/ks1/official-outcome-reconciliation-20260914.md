@@ -28,7 +28,9 @@ separate payload against MLB's official completed plate appearances.
   records, official responses and their exact-version storage receipts are
   retained. Every read recomputes the derived payload and checks the chain.
 - Official play completion must not exceed the independently retained game
-  completion time or the source retrieval time. Historical reconstruction is
+  completion time or the source retrieval time. The feed timestamp must match
+  the independently retained schedule's exact original or resume timestamp; PAs
+  before a suspension remain bound to the original start. Historical reconstruction is
   still retrospective evidence, not original prospective storage.
 - The existing physical-pitch, PA count, game/date and outcome predicate is
   unchanged and runs after reconciliation. Missing physical pitches cannot be
@@ -49,8 +51,9 @@ do not claim to demonstrate recovered historical production dates.
 
 ## Recovery and qualification
 
-The existing trusted-main job first uses retained raw records, avoiding a
-repeat Savant download when the known problem is missing outcome accounting.
+The existing trusted-main job first checks both the base daily archive and
+its exact game-set revision, avoiding a repeat Savant download when retained
+records can supply the missing outcome accounting.
 Official evidence is cached by exact raw-game hash, not only game ID. A new
 method version can revisit a same-day failure of the earlier raw-only method;
 same-method same-day retries remain suppressed. Interrupted dates remain

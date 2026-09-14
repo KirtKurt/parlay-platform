@@ -187,3 +187,53 @@ def test_budget_interruption_remains_resumable_without_false_failure_state(monke
     resumed = recover(bundle, s3, 'b', initial, reconcile_official=True,
                       fetch_official=lambda url: (source['data'], source['receipt']))
     assert resumed['recovered_dates'] == [raw['date']]
+
+
+@pytest.mark.parametrize('base_state', ['absent', 'stale'])
+def test_repairable_game_set_revision_prevents_redundant_download(monkeypatch, base_state):
+    from ks1.inventory import RESEARCH
+    authorize(monkeypatch)
+    bundle, raw, key = raw_fixture()
+    source = evidence(raw)
+    s3 = MemoryS3()
+    if base_state == 'stale':
+        stale = deepcopy(raw)
+        stale['rows'].pop()
+        stale['rows'][0]['game_pk'] = '999'
+        s3.seed(key, stale)
+    revision_key = RESEARCH + f"sources/statcast-v2-revisions/{raw['date']}/{digest([1])}.json"
+    s3.seed(revision_key, raw)
+    initial = load_training_statcast(bundle, s3, 'b')
+    result = recover(bundle, s3, 'b', initial, reconcile_official=True,
+                     fetch=lambda value: pytest.fail('retained revision is repairable'),
+                     fetch_official=lambda url: (source['data'], source['receipt']))
+    assert result['recovered_dates'] == [raw['date']]
+    assert result['statcast_provider_requests'] == 0
+    assert load_training_statcast(bundle, s3, 'b')['errors'] == []
+
+
+@pytest.mark.parametrize('feed_time', ['2026-09-02T18:00:00Z', '2026-09-02T19:00:00Z'])
+def test_suspended_game_requires_exact_retained_resume_time(monkeypatch, feed_time):
+    authorize(monkeypatch)
+    bundle, raw, key = raw_fixture()
+    bundle['schedule'][0]['resumeDate'] = '2026-09-02T18:00:00Z'
+    bundle['full'][0]['completedAtUtc'] = '2026-09-02T21:00:00Z'
+    source = evidence(raw)
+    source['data']['gameData']['datetime']['dateTime'] = feed_time
+    # Most PAs occurred before suspension, one after the independently recorded resume.
+    source['data']['liveData']['plays']['allPlays'][-1]['about']['endTime'] = '2026-09-02T20:00:00Z'
+    seal(source, raw)
+    s3 = MemoryS3()
+    s3.seed(key, raw)
+    initial = load_training_statcast(bundle, s3, 'b')
+    result = recover(bundle, s3, 'b', initial, reconcile_official=True,
+                     fetch_official=lambda url: (source['data'], source['receipt']))
+    if feed_time != bundle['schedule'][0]['resumeDate']:
+        assert result['recovered_dates'] == []
+        assert 'game/date/finality mismatch' in result['attempts'][0]['reason']
+        return
+    assert result['recovered_dates'] == [raw['date']]
+    assert load_training_statcast(bundle, s3, 'b')['errors'] == []
+    # A payload cannot authorize its own resume time on a later read.
+    bundle['schedule'][0].pop('resumeDate')
+    assert load_training_statcast(bundle, s3, 'b')['errors']
