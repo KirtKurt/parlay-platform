@@ -436,7 +436,11 @@ def prediction_and_training_health(
             for reason, count in assessment[
                 "invalid_historical_reasons"
             ].items():
-                invalid_existing_locks += int(count)
+                # A quarantined score prevents training but does not establish
+                # a corrupt lock. Keep it visible as an availability exclusion,
+                # consistent with the trainer and materialization status.
+                if reason != "settlement_conflict":
+                    invalid_existing_locks += int(count)
                 key = f"historical:{reason}"
                 training_exclusion_reasons[key] = (
                     training_exclusion_reasons.get(key, 0) + int(count)
