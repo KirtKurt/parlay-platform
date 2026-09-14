@@ -1,5 +1,6 @@
 """Rolling chronological holdout for seven-day KS1 features; never publish predictions."""
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
@@ -209,6 +210,18 @@ def qualification_basis(coverage):
     return 'mixed_historical_and_frozen_pregame_300'
 
 
+def context_basis_counts(frame):
+    counts = {side: Counter() for side in ('home', 'away')}
+    for value in frame.reconstructed_pitcher_context_proof:
+        try:
+            proofs = json.loads(value)
+        except (TypeError, ValueError):
+            proofs = {}
+        for side in counts:
+            counts[side][proofs.get(side, {}).get('statistical_basis', 'unavailable')] += 1
+    return {side: dict(values) for side, values in counts.items()}
+
+
 def prospective_context_coverage(frame, context_features):
     prospective = frame.pitcher_context_evidence.eq(
         'frozen_versioned_ks1_profile') & frame.historical_pitcher_context_mode.isna()
@@ -290,6 +303,8 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
               'evaluation_kind': 'retrospective_chronological_holdout',
               'historical_evaluation_is_prospective': False,
               'pitcher_context_qualification': context_qualification,
+              'heldout_pitcher_context_bases': context_basis_counts(test),
+              'cold_start_priors_are_observed_current_form': False,
               'evaluation_window_games': EVALUATION_GAMES,
               'features': features, 'omitted_features': omitted,
               'individual_starter_training_rows': coverage,
@@ -325,6 +340,7 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
               'limitations': ['Rolling retrospective evaluation, not official live grades.',
                              'Prior box scores can include later scoring corrections.',
                              'Individual starter inputs require retained pregame identity and earlier pitcher boxes.',
+                             'Season debuts use explicitly identified prior-year pitcher history or a prior league-starter population; these are priors, not observed current-year form.',
                              'The trailing 300-game holdout does not establish future performance.']}
     (output/'metrics.json').write_bytes(encode(report))
     (output/'input_proof.json').write_bytes(encode(proof))

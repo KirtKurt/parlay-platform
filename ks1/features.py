@@ -56,6 +56,47 @@ def pitcher_context(values):
     }
 
 
+CONTEXT_BASES = {"current_season_pitcher": 0.0, "prior_year_pitcher": 1.0,
+                 "current_season_league_prior": 2.0, "prior_year_league_prior": 3.0}
+
+
+def context_history(completed, pitcher_id, year):
+    """Select an explicit prior when an identified pitcher has no season history.
+
+    Callers supply only games completed before the cutoff and on earlier days.
+    An incomplete observed pitching line is never replaced by a prior.
+    """
+    if pitcher_id is None:
+        return [], None
+    for season, basis in ((year, "current_season_pitcher"), (year-1, "prior_year_pitcher")):
+        entries = [(r, p["stats"]) for r in completed if r["day"].year == season
+                   for p in r["players"] if p["id"] == str(pitcher_id)]
+        if entries:
+            return entries, basis
+    for season, basis in ((year, "current_season_league_prior"),
+                          (year-1, "prior_year_league_prior")):
+        entries = [(r, p["stats"]) for r in completed if r["day"].year == season
+                   for p in r["players"] if number(p["stats"].get("gamesStarted")) == 1]
+        if entries:
+            return entries, basis
+    return [], None
+
+
+def summarize_context(entries, basis):
+    ordered = sorted(entries, key=lambda x: (x[0]["start"], x[0]["game_id"]))
+    starts = [x for x in ordered if number(x[1].get("gamesStarted")) == 1]
+    ordered = starts or ordered
+    season = official_context_pitching([stats for _, stats in ordered])
+    league_prior = basis in ("current_season_league_prior", "prior_year_league_prior")
+    recent = season if league_prior else official_context_pitching([stats for _, stats in ordered[-3:]])
+    outs = [number(stats.get("outs")) for _, stats in (ordered if league_prior else ordered[-5:])]
+    return {"quality": season["quality"], "command": season["command"],
+            "recent_form": recent["command"] if recent["command"] is not None else recent["quality"],
+            "velocity": None,
+            "expected_innings": round(sum(outs)/(3*len(outs)), 3)
+            if outs and all(x is not None for x in outs) else None}
+
+
 def official_context_pitching(rows):
     """Mirror V8's unshrunk official game-log summary contract."""
     if not rows:
@@ -704,30 +745,15 @@ class Features:
             statcast["xfip"] = self.xfip(box, statcast, league_hr_fb)
             for name, value in statcast.items():
                 result[f"starter_{name}_{window}d"] = value
-        current_appearances = [(r["start"], r["game_id"], p["stats"])
-                               for r in eligible for p in r["players"]
-                               if p["id"] == starter_id]
-        current_starts = [entry for entry in current_appearances
-                          if number(entry[2].get("gamesStarted")) == 1]
-        # Match V8's official game-log contract: target season only, latest one
-        # through five starts, with appearances as the no-start fallback.
-        context_entries = sorted(current_starts or current_appearances,
-                                 key=lambda item: item[0])
-        last_five = context_entries[-5:]
-        last_five_outs = [number(stats.get("outs")) for _, _, stats in last_five]
-        result["starter_expected_innings_last5"] = (
-            round(sum(last_five_outs)/(3*len(last_five_outs)), 3)
-            if starter_id and last_five_outs and all(value is not None for value in last_five_outs)
-            else None)
-        season_context = official_context_pitching([stats for _, _, stats in context_entries])
-        recent_context = official_context_pitching([stats for _, _, stats in context_entries[-3:]])
+        context_entries, context_basis = context_history(completed, starter_id, date.year)
+        context_values = summarize_context(context_entries, context_basis)
+        result["starter_expected_innings_last5"] = context_values["expected_innings"]
         result.update({
-            "starter_context_quality": season_context["quality"],
-            "starter_context_command": season_context["command"],
-            "starter_context_recent_form": (recent_context["command"]
-                                             if recent_context["command"] is not None
-                                             else recent_context["quality"]),
+            "starter_context_quality": context_values["quality"],
+            "starter_context_command": context_values["command"],
+            "starter_context_recent_form": context_values["recent_form"],
             "starter_context_velocity": None,
+            "starter_context_basis_code": CONTEXT_BASES.get(context_basis),
         })
         starts = [(r["start"], r["game_id"], p["stats"]) for r in completed for p in r["players"]
                   if p["id"] == starter_id and number(p["stats"].get("gamesStarted")) == 1]
