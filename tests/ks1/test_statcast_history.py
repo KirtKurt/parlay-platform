@@ -41,6 +41,7 @@ def fixture():
                              'description': 'hit_into_play' if pitch == 2 else 'called_strike',
                              'events': 'single' if pitch == 2 else '',
                              'woba_denom': '1' if pitch == 2 else '0',
+                             'woba_value': '.9' if pitch == 2 else '',
                              'estimated_woba_using_speedangle': '.5'})
     bundle = {'full': [source], 'official_history_source': {'complete_years': [2026]},
               'schedule': [{'gamePk': 1, 'gameDate': source['startAtUtc'], 'gameType': 'R',

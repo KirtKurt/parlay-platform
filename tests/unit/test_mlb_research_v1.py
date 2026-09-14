@@ -34,7 +34,8 @@ def test_retained_statcast_dates_require_official_pitch_counts(defect):
                                                        'gamesStarted': 1}}}}}
                       for side, tid, pid in (('home', 1, 100), ('away', 2, 101))}}
     rows = [{'game_pk': '1', 'pitcher': str(pid), 'at_bat_number': str(pid),
-             'pitch_number': str(n), 'events': 'field_out' if n == 2 else ''}
+             'pitch_number': str(n), 'events': 'field_out' if n == 2 else '',
+             'woba_denom': '1' if n == 2 else '', 'woba_value': '0' if n == 2 else ''}
             for pid in (100, 101) for n in (1, 2)]
     if defect == 'truncated':
         rows.pop()  # same game ID still present
@@ -536,21 +537,35 @@ def test_ingestion_versions_expanded_games_and_retains_prior_year_scope(monkeypa
 
 def test_prior_year_profiles_survive_current_year_statcast_lag():
     stats = dict(outs=3, earnedRuns=0, runs=0, hits=0, homeRuns=0,
-                 baseOnBalls=0, hitBatsmen=0, strikeOuts=2, battersFaced=3,
+                 baseOnBalls=0, hitBatsmen=0, strikeOuts=1, battersFaced=1,
                  numberOfPitches=1, wins=1, losses=0, gamesStarted=1)
     prior = {'officialGamePk':'11','startAtUtc':'2025-04-01T18:18:00+00:00',
              'completedAtUtc':'2025-04-01T20:18:00+00:00','gameType':'R','teams':{
                  'home':{'team':{'id':10},'teamStats':{'batting':{}},'players':{
                      'ID99':{'person':{'id':99},'stats':{'pitching':stats}}}},
                  'away':{'team':{'id':20},'teamStats':{'batting':{}},'players':{}}}}
+    prior['teams']['away']['players']['ID100'] = {
+        'person': {'id': 100}, 'stats': {'pitching': dict(stats)}}
     pitch = {'game_pk':'11','pitcher':'99','batter':'1','type':'S',
+             'at_bat_number':'1','pitch_number':'1','events':'strikeout',
+             'woba_denom':'1','woba_value':'0',
              'pitch_type':'FF','description':'swinging_strike','release_speed':'95',
              'release_spin_rate':'2400','release_extension':'6.5','pfx_x':'-.5','pfx_z':'1.2'}
 
-    profiles = ingestion.prior_year_profiles([prior], [pitch], 2025)
+    rows = [pitch, {**pitch, 'pitcher':'100', 'at_bat_number':'2'}]
+    profiles = ingestion.prior_year_profiles([prior], rows, 2025)
 
     assert profiles['99']['complete'] == 1
     assert profiles['99']['pitches'] == 1
+    # A missing automatic outcome leaves every physical pitch intact.
+    prior['teams']['home']['players']['ID99']['stats']['pitching']['battersFaced'] = 2
+    automatic = {**pitch, 'at_bat_number':'3','pitch_type':'','release_speed':'',
+                 'description':'automatic_strike'}
+    assert ingestion.prior_year_profiles([prior], rows, 2025) == {}
+    assert ingestion.prior_year_profiles([prior], rows+[automatic], 2025)['99']['xwoba_pa'] == 2
+    for field in ('woba_denom', 'woba_value'):
+        incomplete = {**automatic, field: ''}
+        assert ingestion.prior_year_profiles([prior], rows+[incomplete], 2025) == {}
 
 
 def test_new_deployment_refreshes_training_from_existing_capture_owner(monkeypatch,store):

@@ -59,6 +59,26 @@ and verify that the date is rejected. A verified zero-physical-pitch reliever
 appearance retains its automatic PA outcome; pitch-denominator metrics stay
 null instead of dividing by zero or inventing a physical observation.
 
+The terminal-code set was audited against MLB's official
+[event-type catalog](https://statsapi.mlb.com/api/v1/eventTypes) on September 14,
+2026, including batter/fan interference and alternate strikeout terminal codes.
+Pending scoring rulings fail closed. Every wOBA-eligible terminal must retain
+`woba_denom=1` and a finite, nonnegative `woba_value`; explicit denominator-zero
+exceptions are intentional walks, catcher interference, and sacrifice bunts.
+Missing automatic outcome fields cannot shrink the sample silently.
+
+Prior-year profiles independently run the same physical-count, PA-count and
+outcome-field gate on every contributing game before aggregating any pitcher.
+One unverified appearance rejects that pitcher's entire prior-year profile,
+including a zero-pitch appearance, instead of publishing a partial-season prior.
+
+The stricter field-level audit found two `field_out` rows with missing
+`woba_denom` in the retained 778563 sample. Its physical/PA totals reconcile,
+but it now correctly fails full outcome qualification until complete provider
+fields are available. The 778921 sample also has missing denominator fields;
+it illustrates automatic-event classification, not qualified regular-season
+training coverage. No missing fields were synthesized to make either pass.
+
 All raw events remain available for plate-appearance outcomes, including an
 automatic event ending a walk or strikeout. Starter, bullpen, and batter
 pitch-based denominators and starter pitch mixes use thrown pitches. Overall

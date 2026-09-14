@@ -12,7 +12,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 sys.path.insert(0,str(ROOT/'mlb_research'))
 from ks1.features import Features, number
-from ks1.statcast_history import pitch_complete_dates
+from ks1.statcast_history import official_pitch_counts, pitch_complete_dates, pitches_complete
 from mlb_research_store_v1 import now,utc,digest
 from mlb_research_dataset_v1 import publish_dataset
 import mlb_research_sources_v1 as source
@@ -88,9 +88,13 @@ def _snapshot_problem(value,game):
 
 def prior_year_profiles(sources, rows, prior_year):
     """Build reusable prior-year pitcher physics independently of current-year lag."""
-    engine=Features([g for g in sources
-                     if utc(g['startAtUtc']).astimezone(source.ET).date().year==prior_year],
-                    rows,statcast_complete=True)
+    prior_sources=[g for g in sources
+                   if utc(g['startAtUtc']).astimezone(source.ET).date().year==prior_year]
+    engine=Features(prior_sources, rows, statcast_complete=True)
+    expected_counts,invalid=official_pitch_counts(prior_sources)
+    verified_games={pk for pk in expected_counts
+                    if pitches_complete(engine.statcast_by_game.get(pk, []),
+                                        {pk}, expected_counts, invalid)}
     appearances={}
     for row in engine.rows:
         for player in row['players']:
@@ -98,6 +102,10 @@ def prior_year_profiles(sources, rows, prior_year):
                 appearances.setdefault(player['id'],[]).append((row['game_id'],player['stats']))
     profiles={}
     for pitcher,pairs in appearances.items():
+        # Do not aggregate a convenient subset: every appearance in this
+        # pitcher's prior year must have complete physical AND PA evidence.
+        if not {game_id for game_id,_ in pairs}.issubset(verified_games):
+            continue
         expected=sum(number(stats.get('numberOfPitches')) for _,stats in pairs) if all(
             number(stats.get('numberOfPitches')) is not None for _,stats in pairs) else None
         profile=engine.statcast(pitcher,{game_id for game_id,_ in pairs},expected)

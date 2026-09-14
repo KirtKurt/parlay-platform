@@ -6,7 +6,7 @@ import hashlib
 
 from ks1.features import day, normalize, number
 from ks1.inventory import Reader, RESEARCH, encode
-from ks1.statcast_events import is_plate_appearance, is_thrown_pitch
+from ks1.statcast_events import complete_pa_outcome, is_plate_appearance, is_thrown_pitch
 
 
 def official_pitch_counts(sources):
@@ -53,6 +53,7 @@ def pitches_complete(rows, games, expected, invalid):
     wanted_pas = {pk: sum(count[1] for count in expected[pk].values()) for pk in games}
     return (len(identities) == len(rows) and dict(actual) == wanted
             and len(pa_ids) == len(pas)
+            and all(complete_pa_outcome(row) for row in pas)
             and all(actual_pas[pk] == count for pk, count in wanted_pas.items()))
 
 

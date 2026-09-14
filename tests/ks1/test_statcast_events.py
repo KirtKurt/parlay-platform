@@ -112,3 +112,34 @@ def test_sacrifice_pa_is_counted_without_woba_denominator():
     payload['rows'][1].update(events='sac_bunt', woba_denom='0')
     expected, invalid = official_pitch_counts(bundle['full'])
     assert pitches_complete(payload['rows'], {1}, expected, invalid)
+
+
+@pytest.mark.parametrize('event', ['batter_interference', 'fan_interference',
+                                  'strike_out', 'strikeout_triple_play'])
+def test_additional_official_terminal_codes_are_not_lost(event):
+    bundle, payload, _ = fixture()
+    payload['rows'][1].update(events=event, woba_denom='1', woba_value='0')
+    expected, invalid = official_pitch_counts(bundle['full'])
+    assert pitches_complete(payload['rows'], {1}, expected, invalid)
+
+
+@pytest.mark.parametrize('description', ['automatic_ball', 'automatic_strike'])
+@pytest.mark.parametrize('field,value', [('woba_denom', ''), ('woba_denom', None),
+                                      ('woba_denom', '0'), ('woba_denom', 'nan'),
+                                      ('woba_value', ''), ('woba_value', None),
+                                      ('woba_value', 'nan'), ('woba_value', 'inf'),
+                                      ('woba_value', '-1')])
+def test_incomplete_automatic_outcome_never_qualifies(description, field, value):
+    bundle, payload, key = fixture()
+    bundle['full'][0]['teams']['home']['players']['151']['stats']['pitching']['battersFaced'] = 10
+    payload['rows'].append({**automatic(payload['rows'][0], description), field: value})
+    report = load_training_statcast(bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
+    assert report['verified_pitch_objects'] == 0
+    assert '2026-09-01' not in bundle['statcast_retained_dates']
+
+
+def test_pending_official_scoring_is_not_a_complete_outcome():
+    bundle, payload, _ = fixture()
+    payload['rows'][1]['events'] = 'os_ruling_pending_primary'
+    expected, invalid = official_pitch_counts(bundle['full'])
+    assert not pitches_complete(payload['rows'], {1}, expected, invalid)
