@@ -141,17 +141,21 @@ def _lineup_features(samples):
         "lineup_top4_ops": _weighted(samples, "ops", range(1, 5)),
         "lineup_2_5_ops": _weighted(samples, "ops", range(2, 6)),
         "lineup_observed_batters": float(sum(s["status"] == "OBSERVED" for s in samples)),
-        "lineup_total_pa": sum(s["plate_appearances"] for s in samples
-                               if s["plate_appearances"] is not None),
+        "lineup_total_pa": (sum(s["plate_appearances"] for s in samples)
+                            if all(s["plate_appearances"] is not None for s in samples)
+                            else None),
     }
 
 
 def build_profile(stored, game, row, as_of, history, history_as_of=None,
-                  statcast_as_of=None):
+                  statcast_as_of=None, history_coverage=None):
     """Validate one exact persisted observation and bind it to a KS1 game."""
     raw = stored.get("data", stored) if isinstance(stored, dict) else {}
     game_id, start, cutoff = str(game["gamePk"]), utc(game["gameDate"]), utc(game["gameDate"])-timedelta(minutes=10)
     observed = utc(as_of)
+    if history_coverage is not None and not all(history_coverage.get(key) is True for key in (
+            "7d", "30d", "last3", "current_season_context", "prior_year", "statcast_30d")):
+        raise ValueError("lineup bullpen history coverage incomplete")
     if any(value is not None and utc(value) > observed
            for value in (history_as_of, statcast_as_of)):
         raise ValueError("historical source observed after profile")
@@ -295,7 +299,10 @@ def frozen_profile_features(row):
                 features[side+"_"+key] = value
     return {"as_of": profile["as_of"], "commence_time": profile["commence_time"],
             "teams": {side: str(profile["sides"][side]["team_id"])
-                      for side in ("home", "away")}, "features": features,
+                      for side in ("home", "away")},
+            "lineups": {side: list(profile["sides"][side]["lineup_ids"])
+                        for side in ("home", "away")},
+            "features": features,
             "coverage_status": profile.get("coverage_status")}
 
 

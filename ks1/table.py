@@ -229,9 +229,6 @@ def build(bundle, selected_date=None):
             elif utc(frozen_team_context["as_of"]) > utc(cutoff):
                 cutoff = frozen_team_context["as_of"]
                 row["as_of_timestamp"] = cutoff
-        if frozen_team_context:
-            row.update(frozen_team_context["features"])
-            row["lineup_bullpen_context_evidence"] = "frozen_versioned_ks1_profile"
         if published_problem:
             exclusions.append({"game_id": pk, "reason": published_problem})
         missing_identity = False
@@ -319,6 +316,23 @@ def build(bundle, selected_date=None):
                 if any((cutoff_day-date).days <= window for date in gaps.values()):
                     for stat in ("pitches", "outs"):
                         row[f"{side}_bullpen_{stat}_{window}d"] = None
+        if frozen_team_context:
+            lineup_matches = all(
+                not row.get(side+"_lineup_ids")
+                or [str(value) for value in json.loads(row[side+"_lineup_ids"])]
+                == frozen_team_context["lineups"][side]
+                for side in ("home", "away"))
+            if not lineup_matches:
+                exclusions.append({"game_id": pk,
+                                   "reason": "published_lineup_bullpen_lineup_mismatch"})
+                frozen_team_context = None
+            else:
+                row.update(frozen_team_context["features"])
+                row["lineup_bullpen_context_evidence"] = "frozen_versioned_ks1_profile"
+                for side in ("home", "away"):
+                    row[side+"_lineup_status"] = "confirmed"
+                    row[side+"_lineup_ids"] = json.dumps(
+                        [int(value) for value in frozen_team_context["lineups"][side]])
         for side in ("home", "away"):
             opposing = "away" if side == "home" else "home"
             own = snapshot.get("playerWindows", {}).get("teams", {}).get(side, {})
@@ -476,7 +490,9 @@ def contract(example):
         lineup_bullpen_metric = any(
             column == side+"_"+feature for side in ("home", "away")
             for feature in LINEUP_BULLPEN_FEATURES)
-        if starter_metric or pitcher_context_metric or lineup_bullpen_metric or any(t in column for t in ("_offense_", "_team_starter_", "_bullpen_", "_rest_days", "_history_games")):
+        if column == "lineup_bullpen_context_evidence":
+            source = "checksum-bound KS1-lineup-bullpen-profile-v1 audit metadata"
+        elif starter_metric or pitcher_context_metric or lineup_bullpen_metric or any(t in column for t in ("_offense_", "_team_starter_", "_bullpen_", "_rest_days", "_history_games")):
             dtype, role, source = pa.float64(), "feature", "strictly earlier completed compact/full game boxes"
             meaning += "; calendar-day windows; same-day excluded; current-season empirical prior; OPS/ISO 100 PA/AB, K-BB 100 BF, WHIP 75 outs shrinkage; *_games/*_pa/*_bf/*_appearances are observed counts"
             if lineup_bullpen_metric:

@@ -75,6 +75,27 @@ def test_builds_checksum_bound_profile_and_supported_features():
     assert len(history.calls) == 2
 
 
+def test_incomplete_history_coverage_fails_closed():
+    game, row = game_row()
+    coverage = {key: True for key in (
+        "7d", "30d", "last3", "current_season_context", "prior_year", "statcast_30d")}
+    coverage["30d"] = False
+    with pytest.raises(ValueError, match="history coverage incomplete"):
+        build_profile(stored_observation(), game, row,
+                      "2026-09-14T16:05:00+00:00", History(), history_coverage=coverage)
+
+
+def test_incomplete_lineup_plate_appearances_stay_null():
+    stored = stored_observation(); game, row = game_row()
+    sample = stored["data"]["passiveTeamContext"]["confirmed_lineups"][
+        "home_lineup_season_batting"][0]
+    sample.update(plateAppearances=None, ops=None, obp=None, slg=None,
+                  rateObservationCount=0, sampleStatus="SAMPLE_UNAVAILABLE")
+    _, features = build_profile(stored, game, row,
+                                "2026-09-14T16:05:00+00:00", History())
+    assert features["home_lineup_total_pa"] is None
+
+
 def test_rejects_post_cutoff_or_mismatched_lineup():
     game, row = game_row()
     late = stored_observation()
@@ -176,3 +197,23 @@ def test_reliever_profile_has_strict_prior_workload_quality_and_arsenal():
     assert reliever["workload"]["1d"]["pitches"] == 25
     assert reliever["windows"]["7d"]["velocity"] == 96
     assert reliever["windows"]["7d"]["pitch_arsenal"]["FF"]["mix_pct"] == 100
+
+
+def test_reliever_history_survives_trade_and_missing_pitch_count_is_unknown():
+    pitching = {"outs": 3, "earnedRuns": 0, "runs": 0, "hits": 1, "homeRuns": 0,
+                "baseOnBalls": 0, "hitBatsmen": 0, "strikeOuts": 2,
+                "battersFaced": 4, "wins": 0, "losses": 0, "gamesStarted": 0,
+                "numberOfPitches": None}
+    game = {"officialGamePk": 9, "startAtUtc": "2026-09-09T18:00:00Z",
+            "completedAtUtc": "2026-09-09T21:00:00Z", "gameType": "R",
+            "teams": {side: {"team": {"id": tid, "name": side},
+                              "teamStats": {"batting": {}},
+                              "players": ({"ID151": {"person": {"id": 151},
+                                                       "stats": {"pitching": pitching}}}
+                                          if side == "home" else {})}
+                      for side, tid in (("home", 99), ("away", 20))}}
+    values = Features([game], []).bullpen_roster_at(
+        "2026-09-10T17:50:00Z", "10", ["151"])
+    assert values["bullpen_context_unknown_count"] == 1
+    assert values["bullpen_context_fatigue_score"] is None
+    assert values["bullpen_context_era_7d"] == 0

@@ -508,7 +508,7 @@ def predict(folder, output):
                 context_profile, context_features = lineup_bullpen_profile(
                     passive, game, row, as_of, engine,
                     inputs['history'].get('prior_observed_at'),
-                    inputs['history'].get('statcast_observed_at'))
+                    inputs['history'].get('statcast_observed_at'), coverage)
             except (KeyError, TypeError, ValueError) as exc:
                 reason = re.sub(r'[^A-Z0-9]+', '_', str(exc).upper()).strip('_')
                 row['lineup_bullpen_profile_status'] = 'INVALID_FAIL_CLOSED:'+reason[:120]

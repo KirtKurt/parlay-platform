@@ -9,6 +9,7 @@ from botocore.exceptions import ClientError
 
 from ks1.features import Features, offense
 from ks1.inventory import encode
+from ks1.passive_context import CONTRACT as LINEUP_BULLPEN_CONTRACT
 from ks1.historical_starters import (KS1_STARTER_PROFILE_CONTRACT,
                                      V8_MANIFEST_VERSION, V8_SNAPSHOT_VERSION,
                                      historical_context_index)
@@ -233,6 +234,43 @@ def test_versioned_t10_prediction_supplies_pregame_starter_identity():
     assert row["pregame_evidence"] == "versioned_ks1_t10_prediction"
     assert row["pregame_version_id"] == "v1"
     assert row["as_of_timestamp"] == "2026-08-03T19:40:00Z"
+
+
+def test_frozen_team_profile_restores_confirmed_lineup_metadata():
+    bundle = fixture()
+    profile = {
+        "contract": LINEUP_BULLPEN_CONTRACT,
+        "as_of": "2026-08-03T19:40:00Z",
+        "history_as_of": "2026-08-03T19:30:00Z",
+        "statcast_as_of": "2026-08-03T19:30:00Z",
+        "game_id": "3", "commence_time": "2026-08-03T20:00:00Z",
+        "coverage_status": "SUPPORTED_V1_COMPLETE",
+        "sides": {
+            "home": {"team_id": "1", "lineup_ids": [str(i) for i in range(101, 110)],
+                     "features": {"lineup_quality_ops": .750}},
+            "away": {"team_id": "2", "lineup_ids": [str(i) for i in range(201, 210)],
+                     "features": {"lineup_quality_ops": .725}},
+        },
+    }
+    semantic = {key: value for key, value in profile.items() if key != "as_of"}
+    profile["semantic_sha256"] = hashlib.sha256(encode(semantic)).hexdigest()
+    profile["sha256"] = hashlib.sha256(encode(profile)).hexdigest()
+    bundle["published_predictions"] = [{
+        "row": {"game_id": "3", "date": "2026-08-03",
+                "commence_time": profile["commence_time"], "as_of": profile["as_of"],
+                "home_id": "1", "away_id": "2",
+                "lineup_bullpen_profile_contract": LINEUP_BULLPEN_CONTRACT,
+                "lineup_bullpen_profile_sha256": profile["sha256"],
+                "lineup_bullpen_profile_semantic_sha256": profile["semantic_sha256"],
+                "lineup_bullpen_profile_json": encode(profile).decode()},
+        "evidence": {"bucket": "b", "key": "k", "version_id": "v1",
+                     "stored_at": "2026-08-03T19:45:00Z", "sha256": "a"*64}}]
+    table, *_ = build(bundle)
+    row = table.to_pylist()[-1]
+    assert row["home_lineup_status"] == "confirmed"
+    assert json.loads(row["home_lineup_ids"]) == list(range(101, 110))
+    assert row["home_lineup_quality_ops"] == .750
+    assert row["lineup_bullpen_context_evidence"] == "frozen_versioned_ks1_profile"
 
 
 def test_verified_historical_pitcher_summary_accelerates_without_inventing_identity():

@@ -354,8 +354,11 @@ class Features:
         """
         target = calendar_date.fromisoformat(game_date) if game_date else day(cutoff)
         roster = {str(value) for value in roster_ids}
+        # Apply the current, point-in-time roster identity after selecting the
+        # history.  A traded/claimed reliever's earlier appearances remain
+        # relevant even when they were recorded for another club.
         completed = [r for r in self.rows if r["completed"] < utc(cutoff)
-                     and r["day"] < target and r["team_id"] == str(team_id)]
+                     and r["day"] < target]
         league_rows = [p["stats"] for r in self.rows if r["completed"] < utc(cutoff)
                        and r["day"] < target and r["day"].year == target.year
                        for p in r["players"]]
@@ -401,21 +404,28 @@ class Features:
         states = {"AVAILABLE": 0, "LIMITED": 0, "LIKELY_UNAVAILABLE": 0, "UNKNOWN": 0}
         reliever_profiles, state_by_pitcher = [], {}
         workload_score = 0.0
+        workload_complete = True
         for pid in roster:
             recent = [(r, stats) for r, stats in appearances if any(
                 p["id"] == pid and p["stats"] is stats for p in r["players"])]
             by_age = {age: [stats for r, stats in recent if (target-r["day"]).days == age]
                       for age in range(1, 8)}
             known = any(by_age.values())
-            pitches1 = sum(number(s.get("numberOfPitches")) or 0 for s in by_age[1])
-            pitches3 = sum(number(s.get("numberOfPitches")) or 0
-                           for age in range(1, 4) for s in by_age[age])
+            usage1 = [s for s in by_age[1]]
+            usage3 = [s for age in range(1, 4) for s in by_age[age]]
+            counts1 = [number(s.get("numberOfPitches")) for s in usage1]
+            counts3 = [number(s.get("numberOfPitches")) for s in usage3]
+            pitches1 = sum(counts1) if all(v is not None for v in counts1) else None
+            pitches3 = sum(counts3) if all(v is not None for v in counts3) else None
             consecutive = 0
             for age in range(1, 8):
                 if by_age[age]: consecutive += 1
                 else: break
-            workload_score += pitches1 + .35*max(0, pitches3-pitches1)
-            state = ("UNKNOWN" if not known else "LIKELY_UNAVAILABLE"
+            counts_known = not known or (pitches1 is not None and pitches3 is not None)
+            workload_complete = workload_complete and counts_known
+            if known and counts_known:
+                workload_score += pitches1 + .35*max(0, pitches3-pitches1)
+            state = ("UNKNOWN" if not known or not counts_known else "LIKELY_UNAVAILABLE"
                      if pitches1 >= 30 or consecutive >= 3 else "LIMITED"
                      if pitches1 >= 20 or pitches3 >= 45 or consecutive >= 2 else "AVAILABLE")
             states[state] += 1
@@ -464,7 +474,7 @@ class Features:
             reliever_profiles.append(pitcher_profile)
         for state, count in states.items():
             result["bullpen_context_"+state.lower()+"_count"] = float(count)
-        result["bullpen_context_fatigue_score"] = workload_score
+        result["bullpen_context_fatigue_score"] = workload_score if workload_complete else None
         result["bullpen_context_depth"] = float(len(roster)-states["UNKNOWN"])
         result["bullpen_context_availability_method"] = "strict_prior_workload_v1"
         result["bullpen_context_high_leverage_quality"] = None
