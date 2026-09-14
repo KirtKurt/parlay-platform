@@ -3,7 +3,8 @@ import hashlib
 
 import pytest
 
-from ks1.historical_feed import PREFIX, feed_identity
+from ks1.historical_feed import (PREFIX, TEAM_CONTEXT_PREFIX, feed_identity,
+                                 feed_team_context)
 from ks1.inventory import encode
 from ks1.prior_pitcher_context import PriorPitcherContext, pregame_identity_index, verified_reconstruction
 from ks1.features import Features
@@ -25,13 +26,45 @@ def entry():
                  'retrieved_at':'2026-09-14T04:00:00Z','payload':payload})
 
 
-def sign(value):
+def sign(value, prefix=PREFIX):
     value = deepcopy(value)
     value.pop('receipt', None)
     value['payload_sha256'] = hashlib.sha256(encode(value['payload'])).hexdigest()
-    value['receipt'] = {'bucket':'retained','key':PREFIX+'game=99/timecode=20260811_195000.json',
+    value['receipt'] = {'bucket':'retained','key':prefix+'game=99/timecode=20260811_195000.json',
                         'versionId':'v1','sha256':hashlib.sha256(encode(value)).hexdigest()}
     return value
+
+
+def team_entry(*, missing=None):
+    value = entry()
+    payload = value['payload']
+    payload['gameData']['players'] = {
+        'ID104': {'pitchHand': {'code': 'R'}},
+        'ID105': {'pitchHand': {'code': 'L'}},
+    }
+    boxes = {}
+    for side, base, team_id in (('home', 100, 1), ('away', 200, 2)):
+        lineup = list(range(base+1, base+10))
+        bullpen = [base+11, base+12]
+        players = {
+            'ID'+str(identity): {
+                'person': {'id': identity},
+                'battingOrder': str(slot*100),
+                'gameStatus': {'isSubstitute': False},
+            }
+            for slot, identity in enumerate(lineup, 1)
+        }
+        players.update({'ID'+str(identity): {'person': {'id': identity}}
+                        for identity in bullpen})
+        boxes[side] = {'team': {'id': team_id}, 'battingOrder': lineup,
+                       'bullpen': bullpen, 'players': players}
+    if missing == 'lineup':
+        boxes['home']['battingOrder'] = []
+    if missing == 'bullpen':
+        boxes['away']['bullpen'] = []
+    payload['liveData']['boxscore'] = {'teams': boxes}
+    value['payload'] = payload
+    return sign(value, TEAM_CONTEXT_PREFIX)
 
 
 def test_archived_probables_are_admitted_from_their_own_pregame_timestamp():
@@ -40,6 +73,50 @@ def test_archived_probables_are_admitted_from_their_own_pregame_timestamp():
     assert identity['sides']['home']['pitcher_id'] == '104'
     assert identity['sides']['home']['as_of'] == '2026-08-11T19:30:00+00:00'
     assert pregame_identity_index({'historical_pregame_feeds':[value]})[('99','home')][0] == identity['sides']['home']
+
+
+def test_historical_team_context_binds_lineup_bullpen_and_pitcher_hands():
+    stored = team_entry()
+    context = feed_team_context(stored)
+    assert context['coverage_status'] == 'SUPPORTED_V1_COMPLETE'
+    assert context['sides']['home']['lineup_ids'] == [str(value) for value in range(101, 110)]
+    assert context['sides']['away']['bullpen_roster_ids'] == ['211', '212']
+    assert context['sides']['home']['probable_pitcher_hand'] == 'R'
+    assert context['source']['source_type'] == 'mlb_statsapi_timecoded_team_context'
+    identities = pregame_identity_index({'historical_team_context': [stored]})
+    assert identities[('99', 'home')][0]['pitcher_id'] == '104'
+
+
+@pytest.mark.parametrize('missing', ['lineup', 'bullpen'])
+def test_historical_team_context_preserves_explicit_missing_state(missing):
+    context = feed_team_context(team_entry(missing=missing))
+    assert context['coverage_status'] == 'SUPPORTED_V1_EXPLICIT_MISSING'
+    if missing == 'lineup':
+        assert context['sides']['home']['lineup_ids'] is None
+        assert context['sides']['home']['lineup_status'] == 'MISSING_FAIL_CLOSED'
+    else:
+        assert context['sides']['away']['bullpen_roster_ids'] is None
+        assert context['sides']['away']['bullpen_status'] == 'MISSING_FAIL_CLOSED'
+
+
+@pytest.mark.parametrize('mutation', ['wrong_slot', 'substitute', 'unbound_bullpen',
+                                      'cross_team', 'wrong_prefix'])
+def test_historical_team_context_rejects_malformed_identity_bindings(mutation):
+    value = team_entry()
+    boxes = value['payload']['liveData']['boxscore']['teams']
+    if mutation == 'wrong_slot':
+        boxes['home']['players']['ID101']['battingOrder'] = '200'
+    elif mutation == 'substitute':
+        boxes['home']['players']['ID101']['gameStatus']['isSubstitute'] = True
+    elif mutation == 'unbound_bullpen':
+        boxes['home']['players']['ID111']['person']['id'] = 999
+    elif mutation == 'cross_team':
+        boxes['away']['bullpen'][0] = 111
+        boxes['away']['players']['ID111'] = {'person': {'id': 111}}
+    value = sign(value, TEAM_CONTEXT_PREFIX)
+    if mutation == 'wrong_prefix':
+        value['receipt']['key'] = PREFIX+'game=99/timecode=20260811_195000.json'
+    assert feed_team_context(value) is None
 
 
 @pytest.mark.parametrize('kind', ['late','final','pitch','wrong_game','wrong_start','missing_pitcher','missing_version','wrong_hash'])
@@ -96,3 +173,22 @@ def test_latest_archive_replaces_earlier_snapshot_before_both_sides_are_computed
     assert row['home_starter_era_30d'] == row['away_starter_era_30d'] == 3
     engine = PriorPitcherContext(Features(games).rows, SOURCE, pregame_identity_index(bundle))
     assert verified_reconstruction(row, engine)
+
+
+def test_historical_team_context_enters_table_with_explicit_missingness():
+    games = history()+[full_game(99, '2026-08-11', 999, STATS)]
+    schedule = {'gamePk':99,'gameDate':'2026-08-11T20:00:00Z','gameType':'R',
+                'teams':{s:{'team':games[-1]['teams'][s]['team']} for s in ('home','away')},
+                'status':{'abstractGameState':'Preview'}}
+    bundle = {'full':games, 'schedule':[schedule],
+              'historical_team_context':[team_entry(missing='lineup')],
+              'official_history_source':SOURCE}
+    row = build(bundle)[0].to_pylist()[0]
+    assert row['lineup_bullpen_context_evidence'] == 'historical_timecoded_mlb_feed'
+    assert row['historical_lineup_bullpen_context_status'] == 'SUPPORTED_V1_EXPLICIT_MISSING'
+    assert row['home_starter_id'] == '104'
+    assert row['home_starter_status'] == 'observed_archived_pregame'
+    assert row['home_lineup_ops_30d'] is None
+    assert row['home_lineup_ops_30d_missing'] == 1
+    assert row['home_bullpen_context_roster_count'] == 2
+    assert row['home_bullpen_context_roster_count_missing'] == 0

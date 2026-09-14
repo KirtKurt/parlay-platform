@@ -500,7 +500,8 @@ def predict(folder, output):
         if not all(coverage.values()):
             row['history_status'] = 'partial_pitcher_history_fail_closed'
         row.update(observe(game, inputs['feeds']['games'].get(pk), as_of))
-        features = {side+'_'+name: None for side in ('home', 'away')
+        features = {side+'_'+name: (1.0 if name.endswith('_missing') else None)
+                    for side in ('home', 'away')
                     for name in LINEUP_BULLPEN_FEATURES}
         for side in ('home', 'away'):
             team = game['teams'][side]

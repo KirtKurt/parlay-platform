@@ -13,7 +13,7 @@ import re
 from ks1.features import context_history, day, number, summarize_context, utc
 from ks1.inventory import encode, RESEARCH
 from ks1.historical_starters import published_starter_index
-from ks1.historical_feed import feed_identity
+from ks1.historical_feed import feed_identity, feed_team_context
 
 VERSION = "KS1-prior-pitcher-reconstruction-v2"
 FIELDS = ("quality", "recent_form", "velocity", "command", "expected_innings")
@@ -47,6 +47,18 @@ def pregame_identity_index(bundle):
         if identity:
             for side, proof in identity['sides'].items():
                 result[(identity['game_id'], side)].append(proof)
+    for entry in bundle.get('historical_team_context', []):
+        context = feed_team_context(entry)
+        if context:
+            for side, proof in context['sides'].items():
+                if proof['probable_pitcher_id']:
+                    result[(context['game_id'], side)].append({
+                        'pitcher_id': proof['probable_pitcher_id'],
+                        'team_id': proof['team_id'],
+                        'as_of': context['as_of'],
+                        'commence_time': context['commence_time'],
+                        'source': context['source'],
+                    })
     for pk, entry in published_starter_index(bundle.get('published_predictions', [])).items():
         for side, pitcher in entry['sides'].items():
             result[(pk, side)].append({

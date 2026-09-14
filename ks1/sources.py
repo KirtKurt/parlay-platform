@@ -5,7 +5,9 @@ import json
 
 from ks1.historical_starters import load_active_historical_context, read_locked_predictions
 from ks1.inventory import Reader, RESEARCH, RECONSTRUCTED, ROOT
-from ks1.historical_feed import PREFIX as HISTORICAL_FEED_PREFIX, feed_identity
+from ks1.historical_feed import (PREFIX as HISTORICAL_FEED_PREFIX,
+                                 TEAM_CONTEXT_PREFIX as HISTORICAL_TEAM_CONTEXT_PREFIX,
+                                 feed_identity, feed_team_context)
 
 FINALS = "mlb/historical-daily-v1/official-finals/"
 ODDS = "mlb/odds-v8-shadow/"
@@ -136,6 +138,27 @@ def load_existing(cf, s3, bucket):
         historical_feeds = []
         optional_reads.append({'source':HISTORICAL_FEED_PREFIX,'status':'unavailable',
                                'error_code':type(exc).__name__})
+    historical_team_context = []
+    try:
+        def read_team_context(key):
+            try:
+                source = Reader(s3, bucket)
+                value = source.read(key)
+                entry = {**value, 'receipt': source.receipts[0]}
+                return entry if feed_team_context(entry) is not None else None
+            except Exception:
+                return None
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            historical_team_context = [entry for entry in pool.map(
+                read_team_context, sorted(reader.keys(HISTORICAL_TEAM_CONTEXT_PREFIX)))
+                if entry is not None]
+        reader.receipts.extend(entry['receipt'] for entry in historical_team_context)
+        optional_reads.append({'source':HISTORICAL_TEAM_CONTEXT_PREFIX,'status':'read',
+                               'rows':len(historical_team_context)})
+    except Exception as exc:
+        historical_team_context = []
+        optional_reads.append({'source':HISTORICAL_TEAM_CONTEXT_PREFIX,'status':'unavailable',
+                               'error_code':type(exc).__name__})
     return {"reconstructed": reconstructed, "research": research,
             "compact": compact, "full": prior["games"], "schedule": prior["schedule"],
             "current30_history_complete": prior.get("current30CoverageComplete") is True,
@@ -152,5 +175,6 @@ def load_existing(cf, s3, bucket):
             "historical_pitcher_context": historical_pitcher_context,
             "official_history_source": prior_receipt,
             "historical_pregame_feeds": historical_feeds,
+            "historical_team_context": historical_team_context,
             "source_receipts": sorted(reader.receipts, key=lambda r: (r["bucket"], r["key"])),
             "optional_reads": optional_reads}

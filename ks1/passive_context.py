@@ -15,14 +15,14 @@ from decimal import Decimal
 from ks1.features import utc
 from ks1.inventory import encode
 
-CONTRACT = "KS1-lineup-bullpen-profile-v1"
+CONTRACT = "KS1-lineup-bullpen-profile-v2"
 TEAM_CONTEXT_VERSION = "MLB-STATSAPI-TEAM-CONTEXT-v1-prelock-observations"
 BATTING_VERSION = "MLB-LINEUP-SEASON-BATTING-v1-passive-observations"
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 SLOT_WEIGHTS = (1.00, .98, .96, .94, .92, .90, .88, .86, .84)
-LINEUP_FEATURES = ("lineup_quality_ops", "lineup_quality_obp", "lineup_quality_slg",
-                   "lineup_top4_ops", "lineup_2_5_ops", "lineup_observed_batters",
-                   "lineup_total_pa") + tuple(
+LINEUP_VALUE_FEATURES = ("lineup_quality_ops", "lineup_quality_obp", "lineup_quality_slg",
+                         "lineup_top4_ops", "lineup_2_5_ops", "lineup_observed_batters",
+                         "lineup_total_pa") + tuple(
     f"lineup_{metric}_{window}"
     for window in ("7d", "30d")
     for metric in ("ops", "obp", "slg", "iso", "k_pct", "bb_pct", "k_bb_pct",
@@ -32,7 +32,7 @@ LINEUP_FEATURES = ("lineup_quality_ops", "lineup_quality_obp", "lineup_quality_s
     f"lineup_{metric}_{label}"
     for label in ("prior_year", "talent")
     for metric in ("ops", "obp", "slg", "iso", "k_pct", "bb_pct", "k_bb_pct"))
-BULLPEN_FEATURES = tuple(
+BULLPEN_VALUE_FEATURES = tuple(
     f"bullpen_context_{metric}_{window}d"
     for window in (7, 15, 30)
     for metric in ("era", "whip", "ra9", "wins", "losses", "fip", "k_pct",
@@ -45,6 +45,10 @@ BULLPEN_FEATURES = tuple(
      "bullpen_context_platoon_coverage", "bullpen_context_available_quality",
      "bullpen_context_quality", "bullpen_context_command",
      "bullpen_context_expected_innings", "bullpen_context_early_exit_quality")
+LINEUP_MISSING_FEATURES = tuple(name+"_missing" for name in LINEUP_VALUE_FEATURES)
+BULLPEN_MISSING_FEATURES = tuple(name+"_missing" for name in BULLPEN_VALUE_FEATURES)
+LINEUP_FEATURES = LINEUP_VALUE_FEATURES + LINEUP_MISSING_FEATURES
+BULLPEN_FEATURES = BULLPEN_VALUE_FEATURES + BULLPEN_MISSING_FEATURES
 MODEL_FEATURES = LINEUP_FEATURES + BULLPEN_FEATURES
 
 
@@ -149,6 +153,13 @@ def _lineup_features(samples):
     }
 
 
+def with_missingness(values, names):
+    """Bind every nullable feature to an explicit observed/missing indicator."""
+    result = {name: values.get(name) for name in names}
+    result.update({name+"_missing": float(values.get(name) is None) for name in names})
+    return result
+
+
 def build_profile(stored, game, row, as_of, history, history_as_of=None,
                   statcast_as_of=None, history_coverage=None):
     """Validate one exact persisted observation and bind it to a KS1 game."""
@@ -207,9 +218,11 @@ def build_profile(stored, game, row, as_of, history, history_as_of=None,
             game_date=scheduled_game_date)
             if hasattr(history, "lineup_batters_at") else ([], {}))
         lineup_values.update(batter_features)
+        lineup_values = with_missingness(lineup_values, LINEUP_VALUE_FEATURES)
         bullpen_values = dict(history.bullpen_roster_at(
             as_of, row[side+"_id"], roster_ids, game_date=scheduled_game_date))
         reliever_profiles = bullpen_values.pop("_reliever_profiles", [])
+        bullpen_values = with_missingness(bullpen_values, BULLPEN_VALUE_FEATURES)
         features.update({side+"_"+key: value for key, value in {**lineup_values, **bullpen_values}.items()})
         sides[side] = {"team_id": row[side+"_id"], "lineup_ids": ids,
                        "opposing_starter_id": row.get(opposing+"_starter_id"),

@@ -523,6 +523,32 @@ def test_stale_previous_and_unbound_cache_fail_before_inference(capture):
     assert calls == [2]
 
 
+def test_missing_passive_context_reaches_model_as_explicit_missingness(capture, monkeypatch):
+    folder, output, _, _ = capture
+    seen = []
+
+    class MissingContextClassifier:
+        def feature_name(self):
+            return ['home_lineup_ops_30d_missing',
+                    'away_bullpen_context_fip_30d_missing']
+
+        def predict(self, values, pred_contrib=False):
+            seen.append(values.copy())
+            if pred_contrib:
+                return np.column_stack((np.zeros((len(values), 2)),
+                                        np.zeros(len(values))))
+            return np.full(len(values), .55)
+
+    monkeypatch.setattr(daily.lgb, 'Booster', lambda **kwargs: MissingContextClassifier())
+    table, report, _ = daily.predict(folder, output)
+    assert len(table) == 2
+    assert len(seen) >= 1
+    assert (seen[0].to_numpy() == 1.0).all()
+    assert report['lineup_bullpen_profile_rows'] == 0
+    assert all('FAIL_CLOSED' in value
+               for value in table['lineup_bullpen_profile_status'].to_pylist())
+
+
 def test_feed_collection_is_bounded_and_missing_feed_is_optional(capture):
     _, _, _, games = capture; calls = []
     def requester(provider, base, path, params):

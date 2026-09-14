@@ -74,6 +74,10 @@ def test_builds_checksum_bound_profile_and_supported_features():
     assert "bullpen_SIERA" in profile["unavailable_fields"]
     assert features["home_lineup_observed_batters"] == 9
     assert features["away_bullpen_context_unknown_count"] == 5
+    assert features["home_lineup_observed_batters_missing"] == 0
+    assert features["away_bullpen_context_unknown_count_missing"] == 0
+    assert features["home_lineup_xwoba_7d_missing"] == 1
+    assert features["away_bullpen_context_fip_30d_missing"] == 1
     claimed = profile.pop("sha256")
     assert hashlib.sha256(encode(profile)).hexdigest() == claimed
     assert len(history.calls) == 2
