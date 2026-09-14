@@ -12,6 +12,7 @@ from ks1.features import Features, day, number, starter_matchup, utc
 from ks1.historical_starters import published_starter_index
 from ks1.inventory import encode
 from ks1.passive_context import MODEL_FEATURES as LINEUP_BULLPEN_FEATURES, published_profile_index
+from ks1.starter_identity import published_starter_index as fixture_starter_index
 
 VERSION = "KS1-game-table-v1"
 
@@ -110,6 +111,9 @@ def build(bundle, selected_date=None):
         if s.get("originalObservation") is True and s.get("outcomeKnownAtCapture") is False:
             snapshots[str(s["officialGamePk"])].append(s)
     published_starters = published_starter_index(bundle.get("published_predictions", []))
+    published_by_game = defaultdict(list)
+    for entry in bundle.get("published_predictions", []):
+        published_by_game[str((entry.get("row") or {}).get("game_id") or "")].append(entry)
     published_team_context = published_profile_index(bundle.get("published_predictions", []))
     historical_context = bundle.get("historical_pitcher_context", {})
     history = Features(list(games.values()), bundle.get("statcast", []),
@@ -172,10 +176,17 @@ def build(bundle, selected_date=None):
             cutoff = snapshot["capturedAtUtc"]
         # Snapshot fields and a later immutable KS1 starter profile are
         # independent evidence. Preserve both when both were known by T-10.
-        published = published_starters.get(pk, {})
+        published = fixture_starter_index(
+            published_by_game[pk],
+            fixtures=[{"game_id": pk, "date": date, "commence_time": start}]).get(pk, {})
         published_problem = None
-        if published and utc(published["commence_time"]) != utc(start):
-            published_problem, published = "published_starter_start_mismatch", {}
+        # The unfiltered index is only for diagnostics; it must never mask an
+        # earlier candidate that matches this fixture's date and start.
+        unmatched = published_starters.get(pk, {}) if not published else {}
+        if unmatched and utc(unmatched["commence_time"]) != utc(start):
+            published_problem = "published_starter_start_mismatch"
+        elif unmatched and unmatched.get("date") != date:
+            published_problem = "published_starter_date_mismatch"
         if published:
             cutoff = (max(utc(cutoff), utc(published["as_of"])).isoformat()
                       if snapshot else published["as_of"])
