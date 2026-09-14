@@ -172,6 +172,44 @@ def test_incomplete_pitcher_history_masks_derived_context(capture, monkeypatch):
     assert seen[0].isna().all().all()
 
 
+def test_savant_delay_preserves_verified_official_pitcher_results(capture):
+    from tests.ks1_recent.test_recent import full_game
+    folder, output, _, games = capture
+    stats = {'outs': 18, 'earnedRuns': 2, 'runs': 3, 'hits': 4,
+             'homeRuns': 1, 'baseOnBalls': 2, 'hitBatsmen': 1,
+             'strikeOuts': 7, 'battersFaced': 25, 'wins': 1, 'losses': 0,
+             'gamesStarted': 1, 'numberOfPitches': 90}
+    history = []
+    for pk, date in ((11, '2026-09-09'), (12, '2026-09-04'), (13, '2026-08-30')):
+        game = full_game(pk, date, 101, stats)
+        for side in ('home', 'away'):
+            game['teams'][side]['team'] = games[0]['teams'][side]['team']
+        history.append(game)
+    payload = {'games': history, 'prior_observed_at': AT,
+               'current30_history_complete': True, 'current_year_history_complete': True,
+               'prior_year_history_complete': True, 'statcast_coverage_complete': False,
+               'current_year_statcast_complete': False, 'prior_year_statcast_complete': False}
+    path = folder/'history.json.gz'
+    path.write_bytes(gzip.compress(encode(payload), mtime=0)); seal(folder)
+    rows, _, _ = daily.predict(folder, output)
+    profile = json.loads(rows.to_pylist()[0]['starter_profile_json'])['sides']['home']
+    for window, wins in (('7d', 2), ('30d', 3), ('last3', 3)):
+        assert profile['metrics']['era_'+window] == 3
+        assert profile['metrics']['ra9_'+window] == 4.5
+        assert profile['metrics']['wins_'+window] == wins
+        assert profile['metrics']['fip_'+window] is not None
+        assert profile['metrics']['velocity_'+window] is None
+        assert profile['metrics']['xfip_'+window] is None
+        assert profile['results_window_statuses'][window] == 'COMPLETE'
+        assert profile['window_statuses'][window] == 'SOURCE_INCOMPLETE'
+    payload['current30_history_complete'] = False
+    path.write_bytes(gzip.compress(encode(payload), mtime=0)); seal(folder)
+    rows, _, _ = daily.predict(folder, output)
+    profile = json.loads(rows.to_pylist()[0]['starter_profile_json'])['sides']['home']
+    assert profile['metrics']['era_30d'] is None
+    assert profile['results_window_statuses']['30d'] == 'SOURCE_INCOMPLETE'
+
+
 def test_profile_semantics_refresh_but_audit_timestamp_does_not():
     row = {'game_id': '1', 'starter_profile_semantic_sha256': 'semantic-one',
            'starter_profile_sha256': 'full-one', 'starter_profile_json': '{"as_of":"one"}',
