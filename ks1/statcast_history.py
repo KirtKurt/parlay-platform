@@ -119,7 +119,19 @@ def load_training_statcast(bundle, s3, bucket):
     rows.extend(row for row in bundle.get('statcast', [])
                 if str(row.get('game_pk')) not in loaded_games)
     bundle['statcast'] = rows
-    bundle['statcast_retained_dates'] = verified
+    # The compact source can already contain recent dates whose complete pitch
+    # rows were reconciled by ingestion.  A historical load may cover only a
+    # subset of seasons (for example, when the current official season is not
+    # globally complete), so replacing this set would discard valid coverage
+    # for rows that remain in ``bundle['statcast']`` above.
+    # For dates in the historical range, this load is authoritative: do not
+    # restore a compact date that was rejected against the current schedule or
+    # official pitch counts. Dates outside the range were not examined here and
+    # retain their ingestion-time verification.
+    existing_outside_range = (
+        set(bundle.get('statcast_retained_dates', ())) - set(expected_dates))
+    bundle['statcast_retained_dates'] = sorted(
+        existing_outside_range | set(verified))
     # Preserve the existing global source-completeness gates. Individual
     # windows additionally require every date in statcast_retained_dates.
     bundle['source_receipts'].extend(receipts)
