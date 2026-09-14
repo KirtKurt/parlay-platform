@@ -85,6 +85,8 @@ jobs:
             exit 1
           fi
       - name: Deploy isolated soccer_auto stack
+        env:
+          SOCCER_BBD_KEY: ${{ secrets.BBD_API_KEY }}
         run: |
           set -euo pipefail
           soccer_llm_model_id=us.amazon.nova-2-lite-v1:0
@@ -96,6 +98,7 @@ jobs:
             --capabilities CAPABILITY_IAM \
             --parameter-overrides \
               OddsApiKey="${{ secrets.ODDS_API_KEY }}" \
+              BbdApiKey="$SOCCER_BBD_KEY" \
               EnableHistoricalBackfill="true" \
               SharedQuotaReservePercent="${{ inputs.shared_quota_reserve_percent || '0' }}" \
               QuotaRaceBufferCredits="2000" \

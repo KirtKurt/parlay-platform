@@ -59,6 +59,11 @@ class BbdClient:
         payload = json.loads(raw.decode("utf-8") or "{}")
         if not isinstance(payload, dict):
             raise BbdError("BBD payload must be an object")
+        envelope = payload
+        while isinstance(envelope, dict):
+            if envelope.get("error") is not None:
+                raise BbdError("BBD error envelope")
+            envelope = envelope.get("data")
         return payload
 
     def list_matches(self, league: str, *, limit: int = 50) -> list[dict[str, Any]]:

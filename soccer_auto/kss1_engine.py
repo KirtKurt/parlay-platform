@@ -97,7 +97,7 @@ def blend_with_market(grid: list[list[float]], market_1x2: dict[str, float] | No
     return [[cell / total for cell in row] for row in out]
 
 
-def predict_match(payload: dict[str, Any]) -> dict[str, Any]:
+def predict_match(payload: dict[str, Any], *, goals_model=None, goals_features=None) -> dict[str, Any]:
     mapping = map_event(
         odds_event_id=str(payload.get("odds_event_id") or payload.get("event_id") or ""),
         sport_key=str(payload.get("sport_key") or ""),
@@ -120,8 +120,16 @@ def predict_match(payload: dict[str, Any]) -> dict[str, Any]:
         xg_home=payload.get("xg_home"),
         xg_away=payload.get("xg_away"),
     )
+    if goals_model is not None:
+        from .kss1_goals_model import rates
+        if goals_features is None:
+            raise ValueError("trained goals model requires frozen features")
+        lam, mu = rates(goals_model, goals_features)
+        has_xg = bool(goals_model["use_xg"] and goals_features["xg_complete"])
     grid = score_matrix(lam, mu)
-    grid = blend_with_market(grid, payload.get("market_1x2"))
+    # A fitted model must use exactly the inference evaluated on its holdout.
+    if goals_model is None:
+        grid = blend_with_market(grid, payload.get("market_1x2"))
     markets = apply_abstain(markets_from_grid(grid), min_1x2=0.40, min_other=0.51)
     if mapping.get("publish_ou_btts") is not True:
         markets["ou25_published"] = "ABSTAIN"
@@ -136,16 +144,17 @@ def predict_match(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "engine_id": ENGINE_ID,
         "engine_lock_version": ENGINE_LOCK_VERSION,
+        "goals_model_digest": goals_model["model_digest"] if goals_model else None,
         "authority": AUTHORITY,
         "public_horizon": PUBLIC_HORIZON,
         "lambda_home": lam,
         "lambda_away": mu,
         "has_xg": has_xg,
-        # Coverage describes supplied values, not validated source provenance.
-        # The current shadow writer has no team-strength/xG source integration.
+        # Learned coverage comes from the shared receipt-bearing feature set.
+        # Legacy callers only report the numeric values they supplied.
         "input_coverage": {
             "defaulted_fields": defaulted,
-            "team_strength_complete": not any(
+            "team_strength_complete": goals_features["team_strength_complete"] if goals_features else not any(
                 key in defaulted for key in ("home_attack", "away_attack", "home_defence", "away_defence")
             ),
             "xg_complete": has_xg,

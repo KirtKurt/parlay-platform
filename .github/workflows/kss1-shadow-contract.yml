@@ -7,12 +7,17 @@ on:
       - 'soccer_auto/**'
       - 'tests/soccer_auto/**'
       - 'docs/KSS1_ENGINE.md'
+      - 'soccer-auto-template.yaml'
+      - 'scripts/train_kss1_goals.py'
+      - 'scripts/kss1_open_data_research.py'
       - '.github/workflows/kss1-shadow-contract.yml'
   push:
     branches: [main]
     paths:
       - 'soccer_auto/**'
       - 'tests/soccer_auto/**'
+      - 'soccer-auto-template.yaml'
+      - 'scripts/train_kss1_goals.py'
       - '.github/workflows/kss1-shadow-contract.yml'
 
 permissions:
@@ -39,4 +44,5 @@ jobs:
         run: |
           git rev-parse HEAD
           python -m compileall -q soccer_auto
+          python -m py_compile scripts/train_kss1_goals.py scripts/kss1_open_data_research.py
           python -m pytest -q tests/soccer_auto

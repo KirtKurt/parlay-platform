@@ -1144,6 +1144,9 @@ def api_handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
         store = SoccerStore()
         path = str(event.get("rawPath") or event.get("path") or "")
         params = event.get("queryStringParameters") or {}
+        if path == "/v1/soccer-auto/kss1":
+            from .kss1_training_runtime import goals_status
+            return _response(200, goals_status(store))
         if path == "/v1/soccer-auto/status":
             return _response(200, status(store))
         if path == "/v1/soccer-auto/predictions":
