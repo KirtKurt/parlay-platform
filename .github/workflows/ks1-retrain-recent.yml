@@ -12,9 +12,9 @@ permissions:
   contents: read
 concurrency:
   group: ks1-retrain-recent-${{ github.ref }}
-  # A new PR head supersedes its retrospective artifact; do not let the old,
-  # slower rebuild block validation of the repaired indexed implementation.
-  cancel-in-progress: true
+  # Superseded PR checks may stop, but main backfills must finish so concurrent
+  # KS1 repairs cannot repeatedly discard the historical comparison.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   verify-training:
     runs-on: ubuntu-latest
