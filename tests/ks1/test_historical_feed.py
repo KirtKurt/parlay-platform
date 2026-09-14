@@ -200,7 +200,16 @@ def test_historical_team_context_enters_table_with_explicit_missingness():
     assert row['home_bullpen_context_roster_count_missing'] == 0
 
 
-def test_historical_team_context_fails_closed_on_incomplete_history():
+@pytest.mark.parametrize('gap_date, gap_team, expected_incomplete', [
+    (None, None, True),
+    ('2026-04-01', 'home', True),  # outside the old 75-day check
+    ('2025-04-01', 'home', True),  # prior-year talent/shrink inputs
+    ('2025-04-01', 'Unmapped former team', True),  # traded-player histories
+    ('2024-04-01', 'home', False),  # outside consumed seasons
+    ('2026-09-01', 'home', False),  # unavailable future gap
+])
+def test_historical_team_context_fails_closed_on_incomplete_history(
+        gap_date, gap_team, expected_incomplete):
     games = history()+[full_game(99, '2026-08-11', 999, STATS)]
     schedule = {'gamePk':99,'gameDate':'2026-08-11T20:00:00Z','gameType':'R',
                 'teams':{s:{'team':games[-1]['teams'][s]['team']} for s in ('home','away')},
@@ -213,8 +222,15 @@ def test_historical_team_context_fails_closed_on_incomplete_history():
               'prior_year_history_complete':True,
               'statcast_coverage_complete':True,
               'current_year_statcast_complete':True,
-              'prior_year_statcast_complete':False}
+              'prior_year_statcast_complete':gap_date is not None}
+    if gap_date:
+        bundle['finals'] = [{'officialGamePk': 12345, 'officialDate': gap_date,
+                             'completed': True, 'homeTeam': gap_team,
+                             'awayTeam': 'Unmapped away team'}]
     row = build(bundle)[0].to_pylist()[0]
+    if not expected_incomplete:
+        assert row['lineup_bullpen_context_evidence'] == 'historical_timecoded_mlb_feed'
+        return
     assert row['lineup_bullpen_context_evidence'] is None
     assert row['historical_lineup_bullpen_context_status'] == 'HISTORY_INCOMPLETE_FAIL_CLOSED'
     assert row['home_lineup_ops_30d'] is None

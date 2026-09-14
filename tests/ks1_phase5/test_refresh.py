@@ -428,6 +428,43 @@ def test_frozen_rows_do_not_change_or_rescore_after_cutoff(capture):
     assert first.equals(second) and calls == [2] and report['preserved_pregame_rows'] == 2
 
 
+@pytest.mark.parametrize('contract, embedded_contract, valid', [
+    ('KS1-lineup-bullpen-profile-v1', 'KS1-lineup-bullpen-profile-v1', True),
+    ('KS1-lineup-bullpen-profile-v2', 'KS1-lineup-bullpen-profile-v2', True),
+    ('KS1-lineup-bullpen-profile-v99', 'KS1-lineup-bullpen-profile-v99', False),
+    ('KS1-lineup-bullpen-profile-v2', 'KS1-lineup-bullpen-profile-v1', False),
+])
+def test_frozen_profile_versions_are_preserved_and_contract_bound(
+        capture, contract, embedded_contract, valid):
+    folder, output, calls, _ = capture
+    first, _, out = daily.predict(folder, output)
+    rows = first.to_pylist()
+    for row in rows:
+        profile = {'contract': embedded_contract, 'game_id': row['game_id'],
+                   'as_of': row['as_of'], 'sides': {}}
+        profile['semantic_sha256'] = hashlib.sha256(encode(
+            {k: v for k, v in profile.items() if k != 'as_of'})).hexdigest()
+        profile['sha256'] = hashlib.sha256(encode(profile)).hexdigest()
+        row.update(lineup_bullpen_profile_contract=contract,
+                   lineup_bullpen_profile_sha256=profile['sha256'],
+                   lineup_bullpen_profile_semantic_sha256=profile['semantic_sha256'],
+                   lineup_bullpen_profile_json=encode(profile).decode())
+    frozen = pa.Table.from_pylist(rows, schema=first.schema)
+    body = parquet_bytes(frozen)
+    (out/'predictions.parquet').write_bytes(body)
+    advance(folder, out, DATE+'T19:51:00+00:00')
+    if valid:
+        second, report, _ = daily.predict(folder, output)
+        assert second.equals(frozen)
+        assert (out/'predictions.parquet').read_bytes() == body
+        assert report['preserved_pregame_rows'] == 2
+    else:
+        with pytest.raises(ValueError, match='lineup/bullpen profile binding failed'):
+            daily.predict(folder, output)
+        assert (out/'predictions.parquet').read_bytes() == body
+    assert calls == [2]
+
+
 @pytest.mark.parametrize('mutation', [
     {'codedGameState': 'I'}, {'statusCode': 'I'}, {'detailedState': 'In Progress'},
     {'codedGameState': 'T', 'statusCode': 'T', 'detailedState': 'Suspended'},

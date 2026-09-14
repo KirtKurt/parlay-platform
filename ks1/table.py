@@ -162,12 +162,14 @@ def build(bundle, selected_date=None):
         for name in names:
             name_to_ids[name].add(tid)
     missing_boxes = defaultdict(list)
+    missing_official_dates = set()
     for pk, entries in finals.items():
         if pk in games:
             continue
         for entry in entries:
             if not entry.get("officialDate") or entry.get("completed") is not True:
                 continue
+            missing_official_dates.add(entry["officialDate"])
             for side in ("home", "away"):
                 ids = name_to_ids.get(entry.get(side+"Team"), set())
                 if len(ids) == 1:
@@ -395,7 +397,14 @@ def build(bundle, selected_date=None):
                 historical_team['sides'][side]['probable_pitcher_id'] in (
                     None, row.get(side+'_starter_id'))
                 for side in ('home', 'away'))
+            # Player talent uses current/prior seasons, including games before
+            # a trade. A team's recent 75-day gap check cannot prove those
+            # histories complete; unmapped-team gaps must fail closed too.
+            missing_player_history = any(
+                f'{cutoff_day.year-1}-01-01' <= date < str(cutoff_day)
+                for date in missing_official_dates)
             incomplete_team_history = (not team_context_history_complete
+                                       or missing_player_history
                                        or any(row.get(side+'_history_status')
                                               == 'partial_known_missing_boxes'
                                               for side in ('home', 'away')))
