@@ -84,6 +84,26 @@ def _snapshot_problem(value,game):
                 'snapshotFingerprint':digest(value)}
 
 
+def prior_year_profiles(sources, rows, prior_year):
+    """Build reusable prior-year pitcher physics independently of current-year lag."""
+    engine=Features([g for g in sources
+                     if utc(g['startAtUtc']).astimezone(source.ET).date().year==prior_year],
+                    rows,statcast_complete=True)
+    appearances={}
+    for row in engine.rows:
+        for player in row['players']:
+            if number(player['stats'].get('gamesStarted'))==1:
+                appearances.setdefault(player['id'],[]).append((row['game_id'],player['stats']))
+    profiles={}
+    for pitcher,pairs in appearances.items():
+        expected=sum(number(stats.get('numberOfPitches')) for _,stats in pairs) if all(
+            number(stats.get('numberOfPitches')) is not None for _,stats in pairs) else None
+        profile=engine.statcast(pitcher,{game_id for game_id,_ in pairs},expected)
+        if profile['complete']==1:
+            profiles[pitcher]=profile
+    return profiles
+
+
 def ingest(store,seconds=2400):
     started=now();deadline=time.monotonic()+seconds
     owner=store.acquire('ingestion',seconds+120)
@@ -161,23 +181,12 @@ def ingest(store,seconds=2400):
         current_year_complete={d.isoformat() for d in current_year_dates}.issubset(complete_dates)
         prior_complete={d.isoformat() for d in prior_dates}.issubset(complete_dates)
         prior_profiles={};last_start_rows=[]
-        if (prior_complete and current_year_complete and prior['priorYearCoverageComplete']
-                and prior['currentYearCoverageComplete']):
+        if prior_complete and prior['priorYearCoverageComplete']:
             prior_rows=[row for value in sorted(d.isoformat() for d in prior_dates)
                         for row in statcast_by_date.get(value,())]
-            engine=Features([g for g in sources if utc(g['startAtUtc']).astimezone(source.ET).date().year==prior_year],
-                            prior_rows,statcast_complete=True)
-            appearances={}
-            for row in engine.rows:
-                for player in row['players']:
-                    if number(player['stats'].get('gamesStarted'))==1:
-                        appearances.setdefault(player['id'],[]).append((row['game_id'],player['stats']))
-            for pitcher,pairs in appearances.items():
-                expected=sum(number(stats.get('numberOfPitches')) for _,stats in pairs) if all(
-                    number(stats.get('numberOfPitches')) is not None for _,stats in pairs) else None
-                profile=engine.statcast(pitcher,{game_id for game_id,_ in pairs},expected)
-                if profile['complete']==1:
-                    prior_profiles[pitcher]=profile
+            prior_profiles=prior_year_profiles(sources,prior_rows,prior_year)
+        if (prior_complete and current_year_complete and prior['priorYearCoverageComplete']
+                and prior['currentYearCoverageComplete']):
             all_rows=[row for value in sorted(d.isoformat() for d in prior_dates|current_year_dates)
                       for row in statcast_by_date.get(value,())]
             all_engine=Features(sources,all_rows,statcast_complete=True)
