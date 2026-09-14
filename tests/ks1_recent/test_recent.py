@@ -18,7 +18,7 @@ def test_recent_validation_credentials_are_restricted_to_trusted_branch():
     assert "github.event_name == 'schedule'" in workflow_text
     assert "github.event_name == 'workflow_dispatch'" in workflow_text
     assert "github.ref == 'refs/heads/main'" in workflow_text
-    assert 'cancel-in-progress: true' in workflow_text
+    assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in workflow_text
 
 
 @pytest.mark.parametrize(('event', 'ref', 'head', 'authorized'), [
