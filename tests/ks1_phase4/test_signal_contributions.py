@@ -1,10 +1,13 @@
 """Live proof must distinguish performance from missing-data effects."""
 import lightgbm as lgb
+import hashlib
 import numpy as np
 import pandas as pd
 import pytest
+import pyarrow as pa
 
-from ks1.daily import signal_contributions
+from ks1.daily import signal_contributions, publication_proof
+from ks1.publish import parquet_bytes
 
 
 @pytest.fixture
@@ -62,3 +65,25 @@ def test_rejects_contributions_for_a_different_prediction(fitted, monkeypatch):
     monkeypatch.setattr(model, 'predict', corrupt)
     with pytest.raises(ValueError, match='do not reconstruct'):
         signal_contributions(model, frame.iloc[:2])
+
+
+def test_publication_proof_uses_verified_post_calibration_bytes(tmp_path):
+    # The raw classifier output differs from the official calibrated probability.
+    body = parquet_bytes(pa.Table.from_pylist([{
+        'date': '2026-09-14', 'game_id': '123', 'p_home': .56789123456789,
+        'p_raw': .6, 'as_of': '2026-09-14T17:00:00Z',
+    }]))
+    (tmp_path/'predictions.parquet').write_bytes(body)
+    report = {'as_of': '2026-09-14T17:01:00Z', 'published': True,
+              'publication': {'readback_verified': True},
+              'parquet_sha256': hashlib.sha256(body).hexdigest()}
+    proof = publication_proof(tmp_path, report)
+    assert proof['rows'][0]['p_home'] == .56789123456789
+    assert proof['rows'][0]['p_raw'] == .6
+    assert proof['rows'][0]['as_of'] != proof['publication_as_of']
+    assert proof['rows'][0]['team_context'] == {}
+    assert proof['rows'][0]['signal_contributions'] is None
+    with pytest.raises(ValueError, match='requires successful AWS readback'):
+        publication_proof(tmp_path, dict(report, published=False))
+    with pytest.raises(ValueError, match='hash mismatch'):
+        publication_proof(tmp_path, dict(report, parquet_sha256='0'*64))

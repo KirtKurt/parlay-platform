@@ -778,6 +778,34 @@ def publish(s3, bucket, table, report, output, *, calibration='temperature', pla
     return {'bucket': bucket, 'prefix': prefix, 'write_keys': writes, 'readback_verified': True}
 
 
+def publication_proof(output, report):
+    """Expose exact published rows for review only after successful readback."""
+    if not (report.get('published') and report.get('publication', {}).get('readback_verified')):
+        raise ValueError('publication proof requires successful AWS readback')
+    body = (output/'predictions.parquet').read_bytes()
+    if hashlib.sha256(body).hexdigest() != report['parquet_sha256']:
+        raise ValueError('publication proof hash mismatch')
+    rows = pq.read_table(io.BytesIO(body)).to_pylist()
+    columns = ('date', 'game_id', 'home_team', 'away_team', 'commence_time', 'as_of',
+               'model_version', 'p_home', 'p_raw', 'lineup_status', 'prediction_status',
+               'home_starter_id', 'away_starter_id', 'home_lineup_ids', 'away_lineup_ids',
+               'lineup_bullpen_profile_status', 'lineup_bullpen_profile_sha256')
+    proof_rows = []
+    for row in rows:
+        item = {key: row.get(key) for key in columns}
+        item['signal_contributions'] = (json.loads(row['signal_contributions_json'])
+                                         if row.get('signal_contributions_json') else None)
+        profile = json.loads(row['lineup_bullpen_profile_json']) if row.get('lineup_bullpen_profile_json') else {}
+        item['team_context'] = {
+            side: {key: value.get(key) for key in ('lineup_ids', 'bullpen_roster_ids',
+                   'opposing_starter_id', 'opposing_starter_pitch_hand', 'availability_status')}
+            for side, value in profile.get('sides', {}).items()}
+        proof_rows.append(item)
+    return {'kind': 'KS1_verified_publication_rows', 'publication_as_of': report['as_of'],
+            'parquet_sha256': report['parquet_sha256'], 'readback_verified': True,
+            'rows': proof_rows}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--inputs', type=Path, required=True)
@@ -797,6 +825,9 @@ def main():
         (output/'report.json').write_bytes(encode(report))
         (output/'publication.json').write_bytes(encode(result))
         print(json.dumps(result))
+        proof = publication_proof(output, report)
+        (output/'publication_proof.json').write_bytes(encode(proof))
+        print(json.dumps(proof, indent=2))
 
 
 if __name__ == '__main__':
