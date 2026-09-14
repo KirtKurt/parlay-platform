@@ -12,7 +12,7 @@ import numpy as np
 from ks1.features import utc
 from ks1.historical_starters import read_locked_predictions
 from ks1.inventory import encode
-from ks1.platt import identity, raw_model_version, temperature_identity
+from ks1.platt import grading_model_versions, identity, raw_model_version, temperature_identity
 
 PREFIX = 'mlb/ks1/predictions-v1/'
 
@@ -41,7 +41,8 @@ def capture(s3, bucket, as_of, prior, final_sources):
         if kind in found:
             continue
         model = json.loads(s3.get_object(Bucket=bucket, Key=key)['Body'].read())
-        if model.get('fitted_at') is None or utc(model['fitted_at']) <= utc(as_of):
+        if (model.get('raw_model_version') == raw_model_version() and
+                (model.get('fitted_at') is None or utc(model['fitted_at']) <= utc(as_of))):
             models[kind] = model; found.add(kind)
     from ks1.calibration_store import latest_checkpoint
     checkpoint = latest_checkpoint(s3, bucket, as_of)
@@ -49,14 +50,16 @@ def capture(s3, bucket, as_of, prior, final_sources):
         # The nightly commit is authoritative even when today's slate is empty
         # or a later hourly prediction file still contains an older model copy.
         for kind in models:
-            models[kind] = checkpoint['state'][kind+'_model']
+            model = checkpoint['state'][kind+'_model']
+            if model.get('raw_model_version') == raw_model_version():
+                models[kind] = model
     return {'system': 'KS1', 'as_of': as_of, 'locked': locked, 'finals': finals,
             'inventory': inventory, 'final_sources': final_sources, 'platt_model': models['platt'], 'temperature_model': models['temperature'],
             'committed_ledger': checkpoint['ledger'] if checkpoint else None,
             'aws_writes': 0, 'provider_calls': 0}
 
 
-def dataset(capture):
+def dataset(capture, *, include_predecessors=False):
     if capture.get('system') != 'KS1' or capture.get('errors'):
         raise ValueError('invalid KS1 calibration capture')
     as_of = capture['as_of']
@@ -65,7 +68,8 @@ def dataset(capture):
     for entry in capture['locked']:
         row, proof = entry['row'], entry['evidence']
         pk = str(row['game_id'])
-        if row['model_version'] != raw_model_version() or row.get('official_probability_field', 'p_home') != 'p_home':
+        versions = grading_model_versions() if include_predecessors else {raw_model_version()}
+        if row['model_version'] not in versions or row.get('official_probability_field', 'p_home') != 'p_home':
             excluded.append({'game_id': pk, 'reason': 'different_raw_model_or_official_engine'}); continue
         final = capture['finals'].get(pk)
         if not final or not capture.get('final_sources'):

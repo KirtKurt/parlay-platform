@@ -61,6 +61,63 @@ def checkpoint(store, at=NOW):
     return latest_checkpoint(store, 'test', (utc(at)+timedelta(minutes=1)).isoformat())
 
 
+@pytest.mark.parametrize('at', ['2026-09-11T08:00:00Z', '2026-09-12T07:00:00Z'])
+def test_reviewed_model_transition_preserves_old_grades_and_calibrates_only_new_model(
+        main_job, tmp_path, monkeypatch, at):
+    store = Store()
+    run(source(35), tmp_path/'before', store)
+    old = checkpoint(store)
+    old_bytes = deepcopy(store.objects)
+    old_version = platt.raw_model_version()
+    old_late = source(36, at)
+    new_version = 'KS1-LGB-aaaaaaaaaaaa-DP-bbbbbbbbbbbb'
+    for module in (platt, nightly, platt_inputs):
+        monkeypatch.setattr(module, 'raw_model_version', lambda: new_version)
+    for module in (nightly, platt_inputs):
+        monkeypatch.setattr(module, 'grading_model_versions', lambda: {old_version, new_version})
+    new_source = source(37, at)
+    # One late predecessor grade and one newly promoted-model grade.
+    old_late['locked'].append(new_source['locked'][-1])
+    old_late['finals']['36'] = new_source['finals']['36']
+    report = run(old_late, tmp_path/'after', store, old)
+    after = checkpoint(store, at)
+    assert report['ledger_rows'] == 37 and report['new_grades'] == 2
+    assert after['ledger']['rows'][:35] == old['ledger']['rows']
+    assert after['ledger']['rows'][35]['raw_model_version'] == old_version
+    assert after['ledger']['rows'][36]['raw_model_version'] == new_version
+    assert all(store.objects[k] == v for k, v in old_bytes.items())
+    assert after['state']['temperature_model']['T'] == 1
+    assert after['state']['temperature_model']['n'] == 0
+    assert after['state']['temperature_model']['raw_model_version'] == new_version
+    assert after['state']['platt_model']['raw_model_version'] == new_version
+    if report['status'] == 'completed':
+        assert report['calibration_model_rows'] == 1
+    monkeypatch.setattr(platt_inputs, 'read_locked_predictions', lambda *a: ([], {}))
+    captured = platt_inputs.capture(store, 'test', (utc(at)+timedelta(minutes=2)).isoformat(), {'games': []}, [])
+    assert captured['temperature_model']['raw_model_version'] == new_version
+    assert len(captured['committed_ledger']['rows']) == 37
+
+
+def test_unreviewed_model_cannot_enter_grading_ledger():
+    ledger = nightly.build_ledger(source(1))
+    ledger['rows'][0]['raw_model_version'] = 'KS1-LGB-aaaaaaaaaaaa-DP-bbbbbbbbbbbb'
+    with pytest.raises(ValueError, match='unreviewed model'):
+        nightly.ledger_rows(ledger, NOW)
+
+
+def test_capture_discards_previous_models_calibration_after_promotion(main_job, tmp_path, monkeypatch):
+    store = Store()
+    run(source(35), tmp_path, store)
+    new_version = 'KS1-LGB-aaaaaaaaaaaa-DP-bbbbbbbbbbbb'
+    for module in (platt, platt_inputs):
+        monkeypatch.setattr(module, 'raw_model_version', lambda: new_version)
+    monkeypatch.setattr(platt_inputs, 'read_locked_predictions', lambda *a: ([], {}))
+    captured = platt_inputs.capture(store, 'test', '2026-09-11T08:00:00Z', {'games': []}, [])
+    assert captured['temperature_model'] == platt.temperature_identity()
+    assert captured['platt_model'] == platt.identity()
+    assert len(captured['committed_ledger']['rows']) == 35
+
+
 @pytest.mark.parametrize('at,due', [
     ('2026-09-11T05:59:59Z', None), ('2026-09-11T06:00:00Z', '2026-09-11'),
     ('2026-09-11T07:00:00Z', '2026-09-11'),

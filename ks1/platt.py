@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import timedelta
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -22,6 +23,17 @@ EPS = 1e-6
 def raw_model_version():
     refs = json.loads((Path(__file__).parent/'model_refs.json').read_bytes())
     return 'KS1-LGB-'+refs['lightgbm']['sha256'][:12]+'-DP-'+refs['poisson']['sha256'][:12]
+
+
+def grading_model_versions():
+    """Reviewed predecessor models remain gradeable after serving promotion."""
+    refs = json.loads((Path(__file__).parent/'model_refs.json').read_bytes())
+    previous = refs.get('previous_raw_model_versions', [])
+    if not isinstance(previous, list) or any(
+            not isinstance(v, str) or not re.fullmatch(r'KS1-LGB-[0-9a-f]{12}-DP-[0-9a-f]{12}', v)
+            for v in previous):
+        raise ValueError('invalid reviewed grading model lineage')
+    return set(previous) | {raw_model_version()}
 
 
 def identity():

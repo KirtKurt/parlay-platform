@@ -14,7 +14,8 @@ from pathlib import Path
 from ks1.calibration_store import PREFIX, checkpoint_prefix, commit_json, latest_checkpoint, read_json
 from ks1.features import ET, utc
 from ks1.inventory import Reader, RESEARCH, encode
-from ks1.platt import compare, identity, metrics, ordered, raw_model_version, refit, temperature_identity
+from ks1.platt import (compare, grading_model_versions, identity, metrics, ordered,
+                       raw_model_version, refit, temperature_identity)
 from ks1.platt_inputs import capture, dataset
 from ks1.team_audit import build as team_pick_audit
 from src.temperature_calibrator import fit_from_ledger
@@ -73,14 +74,34 @@ def require_fresh_finals(prior, not_before, as_of):
 
 
 def ledger_rows(ledger, as_of):
-    if ledger.get('system') != 'KS1' or ledger.get('raw_model_version') != raw_model_version():
+    if ledger.get('system') != 'KS1' or ledger.get('raw_model_version') not in grading_model_versions():
         raise ValueError('invalid KS1 grading ledger model')
-    rows = ordered(ledger['rows'], as_of)
+    rows = ordered_official_rows(ledger['rows'], as_of)
     for row in rows:
         if row.get('official_probability_field') != 'p_home' or not row.get('lock_evidence'):
             raise ValueError('ledger requires original official lock evidence')
         metrics([row['home_win']], [row['p_home']])
     return rows
+
+
+def ordered_official_rows(rows, as_of):
+    """Validate each reviewed model separately; never mix calibration samples."""
+    versions = {r['raw_model_version'] for r in rows}
+    if not versions.issubset(grading_model_versions()):
+        raise ValueError('unreviewed model in KS1 grading ledger')
+    if len({r['game_id'] for r in rows}) != len(rows):
+        raise ValueError('duplicate game IDs in official ledger')
+    validated = [row for version in versions
+                 for row in ordered([r for r in rows if r['raw_model_version'] == version],
+                                    as_of, version=version)]
+    return sorted(validated, key=lambda r: (utc(r['locked_at']), str(r['game_id'])))
+
+
+def current_calibration_model(previous, kind):
+    model = previous.get(kind+'_model')
+    if model and model.get('raw_model_version') == raw_model_version():
+        return model
+    return temperature_identity() if kind == 'temperature' else identity()
 
 
 def build_ledger(source, previous=None):
@@ -91,7 +112,7 @@ def build_ledger(source, previous=None):
     # Preserve the actual first label availability across disposable runners.
     source.setdefault('platt_model', identity()).setdefault('label_first_seen', {}).update(
         {r['game_id']: {'signature': r['signature'], 'graded_at': r['graded_at']} for r in prior})
-    admitted, admission = dataset(source)
+    admitted, admission = dataset(source, include_predecessors=True)
     originals = {str(e['row']['game_id']): e for e in source['locked']}
     for row in admitted:
         entry = originals[row['game_id']]
@@ -107,7 +128,7 @@ def build_ledger(source, previous=None):
                                     home_score=source['finals'][row['game_id']]['home_score'],
                                     away_score=source['finals'][row['game_id']]['away_score'],
                                     final_evidence=source['final_sources'])
-    rows = ordered(list(known.values()), source['as_of'])
+    rows = ordered_official_rows(list(known.values()), source['as_of'])
     return {'system': 'KS1', 'raw_model_version': raw_model_version(),
             'night_date': utc(source['as_of']).astimezone(ET).date().isoformat(),
             'as_of': source['as_of'], 'rows': rows, 'admission': admission,
@@ -155,13 +176,12 @@ def execute(source, output, *, s3=None, bucket=None, checkpoint=None, clock=None
     fitted_at = (clock() if clock else datetime.now(timezone.utc)).isoformat()
     if utc(fitted_at) < utc(source['as_of']):
         raise ValueError('calibration clock precedes source capture')
-    old_temperature = previous.get('temperature_model') or temperature_identity()
-    if old_temperature['raw_model_version'] != raw_model_version():
-        raise ValueError('nightly temperature belongs to another raw model')
+    old_temperature = current_calibration_model(previous, 'temperature')
+    calibration_rows = [r for r in rows if r['raw_model_version'] == raw_model_version()]
     temperature, temperature_decision = fit_from_ledger(
-        rows, previous=old_temperature, as_of=fitted_at,
+        calibration_rows, previous=old_temperature, as_of=fitted_at,
         model_path=output/'data/models/temperature.json')
-    platt, platt_decision = refit(rows, previous.get('platt_model') or identity(), fitted_at)
+    platt, platt_decision = refit(calibration_rows, current_calibration_model(previous, 'platt'), fitted_at)
     state = {'system': 'KS1', 'status': 'completed', 'night_date': date,
              'completed_at': fitted_at, 'ledger': proof,
              'temperature_model': temperature, 'platt_model': platt,
@@ -174,7 +194,9 @@ def execute(source, output, *, s3=None, bucket=None, checkpoint=None, clock=None
               'ledger_rows': len(rows), 'new_grades': ledger['new_grades'],
               'ledger_readback_verified_before_fit': True,
               'temperature_decision': temperature_decision, 'platt_decision': platt_decision,
-              'official_metrics': ledger['official_metrics'], 'comparison': compare(rows, source['as_of']),
+              'official_metrics': ledger['official_metrics'], 'comparison': compare(calibration_rows, source['as_of']),
+              'calibration_model_rows': len(calibration_rows),
+              'graded_model_versions': sorted({r['raw_model_version'] for r in rows}),
               'write_keys': [prefix+'graded_ledger.json', prefix+'calibration_state.json'] if publish else [],
               'prediction_writes': 0, 'provider_calls': 0, 'trained_LightGBM': False}
     attach_team_pick_audit(report, source, rows, output)
@@ -226,6 +248,8 @@ def _execute_catchup(source, output, *, s3, bucket, checkpoint, clock=None):
     # Never fit or alter parameters here, even when late grades cross 30 rows.
     state = dict(deepcopy(previous), completed_at=completed_at, ledger=proof,
                  catchup_revision=revision, calibration_status='deferred_to_next_nightly')
+    for kind in ('temperature', 'platt'):
+        state[kind+'_model'] = current_calibration_model(previous, kind)
     if publish:
         commit_json(s3, bucket, prefix+'calibration_state.json', state)
     (output/'calibration_state.json').write_bytes(encode(state))
