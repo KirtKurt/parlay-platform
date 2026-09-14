@@ -22,6 +22,7 @@ from ks1.passive_context import (LINEUP_FEATURES, LINEUP_VALUE_FEATURES,
                                  MODEL_FEATURES as LINEUP_BULLPEN_FEATURES)
 from ks1.sources import aws_clients, load_existing
 from ks1.progress import record_progress
+from ks1.statcast_history import load_training_statcast
 from ks1.table import build, contract
 from ks1.train import PARAMS, select_features, save_artifact
 from ks1.prior_pitcher_context import (PriorPitcherContext, pregame_identity_index,
@@ -113,6 +114,13 @@ def bullpen_context_value_feature(column):
 def lineup_performance_feature(column):
     return any(column == side+'_'+name
                for side in ('home', 'away') for name in LINEUP_PERFORMANCE_FEATURES)
+
+
+def matchup_performance_feature(column):
+    return column in {side+'_lineup_'+metric+'_'+window
+                      for side in ('home', 'away')
+                      for metric in ('platoon_xwoba', 'pitch_type_matchup_xwoba')
+                      for window in ('7d', '30d')}
 
 
 def bullpen_context_performance_feature(column):
@@ -439,6 +447,9 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
                                                       if bullpen_context_value_feature(c)
                                                       and split_counts[c] > 0],
             'feature_split_counts': split_counts,
+            'matchup_value_features_used_in_splits': [c for c in columns
+                                                     if matchup_performance_feature(c)
+                                                     and split_counts[c] > 0],
             'model_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
             'model_reload_verified': True,
         }
@@ -475,7 +486,8 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
                 any(lineup_performance_feature(c)
                     for c in comparison['lineup_value_features_used_in_splits'])
                 and any(bullpen_context_performance_feature(c)
-                        for c in comparison['bullpen_value_features_used_in_splits']))
+                        for c in comparison['bullpen_value_features_used_in_splits'])
+                and comparison['matchup_value_features_used_in_splits'])
         comparison['qualified'] = bool(
             comparison['statistical_gate_passed']
             and used_pitcher_context
@@ -586,7 +598,7 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
               'prospective_lineup_bullpen_feature_rows': prospective_team_feature_coverage,
               'prospective_lineup_bullpen_test_rows': prospective_team_rows,
               'lineup_bullpen_context_qualification': team_context_qualification,
-              'lineup_bullpen_promotion_rule': 'the full candidate must use substantive lineup and individual-bullpen value fields, not only missingness indicators, in tree splits; every consumed training and exact-300 holdout value must have frozen or MLB-timecoded pre-T10 evidence',
+              'lineup_bullpen_promotion_rule': 'the full candidate must use substantive lineup, matchup and individual-bullpen value fields, not only missingness indicators, in tree splits; every consumed training and exact-300 holdout value must have frozen or MLB-timecoded pre-T10 evidence',
               'minimum_individual_starter_rows_per_side': MIN_STARTER_ROWS,
               'parameters': PARAMS, 'test_used_for_tuning': False,
               'development_used_for_recipe_selection': True, 'holdout_refit': False,
@@ -663,6 +675,9 @@ def main():
     record_progress(args.output, 'loading_sources')
     cf, s3, bucket = aws_clients('us-east-1', 'parlay-platform-dev')
     bundle = load_existing(cf, s3, bucket)
+    record_progress(args.output, 'loading_historical_pitches')
+    statcast_report = load_training_statcast(bundle, s3, bucket)
+    (args.output/'historical_statcast_report.json').write_bytes(encode(statcast_report))
     args.output.mkdir(parents=True, exist_ok=True)
     record_progress(args.output, 'collecting_starter_history')
     historical_feeds, feed_report = prepare_historical_feeds(bundle, s3, bucket)
@@ -694,6 +709,7 @@ def main():
              'optional_reads': source_report['optional_reads'],
              'incumbent_ref': ref, 'historical_feed_report': feed_report,
              'historical_team_context_report': team_report,
+             'historical_statcast_report': statcast_report,
              'provider_calls': (feed_report['provider_requests']+
                                 team_report['provider_requests'])}
     proof['official_history_source'] = bundle.get('official_history_source')
