@@ -311,7 +311,7 @@ def test_reliever_history_survives_trade_and_missing_pitch_count_is_unknown():
     assert values["bullpen_context_era_7d"] == 0
 
 
-def test_rested_reliever_with_retained_history_is_available():
+def test_rested_reliever_has_low_workload_but_unconfirmed_availability():
     pitching = {"outs": 3, "earnedRuns": 0, "runs": 0, "hits": 1, "homeRuns": 0,
                 "baseOnBalls": 0, "hitBatsmen": 0, "strikeOuts": 2,
                 "battersFaced": 4, "wins": 0, "losses": 0, "gamesStarted": 0,
@@ -329,6 +329,18 @@ def test_rested_reliever_with_retained_history_is_available():
     assert values["bullpen_context_available_count"] == 1
     assert values["bullpen_context_unknown_count"] == 0
     assert values["bullpen_context_depth"] == 1
+    profile = values["_reliever_profiles"][0]
+    assert profile["availability_state"] == "AVAILABLE"
+    assert values["bullpen_context_fatigue_score"] == 0
+
+    partial = Features([game], []).bullpen_roster_at(
+        "2026-09-10T17:50:00Z", "10", ["151", "999"], game_date="2026-09-10")
+    assert partial["bullpen_context_unknown_count"] == 1
+    assert partial["bullpen_context_fatigue_score"] is None
+    absent = Features([], []).bullpen_roster_at(
+        "2026-09-10T17:50:00Z", "10", ["999"], game_date="2026-09-10")
+    assert absent["bullpen_context_unknown_count"] == 1
+    assert absent["bullpen_context_fatigue_score"] is None
 
 
 def test_zero_pitch_relief_window_keeps_statcast_rates_null():

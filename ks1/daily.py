@@ -24,6 +24,8 @@ from ks1.publish import parquet_bytes
 from ks1.refresh import change_reason, fingerprint, observe, pregame_status
 from ks1.passive_context import (CONTRACT as LINEUP_BULLPEN_CONTRACT,
                                  SUPPORTED_FROZEN_CONTRACTS,
+                                 LINEUP_PERFORMANCE_FEATURES,
+                                 BULLPEN_PERFORMANCE_FEATURES,
                                  MODEL_FEATURES as LINEUP_BULLPEN_FEATURES,
                                  build_profile as lineup_bullpen_profile)
 from ks1.table import american, team_identity
@@ -153,6 +155,14 @@ def signal_contributions(classifier, values):
     names = classifier.feature_name()
     if matrix.shape != (len(values), len(names)+1) or not np.isfinite(matrix).all():
         raise ValueError('invalid LightGBM contribution matrix')
+    raw_scores = np.asarray(classifier.predict(values, raw_score=True), dtype=float)
+    if (raw_scores.shape != (len(values),)
+            or not np.isfinite(raw_scores).all()
+            or not np.allclose(matrix.sum(axis=1), raw_scores, atol=1e-8, rtol=1e-8)):
+        raise ValueError('LightGBM contributions do not reconstruct raw prediction')
+    inputs = np.asarray(values, dtype=float)
+    performance_names = {side+'_'+name for side in ('home', 'away')
+                         for name in LINEUP_PERFORMANCE_FEATURES+BULLPEN_PERFORMANCE_FEATURES}
     def group(name):
         if name.startswith('market_'): return 'market'
         if '_lineup_' in name: return 'batters'
@@ -161,21 +171,58 @@ def signal_contributions(classifier, values):
         if '_offense_' in name or name.endswith(('_rest_days', '_history_games')): return 'team_form'
         return 'other'
     result = []
-    for vector in matrix:
+    for row_number, vector in enumerate(matrix):
         grouped, grouped_abs = {}, {}
+        evidence = {}
         features = []
-        for name, score in zip(names, vector[:-1]):
+        for column, (name, score) in enumerate(zip(names, vector[:-1])):
             bucket = group(name)
             grouped[bucket] = grouped.get(bucket, 0.0)+float(score)
             grouped_abs[bucket] = grouped_abs.get(bucket, 0.0)+abs(float(score))
             features.append({'feature': name, 'score': float(score)})
+            if bucket in ('batters', 'bullpen'):
+                value = inputs[row_number, column]
+                kind = ('missingness_indicator' if name.endswith('_missing')
+                        else 'missing_value' if not np.isfinite(value)
+                        else 'observed_performance' if name in performance_names
+                        else 'other_observed_context')
+                entry = evidence.setdefault(bucket, {}).setdefault(kind, {
+                    'signal_score': 0.0, 'absolute_contribution': 0.0,
+                    'nonzero_features': 0, 'top_features': []})
+                entry['signal_score'] += float(score)
+                entry['absolute_contribution'] += abs(float(score))
+                if score != 0:
+                    entry['nonzero_features'] += 1
+                    entry['top_features'].append({'feature': name, 'score': float(score),
+                                                  'value': float(value) if np.isfinite(value) else None})
+        for buckets in evidence.values():
+            for entry in buckets.values():
+                entry['top_features'] = sorted(entry['top_features'],
+                    key=lambda item: abs(item['score']), reverse=True)[:5]
         denominator = sum(grouped_abs.values())
-        result.append({'scale': 'raw_log_odds_SHAP', 'bias': float(vector[-1]),
+        result.append({'schema_version': 2, 'scale': 'raw_log_odds_SHAP', 'bias': float(vector[-1]),
+                       'raw_score': float(raw_scores[row_number]), 'additivity_verified': True,
+                       'performance_evidence': evidence,
                        'groups': {key: {'signal_score': value,
                                         'decision_influence_pct': 100*grouped_abs[key]/denominator if denominator else 0.0}
                                   for key, value in sorted(grouped.items())},
                        'top_features': sorted(features, key=lambda item: abs(item['score']), reverse=True)[:10]})
     return result
+
+
+def upgrade_signal_evidence(classifier, features, previous):
+    """Explain identical pre-cutoff inputs without changing stored probabilities."""
+    existing = json.loads(previous['signal_contributions_json']) if previous.get('signal_contributions_json') else {}
+    if existing.get('schema_version') == 2 or previous.get('p_raw') is None:
+        return previous
+    values = pd.DataFrame([features])[classifier.feature_name()].astype(float)
+    proof = signal_contributions(classifier, values)[0]
+    if proof is None:
+        return previous
+    probability = float(classifier.predict(values)[0])
+    if not np.isclose(probability, float(previous['p_raw']), atol=1e-12, rtol=0):
+        raise ValueError('explanation upgrade does not match retained raw probability')
+    return {**previous, 'signal_contributions_json': encode(proof).decode()}
 
 
 class Crosswalk:
@@ -412,6 +459,7 @@ def predict(folder, output):
     prior_rows = {r['game_id']: r for r in pq.ParquetFile(folder/'previous.parquet').read().to_pylist()} if previous is not None else {}
     retained, changes, unchanged, withdrawals = [], [], [], []
     provider_status_disagreement_retained = []
+    upgraded_signal_evidence = []
     migrated_frozen = []
     for pk in sorted(frozen_ids):
         row = dict(prior_rows[pk])
@@ -550,7 +598,10 @@ def predict(folder, output):
         row['input_fingerprint'] = fingerprint(row, features, needed)
         old = prior_rows.get(pk)
         if old and old.get('status') and old.get('input_fingerprint') == row['input_fingerprint']:
-            retained.append(old); unchanged.append(pk); continue
+            upgraded = upgrade_signal_evidence(classifier, features, old)
+            if upgraded is not old:
+                upgraded_signal_evidence.append(pk)
+            retained.append(upgraded); unchanged.append(pk); continue
         changes.append({'game_id': pk, 'reason': change_reason(old, row)})
         rows.append(row); feature_rows.append(features)
     if rows:
@@ -631,6 +682,7 @@ def predict(folder, output):
                                                    if name in {side+'_'+feature for side in ('home', 'away')
                                                                for feature in LINEUP_BULLPEN_FEATURES}],
               'lineup_bullpen_profile_rows': int(frame.lineup_bullpen_profile_json.notna().sum()),
+              'upgraded_signal_evidence_game_ids': upgraded_signal_evidence,
               'lineup_bullpen_profile_status_counts': {
                   str(key): int(value) for key, value in frame.lineup_bullpen_profile_status.value_counts(dropna=False).items()},
               'passive_context_capture_status': inputs['passive_context'].get('status'),
@@ -658,7 +710,7 @@ def predict(folder, output):
               'limitations': ['Fixed research models; no model retraining or R8 authority change.',
                   'Probable pitchers come from the verified pregame MLB feed, falling back to the existing official schedule.',
                   'Individual pitcher features influence predictions only when present in the accepted model; missing history retains explicit counts and team priors.',
-                  'Confirmed batting orders are recorded; the accepted models still use shrunk team offense priors.',
+                  'Batter and individual-bullpen performance can influence predictions only through fields learned by the accepted model; SHAP evidence separates observed performance from missing inputs and indicators.',
                   'An identity-only scratch rebuilds the game but can leave the accepted model probabilities unchanged.',
                   'Unchanged rows retain their original as_of; this report records the latest poll. T-10 remains the cutoff.',
                   'Stored history can lag games completed since its last refresh.']}
@@ -746,6 +798,43 @@ def publish(s3, bucket, table, report, output, *, calibration='temperature', pla
     return {'bucket': bucket, 'prefix': prefix, 'write_keys': writes, 'readback_verified': True}
 
 
+def publication_proof(output, report):
+    """Expose exact published rows for review only after successful readback."""
+    if not (report.get('published') and report.get('publication', {}).get('readback_verified')):
+        raise ValueError('publication proof requires successful AWS readback')
+    body = (output/'predictions.parquet').read_bytes()
+    if hashlib.sha256(body).hexdigest() != report['parquet_sha256']:
+        raise ValueError('publication proof hash mismatch')
+    rows = pq.read_table(io.BytesIO(body)).to_pylist()
+    columns = ('date', 'game_id', 'home_team', 'away_team', 'commence_time', 'as_of',
+               'model_version', 'p_home', 'p_raw', 'lineup_status', 'prediction_status',
+               'home_starter_id', 'away_starter_id', 'home_lineup_ids', 'away_lineup_ids',
+               'lineup_bullpen_profile_status', 'lineup_bullpen_profile_sha256')
+    proof_rows = []
+    for row in rows:
+        item = {key: row.get(key) for key in columns}
+        item['signal_contributions'] = (json.loads(row['signal_contributions_json'])
+                                         if row.get('signal_contributions_json') else None)
+        item['signal_evidence_status'] = ('observed_performance_separated'
+            if (item['signal_contributions'] or {}).get('schema_version') == 2
+            else 'legacy_or_unavailable')
+        profile = json.loads(row['lineup_bullpen_profile_json']) if row.get('lineup_bullpen_profile_json') else {}
+        item['team_context'] = {
+            side: {**{key: value.get(key) for key in ('lineup_ids', 'bullpen_roster_ids',
+                   'opposing_starter_id', 'opposing_starter_pitch_hand', 'availability_status')},
+                   'reliever_availability': [{
+                       'player_id': reliever.get('player_id'),
+                       'actual_availability_status': 'UNKNOWN_NO_CONFIRMED_SOURCE',
+                       'workload_classification': reliever.get('availability_state'),
+                       'workload_classification_basis': 'strict_prior_workload_v1'}
+                       for reliever in value.get('reliever_history', [])]}
+            for side, value in profile.get('sides', {}).items()}
+        proof_rows.append(item)
+    return {'kind': 'KS1_verified_publication_rows', 'publication_as_of': report['as_of'],
+            'parquet_sha256': report['parquet_sha256'], 'readback_verified': True,
+            'rows': proof_rows}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--inputs', type=Path, required=True)
@@ -765,6 +854,9 @@ def main():
         (output/'report.json').write_bytes(encode(report))
         (output/'publication.json').write_bytes(encode(result))
         print(json.dumps(result))
+        proof = publication_proof(output, report)
+        (output/'publication_proof.json').write_bytes(encode(proof))
+        print(json.dumps(proof, indent=2))
 
 
 if __name__ == '__main__':

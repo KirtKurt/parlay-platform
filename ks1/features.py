@@ -416,8 +416,8 @@ class Features:
     def bullpen_roster_at(self, cutoff, team_id, roster_ids, *, game_date=None):
         """Summarize only listed relievers from strictly earlier games.
 
-        Availability is a conservative workload classification.  A player with
-        no retained earlier appearance is UNKNOWN, never assumed available.
+        Availability-named model fields are workload estimates, never confirmed
+        availability. A player with no retained earlier appearance is UNKNOWN.
         """
         target = calendar_date.fromisoformat(game_date) if game_date else day(cutoff)
         roster = {str(value) for value in roster_ids}
@@ -483,7 +483,7 @@ class Features:
         states = {"AVAILABLE": 0, "LIMITED": 0, "LIKELY_UNAVAILABLE": 0, "UNKNOWN": 0}
         reliever_profiles, state_by_pitcher = [], {}
         workload_score = 0.0
-        workload_complete = True
+        workload_complete = bool(roster)
         for pid in roster:
             recent = [(r, stats) for r, stats in appearances if any(
                 p["id"] == pid and p["stats"] is stats for p in r["players"])]
@@ -503,7 +503,7 @@ class Features:
             for age in range(1, 8):
                 if by_age[age]: consecutive += 1
                 else: break
-            counts_known = not known or (pitches1 is not None and pitches3 is not None)
+            counts_known = known and pitches1 is not None and pitches3 is not None
             workload_complete = workload_complete and counts_known
             if known and counts_known:
                 workload_score += pitches1 + .35*max(0, pitches3-pitches1)
