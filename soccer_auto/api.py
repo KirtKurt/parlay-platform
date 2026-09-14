@@ -1144,6 +1144,12 @@ def api_handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
         store = SoccerStore()
         path = str(event.get("rawPath") or event.get("path") or "")
         params = event.get("queryStringParameters") or {}
+        if path == "/v1/soccer-auto/kss1/picks":
+            from .kss1_picks import recorded_picks
+            try:
+                return _response(200, recorded_picks(store, params.get("date"), selection=params.get("selection"), trained_only=params.get("trained_only", "true") != "false"))
+            except ValueError as exc:
+                return _response(400, {"ok": False, "error": str(exc)})
         if path == "/v1/soccer-auto/kss1":
             from .kss1_training_runtime import goals_status
             return _response(200, goals_status(store))
