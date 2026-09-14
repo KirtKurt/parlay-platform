@@ -12,7 +12,8 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 sys.path.insert(0,str(ROOT/'mlb_research'))
 from ks1.features import Features, number
-from ks1.statcast_history import official_pitch_counts, pitch_complete_dates, pitches_complete
+from ks1.statcast_history import (official_pitch_counts, physical_pitch_complete_dates,
+                                  pitch_complete_dates, pitches_complete)
 from mlb_research_store_v1 import now,utc,digest
 from mlb_research_dataset_v1 import publish_dataset
 import mlb_research_sources_v1 as source
@@ -217,12 +218,19 @@ def ingest(store,seconds=2400):
             identity=tuple(str(row.get(key)) for key in ('game_pk','at_bat_number','pitch_number'))
             retained_rows[identity]=row
         pitch_verified_dates = set(pitch_complete_dates(sources, statcast_by_date, expected_by_date))
+        physical_verified_dates = set(physical_pitch_complete_dates(
+            sources, statcast_by_date, expected_by_date))
         retained_verified_games=sorted({str(row.get('game_pk')) for row in retained_rows.values()
                                        if row.get('game_date') in pitch_verified_dates})
+        retained_physical_games=sorted({str(row.get('game_pk')) for row in retained_rows.values()
+                                       if row.get('game_date') in physical_verified_dates})
         sc={'rows':current_rows,'coverageComplete':current_complete and current_year_complete and prior_complete,
             'retainedCompleteDates':sorted({d.isoformat() for d in current_dates}&pitch_verified_dates),
             'retainedCompleteGames':retained_verified_games,
-            'retainedPitchCoverageMethod':'official_box_thrown_pitches_and_pa_v3',
+            'retainedPhysicalDates':sorted(
+                {d.isoformat() for d in current_dates}&physical_verified_dates),
+            'retainedPhysicalGames':retained_physical_games,
+            'retainedPitchCoverageMethod':'official_box_physical_v1_plus_pa_outcomes_v3',
             'current30CoverageComplete':current_complete,'priorYearCoverageComplete':prior_complete,
             'currentYearCoverageComplete':current_year_complete,
             'priorYear':prior_year,'priorYearProfiles':prior_profiles,
@@ -269,6 +277,10 @@ def ingest(store,seconds=2400):
                 'expectedPriorYearStatcastDays':len(prior_dates),
                 'currentYearStatcastDays':len({d.isoformat() for d in current_year_dates}&complete_dates),
                 'expectedCurrentYearStatcastDays':len(current_year_dates),
+                'retainedPhysicalStatcastDays':len(
+                    {d.isoformat() for d in current_dates}&physical_verified_dates),
+                'retainedOutcomeStatcastDays':len(
+                    {d.isoformat() for d in current_dates}&pitch_verified_dates),
                 'retainedStatcastPitches':len(sc['rows']),'priorYearProfiles':len(prior_profiles),
                 'datasetRows':len(data['rows']),'originalRows':data['originalRows'],
                 'featureDiscovery':discovery_summary(store),'errors':errors,

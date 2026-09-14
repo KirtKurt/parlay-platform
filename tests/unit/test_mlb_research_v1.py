@@ -49,6 +49,27 @@ def test_retained_statcast_dates_require_official_pitch_counts(defect):
     assert dates == (['2026-09-01'] if defect is None else [])
 
 
+def test_physical_statcast_date_does_not_claim_incomplete_pa_outcomes():
+    game = {'officialGamePk': 1, 'startAtUtc': '2026-09-01T18:00:00Z',
+            'completedAtUtc': '2026-09-01T21:00:00Z', 'gameType': 'R',
+            'teams': {side: {'team': {'id': tid, 'name': side},
+                             'teamStats': {'batting': {}},
+                             'players': {'ID'+str(pid): {
+                                 'person': {'id': pid},
+                                 'stats': {'pitching': {'numberOfPitches': 1,
+                                                       'battersFaced': 1,
+                                                       'gamesStarted': 1}}}}}
+                      for side, tid, pid in (('home', 1, 100), ('away', 2, 101))}}
+    rows = [{'game_pk': '1', 'game_date': '2026-09-01', 'pitcher': str(pid),
+             'at_bat_number': str(pid), 'pitch_number': '1',
+             'description': 'hit_into_play', 'events': 'field_out',
+             'woba_denom': '' if pid == 100 else '1', 'woba_value': '0'}
+            for pid in (100, 101)]
+    by_date, games = {'2026-09-01': rows}, {'2026-09-01': {1}}
+    assert ingestion.physical_pitch_complete_dates([game], by_date, games) == ['2026-09-01']
+    assert ingestion.pitch_complete_dates([game], by_date, games) == []
+
+
 class MemoryS3:
     def __init__(self): self.items={};self.sequence=0
     def get_object(self,Bucket,Key,VersionId=None):
@@ -558,6 +579,8 @@ def test_ingestion_versions_expanded_games_and_retains_prior_year_scope(monkeypa
     assert prior['receipt']['retrievedAtUtc']==AT.isoformat()
     assert statcast['priorYear']==2025 and statcast['current30CoverageComplete'] is True
     assert statcast['retainedCompleteGames'] == ['11','12']
+    assert statcast['retainedPhysicalGames'] == ['11','12']
+    assert '2026-09-08' in statcast['retainedPhysicalDates']
     assert '2025-04-01' not in statcast['retainedCompleteDates']
     assert {r['pitcher'] for r in statcast['rows'] if r['game_pk']=='11'} == {'99','100'}
     assert result['priorYearStatcastDays']==365

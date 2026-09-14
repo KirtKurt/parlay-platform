@@ -28,6 +28,45 @@ def official_pitch_counts(sources):
     return expected, invalid
 
 
+def official_physical_pitch_counts(sources):
+    """Bind thrown-pitch counts without requiring separate PA evidence."""
+    expected, invalid = {}, set()
+    for game in normalize(sources):
+        game_id = str(game['game_id'])
+        counts = expected.setdefault(game_id, {})
+        if not game['context_players']:
+            invalid.add(game_id)
+        for player in game['context_players']:
+            count = number(player['stats'].get('numberOfPitches'))
+            if count is None or count < 0 or int(count) != count:
+                invalid.add(game_id)
+            else:
+                counts[(game_id, str(player['id']))] = int(count)
+    return expected, invalid
+
+
+def physical_pitches_complete(rows, games, expected, invalid):
+    """Prove identities and exact official physical pitch counts only.
+
+    Plate-appearance outcomes are deliberately independent. A provider row can
+    therefore support velocity, movement, arsenal, contact and discipline
+    measurements while xwOBA-style outcome features remain unavailable.
+    """
+    games = {str(pk) for pk in games}
+    if games & invalid or not games.issubset(expected):
+        return False
+    wanted = {key: count for pk in games for key, count in expected[pk].items() if count}
+    if any((str(row.get('game_pk')), str(row.get('pitcher')))
+           not in expected.get(str(row.get('game_pk')), {})
+           or str(row.get('game_pk')) not in games for row in rows):
+        return False
+    actual = Counter((str(row.get('game_pk')), str(row.get('pitcher')))
+                     for row in rows if is_thrown_pitch(row))
+    identities = {tuple(str(row.get(key)) for key in (
+        'game_pk', 'at_bat_number', 'pitch_number')) for row in rows}
+    return len(identities) == len(rows) and dict(actual) == wanted
+
+
 def pitches_complete(rows, games, expected, invalid):
     games = {str(pk) for pk in games}
     if games & invalid or not games.issubset(expected):
@@ -62,6 +101,25 @@ def pitch_complete_dates(sources, statcast_by_date, expected_by_date):
     expected, invalid = official_pitch_counts(sources)
     return sorted(value for value, rows in statcast_by_date.items()
                   if pitches_complete(rows, expected_by_date[value], expected, invalid))
+
+
+def physical_pitch_complete_dates(sources, statcast_by_date, expected_by_date):
+    """Return dates whose physical pitches reconcile to official boxes."""
+    expected, invalid = official_physical_pitch_counts(sources)
+    return sorted(value for value, rows in statcast_by_date.items()
+                  if physical_pitches_complete(
+                      rows, expected_by_date[value], expected, invalid))
+
+
+def physical_validation_reason(payload, value, games, expected, invalid):
+    rows = payload.get('rows', [])
+    if payload.get('date') != value or any(row.get('game_date') != value for row in rows):
+        return 'date_mismatch'
+    if {str(row.get('game_pk')) for row in rows} != {str(pk) for pk in games}:
+        return 'game_set_mismatch'
+    if not physical_pitches_complete(rows, games, expected, invalid):
+        return 'physical_pitch_identity_count_mismatch'
+    return None
 
 
 def validation_reason(payload, value, games, expected, invalid):
@@ -114,29 +172,37 @@ def load_training_statcast(bundle, s3, bucket):
         else:
             unfinished.add(value)
     expected, invalid = official_pitch_counts(bundle['full'])
+    physical_expected, physical_invalid = official_physical_pitch_counts(bundle['full'])
 
     def read_date(value):
         games = expected_dates[value]
         if value in unfinished:
-            return value, [], [], 'unfinished_scheduled_game'
+            return value, [], [], 'unfinished_scheduled_game', False, None
         if not games:
-            return value, [], [], None
+            return value, [], [], None, True, None
         reader = Reader(s3, bucket)
         revision = hashlib.sha256(encode(sorted(games))).hexdigest()
         keys = [RESEARCH+f'sources/statcast-v2/{value}.json',
                 RESEARCH+f'sources/statcast-v2-revisions/{value}/{revision}.json']
         reasons = []
+        physical_candidate = None
         for key in keys:
             try:
                 payload = reader.read(key)
                 receipt = reader.receipts[-1]
+                physical_reason = physical_validation_reason(
+                    payload, value, games, physical_expected, physical_invalid)
                 reason = validation_reason(payload, value, games, expected, invalid)
                 if receipt.get('versionId') in (None, '', 'null'):
-                    reason = 'unversioned_source'
-                if reason:
-                    reasons.append(reason)
+                    physical_reason = reason = 'unversioned_source'
+                if physical_reason:
+                    reasons.append(physical_reason)
                     continue
-                return value, payload['rows'], [receipt], None
+                if reason is None:
+                    return value, payload['rows'], [receipt], None, True, None
+                reasons.append(reason)
+                if physical_candidate is None:
+                    physical_candidate = (payload['rows'], [receipt], reason)
             except Exception as exc:
                 # Missing or invalid immutable objects do not create coverage.
                 reasons.append('source_read:' + type(exc).__name__)
@@ -146,24 +212,39 @@ def load_training_statcast(bundle, s3, bucket):
             if payload is not None:
                 reason = validation_reason(payload, value, games, expected, invalid)
                 if reason is None:
-                    return value, payload['rows'], recovery_receipts, None
+                    return value, payload['rows'], recovery_receipts, None, True, None
                 reasons.append('recovered_' + reason)
         except Exception as exc:
             reasons.append('recovery_read:' + type(exc).__name__)
+        if physical_candidate is not None:
+            daily_rows, daily_receipts, outcome_reason = physical_candidate
+            return value, daily_rows, daily_receipts, None, False, outcome_reason
         return value, [], [], {'reason': 'retained_pitches_unavailable_or_unverified',
-                              'details': sorted(set(reasons))}
+                              'details': sorted(set(reasons))}, False, None
 
-    rows, receipts, verified, errors = [], [], [], []
-    verified_pitch_objects = 0
+    rows, receipts, verified_physical, verified_outcomes, errors = [], [], [], [], []
+    verified_physical_pitch_objects = 0
+    verified_outcome_pitch_objects = 0
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for value, daily_rows, daily_receipts, error in pool.map(read_date, sorted(expected_dates)):
+        for value, daily_rows, daily_receipts, error, outcomes_complete, outcome_reason in pool.map(
+                read_date, sorted(expected_dates)):
             if error:
                 errors.append({'date': value, **(error if isinstance(error, dict) else {'reason': error})})
             else:
-                verified.append(value)
+                verified_physical.append(value)
+                if outcomes_complete:
+                    verified_outcomes.append(value)
+                    verified_outcome_pitch_objects += bool(daily_rows)
+                elif outcome_reason:
+                    errors.append({
+                        'date': value,
+                        'reason': 'retained_pa_outcomes_unavailable_or_unverified',
+                        'details': [outcome_reason],
+                        'physical_pitch_coverage_retained': True,
+                    })
                 rows.extend(daily_rows)
                 receipts.extend(daily_receipts)
-                verified_pitch_objects += bool(daily_rows)
+                verified_physical_pitch_objects += bool(daily_rows)
     loaded_games = {str(row['game_pk']) for row in rows}
     # Keep compact starter-only rows for other games, but give them no new
     # whole-date coverage. Verified daily objects supply all rows for their games.
@@ -181,20 +262,37 @@ def load_training_statcast(bundle, s3, bucket):
     # retain their ingestion-time verification.
     existing_outside_range = (
         set(bundle.get('statcast_retained_dates', ())) - set(expected_dates))
+    existing_physical_outside_range = (
+        set(bundle.get('statcast_physical_dates',
+                       bundle.get('statcast_retained_dates', ()))) - set(expected_dates))
     bundle['statcast_retained_dates'] = sorted(
-        existing_outside_range | set(verified))
+        existing_outside_range | set(verified_outcomes))
+    bundle['statcast_physical_dates'] = sorted(
+        existing_physical_outside_range | set(verified_physical))
     existing_game_dates = {str(row.get('game_pk')): row.get('game_date')
                            for row in bundle['statcast']}
+    prior_physical_games = set(bundle.get(
+        'statcast_physical_games', bundle.get('statcast_verified_games', [])))
     outside_games = {str(pk) for pk in bundle.get('statcast_verified_games', [])
                      if existing_game_dates.get(str(pk))
                      and existing_game_dates[str(pk)] not in expected_dates}
-    bundle['statcast_verified_games'] = sorted(outside_games | loaded_games)
+    outcome_games = {str(row['game_pk']) for row in rows
+                     if row.get('game_date') in set(verified_outcomes)}
+    bundle['statcast_verified_games'] = sorted(outside_games | outcome_games)
+    existing_physical_games = {str(pk) for pk in prior_physical_games
+        if existing_game_dates.get(str(pk))
+        and existing_game_dates[str(pk)] not in expected_dates}
+    bundle['statcast_physical_games'] = sorted(existing_physical_games | loaded_games)
     # Preserve the existing global source-completeness gates. Individual
     # windows additionally require every date in statcast_retained_dates.
     bundle['source_receipts'].extend(receipts)
     return {'source': RESEARCH+'sources/statcast-v2/', 'provider_requests': 0,
             'complete_official_years': years, 'expected_dates': len(expected_dates),
-            'verified_dates': len(verified), 'verified_pitch_objects': verified_pitch_objects,
+            'verified_physical_dates': len(verified_physical),
+            'verified_outcome_dates': len(verified_outcomes),
+            'verified_dates': len(verified_outcomes),
+            'verified_pitch_objects': verified_outcome_pitch_objects,
+            'verified_physical_pitch_objects': verified_physical_pitch_objects,
             'retained_pitch_rows': len(rows), 'errors': errors,
-            'pitch_coverage_method': 'official_box_thrown_pitches_and_pa_v3',
+            'pitch_coverage_method': 'official_box_physical_v1_plus_pa_outcomes_v3',
             'original_prospective_storage_claimed': False}

@@ -296,7 +296,8 @@ def normalize(games):
 class Features:
     def __init__(self, games, statcast_rows=None, *, statcast_complete=True,
                  prior_statcast_profiles=None, prior_statcast_year=None,
-                 statcast_retained_dates=None, statcast_verified_games=None):
+                 statcast_retained_dates=None, statcast_verified_games=None,
+                 statcast_physical_dates=None, statcast_physical_games=None):
         self.rows = normalize(games)
         self.game_dates = {row['game_id']: row['day'].isoformat() for row in self.rows}
         self.statcast_rows = list(statcast_rows or [])
@@ -304,6 +305,13 @@ class Features:
         self.statcast_retained_dates = (None if statcast_retained_dates is None
                                        else set(statcast_retained_dates))
         self.statcast_verified_games = {str(pk) for pk in (statcast_verified_games or [])}
+        self.statcast_physical_dates = (
+            self.statcast_retained_dates if statcast_physical_dates is None
+            else set(statcast_physical_dates))
+        self.statcast_physical_games = {
+            str(pk) for pk in (statcast_physical_games
+                               if statcast_physical_games is not None
+                               else statcast_verified_games or [])}
         self.prior_statcast_profiles = dict(prior_statcast_profiles or {})
         self.prior_statcast_year = prior_statcast_year
         self.statcast_by_game = {}
@@ -330,7 +338,14 @@ class Features:
                         ((row_number, player_number), row, player["stats"]))
 
     def team_statcast_window_complete(self, target, window):
-        """Archive completeness alone cannot prove compacted rows are loaded."""
+        """Require exact loaded-date proof for physical pitch measurements."""
+        return self.statcast_complete and (
+            self.statcast_physical_dates is None or all(
+                (target-timedelta(days=age)).isoformat() in self.statcast_physical_dates
+                for age in range(1, window+1)))
+
+    def team_statcast_outcome_window_complete(self, target, window):
+        """Require the stricter complete-PA proof for xwOBA-style outcomes."""
         return self.statcast_complete and (
             self.statcast_retained_dates is None or all(
                 (target-timedelta(days=age)).isoformat() in self.statcast_retained_dates
@@ -350,12 +365,17 @@ class Features:
         events = [row for game_id in game_ids
                   for row in self.statcast_by_pitcher_game.get((str(starter_id), str(game_id)), ())]
         selected = [row for row in events if is_thrown_pitch(row)]
-        verified_dates = (self.statcast_retained_dates is None or all(
-            (self.game_dates.get(str(game_id)) in self.statcast_retained_dates
-             or str(game_id) in self.statcast_verified_games)
+        verified_dates = (self.statcast_physical_dates is None or all(
+            (self.game_dates.get(str(game_id)) in self.statcast_physical_dates
+             or str(game_id) in self.statcast_physical_games)
             for game_id in game_ids))
         complete = bool(starter_id and game_ids and verified_dates
                         and expected_pitches is not None and len(selected) == expected_pitches)
+        outcome_complete = bool(complete and (
+            self.statcast_retained_dates is None or all(
+                self.game_dates.get(str(game_id)) in self.statcast_retained_dates
+                or str(game_id) in self.statcast_verified_games
+                for game_id in game_ids)))
         def average(values):
             return sum(values)/len(values) if values and all(v is not None for v in values) else None
         contacts = [r for r in selected if r.get("type") == "X"]
@@ -374,8 +394,8 @@ class Features:
                   "barrel_pct": 100*sum(v == 6 for v in barrels)/len(barrels) if complete and barrels and all(v is not None for v in barrels) else None,
                   "avg_ev_allowed": average(speeds) if complete else None,
                   "xwoba_contact": average([self._finite(r.get("estimated_woba_using_speedangle")) for r in contacts]) if complete else None,
-                  "xwoba": average(expected_woba) if complete and plate_appearances else None,
-                  "xwoba_pa": len(plate_appearances) if complete else None,
+                  "xwoba": average(expected_woba) if outcome_complete and plate_appearances else None,
+                  "xwoba_pa": len(plate_appearances) if outcome_complete else None,
                   "swstr_pct": 100*sum(d in SWINGING_STRIKES for d in descriptions)/len(selected) if complete and selected else None,
                   "csw_pct": 100*sum(d in SWINGING_STRIKES | CALLED_STRIKES for d in descriptions)/len(selected) if complete and selected else None,
                   "velocity": average([self._finite(r.get("release_speed")) for r in selected]) if complete else None,
@@ -500,7 +520,9 @@ class Features:
                     "csw_pct": (100*sum(d in SWINGING_STRIKES | CALLED_STRIKES for d in descriptions)/len(selected)
                                 if selected else None),
                     "xwoba": (sum(expected_woba)/len(expected_woba)
-                              if expected_woba and all(v is not None for v in expected_woba) else None),
+                              if (self.team_statcast_outcome_window_complete(target, window)
+                                  and expected_woba
+                                  and all(v is not None for v in expected_woba)) else None),
                     "barrel_pct": (100*sum(v == 6 for v in barrels)/len(barrels)
                                    if barrels and all(v is not None for v in barrels) else None),
                     "hard_hit_pct": (100*sum(v >= 95 for v in speeds)/len(speeds)
@@ -675,9 +697,10 @@ class Features:
                           if self._finite(pitch.get("woba_denom")) == 1]
                 descriptions = [str(pitch.get("description") or "").lower() for pitch in thrown]
                 complete = self.team_statcast_window_complete(target, window)
+                outcome_complete = self.team_statcast_outcome_window_complete(target, window)
                 summary.update({
-                    "woba": sum(actual)/len(actual) if complete and actual and all(v is not None for v in actual) else None,
-                    "xwoba": sum(expected)/len(expected) if complete and expected and all(v is not None for v in expected) else None,
+                    "woba": sum(actual)/len(actual) if outcome_complete and actual and all(v is not None for v in actual) else None,
+                    "xwoba": sum(expected)/len(expected) if outcome_complete and expected and all(v is not None for v in expected) else None,
                     "barrel_pct": 100*sum(v == 6 for v in barrels)/len(barrels) if complete and barrels and all(v is not None for v in barrels) else None,
                     "hard_hit_pct": 100*sum(v >= 95 for v in speeds)/len(speeds) if complete and speeds and all(v is not None for v in speeds) else None,
                     "avg_exit_velocity": sum(speeds)/len(speeds) if complete and speeds and all(v is not None for v in speeds) else None,
@@ -690,7 +713,7 @@ class Features:
                           and self._finite(pitch.get("woba_denom")) == 1]
                 versus_values = [expected_woba(pitch) for pitch in versus]
                 summary["platoon_xwoba"] = (sum(versus_values)/len(versus_values)
-                                             if complete and versus_values and all(v is not None for v in versus_values)
+                                             if outcome_complete and versus_values and all(v is not None for v in versus_values)
                                              else None)
                 by_type = {}
                 for pitch_type in PITCH_TYPES:
@@ -703,8 +726,8 @@ class Features:
                                       if str(pitch.get("description") or "").lower() in SWINGS
                                       or pitch.get("type") == "X"]
                     by_type[pitch_type] = {
-                        "xwoba": sum(values)/len(values) if complete and values and all(v is not None for v in values) else None,
-                        "woba": sum(actual_values)/len(actual_values) if complete and actual_values and all(v is not None for v in actual_values) else None,
+                        "xwoba": sum(values)/len(values) if outcome_complete and values and all(v is not None for v in values) else None,
+                        "woba": sum(actual_values)/len(actual_values) if outcome_complete and actual_values and all(v is not None for v in actual_values) else None,
                         "whiff_pct": (100*sum(str(pitch.get("description") or "").lower() in SWINGING_STRIKES
                                                for pitch in swings_by_type)/len(swings_by_type)
                                       if complete and swings_by_type else None)}
@@ -714,9 +737,18 @@ class Features:
                 supported_pitches = sum(count for count, _ in supported_mix)
                 summary["pitch_type_matchup_xwoba"] = (
                     sum(count*value for count, value in supported_mix)/starter_total
-                    if (complete and self.team_statcast_window_complete(target, 30)
+                    if (outcome_complete and self.team_statcast_outcome_window_complete(target, 30)
                         and starter_total > 0 and starter_total == len(starter_rows)
                         and supported_pitches == starter_total) else None)
+                supported_whiff = [(count, by_type.get(pitch_type, {}).get("whiff_pct"))
+                                   for pitch_type, count in starter_mix.items()
+                                   if by_type.get(pitch_type, {}).get("whiff_pct") is not None]
+                whiff_pitches = sum(count for count, _ in supported_whiff)
+                summary["pitch_type_matchup_whiff_pct"] = (
+                    sum(count*value for count, value in supported_whiff)/starter_total
+                    if (complete and self.team_statcast_window_complete(target, 30)
+                        and starter_total > 0 and starter_total == len(starter_rows)
+                        and whiff_pitches == starter_total) else None)
                 summary["pitch_type_xwoba"] = by_type
                 profile["windows"][str(window)+"d"] = summary
             season = [stats for r, stats in pairs if r["day"].year == target.year]
@@ -736,7 +768,7 @@ class Features:
         metrics = ("ops", "obp", "slg", "iso", "k_pct", "bb_pct", "k_bb_pct",
                    "woba", "xwoba", "barrel_pct", "hard_hit_pct", "avg_exit_velocity",
                    "contact_pct", "swstr_pct", "csw_pct", "platoon_xwoba",
-                   "pitch_type_matchup_xwoba")
+                   "pitch_type_matchup_xwoba", "pitch_type_matchup_whiff_pct")
         features = {}
         for window in ("7d", "30d"):
             for metric in metrics:

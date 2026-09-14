@@ -4,7 +4,8 @@ import pytest
 
 from ks1.features import Features
 from ks1.statcast_events import is_thrown_pitch
-from ks1.statcast_history import load_training_statcast, official_pitch_counts, pitches_complete
+from ks1.statcast_history import (load_training_statcast, official_pitch_counts,
+                                  pitches_complete)
 from tests.ks1.test_statcast_history import RetainedS3, fixture
 
 
@@ -52,7 +53,8 @@ def test_automatic_outcomes_survive_but_do_not_dilute_physical_pitch_features():
     payload['rows'] = rows+events
     report = load_training_statcast(bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
     assert report['verified_pitch_objects'] == 1
-    assert report['pitch_coverage_method'] == 'official_box_thrown_pitches_and_pa_v3'
+    assert report['verified_physical_pitch_objects'] == 1
+    assert report['pitch_coverage_method'] == 'official_box_physical_v1_plus_pa_outcomes_v3'
     engine = Features(bundle['full'], bundle['statcast'],
                       statcast_retained_dates=bundle['statcast_retained_dates'])
     profiles, values = engine.lineup_batters_at(
@@ -86,6 +88,7 @@ def test_zero_pitch_official_appearance_can_contain_automatic_outcome():
     bundle['full'], payload['rows'] = source, rows
     report = load_training_statcast(bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
     assert report['verified_pitch_objects'] == 1
+    assert report['verified_physical_pitch_objects'] == 1
     engine = Features(source, bundle['statcast'], statcast_retained_dates=bundle['statcast_retained_dates'])
     bullpen = engine.bullpen_roster_at('2026-09-02T17:50:00Z', '10', ['151'])
     assert bullpen['bullpen_context_xwoba_7d'] == 0
@@ -104,7 +107,10 @@ def test_outcomes_need_independent_official_completeness(defect):
         payload['rows'][1]['events'] = '' if defect == 'missing_terminal' else 'unsupported_event'
     report = load_training_statcast(bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
     assert report['verified_pitch_objects'] == 0
+    assert report['verified_physical_pitch_objects'] == 1
     assert '2026-09-01' not in bundle['statcast_retained_dates']
+    assert '2026-09-01' in bundle['statcast_physical_dates']
+    assert report['errors'][0]['physical_pitch_coverage_retained'] is True
 
 
 def test_sacrifice_pa_is_counted_without_woba_denominator():
@@ -135,7 +141,9 @@ def test_incomplete_automatic_outcome_never_qualifies(description, field, value)
     payload['rows'].append({**automatic(payload['rows'][0], description), field: value})
     report = load_training_statcast(bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
     assert report['verified_pitch_objects'] == 0
+    assert report['verified_physical_pitch_objects'] == 1
     assert '2026-09-01' not in bundle['statcast_retained_dates']
+    assert '2026-09-01' in bundle['statcast_physical_dates']
 
 
 def test_pending_official_scoring_is_not_a_complete_outcome():
@@ -145,6 +153,26 @@ def test_pending_official_scoring_is_not_a_complete_outcome():
     assert not pitches_complete(payload['rows'], {1}, expected, invalid)
 
 
+def test_physical_only_receipt_enables_whiff_matchup_but_not_xwoba():
+    bundle, payload, key = fixture()
+    payload['rows'][-1]['woba_denom'] = ''
+    report = load_training_statcast(
+        bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
+    assert '2026-09-01' in bundle['statcast_physical_dates']
+    assert '2026-09-01' not in bundle['statcast_retained_dates']
+    assert report['verified_physical_dates'] == report['verified_outcome_dates']+1
+    engine = Features(
+        bundle['full'], bundle['statcast'],
+        statcast_retained_dates=bundle['statcast_retained_dates'],
+        statcast_physical_dates=bundle['statcast_physical_dates'])
+    profiles, values = engine.lineup_batters_at(
+        '2026-09-02T17:50:00Z', list(range(101, 110)), '251', 'R')
+    assert values['lineup_pitch_type_matchup_xwoba_30d'] is None
+    assert values['lineup_pitch_type_matchup_whiff_pct_30d'] == 0
+    assert all(profile['windows']['7d']['xwoba'] is None for profile in profiles)
+    assert all(profile['windows']['7d']['csw_pct'] == 50 for profile in profiles)
+
+
 def test_starter_windows_reject_unverified_pa_dates_but_keep_official_results():
     bundle, payload, key = fixture()
     bundle['full'][0]['teams']['home']['players']['151']['stats']['pitching']['battersFaced'] = 10
@@ -152,18 +180,20 @@ def test_starter_windows_reject_unverified_pa_dates_but_keep_official_results():
     bundle['statcast'] = deepcopy(payload['rows'])
     load_training_statcast(bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
     engine = Features(bundle['full'], bundle['statcast'],
-                      statcast_retained_dates=bundle['statcast_retained_dates'])
+                      statcast_retained_dates=bundle['statcast_retained_dates'],
+                      statcast_physical_dates=bundle['statcast_physical_dates'])
     values = engine.at('2026-09-02T17:50:00Z', '10', '151')
     for window in ('7d', '30d'):
         assert values[f'starter_era_{window}'] == 0
-        assert values[f'starter_complete_{window}'] == 0
+        assert values[f'starter_complete_{window}'] == 1
         assert values[f'starter_xwoba_{window}'] is None
-        assert values[f'starter_csw_pct_{window}'] is None
+        assert values[f'starter_csw_pct_{window}'] == 50
     # Restoring genuine provider evidence re-enables the same windows.
     payload['rows'].append(automatic(payload['rows'][0]))
     load_training_statcast(bundle, RetainedS3({key: (payload, 'v2', None)}), 'bucket')
     repaired = Features(bundle['full'], bundle['statcast'],
-                        statcast_retained_dates=bundle['statcast_retained_dates'])
+                        statcast_retained_dates=bundle['statcast_retained_dates'],
+                        statcast_physical_dates=bundle['statcast_physical_dates'])
     assert repaired.at('2026-09-02T17:50:00Z', '10', '151')['starter_xwoba_7d'] == .45
 
 

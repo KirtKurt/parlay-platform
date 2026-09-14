@@ -70,7 +70,9 @@ def test_invalid_same_game_cache_recovers_without_editing_raw_source(monkeypatch
     assert bundle['statcast'] == valid['rows']
     assert s3.objects[key] == original
     assert all(x.startswith(RESEARCH) for x in s3.writes)
-    assert len(bundle['source_receipts']) == 2  # pointer and exact payload version
+    # The final bundle keeps its prior receipt and adds the immutable recovery
+    # pointer plus exact payload version for outcome-safe features.
+    assert len(bundle['source_receipts']) == 3
     # A stale recovery pointer cannot qualify a changed official game set.
     bundle['schedule'].append({**bundle['schedule'][0], 'gamePk': 2})
     assert load_training_statcast(bundle, s3, 'b')['errors']

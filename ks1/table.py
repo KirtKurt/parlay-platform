@@ -143,6 +143,8 @@ def build(bundle, selected_date=None):
     history = Features(list(games.values()), bundle.get("statcast", []),
                        statcast_retained_dates=bundle.get("statcast_retained_dates", []),
                        statcast_verified_games=bundle.get("statcast_verified_games", []),
+                       statcast_physical_dates=bundle.get("statcast_physical_dates"),
+                       statcast_physical_games=bundle.get("statcast_physical_games"),
                        statcast_complete=bundle.get("statcast_coverage_complete") is True,
                        prior_statcast_profiles=bundle.get("prior_statcast_profiles"),
                        prior_statcast_year=bundle.get("prior_statcast_year"))
@@ -492,8 +494,10 @@ def build(bundle, selected_date=None):
                         for window in ("7d", "30d"):
                             context_features[side+"_lineup_platoon_xwoba_"+window] = None
                             context_features[side+"_lineup_pitch_type_matchup_xwoba_"+window] = None
+                            context_features[side+"_lineup_pitch_type_matchup_whiff_pct_"+window] = None
                             context_features[side+"_lineup_platoon_xwoba_"+window+"_missing"] = 1.0
                             context_features[side+"_lineup_pitch_type_matchup_xwoba_"+window+"_missing"] = 1.0
+                            context_features[side+"_lineup_pitch_type_matchup_whiff_pct_"+window+"_missing"] = 1.0
                 row.update(context_features)
                 row["lineup_bullpen_context_evidence"] = "frozen_versioned_ks1_profile"
                 row["lineup_bullpen_history_status"] = "COMPLETE"
@@ -676,7 +680,7 @@ def contract(example):
             "historical_lineup_bullpen_context_source",
         )
         if lineup_bullpen_audit:
-            source = "checksum-bound KS1-lineup-bullpen-profile-v2 or historical timecoded-feed audit metadata"
+            source = "checksum-bound KS1-lineup-bullpen-profile-v3 or historical timecoded-feed audit metadata"
         elif starter_metric or pitcher_context_metric or lineup_bullpen_metric or any(t in column for t in ("_offense_", "_team_starter_", "_bullpen_", "_rest_days", "_history_games")):
             dtype, role, source = pa.float64(), "feature", "strictly earlier completed compact/full game boxes"
             meaning += "; calendar-day windows; same-day excluded; current-season empirical prior; OPS/ISO 100 PA/AB, K-BB 100 BF, WHIP 75 outs shrinkage; *_games/*_pa/*_bf/*_appearances are observed counts"
@@ -688,7 +692,8 @@ def contract(example):
                 statcast_lineup = "_lineup_" in column and any(token in column for token in (
                     "_woba_", "_xwoba_", "_barrel_pct_", "_hard_hit_pct_",
                     "_avg_exit_velocity_", "_contact_pct_", "_swstr_pct_", "_csw_pct_",
-                    "_platoon_xwoba_", "_pitch_type_matchup_xwoba_"))
+                    "_platoon_xwoba_", "_pitch_type_matchup_xwoba_",
+                    "_pitch_type_matchup_whiff_pct_"))
                 source = ("immutable pre-T10 MLB Stats API lineup season-batting observation"
                           if direct_lineup else
                           "retained Baseball Savant pitch rows bound to strictly earlier completed official games"
@@ -696,7 +701,7 @@ def contract(example):
                           "strictly earlier completed official MLB game boxes"
                           if "_lineup_" in column else
                           "immutable pre-T10 MLB roster plus strictly earlier official boxes/retained Statcast")
-                meaning += "; admitted only from checksum-bound KS1-lineup-bullpen-profile-v2 or verified historical timecoded context"
+                meaning += "; admitted only from checksum-bound KS1-lineup-bullpen-profile-v3 or verified historical timecoded context"
             statcast = any(token in column for token in (
                 "_complete_", "_pitches_", "_hard_hit_pct_", "_barrel_pct_", "_avg_ev_allowed_",
                 "_xwoba", "_swstr_pct_", "_csw_pct_", "_velocity_", "_spin_",

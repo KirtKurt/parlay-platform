@@ -81,8 +81,10 @@ def statcast_features(observation, bundle, cutoff):
     from ks1.statcast_events import is_plate_appearance, is_thrown_pitch
     result = {}
     rows = bundle.get('rows', [])
-    verified_dates = set(bundle.get('retainedCompleteDates', []))
-    verified_games = {str(pk) for pk in bundle.get('retainedCompleteGames', [])}
+    verified_dates = set(bundle.get('retainedPhysicalDates',
+                                    bundle.get('retainedCompleteDates', [])))
+    verified_games = {str(pk) for pk in bundle.get(
+        'retainedPhysicalGames', bundle.get('retainedCompleteGames', []))}
     game_dates = {str(row.get('game_pk')): row.get('game_date') for row in rows}
     for side, team in observation['teams'].items():
         for group, members, role in (('Starter',[p for p in team['players'] if p['probableStarter']], 'pitcher'),
