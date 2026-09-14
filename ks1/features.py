@@ -339,6 +339,87 @@ class Features:
         prior_weight = min(old_n, PRIOR_WEIGHT_CAP_PITCHES)
         return (now*now_weight + old*prior_weight)/(now_weight+prior_weight)
 
+    def bullpen_roster_at(self, cutoff, team_id, roster_ids, *, game_date=None):
+        """Summarize only listed relievers from strictly earlier games.
+
+        Availability is a conservative workload classification.  A player with
+        no retained earlier appearance is UNKNOWN, never assumed available.
+        """
+        target = calendar_date.fromisoformat(game_date) if game_date else day(cutoff)
+        roster = {str(value) for value in roster_ids}
+        completed = [r for r in self.rows if r["completed"] < utc(cutoff)
+                     and r["day"] < target and r["team_id"] == str(team_id)]
+        league_rows = [p["stats"] for r in self.rows if r["completed"] < utc(cutoff)
+                       and r["day"] < target and r["day"].year == target.year
+                       for p in r["players"]]
+        league = {"kbb": counts(league_rows, PITCH)[0],
+                  "whip": counts(league_rows, ("outs", "hits", "baseOnBalls"))[0]}
+        appearances = [(r, p["stats"]) for r in completed for p in r["players"]
+                       if p["id"] in roster and number(p["stats"].get("gamesStarted")) != 1]
+        result = {"bullpen_context_roster_count": float(len(roster))}
+        for window in (7, 15, 30):
+            pairs = [(r, stats) for r, stats in appearances
+                     if r["day"] >= target-timedelta(days=window)]
+            box = pitching([stats for _, stats in pairs], league)
+            for metric in ("era", "whip", "ra9", "wins", "losses", "fip",
+                           "k_pct", "bb_pct", "k_bb_pct", "appearances"):
+                result[f"bullpen_context_{metric}_{window}d"] = box.get(metric)
+            game_ids = {r["game_id"] for r, _ in pairs}
+            expected = (sum(number(stats.get("numberOfPitches")) for _, stats in pairs)
+                        if pairs and all(number(stats.get("numberOfPitches")) is not None
+                                         for _, stats in pairs) else None)
+            statcast = self.statcast(None, set(), None)
+            selected = [row for game_id in game_ids for row in self.statcast_by_game.get(game_id, ())
+                        if str(row.get("pitcher")) in roster]
+            if expected is not None and len(selected) == expected:
+                # Reuse the exact pitcher aggregator one reliever at a time and
+                # weight team values by observed pitches.
+                pieces = []
+                for pid in roster:
+                    ids = {r["game_id"] for r, stats in pairs
+                           if any(p["id"] == pid and p["stats"] is stats for p in r["players"])}
+                    count = sum(number(stats.get("numberOfPitches")) for r, stats in pairs
+                                if any(p["id"] == pid and p["stats"] is stats for p in r["players"]))
+                    if count:
+                        pieces.append((count, self.statcast(pid, ids, count)))
+                for metric in ("swstr_pct", "csw_pct", "xwoba", "barrel_pct",
+                               "hard_hit_pct", "avg_ev_allowed", "velocity"):
+                    values = [(weight, part.get(metric)) for weight, part in pieces
+                              if part.get(metric) is not None]
+                    statcast[metric] = (sum(weight*value for weight, value in values)
+                                        / sum(weight for weight, _ in values)) if values else None
+            for metric in ("swstr_pct", "csw_pct", "xwoba", "barrel_pct",
+                           "hard_hit_pct", "avg_ev_allowed", "velocity"):
+                result[f"bullpen_context_{metric}_{window}d"] = statcast.get(metric)
+        states = {"AVAILABLE": 0, "LIMITED": 0, "LIKELY_UNAVAILABLE": 0, "UNKNOWN": 0}
+        workload_score = 0.0
+        for pid in roster:
+            recent = [(r, stats) for r, stats in appearances if any(
+                p["id"] == pid and p["stats"] is stats for p in r["players"])]
+            by_age = {age: [stats for r, stats in recent if (target-r["day"]).days == age]
+                      for age in range(1, 8)}
+            known = any(by_age.values())
+            pitches1 = sum(number(s.get("numberOfPitches")) or 0 for s in by_age[1])
+            pitches3 = sum(number(s.get("numberOfPitches")) or 0
+                           for age in range(1, 4) for s in by_age[age])
+            consecutive = 0
+            for age in range(1, 8):
+                if by_age[age]: consecutive += 1
+                else: break
+            workload_score += pitches1 + .35*max(0, pitches3-pitches1)
+            state = ("UNKNOWN" if not known else "LIKELY_UNAVAILABLE"
+                     if pitches1 >= 30 or consecutive >= 3 else "LIMITED"
+                     if pitches1 >= 20 or pitches3 >= 45 or consecutive >= 2 else "AVAILABLE")
+            states[state] += 1
+        for state, count in states.items():
+            result["bullpen_context_"+state.lower()+"_count"] = float(count)
+        result["bullpen_context_fatigue_score"] = workload_score
+        result["bullpen_context_depth"] = float(len(roster)-states["UNKNOWN"])
+        result["bullpen_context_availability_method"] = "strict_prior_workload_v1"
+        result["bullpen_context_high_leverage_quality"] = None
+        result["bullpen_context_platoon_coverage"] = None
+        return result
+
     def at(self, cutoff, team_id, starter_id=None, *, game_date=None):
         # Conservative same-day exclusion also prevents game-one results from
         # leaking into a doubleheader unless original observations say otherwise.

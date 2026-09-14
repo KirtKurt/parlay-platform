@@ -124,7 +124,8 @@ def fingerprint(row, features, needed):
     # Retrieval timestamps are audit metadata; including them would rewrite
     # every game on every poll. Quote values/status DO participate in this hash.
     audit_only = ('as_of', 'history_source_as_of', 'input_fingerprint',
-                  'starter_profile_json', 'starter_profile_sha256')
+                  'starter_profile_json', 'starter_profile_sha256',
+                  'lineup_bullpen_profile_json', 'lineup_bullpen_profile_sha256')
     values = {k: v for k, v in row.items() if k not in audit_only}
     return hashlib.sha256(encode({'contract': CONTRACT, 'row': values,
                                  'features': {k: features[k] for k in sorted(needed)}})).hexdigest()

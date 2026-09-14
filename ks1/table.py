@@ -6,12 +6,12 @@ import json
 import statistics
 
 import numpy as np
-import pandas as pd
 import pyarrow as pa
 
 from ks1.features import Features, day, number, starter_matchup, utc
 from ks1.historical_starters import published_starter_index
 from ks1.inventory import encode
+from ks1.passive_context import MODEL_FEATURES as LINEUP_BULLPEN_FEATURES, published_profile_index
 
 VERSION = "KS1-game-table-v1"
 
@@ -110,6 +110,7 @@ def build(bundle, selected_date=None):
         if s.get("originalObservation") is True and s.get("outcomeKnownAtCapture") is False:
             snapshots[str(s["officialGamePk"])].append(s)
     published_starters = published_starter_index(bundle.get("published_predictions", []))
+    published_team_context = published_profile_index(bundle.get("published_predictions", []))
     historical_context = bundle.get("historical_pitcher_context", {})
     history = Features(list(games.values()), bundle.get("statcast", []),
                        statcast_complete=bundle.get("statcast_coverage_complete") is True,
@@ -201,15 +202,36 @@ def build(bundle, selected_date=None):
                "pregame_sha256": None,
                "historical_pitcher_context_mode": None,
                "pitcher_context_evidence": None,
+               "lineup_bullpen_context_evidence": None,
                "historical_pitcher_context_as_of": None,
                "historical_pitcher_context_source": None,
                "reconstructed_source": json.dumps(r.get("sourceArtifact"), sort_keys=True) if r else None}
+        row.update({side+"_"+feature: None for side in ("home", "away")
+                    for feature in LINEUP_BULLPEN_FEATURES})
         if published:
             proof = published["source"]
             row.update(pregame_source_key=proof.get("key"),
                        pregame_version_id=proof.get("version_id"),
                        pregame_stored_at=proof.get("stored_at"),
                        pregame_sha256=proof.get("sha256"))
+        frozen_team_context = published_team_context.get(pk)
+        if frozen_team_context:
+            current_teams = {side: team_identity(
+                sch.get("teams", {}).get(side) or game.get("teams", {}).get(side))[0]
+                for side in ("home", "away")
+                if sch.get("teams", {}).get(side) or game.get("teams", {}).get(side)}
+            context_matches = (utc(frozen_team_context["commence_time"]) == utc(start)
+                               and len(current_teams) == 2
+                               and current_teams == frozen_team_context["teams"])
+            if not context_matches:
+                exclusions.append({"game_id": pk, "reason": "published_lineup_bullpen_identity_mismatch"})
+                frozen_team_context = None
+            elif utc(frozen_team_context["as_of"]) > utc(cutoff):
+                cutoff = frozen_team_context["as_of"]
+                row["as_of_timestamp"] = cutoff
+        if frozen_team_context:
+            row.update(frozen_team_context["features"])
+            row["lineup_bullpen_context_evidence"] = "frozen_versioned_ks1_profile"
         if published_problem:
             exclusions.append({"game_id": pk, "reason": published_problem})
         missing_identity = False
@@ -451,9 +473,17 @@ def contract(example):
                                                   "_starter_expected_innings_last5"))
         pitcher_context_metric = (column.startswith("home_pitcher_context_")
                                   or column.startswith("away_pitcher_context_"))
-        if starter_metric or pitcher_context_metric or any(t in column for t in ("_offense_", "_team_starter_", "_bullpen_", "_rest_days", "_history_games")):
+        lineup_bullpen_metric = any(
+            column == side+"_"+feature for side in ("home", "away")
+            for feature in LINEUP_BULLPEN_FEATURES)
+        if starter_metric or pitcher_context_metric or lineup_bullpen_metric or any(t in column for t in ("_offense_", "_team_starter_", "_bullpen_", "_rest_days", "_history_games")):
             dtype, role, source = pa.float64(), "feature", "strictly earlier completed compact/full game boxes"
             meaning += "; calendar-day windows; same-day excluded; current-season empirical prior; OPS/ISO 100 PA/AB, K-BB 100 BF, WHIP 75 outs shrinkage; *_games/*_pa/*_bf/*_appearances are observed counts"
+            if lineup_bullpen_metric:
+                source = ("immutable pre-T10 MLB Stats API lineup season-batting observation"
+                          if "_lineup_" in column else
+                          "immutable pre-T10 MLB roster plus strictly earlier official boxes/retained Statcast")
+                meaning += "; admitted only from checksum-bound KS1-lineup-bullpen-profile-v1"
             statcast = any(token in column for token in (
                 "_complete_", "_pitches_", "_hard_hit_pct_", "_barrel_pct_", "_avg_ev_allowed_",
                 "_xwoba", "_swstr_pct_", "_csw_pct_", "_velocity_", "_spin_",
