@@ -33,6 +33,11 @@ def cached_statcast(store,value,expected,deadline):
         if time.monotonic()>deadline:
             raise TimeoutError('ingestion time budget reached')
         fetched=source.statcast(value)
+        # Savant returns every game played on a date, including spring games
+        # outside this research contract.  Retain only the independently
+        # scheduled eligible IDs, then still fail closed if any are missing.
+        fetched={**fetched,'rows':[r for r in fetched['rows']
+                                   if source.count(r['game_pk']) in expected]}
         actual={source.count(r['game_pk']) for r in fetched['rows']}
         if actual!=expected:
             return [],{'date':value,'source':'statcast','error':'COVERAGE_MISMATCH',

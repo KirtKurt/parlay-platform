@@ -110,6 +110,36 @@ def test_statcast_cache_revalidates_when_a_late_game_becomes_final(store, monkey
     assert store.get(f'sources/statcast-v2/{day}.json')['rows'] == [{'game_pk': '1'}]
 
 
+def test_statcast_cache_filters_games_outside_the_eligible_schedule(store, monkeypatch):
+    day = '2026-03-18'
+    fetched = {'date': day, 'rows': [
+        {'game_pk': '1'}, {'game_pk': '2'}, {'game_pk': '99'}],
+        'receipt': {'provider': 'Baseball Savant'}}
+    monkeypatch.setattr(source, 'statcast', lambda value: fetched)
+
+    rows, error = ingestion.cached_statcast(store, day, {1, 2}, float('inf'))
+
+    assert error is None
+    assert rows == [{'game_pk': '1'}, {'game_pk': '2'}]
+    assert store.get(f'sources/statcast-v2/{day}.json')['rows'] == rows
+
+
+def test_feed_accepts_only_explicit_resume_timestamp(monkeypatch):
+    scheduled = game(start='2026-06-16T23:15:00Z')
+    scheduled['resumeDate'] = '2026-06-17T18:00:00Z'
+
+    def payload(at):
+        return {'gameData': {'game': {'pk': scheduled['gamePk']},
+                             'datetime': {'dateTime': at},
+                             'teams': {'home': {'id': 10}, 'away': {'id': 20}}}}, {}
+
+    monkeypatch.setattr(source, 'fetch', lambda *args, **kwargs: payload(scheduled['resumeDate']))
+    assert source.feed(scheduled)[0]['gameData']['datetime']['dateTime'] == scheduled['resumeDate']
+    monkeypatch.setattr(source, 'fetch', lambda *args, **kwargs: payload('2026-06-18T18:00:00Z'))
+    with pytest.raises(ValueError, match='identity changed'):
+        source.feed(scheduled)
+
+
 @pytest.mark.parametrize('bad',[float('inf'),float('-inf'),float('nan'),-0.1,1.1,[.5]])
 def test_invalid_probability_rejected_before_clipping(bad):
     with pytest.raises((ValueError,TypeError)):models.metrics([{'homeWon':1}],[bad])
