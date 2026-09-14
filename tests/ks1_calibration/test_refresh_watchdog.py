@@ -56,7 +56,8 @@ def test_no_runs_and_future_dates():
 def owner(monkeypatch):
     env = {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': watch.REPOSITORY,
            'GITHUB_REF': 'refs/heads/main', 'GITHUB_EVENT_NAME': 'workflow_dispatch',
-           'GITHUB_WORKFLOW_REF': watch.REPOSITORY+'/.github/workflows/'+watch.OWNER+'@refs/heads/main'}
+           'GITHUB_WORKFLOW_REF': watch.REPOSITORY+'/.github/workflows/'+watch.OWNER+'@refs/heads/main',
+           'GITHUB_RUN_ID': '1234'}
     for k, v in env.items():
         monkeypatch.setenv(k, v)
 
@@ -249,3 +250,69 @@ def test_watchdog_is_singleton_main_only_and_has_no_aws_credentials():
     assert job['permissions'] == {'contents': 'read', 'actions': 'write'}
     assert 'secrets.' not in body and 'aws-actions' not in body
     assert 'persist-credentials: false' in body
+
+
+def owner_run(run_id, status='queued', **changes):
+    row = {'id': run_id, 'head_branch': 'main', 'event': 'workflow_dispatch',
+           'status': status, 'path': '.github/workflows/'+watch.OWNER,
+           'head_repository': {'full_name': watch.REPOSITORY}}
+    return dict(row, **changes)
+
+
+class HandoffAPI(API):
+    def __init__(self, *, successor=None, read_failure=False):
+        super().__init__()
+        self.successor = successor or []
+        self.read_failure = read_failure
+        self.owner_attempts = 0
+
+    def dispatch(self, target):
+        self.calls.append(target)
+        if target == watch.OWNER:
+            self.owner_attempts += 1
+            if self.owner_attempts == 1:
+                raise RuntimeError('ambiguous owner POST timeout')
+
+    def owner_runs(self):
+        if self.read_failure:
+            raise RuntimeError('owner read unavailable')
+        return self.successor
+
+
+def test_ambiguous_handoff_is_confirmed_without_duplicate(owner):
+    api = HandoffAPI(successor=[owner_run(5678)])
+    clock = exercise(api)
+    assert api.calls == [watch.TARGET, watch.OWNER]
+    assert clock.elapsed == watch.OWNER_SECONDS+watch.HANDOFF_CONFIRM_BACKOFF[0]
+
+
+def test_unconfirmed_handoff_retries_once_after_fresh_empty_readback(owner):
+    api = HandoffAPI()
+    clock = exercise(api)
+    assert api.calls == [watch.TARGET, watch.OWNER, watch.OWNER]
+    assert clock.elapsed == watch.OWNER_SECONDS+sum(watch.HANDOFF_CONFIRM_BACKOFF)
+
+
+def test_unreadable_handoff_never_queues_a_possible_duplicate(owner):
+    api = HandoffAPI(read_failure=True)
+    with pytest.raises(RuntimeError, match='fresh readback unavailable'):
+        exercise(api)
+    assert api.calls == [watch.TARGET, watch.OWNER]
+
+
+def test_successor_readback_is_exact_and_filters_current_or_foreign_runs(monkeypatch):
+    api = watch.GitHub()
+    calls = []
+
+    def request(path):
+        calls.append(path)
+        return {'workflow_runs': []}
+
+    monkeypatch.setattr(api, 'request', request)
+    assert api.owner_runs() == []
+    assert calls == ['workflows/'+watch.OWNER+'/runs?branch=main&per_page=20']
+    current = owner_run(1234)
+    foreign = owner_run(5678, head_repository={'full_name': 'untrusted/fork'})
+    completed = owner_run(9012, status='completed')
+    assert not watch.successor_active([current, foreign, completed], '1234')
+    assert watch.successor_active([owner_run(5678)], '1234')

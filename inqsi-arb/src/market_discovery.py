@@ -95,7 +95,7 @@ def discover_event_market_keys(
     sport_key: str,
     event_id: str,
     *,
-    regions: str = "us,us2,uk,eu,au",
+    regions: str = "us,us2,us_dfs,us_ex,uk,eu,fr,se,au",
     bookmakers: Optional[str] = None,
     max_markets: int = 120,
 ) -> Tuple[List[str], Dict[str, Any]]:
@@ -120,7 +120,7 @@ def discover_sport_event_markets(
     sport_key: str,
     events: List[Dict[str, Any]],
     *,
-    regions: str = "us,us2,uk,eu,au",
+    regions: str = "us,us2,us_dfs,us_ex,uk,eu,fr,se,au",
     bookmakers: Optional[str] = None,
     max_events: int = 40,
     max_markets: int = 120,

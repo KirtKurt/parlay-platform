@@ -97,7 +97,14 @@ def feed(game,fields=None):
     if fields:url+='?'+urlencode({'fields':fields})
     data, receipt = fetch(url)
     identity = data['gameData']
-    if (identity['game']['pk'] != game['gamePk'] or utc(identity['datetime']['dateTime']) != utc(game['gameDate'])
+    # MLB replaces gameData.datetime.dateTime with resumeDate after a
+    # suspended game is completed.  Bind only to the schedule's explicit
+    # original/resume timestamps; never accept an unrelated time change.
+    scheduled_times = {utc(game['gameDate'])}
+    if game.get('resumeDate'):
+        scheduled_times.add(utc(game['resumeDate']))
+    if (identity['game']['pk'] != game['gamePk']
+            or utc(identity['datetime']['dateTime']) not in scheduled_times
             or any(identity['teams'][s]['id'] != game['teams'][s]['team']['id'] for s in ('home', 'away'))):
         raise ValueError('official feed identity changed')
     return data, receipt
@@ -108,7 +115,7 @@ def final_source(game):
             'venue,location,defaultCoordinates,latitude,longitude,liveData,plays,allPlays,about,endTime,'
             'boxscore,team,teamStats,batting,runs,atBats,hits,doubles,triples,homeRuns,baseOnBalls,'
             'hitByPitch,sacFlies,strikeOuts,plateAppearances,pitchers,players,person,stats,pitching,'
-            'gamesStarted,outs,earnedRuns,battersFaced,numberOfPitches')
+            'gamesStarted,outs,earnedRuns,battersFaced,numberOfPitches,hitBatsmen,wins,losses,strikes')
     payload, receipt = feed(game,fields)
     if not final(payload['gameData']):
         raise ValueError('source game not final')
@@ -131,7 +138,10 @@ def statcast(day):
     if not required.issubset(reader.fieldnames or []):
         raise ValueError('invalid Statcast schema')
     rows, seen = [], set()
-    keep = required | {'estimated_woba_using_speedangle', 'events', 'game_date', 'p_throws', 'stand'}
+    keep = required | {'estimated_woba_using_speedangle', 'events', 'description', 'game_date',
+                       'p_throws', 'stand', 'launch_angle', 'launch_speed_angle', 'bb_type',
+                       'release_spin_rate', 'release_extension', 'pfx_x', 'pfx_z', 'spin_axis',
+                       'zone', 'plate_x', 'plate_z', 'woba_value', 'woba_denom'}
     for row in reader:
         identity = tuple(count(row[k]) for k in ('game_pk', 'at_bat_number', 'pitch_number'))
         if identity in seen or row.get('game_date') != day:
@@ -149,10 +159,40 @@ def statcast_player(rows, identity, role):
     velocities = [number(r['release_speed']) for r in chosen]
     def average(values):
         return sum(values)/len(values) if values and all(v is not None for v in values) else None
-    return {'pitches': len(chosen), 'fairContacts': len(contacts),
+    descriptions = [str(r.get('description') or '').lower() for r in chosen]
+    swings = {'swinging_strike', 'swinging_strike_blocked', 'foul_tip', 'missed_bunt'}
+    called = {'called_strike'}
+    barrels = [number(r.get('launch_speed_angle')) for r in contacts]
+    def arsenal():
+        result = {}
+        for pitch in sorted({r.get('pitch_type') for r in chosen if r.get('pitch_type')}):
+            group = [r for r in chosen if r.get('pitch_type') == pitch]
+            desc = [str(r.get('description') or '').lower() for r in group]
+            contact = [r for r in group if r.get('type') == 'X']
+            result[pitch] = {'pitches': len(group), 'mix': len(group)/len(chosen) if chosen else None,
+                             'velocity': average([number(r.get('release_speed')) for r in group]),
+                             'spin': average([number(r.get('release_spin_rate')) for r in group]),
+                             'horizontalBreakIn': average([12*number(r.get('pfx_x')) if number(r.get('pfx_x')) is not None else None for r in group]),
+                             'verticalBreakIn': average([12*number(r.get('pfx_z')) if number(r.get('pfx_z')) is not None else None for r in group]),
+                             'extension': average([number(r.get('release_extension')) for r in group]),
+                             'whiffRatePerPitch': sum(d in swings for d in desc)/len(group) if group else None,
+                             'xwobaOnContact': average([number(r.get('estimated_woba_using_speedangle')) for r in contact])}
+        return result
+    result = {'pitches': len(chosen), 'fairContacts': len(contacts),
             'hardHitRate': sum(v >= 95 for v in speed)/len(speed) if speed and all(v is not None for v in speed) else None,
-            'xwobaOnContact': average(xwoba), 'meanVelocity': average(velocities) if role == 'pitcher' else None,
-            'pitchMix': {k: v/len(chosen) for k, v in Counter(r['pitch_type'] for r in chosen if r['pitch_type']).items()}}
+            'barrelRate': sum(v == 6 for v in barrels)/len(barrels) if barrels and all(v is not None for v in barrels) else None,
+            'xwobaOnContact': average(xwoba),
+            'swingingStrikeRate': sum(d in swings for d in descriptions)/len(chosen) if chosen else None,
+            'cswRate': sum(d in swings | called for d in descriptions)/len(chosen) if chosen else None,
+            'meanVelocity': average(velocities) if role == 'pitcher' else None,
+            'meanSpin': average([number(r.get('release_spin_rate')) for r in chosen]) if role == 'pitcher' else None,
+            'meanHorizontalBreakIn': average([12*number(r.get('pfx_x')) if number(r.get('pfx_x')) is not None else None for r in chosen]) if role == 'pitcher' else None,
+            'meanVerticalBreakIn': average([12*number(r.get('pfx_z')) if number(r.get('pfx_z')) is not None else None for r in chosen]) if role == 'pitcher' else None,
+            'meanExtension': average([number(r.get('release_extension')) for r in chosen]) if role == 'pitcher' else None,
+            'pitchMix': {k: v/len(chosen) for k, v in Counter(r['pitch_type'] for r in chosen if r['pitch_type']).items()},
+            'arsenal': arsenal() if role == 'pitcher' else {}}
+    result['averageExitVelocityAllowed' if role == 'pitcher' else 'averageExitVelocity'] = average(speed)
+    return result
 
 
 def markets(games):

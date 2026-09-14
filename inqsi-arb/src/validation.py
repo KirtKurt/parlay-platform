@@ -149,6 +149,20 @@ def validate_event(event: Dict[str, Any], *, jurisdiction: str = "*") -> List[Di
         grouped["quotes"] = group_quotes
         validated.append(_annotate(grouped, result, s, m, unknown_books, freshness_evidence))
 
+    if validated and (unknown_books or len(groups) > 1):
+        # Preserve visibility into a better mathematical price that depends on
+        # an unreviewed book or crosses materially different rule profiles.
+        # This row can only be held/rejected; it can never qualify as verified.
+        combined = dict(row)
+        combined["id"] = f"{row.get('id') or row.get('market_id') or ''}|rules:unverified"
+        combined["quotes"] = fresh_quotes
+        all_books = sorted({str(q.get("book") or "").lower() for q in fresh_quotes if q.get("book")})
+        combined_result = compatibility(all_books, s, m, jurisdiction)
+        combined_result["rules_considered"] = [asdict(r) for r in rule_by_book.values() if r is not None]
+        validated.append(_annotate(
+            combined, combined_result, s, m, unknown_books, freshness_evidence
+        ))
+
     if validated:
         return validated
 
@@ -162,9 +176,9 @@ def validate_event(event: Dict[str, Any], *, jurisdiction: str = "*") -> List[Di
         }
     else:
         result = compatibility(fresh_books, s, m, jurisdiction)
-    result["rules_considered"] = [asdict(r) for r in rule_by_book.values() if r is not None]
     filtered = dict(row)
     filtered["quotes"] = fresh_quotes
+    result["rules_considered"] = [asdict(r) for r in rule_by_book.values() if r is not None]
     return [_annotate(filtered, result, s, m, unknown_books or fresh_books, freshness_evidence)]
 
 

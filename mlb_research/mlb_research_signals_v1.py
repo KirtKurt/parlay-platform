@@ -83,25 +83,59 @@ def statcast_features(observation, bundle, cutoff):
     for side, team in observation['teams'].items():
         for group, members, role in (('Starter',[p for p in team['players'] if p['probableStarter']], 'pitcher'),
                 ('Lineup',[p for p in team['players'] if p['lineupSlot']], 'batter')):
-            for n in (7,15,30):
-                summaries, complete = [], bool(members)
+            windows = [('7d', '7d'), ('15d', '15d'), ('30d', '30d')]
+            if role == 'pitcher':
+                windows.append(('Last3', 'last3Starts'))
+            for label, window_key in windows:
+                summaries, selected_sets, complete = [], [], bool(members)
                 for player in members:
-                    window = player['pitching' if role=='pitcher' else 'hitting'][str(n)+'d']
+                    window = player['pitching' if role=='pitcher' else 'hitting'][window_key]
                     ids = set(window.get('gameIds', []))
                     selected = [r for r in rows if source.count(r['game_pk']) in ids and str(r[role])==str(player['id'])]
+                    selected_sets.append(selected)
                     expected = (window.get('stats') or {}).get('numberOfPitches' if role=='pitcher' else 'plateAppearances')
                     actual = len(selected) if role=='pitcher' else sum(bool(r.get('events')) for r in selected)
                     if expected is None or actual != expected:
                         complete = False
                     summaries.append(source.statcast_player(selected,player['id'],role))
-                result[f'{side}{group}StatcastComplete{n}d'] = float(complete)
-                for metric in ('hardHitRate','xwobaOnContact','meanVelocity'):
+                result[f'{side}{group}StatcastComplete{label}'] = float(complete)
+                metrics = ('hardHitRate','barrelRate','xwobaOnContact',
+                               'swingingStrikeRate','cswRate','meanVelocity','meanSpin',
+                               'meanHorizontalBreakIn','meanVerticalBreakIn','meanExtension')
+                metrics += (('averageExitVelocityAllowed',) if role == 'pitcher'
+                            else ('averageExitVelocity',))
+                for metric in metrics:
                     vals = [s[metric] for s in summaries]
-                    result[f'{side}{group}{metric[0].upper()+metric[1:]}{n}d'] = sum(vals)/len(vals) if complete and vals and all(v is not None for v in vals) else None
+                    result[f'{side}{group}{metric[0].upper()+metric[1:]}{label}'] = sum(vals)/len(vals) if complete and vals and all(v is not None for v in vals) else None
                 if role == 'pitcher':
                     mixes = {k for s in summaries for k in s['pitchMix']}
                     for pitch in mixes:
-                        result[f'{side}StarterPitchMix{pitch}{n}d'] = sum(s['pitchMix'].get(pitch,0) for s in summaries)/len(summaries) if complete else None
+                        result[f'{side}StarterPitchMix{pitch}{label}'] = sum(s['pitchMix'].get(pitch,0) for s in summaries)/len(summaries) if complete else None
+                        for metric in ('velocity','spin','horizontalBreakIn','verticalBreakIn','extension',
+                                       'whiffRatePerPitch','xwobaOnContact'):
+                            values = [s['arsenal'].get(pitch, {}).get(metric) for s in summaries]
+                            result[f'{side}Starter{pitch}{metric[0].upper()+metric[1:]}{label}'] = (
+                                sum(values)/len(values) if complete and values and all(v is not None for v in values) else None)
+                    other = 'away' if side == 'home' else 'home'
+                    lineup = [p for p in observation['teams'][other]['players'] if p['lineupSlot']]
+                    hand = members[0].get('pitchHand') if len(members) == 1 else None
+                    if len(lineup) == 9 and hand in ('L','R') and all(p.get('batSide') in ('L','R','S') for p in lineup):
+                        left = sum(p['batSide'] == 'L' or (p['batSide'] == 'S' and hand == 'R') for p in lineup)/9
+                        right = 1-left
+                        result[f'{side}StarterOpposingLineupLeftShare{label}'] = left
+                        result[f'{side}StarterOpposingLineupRightShare{label}'] = right
+                        versus = {stand: source.statcast_player(
+                            [r for r in selected_sets[0] if r.get('stand') == stand], members[0]['id'], 'pitcher')
+                                  for stand in ('L','R')}
+                        for pitch in mixes:
+                            for metric in ('mix','whiffRatePerPitch','xwobaOnContact'):
+                                values = [versus[stand]['arsenal'].get(pitch, {}).get(metric) for stand in ('L','R')]
+                                result[f'{side}Starter{pitch}Matchup{metric[0].upper()+metric[1:]}{label}'] = (
+                                    left*values[0]+right*values[1]
+                                    if complete and all(value is not None for value in values) else None)
+                    else:
+                        result[f'{side}StarterOpposingLineupLeftShare{label}'] = None
+                        result[f'{side}StarterOpposingLineupRightShare{label}'] = None
     return result
 
 

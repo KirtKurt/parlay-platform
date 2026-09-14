@@ -4,7 +4,7 @@ Isolated production arbitrage service. It never places bets.
 
 ## Coverage model
 
-Sports and sportsbooks are provider-discovered. `/v1/arb/catalog` reads the active sport catalogue from The Odds API; scans omit a hard-coded sportsbook allowlist so every provider-returned operator in the requested permitted regions can participate.
+Sports and sportsbooks are provider-discovered. `/v1/arb/catalog` reads the active sport catalogue from The Odds API. Production scans include every sportsbook returned across the configured worldwide region set; no hard-coded bookmaker allowlist is applied.
 
 The deterministic engine supports N-way markets and arbitrary provider market keys. Featured `h2h`, `spreads`, `totals`, and `outrights` use the sport odds endpoint. Other exact market keys use event-specific odds endpoints. Market availability is sport/book dependent and is never fabricated.
 
@@ -21,3 +21,12 @@ Extended market example:
 `/v1/arb/scan?sport=baseball_mlb&markets=player_strikeouts,alternate_totals`
 
 The service rejects incomplete outcome universes and never labels unknown/incompatible rule identities as an arb. Quote/book links and provider timestamps are retained where the provider supplies them.
+
+Production defaults to worldwide settlement scope (`*`) and the configured
+global provider regions. Supplying a jurisdiction narrows validation to that
+ruleset; explicit `regions` or `bookmakers` parameters remain available for
+diagnostic scans. Scan history
+persists bounded leg-level evidence for verified, held-back, rejected, and
+exchange-pending candidates. Lay markets are never evaluated as ordinary
+sportsbook back markets; they are reported separately until the commission,
+liability, and liquidity-aware back/lay engine can evaluate them.

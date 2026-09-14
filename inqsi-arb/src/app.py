@@ -20,6 +20,13 @@ from validation import validate_events
 
 VERSION = "INQSI-ARB-v3"
 DEFAULT_MARKETS = "h2h,spreads,totals"
+US_JURISDICTIONS = {
+    "al", "ak", "az", "ar", "ca", "co", "ct", "de", "dc", "fl", "ga",
+    "hi", "id", "il", "in", "ia", "ks", "ky", "la", "me", "md", "ma",
+    "mi", "mn", "ms", "mo", "mt", "ne", "nv", "nh", "nj", "nm", "ny",
+    "nc", "nd", "oh", "ok", "or", "pa", "ri", "sc", "sd", "tn", "tx",
+    "ut", "vt", "va", "wa", "wv", "wi", "wy",
+}
 
 
 def response(status: int, body: Any, *, content_type: str = "application/json") -> Dict[str, Any]:
@@ -72,18 +79,95 @@ def _maybe_broadcast(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"sent": 0, "stale": 0, "error": type(exc).__name__}
 
 
-def _finalize_scan(result: Dict[str, Any], *, sport: str) -> Dict[str, Any]:
+def _default_jurisdiction() -> str:
+    return (os.environ.get("ARB_DEFAULT_JURISDICTION") or "*").strip().lower() or "*"
+
+
+def _regions(jurisdiction: str, explicit: str = "") -> str:
+    if explicit.strip():
+        return explicit.strip()
+    if jurisdiction.strip().lower() in US_JURISDICTIONS:
+        return os.environ.get("ARB_US_REGIONS", "us,us2")
+    return os.environ.get("ARB_REGIONS", "us,us2,us_dfs,us_ex,uk,eu,fr,se,au")
+
+
+def _audit_candidate(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Return bounded, decision-complete candidate evidence for DynamoDB."""
+    def bounded(value: Any, maximum: int = 256) -> Any:
+        if isinstance(value, str):
+            return value[:maximum]
+        if isinstance(value, list):
+            return [bounded(item, 128) for item in value[:25]]
+        if isinstance(value, dict):
+            return {str(key)[:64]: bounded(item) for key, item in list(value.items())[:25]}
+        return value
+
+    validation = {
+        str(key): bounded(value)
+        for key, value in dict(row.get("validation") or {}).items()
+    }
+    settlement = dict((row.get("context") or {}).get("settlement_validation") or {})
+    if settlement.get("reason") and not validation.get("settlement_reason"):
+        validation["settlement_reason"] = settlement["reason"]
+    if settlement.get("missing_books") and not validation.get("missing_books"):
+        validation["missing_books"] = bounded(settlement["missing_books"])
+    all_legs = list(row.get("legs") or [])
+    legs = []
+    for leg in all_legs[:4]:
+        legs.append({key: bounded(leg.get(key)) for key in (
+            "outcome", "book", "american", "decimal", "net_decimal", "stake",
+            "payout_if_wins", "profit_if_wins", "last_update", "provider", "link", "limit",
+        )})
+    return {
+        key: bounded(row.get(key)) for key in (
+            "market_id", "event", "market", "commence_time", "math_arb", "arb",
+            "sum_implied", "margin_pct", "hold_pct", "bankroll", "minimum_payout",
+            "minimum_profit", "n_quotes", "n_books", "outcomes", "books",
+        )
+    } | {
+        "validation": validation,
+        "legs": legs,
+        "n_legs": len(all_legs),
+        "omitted_legs": max(0, len(all_legs) - len(legs)),
+    }
+
+
+def _audit_scan_payload(result: Dict[str, Any], *, sport: str, jurisdiction: str) -> Dict[str, Any]:
+    remaining = 25
+    saved: Dict[str, list] = {}
+    for name in ("hits", "detected_unverified", "rejected", "exchange_pending"):
+        rows = list(result.get(name) or [])
+        selected = rows[:remaining]
+        saved[name] = [_audit_candidate(row) for row in selected]
+        remaining -= len(selected)
+    counts = {
+        "hits": int(result.get("n_arbs") or 0),
+        "detected_unverified": int(result.get("n_detected_unverified") or 0),
+        "rejected": int(result.get("n_rejected") or 0),
+        "exchange_pending": int(result.get("n_exchange_pending") or 0),
+    }
+    return {
+        "sport": str(sport)[:256],
+        "jurisdiction": str(jurisdiction)[:256],
+        "n_markets": result.get("n_markets"),
+        "n_arbs": result.get("n_arbs"),
+        "n_detected_unverified": result.get("n_detected_unverified"),
+        "n_rejected": result.get("n_rejected"),
+        "n_held_unverified": result.get("n_held_unverified"),
+        "n_exchange_pending": result.get("n_exchange_pending"),
+        **saved,
+        "truncated": {name: max(0, count - len(saved[name])) for name, count in counts.items()},
+    }
+
+
+def _finalize_scan(result: Dict[str, Any], *, sport: str, jurisdiction: str) -> Dict[str, Any]:
     result["version"] = VERSION
+    result["jurisdiction"] = jurisdiction
     if audit_enabled():
         try:
-            result["audit_event_id"] = audit_record("SCAN", {
-                "sport": sport,
-                "n_markets": result.get("n_markets"),
-                "n_arbs": result.get("n_arbs"),
-                "n_detected_unverified": result.get("n_detected_unverified"),
-                "n_rejected": result.get("n_rejected"),
-                "hits": result.get("hits", [])[:50],
-            })
+            result["audit_event_id"] = audit_record(
+                "SCAN", _audit_scan_payload(result, sport=sport, jurisdiction=jurisdiction)
+            )
         except Exception as exc:
             result["audit_error"] = type(exc).__name__
     if result.get("hits"):
@@ -120,6 +204,12 @@ def lambda_handler(event, context):
             "balance_aware_optimizer": True,
             "two_leg_completion_assistant": True,
             "opportunity_history": audit_enabled(),
+            "default_jurisdiction": _default_jurisdiction(),
+            "candidate_evidence_audit": True,
+            "required_outcome_universe_preserved": True,
+            "exchange_lay_routed": True,
+            "sportsbook_scope": "all_provider_returned",
+            "default_regions": _regions(_default_jurisdiction()).split(","),
         })
 
     if method == "GET" and path == "/v1/arb/history":
@@ -166,7 +256,7 @@ def lambda_handler(event, context):
             "sports": sports,
             "n_sports": len(sports),
             "market_families": {**MARKET_FAMILIES, **MARKET_FAMILY_KEYS},
-            "sportsbook_policy": "all provider-returned books in requested permitted regions; no hard-coded allowlist",
+            "sportsbook_policy": "all provider-returned books in requested configured regions; no hard-coded allowlist",
             "settlement_policy": "explicit reviewed book rules only; unknown combinations fail closed",
             "provider": meta,
         })
@@ -176,7 +266,8 @@ def lambda_handler(event, context):
         event_id = query.get("event_id", "").strip()
         if not sport:
             return response(400, {"ok": False, "error": "SPORT_REQUIRED"})
-        regions = query.get("regions") or os.environ.get("ARB_REGIONS", "us,us2,uk,eu,au")
+        jurisdiction = (query.get("jurisdiction") or _default_jurisdiction()).strip().lower()
+        regions = _regions(jurisdiction, query.get("regions", ""))
         if event_id:
             keys, meta = discover_event_market_keys(
                 sport, event_id, regions=regions, bookmakers=query.get("bookmakers"),
@@ -196,11 +287,12 @@ def lambda_handler(event, context):
         except ValueError:
             return response(400, {"ok": False, "error": "INVALID_NUMERIC_PARAMETER"})
 
-        jurisdiction = query.get("jurisdiction", "*")
+        jurisdiction = (query.get("jurisdiction") or _default_jurisdiction()).strip().lower()
+        regions = _regions(jurisdiction, query.get("regions", ""))
         if market_arg.lower() == "all":
             rows, status = fetch_all_discovered_markets(
                 sport,
-                regions=query.get("regions") or os.environ.get("ARB_REGIONS", "us,us2,uk,eu,au"),
+                regions=regions,
                 bookmakers=query.get("bookmakers"),
                 max_events=max_events,
                 max_markets_per_event=int(os.environ.get("ARB_MAX_MARKETS_PER_EVENT", "120")),
@@ -208,7 +300,7 @@ def lambda_handler(event, context):
             rows = validate_events(rows, jurisdiction=jurisdiction)
             result = scan_all({"bankroll": bankroll, "events": rows})
             result["status"] = status
-            return response(200 if status.get("ok") else 503, _finalize_scan(result, sport=sport))
+            return response(200 if status.get("ok") else 503, _finalize_scan(result, sport=sport, jurisdiction=jurisdiction))
 
         markets = [m.strip() for m in market_arg.split(",") if m.strip()]
         if families_arg:
@@ -227,34 +319,37 @@ def lambda_handler(event, context):
             for row in sports[:limit]:
                 payload = scan_sport_payload(
                     row["key"], bankroll=bankroll, markets=markets,
-                    regions=query.get("regions"), bookmakers=query.get("bookmakers"), max_events=max_events,
+                    regions=regions, bookmakers=query.get("bookmakers"), max_events=max_events,
                 )
                 combined["events"].extend(validate_events(payload["events"], jurisdiction=jurisdiction))
                 statuses.append(payload["status"])
             result = scan_all(combined)
             result["status"] = {"sports": statuses, "n_sports_scanned": limit, "catalog": sports_meta}
-            return response(200, _finalize_scan(result, sport="all"))
+            return response(200, _finalize_scan(result, sport="all", jurisdiction=jurisdiction))
 
         payload = scan_sport_payload(
             sport, bankroll=bankroll, markets=markets,
-            regions=query.get("regions"), bookmakers=query.get("bookmakers"), max_events=max_events,
+            regions=regions, bookmakers=query.get("bookmakers"), max_events=max_events,
         )
         payload["events"] = validate_events(payload["events"], jurisdiction=jurisdiction)
         result = scan_all(payload)
         result["status"] = payload["status"]
-        return response(200 if payload["status"].get("ok") else 503, _finalize_scan(result, sport=sport))
+        return response(200 if payload["status"].get("ok") else 503, _finalize_scan(result, sport=sport, jurisdiction=jurisdiction))
 
     if method == "POST" and path in {"/v1/arb/scan", "/v1/scan"}:
         payload = _body(event)
         if not isinstance(payload.get("events"), list):
             return response(400, {"ok": False, "error": "BODY_EVENTS_REQUIRED"})
-        payload["events"] = validate_events(payload["events"], jurisdiction=str(payload.get("jurisdiction") or "*"))
+        jurisdiction = str(payload.get("jurisdiction") or _default_jurisdiction()).strip().lower()
+        payload["events"] = validate_events(payload["events"], jurisdiction=jurisdiction)
         try:
             result = scan_all(payload)
         except (ValueError, ArbValidationError) as exc:
             return response(400, {"ok": False, "error": "INVALID_SCAN_PAYLOAD", "detail": str(exc)[:200]})
         result["status"] = {"source": "posted", "places_bets": False}
-        return response(200, _finalize_scan(result, sport=str(payload.get("sport") or "posted")))
+        return response(200, _finalize_scan(
+            result, sport=str(payload.get("sport") or "posted"), jurisdiction=jurisdiction
+        ))
 
     if method == "POST" and path == "/v1/arb/constraints":
         payload = _body(event)

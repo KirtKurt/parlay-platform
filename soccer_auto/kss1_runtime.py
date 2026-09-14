@@ -29,9 +29,25 @@ def market_prior_from_lock(lock: Mapping[str, Any]) -> dict[str, float] | None:
 
 def kss1_prediction_sk(lock: Mapping[str, Any]) -> str:
     return (
-        f"PRED#KSS1#REV#{int(lock['schedule_revision'])}"
+        f"PRED#KSS1#REV#{int(lock.get('schedule_revision') or 0)}"
         f"#TARGET#kss1_book#MODEL#{ENGINE_ID}"
     )
+
+
+def shadow_source_from_event(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "event_key": row.get("event_key"),
+        "event_id": row.get("event_id") or row.get("odds_event_id"),
+        "sport_key": row.get("sport_key"),
+        "home_team": row.get("home_team"),
+        "away_team": row.get("away_team"),
+        "commence_time": row.get("commence_time"),
+        "schedule_revision": int(row.get("schedule_revision") or 0),
+        "lock_at": row.get("lock_at"),
+        "feature_hash": row.get("feature_hash"),
+        "frozen_features": row.get("frozen_features") or {},
+        "prediction_eligible": False,
+    }
 
 
 def build_kss1_shadow_item(lock: Mapping[str, Any], observed_at: str) -> dict[str, Any]:
@@ -72,8 +88,8 @@ def build_kss1_shadow_item(lock: Mapping[str, Any], observed_at: str) -> dict[st
 
 
 def write_kss1_shadow(store: SoccerStore, lock: Mapping[str, Any], observed_at: str) -> dict[str, Any]:
-    if not lock.get("prediction_eligible"):
-        return {"written": False, "reason": "LOCK_NOT_PREDICTION_ELIGIBLE"}
+    if not lock.get("event_key") or not lock.get("home_team") or not lock.get("away_team"):
+        return {"written": False, "reason": "EVENT_IDENTITY_INCOMPLETE"}
     item = build_kss1_shadow_item(lock, observed_at)
     return {"written": bool(store.put_prediction(item)), "sk": item["SK"]}
 
@@ -116,18 +132,15 @@ def freeze_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, A
         )
         for row in events:
             revision = int(row.get("schedule_revision") or 0)
-            if revision <= 0:
-                skipped += 1
-                continue
-            lock = store.get_lock(
-                row["event_key"],
-                schedule_revision=revision,
-                horizon="T10",
-            )
-            if not lock:
-                skipped += 1
-                continue
-            outcome = write_kss1_shadow(store, lock, observed_at)
+            lock = None
+            if revision > 0:
+                lock = store.get_lock(
+                    row["event_key"],
+                    schedule_revision=revision,
+                    horizon="T10",
+                )
+            source = lock or shadow_source_from_event(row)
+            outcome = write_kss1_shadow(store, source, observed_at)
             written += int(bool(outcome.get("written")))
             skipped += int(not outcome.get("written"))
     except Exception as exc:

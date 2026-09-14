@@ -14,8 +14,9 @@ from urllib.request import Request, urlopen
 
 from ks1.features import ET, day, utc
 from ks1.inventory import Reader, RESEARCH, RECONSTRUCTED, encode
-from ks1.sources import aws_clients
+from ks1.passive_context import read_date as read_passive_context
 from ks1.refresh import pregame_status
+from ks1.sources import aws_clients
 
 
 def shape(value, depth=0):
@@ -166,15 +167,39 @@ def capture(target_date, output):
     # Existing repository source. One bulk schedule call supplies official IDs
     # and probable pitchers: the documented BBS stored lineup route is empty.
     _, s3, bucket = aws_clients('us-east-1', 'parlay-platform-dev')
+    try:
+        import boto3
+        passive_table = boto3.resource('dynamodb', region_name='us-east-1').Table(
+            'parlay_platform_snapshots')
+        passive = {'status': 'READ', 'table': 'parlay_platform_snapshots',
+                   'as_of': datetime.now(timezone.utc).isoformat(),
+                   'games': read_passive_context(passive_table, target_date)}
+    except Exception as exc:
+        passive = {'status': 'UNAVAILABLE_FAIL_CLOSED',
+                   'error_code': getattr(exc, 'response', {}).get('Error', {}).get(
+                       'Code', type(exc).__name__), 'games': {}}
+    (output/'passive_context.json').write_bytes(encode(passive))
     reader = Reader(s3, bucket)
     prior = reader.pointer(reader.read(RESEARCH+'prior-games.json')['artifact'])
     with ThreadPoolExecutor(max_workers=8) as pool:
         compact = list(pool.map(reader.read, sorted(reader.keys(RECONSTRUCTED+'source-games/'))))
     games = {str(g['officialGamePk']): g for g in compact}
     games.update({str(g['officialGamePk']): g for g in prior['games']})
-    games = [g for g in games.values() if day(g['startAtUtc']).year == date.fromisoformat(target_date).year]
+    target_year = date.fromisoformat(target_date).year
+    games = [g for g in games.values() if day(g['startAtUtc']).year in (target_year-1, target_year)]
+    statcast = reader.pointer(reader.read(RESEARCH+'statcast.json')['artifact'])
     history = {'games': games, 'source_receipts': reader.receipts, 'schedule': prior.get('schedule', []),
+               'statcast': statcast.get('rows', []),
                'coverage_complete': prior.get('coverageComplete'),
+               'current30_history_complete': prior.get('current30CoverageComplete'),
+               'current_year_history_complete': prior.get('currentYearCoverageComplete'),
+               'prior_year_history_complete': prior.get('priorYearCoverageComplete'),
+               'statcast_coverage_complete': statcast.get('current30CoverageComplete', statcast.get('coverageComplete')),
+               'current_year_statcast_complete': statcast.get('currentYearCoverageComplete'),
+               'prior_year_statcast_complete': statcast.get('priorYearCoverageComplete'),
+               'prior_statcast_profiles': statcast.get('priorYearProfiles', {}),
+               'prior_statcast_year': statcast.get('priorYear'),
+               'statcast_observed_at': statcast.get('updatedAtUtc') or statcast.get('receipt', {}).get('retrievedAtUtc'),
                'prior_observed_at': prior.get('updatedAtUtc') or prior.get('receipt', {}).get('retrievedAtUtc')}
     (output / 'history.json.gz').write_bytes(gzip.compress(encode(history), mtime=0))
     refs = json.loads((Path(__file__).parent/'model_refs.json').read_bytes())

@@ -45,7 +45,9 @@ jobs:
             --resolve-s3 \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
-            --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}"
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              "ArbRegions=us,us2,us_dfs,us_ex,uk,eu,fr,se,au"
       - name: Verify repair
         env:
           BBD_API_KEY: ${{ secrets.BBD_API_KEY }}
