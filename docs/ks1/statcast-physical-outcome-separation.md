@@ -9,7 +9,8 @@ claims and are now stored separately.
 
 - `retainedPhysicalDates` / `retainedPhysicalGames` require exact official
   pitcher identities and `numberOfPitches` reconciliation, unique pitch
-  identities, and the independently scheduled game set.
+  identities, one consistent official batter per at-bat, exact individual
+  batter plate-appearance counts, and the independently scheduled game set.
 - `retainedCompleteDates` / `retainedCompleteGames` retain the stricter prior
   requirement: physical proof plus official batters-faced, unique terminal
   plate appearances, supported outcomes, and finite wOBA fields.
@@ -19,7 +20,7 @@ claims and are now stored separately.
 
 Physical proof can populate velocity, spin, movement, extension, pitch mix,
 contact quality, swinging-strike and called-strike fields. Full-PA proof is
-still mandatory for wOBA, xwOBA, platoon xwOBA and pitch-type matchup xwOBA.
+still mandatory for wOBA, xwOBA, xFIP, platoon xwOBA and pitch-type matchup xwOBA.
 Nothing synthesizes a missing provider field.
 
 The lineup schema adds a physical-only

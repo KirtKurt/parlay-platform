@@ -25,6 +25,9 @@ class RetainedS3:
 
 def fixture():
     source = game(1, '2026-09-01', '2026-09-01T21:00:00Z')
+    for player in source['teams']['home']['players'].values():
+        if player.get('stats', {}).get('batting'):
+            player['stats']['batting']['plateAppearances'] = 1
     source['teams']['home']['players']['151']['stats']['pitching']['numberOfPitches'] = 18
     source['teams']['home']['players']['151']['stats']['pitching']['battersFaced'] = 9
     source['teams']['away']['players'] = deepcopy(source['teams']['home']['players'])

@@ -29,11 +29,12 @@ def official_pitch_counts(sources):
 
 
 def official_physical_pitch_counts(sources):
-    """Bind thrown-pitch counts without requiring separate PA evidence."""
-    expected, invalid = {}, set()
+    """Bind thrown pitches and batter attribution without outcome fields."""
+    expected, batters, invalid = {}, {}, set()
     for game in normalize(sources):
         game_id = str(game['game_id'])
         counts = expected.setdefault(game_id, {})
+        batter_counts = batters.setdefault(game_id, {})
         if not game['context_players']:
             invalid.add(game_id)
         for player in game['context_players']:
@@ -42,15 +43,25 @@ def official_physical_pitch_counts(sources):
                 invalid.add(game_id)
             else:
                 counts[(game_id, str(player['id']))] = int(count)
-    return expected, invalid
+        for player in game['batters']:
+            appearances = number(player['stats'].get('plateAppearances'))
+            if (appearances is None or appearances < 0
+                    or int(appearances) != appearances):
+                invalid.add(game_id)
+            elif appearances:
+                batter_counts[(game_id, str(player['id']))] = int(appearances)
+    for game_id in expected:
+        if not batters.get(game_id):
+            invalid.add(game_id)
+    return expected, batters, invalid
 
 
-def physical_pitches_complete(rows, games, expected, invalid):
+def physical_pitches_complete(rows, games, expected, batters, invalid):
     """Prove identities and exact official physical pitch counts only.
 
-    Plate-appearance outcomes are deliberately independent. A provider row can
-    therefore support velocity, movement, arsenal, contact and discipline
-    measurements while xwOBA-style outcome features remain unavailable.
+    Plate-appearance outcomes are deliberately independent. Batter identities
+    and unique at-bat counts still reconcile to official individual PA totals,
+    so physical matchup values cannot omit or transfer an unattributed row.
     """
     games = {str(pk) for pk in games}
     if games & invalid or not games.issubset(expected):
@@ -58,13 +69,28 @@ def physical_pitches_complete(rows, games, expected, invalid):
     wanted = {key: count for pk in games for key, count in expected[pk].items() if count}
     if any((str(row.get('game_pk')), str(row.get('pitcher')))
            not in expected.get(str(row.get('game_pk')), {})
+           or (str(row.get('game_pk')), str(row.get('batter')))
+           not in batters.get(str(row.get('game_pk')), {})
            or str(row.get('game_pk')) not in games for row in rows):
         return False
     actual = Counter((str(row.get('game_pk')), str(row.get('pitcher')))
                      for row in rows if is_thrown_pitch(row))
     identities = {tuple(str(row.get(key)) for key in (
         'game_pk', 'at_bat_number', 'pitch_number')) for row in rows}
-    return len(identities) == len(rows) and dict(actual) == wanted
+    at_bat_batters = {}
+    for row in rows:
+        at_bat_batters.setdefault(
+            (str(row.get('game_pk')), str(row.get('at_bat_number'))),
+            set()).add(str(row.get('batter')))
+    actual_batters = Counter(
+        (game_id, next(iter(values)))
+        for (game_id, _), values in at_bat_batters.items()
+        if len(values) == 1)
+    wanted_batters = {key: count for pk in games
+                      for key, count in batters[pk].items() if count}
+    return (len(identities) == len(rows) and dict(actual) == wanted
+            and all(len(values) == 1 for values in at_bat_batters.values())
+            and dict(actual_batters) == wanted_batters)
 
 
 def pitches_complete(rows, games, expected, invalid):
@@ -105,20 +131,20 @@ def pitch_complete_dates(sources, statcast_by_date, expected_by_date):
 
 def physical_pitch_complete_dates(sources, statcast_by_date, expected_by_date):
     """Return dates whose physical pitches reconcile to official boxes."""
-    expected, invalid = official_physical_pitch_counts(sources)
+    expected, batters, invalid = official_physical_pitch_counts(sources)
     return sorted(value for value, rows in statcast_by_date.items()
                   if physical_pitches_complete(
-                      rows, expected_by_date[value], expected, invalid))
+                      rows, expected_by_date[value], expected, batters, invalid))
 
 
-def physical_validation_reason(payload, value, games, expected, invalid):
+def physical_validation_reason(payload, value, games, expected, batters, invalid):
     rows = payload.get('rows', [])
     if payload.get('date') != value or any(row.get('game_date') != value for row in rows):
         return 'date_mismatch'
     if {str(row.get('game_pk')) for row in rows} != {str(pk) for pk in games}:
         return 'game_set_mismatch'
-    if not physical_pitches_complete(rows, games, expected, invalid):
-        return 'physical_pitch_identity_count_mismatch'
+    if not physical_pitches_complete(rows, games, expected, batters, invalid):
+        return 'physical_pitch_or_batter_attribution_mismatch'
     return None
 
 
@@ -172,7 +198,8 @@ def load_training_statcast(bundle, s3, bucket):
         else:
             unfinished.add(value)
     expected, invalid = official_pitch_counts(bundle['full'])
-    physical_expected, physical_invalid = official_physical_pitch_counts(bundle['full'])
+    physical_expected, physical_batters, physical_invalid = official_physical_pitch_counts(
+        bundle['full'])
 
     def read_date(value):
         games = expected_dates[value]
@@ -191,7 +218,8 @@ def load_training_statcast(bundle, s3, bucket):
                 payload = reader.read(key)
                 receipt = reader.receipts[-1]
                 physical_reason = physical_validation_reason(
-                    payload, value, games, physical_expected, physical_invalid)
+                    payload, value, games, physical_expected, physical_batters,
+                    physical_invalid)
                 reason = validation_reason(payload, value, games, expected, invalid)
                 if receipt.get('versionId') in (None, '', 'null'):
                     physical_reason = reason = 'unversioned_source'

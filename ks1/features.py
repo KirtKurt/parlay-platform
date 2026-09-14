@@ -403,7 +403,7 @@ class Features:
                   "horizontal_break_in": average([12*self._finite(r.get("pfx_x")) if self._finite(r.get("pfx_x")) is not None else None for r in selected]) if complete else None,
                   "vertical_break_in": average([12*self._finite(r.get("pfx_z")) if self._finite(r.get("pfx_z")) is not None else None for r in selected]) if complete else None,
                   "extension": average([self._finite(r.get("release_extension")) for r in selected]) if complete else None,
-                  "fly_balls": len(fly_balls) if complete else None}
+                  "fly_balls": len(fly_balls) if outcome_complete else None}
         result.update({name: None for name in UNAVAILABLE_EXACT})
         counts = Counter(r.get("pitch_type") if r.get("pitch_type") in PITCH_TYPES else "OTHER"
                          for r in selected)
@@ -428,6 +428,11 @@ class Features:
         if not self.statcast_complete:
             return None
         game_ids = {row["game_id"] for row in eligible}
+        if (self.statcast_retained_dates is not None
+                and not all(self.game_dates.get(str(game_id)) in self.statcast_retained_dates
+                            or str(game_id) in self.statcast_verified_games
+                            for game_id in game_ids)):
+            return None
         balls = [row for game_id in game_ids for row in self.statcast_by_game.get(str(game_id), ())
                  if row.get("bb_type") == "fly_ball"]
         return rate(sum(row.get("events") == "home_run" for row in balls), len(balls))

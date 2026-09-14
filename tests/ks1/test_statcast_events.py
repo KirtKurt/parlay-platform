@@ -18,6 +18,16 @@ def automatic(row, description='automatic_strike'):
             'estimated_woba_using_speedangle': ''}
 
 
+def add_official_pa(bundle, batter_id):
+    for side in ('home', 'away'):
+        for player in bundle['full'][0]['teams'][side]['players'].values():
+            if str(player['person']['id']) == str(batter_id):
+                batting = player['stats']['batting']
+                batting['plateAppearances'] += 1
+                return
+    raise AssertionError('test batter absent from official box')
+
+
 @pytest.mark.parametrize('description', ['automatic_ball', 'automatic_strike'])
 def test_automatic_events_reconcile_without_relaxing_pitch_counts(description):
     bundle, payload, _ = fixture()
@@ -50,6 +60,8 @@ def test_automatic_outcomes_survive_but_do_not_dilute_physical_pitch_features():
         if row['pitch_number'] == '1':
             row.update(type='S', description='called_strike', woba_denom='0')
     events = [automatic(row) for row in rows if row['pitch_number'] == '2']
+    for event in events:
+        add_official_pa(bundle, event['batter'])
     payload['rows'] = rows+events
     report = load_training_statcast(bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
     assert report['verified_pitch_objects'] == 1
@@ -81,9 +93,14 @@ def test_zero_pitch_official_appearance_can_contain_automatic_outcome():
     source = deepcopy(bundle['full'])
     source[0]['teams']['home']['players']['151']['stats']['pitching']['numberOfPitches'] = 0
     source[0]['teams']['home']['players']['151']['stats']['pitching']['battersFaced'] = 1
+    for player in source[0]['teams']['away']['players'].values():
+        if player.get('stats', {}).get('batting'):
+            player['stats']['batting']['plateAppearances'] = 0
     expected, invalid = official_pitch_counts(source)
     rows = [r for r in payload['rows'] if r['pitcher'] != '151']
-    rows.append(automatic(payload['rows'][0]))
+    event = automatic(payload['rows'][0])
+    add_official_pa({'full': source}, event['batter'])
+    rows.append(event)
     assert pitches_complete(rows, {1}, expected, invalid)
     bundle['full'], payload['rows'] = source, rows
     report = load_training_statcast(bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
@@ -138,7 +155,9 @@ def test_additional_official_terminal_codes_are_not_lost(event):
 def test_incomplete_automatic_outcome_never_qualifies(description, field, value):
     bundle, payload, key = fixture()
     bundle['full'][0]['teams']['home']['players']['151']['stats']['pitching']['battersFaced'] = 10
-    payload['rows'].append({**automatic(payload['rows'][0], description), field: value})
+    event = {**automatic(payload['rows'][0], description), field: value}
+    add_official_pa(bundle, event['batter'])
+    payload['rows'].append(event)
     report = load_training_statcast(bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
     assert report['verified_pitch_objects'] == 0
     assert report['verified_physical_pitch_objects'] == 1
@@ -173,6 +192,21 @@ def test_physical_only_receipt_enables_whiff_matchup_but_not_xwoba():
     assert all(profile['windows']['7d']['csw_pct'] == 50 for profile in profiles)
 
 
+@pytest.mark.parametrize('defect', ['blank', 'foreign', 'inconsistent_at_bat'])
+def test_physical_receipt_requires_official_batter_attribution(defect):
+    bundle, payload, key = fixture()
+    if defect == 'blank':
+        payload['rows'][0]['batter'] = ''
+    elif defect == 'foreign':
+        payload['rows'][0]['batter'] = '999999'
+    else:
+        payload['rows'][0]['batter'] = payload['rows'][2]['batter']
+    report = load_training_statcast(
+        bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
+    assert report['verified_physical_pitch_objects'] == 0
+    assert '2026-09-01' not in bundle['statcast_physical_dates']
+
+
 def test_starter_windows_reject_unverified_pa_dates_but_keep_official_results():
     bundle, payload, key = fixture()
     bundle['full'][0]['teams']['home']['players']['151']['stats']['pitching']['battersFaced'] = 10
@@ -187,9 +221,12 @@ def test_starter_windows_reject_unverified_pa_dates_but_keep_official_results():
         assert values[f'starter_era_{window}'] == 0
         assert values[f'starter_complete_{window}'] == 1
         assert values[f'starter_xwoba_{window}'] is None
+        assert values[f'starter_xfip_{window}'] is None
         assert values[f'starter_csw_pct_{window}'] == 50
     # Restoring genuine provider evidence re-enables the same windows.
-    payload['rows'].append(automatic(payload['rows'][0]))
+    event = automatic(payload['rows'][0])
+    add_official_pa(bundle, event['batter'])
+    payload['rows'].append(event)
     load_training_statcast(bundle, RetainedS3({key: (payload, 'v2', None)}), 'bucket')
     repaired = Features(bundle['full'], bundle['statcast'],
                         statcast_retained_dates=bundle['statcast_retained_dates'],
