@@ -199,6 +199,7 @@ def capture(target_date, output):
                'prior_year_statcast_complete': statcast.get('priorYearCoverageComplete'),
                'prior_statcast_profiles': statcast.get('priorYearProfiles', {}),
                'prior_statcast_year': statcast.get('priorYear'),
+               'statcast_observed_at': statcast.get('updatedAtUtc') or statcast.get('receipt', {}).get('retrievedAtUtc'),
                'prior_observed_at': prior.get('updatedAtUtc') or prior.get('receipt', {}).get('retrievedAtUtc')}
     (output / 'history.json.gz').write_bytes(gzip.compress(encode(history), mtime=0))
     refs = json.loads((Path(__file__).parent/'model_refs.json').read_bytes())

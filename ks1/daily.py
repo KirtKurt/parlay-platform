@@ -507,7 +507,8 @@ def predict(folder, output):
             try:
                 context_profile, context_features = lineup_bullpen_profile(
                     passive, game, row, as_of, engine,
-                    inputs['history'].get('prior_observed_at'))
+                    inputs['history'].get('prior_observed_at'),
+                    inputs['history'].get('statcast_observed_at'))
             except (KeyError, TypeError, ValueError) as exc:
                 reason = re.sub(r'[^A-Z0-9]+', '_', str(exc).upper()).strip('_')
                 row['lineup_bullpen_profile_status'] = 'INVALID_FAIL_CLOSED:'+reason[:120]
@@ -603,6 +604,8 @@ def predict(folder, output):
                     or utc(profile['as_of']) != utc(record.as_of)
                     or (profile.get('history_as_of')
                         and utc(profile['history_as_of']) > utc(profile['as_of']))
+                    or (profile.get('statcast_as_of')
+                        and utc(profile['statcast_as_of']) > utc(profile['as_of']))
                     or utc(profile['as_of']) > utc(record.commence_time)-timedelta(minutes=10)):
                 raise ValueError('lineup/bullpen profile binding failed')
     output = output / ('date='+target_date); output.mkdir(parents=True, exist_ok=True)

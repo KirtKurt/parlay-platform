@@ -146,12 +146,14 @@ def _lineup_features(samples):
     }
 
 
-def build_profile(stored, game, row, as_of, history, history_as_of=None):
+def build_profile(stored, game, row, as_of, history, history_as_of=None,
+                  statcast_as_of=None):
     """Validate one exact persisted observation and bind it to a KS1 game."""
     raw = stored.get("data", stored) if isinstance(stored, dict) else {}
     game_id, start, cutoff = str(game["gamePk"]), utc(game["gameDate"]), utc(game["gameDate"])-timedelta(minutes=10)
     observed = utc(as_of)
-    if history_as_of is not None and utc(history_as_of) > observed:
+    if any(value is not None and utc(value) > observed
+           for value in (history_as_of, statcast_as_of)):
         raise ValueError("historical source observed after profile")
     if str(raw.get("officialGamePk") or raw.get("official_game_pk") or "") != game_id:
         raise ValueError("passive context game identity mismatch")
@@ -208,6 +210,7 @@ def build_profile(stored, game, row, as_of, history, history_as_of=None):
         raise ValueError("bullpen roster status invalid")
     profile = {"contract": CONTRACT, "as_of": observed.isoformat(),
                "history_as_of": history_as_of,
+               "statcast_as_of": statcast_as_of,
                "game_id": game_id, "commence_time": start.isoformat(),
                "source_roles": {"lineup_and_season_batting": lineup_source,
                                 "bullpen_roster_only": bullpen_source,
@@ -216,7 +219,7 @@ def build_profile(stored, game, row, as_of, history, history_as_of=None):
                                     "as_of": history_as_of},
                                 "contact_plate_discipline_and_pitch_arsenal": {
                                     "provider": "Baseball Savant retained Statcast pitch rows",
-                                    "as_of": history_as_of},
+                                    "as_of": statcast_as_of},
                                 "market_context": {"provider": "The Odds API", "role": "markets only"},
                                 "BBD": {"role": "fixture crosscheck only", "player_stats_claimed": False}},
                "coverage_status": "SUPPORTED_V1_COMPLETE", "sides": sides,
@@ -277,6 +280,8 @@ def frozen_profile_features(row):
              and utc(profile["as_of"]) == utc(row["as_of"])
              and (not profile.get("history_as_of")
                   or utc(profile["history_as_of"]) <= utc(profile["as_of"]))
+             and (not profile.get("statcast_as_of")
+                  or utc(profile["statcast_as_of"]) <= utc(profile["as_of"]))
              and utc(profile["as_of"]) <= utc(row["commence_time"])-timedelta(minutes=10))
     if not valid:
         return None
