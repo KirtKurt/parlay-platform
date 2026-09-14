@@ -200,8 +200,6 @@ def build(bundle, selected_date=None):
             if hashlib.sha256(encode(snapshot["features"])).hexdigest() != snapshot["featureFingerprint"]:
                 raise ValueError("snapshot feature fingerprint mismatch")
             cutoff = snapshot["capturedAtUtc"]
-        # Snapshot fields and a later immutable KS1 starter profile are
-        # independent evidence. Preserve both when both were known by T-10.
         published = published_starters.get(pk, {})
         published_problem = None
         if published and utc(published["commence_time"]) != utc(start):
@@ -209,8 +207,6 @@ def build(bundle, selected_date=None):
         if published:
             cutoff = (max(utc(cutoff), utc(published["as_of"])).isoformat()
                       if snapshot else published["as_of"])
-        # Select the latest matching archived observations before computing
-        # either side's features, so both sides share the final safe cutoff.
         archived_for_game = {}
         for side in ('home', 'away'):
             candidates = []
@@ -373,14 +369,17 @@ def build(bundle, selected_date=None):
                 row.update(captured)
                 row["rolling_feature_evidence"] = "immutable original snapshot starter profile"
             cutoff_day = day(cutoff)
-            gaps = {key: calendar_date.fromisoformat(date)
-                    for key, date in missing_boxes[tid]
-                    if date[:4] == str(cutoff_day.year) and date < str(cutoff_day)}
-            gaps = {key: date for key, date in gaps.items() if (cutoff_day-date).days <= 75}
-            row[f"{side}_missing_history_boxes_75d"] = len(gaps)
-            row[f"{side}_history_status"] = "partial_known_missing_boxes" if gaps else "complete_for_retained_finals"
+            relevant_gap_years = {str(cutoff_day.year), str(cutoff_day.year-1)}
+            history_gaps = {key: calendar_date.fromisoformat(date)
+                            for key, date in missing_boxes[tid]
+                            if date[:4] in relevant_gap_years and date < str(cutoff_day)}
+            recent_gaps = {key: date for key, date in history_gaps.items()
+                           if (cutoff_day-date).days <= 75}
+            row[f"{side}_missing_history_boxes_75d"] = len(recent_gaps)
+            row[f"{side}_history_status"] = ("partial_known_missing_boxes"
+                                             if history_gaps else "complete_for_retained_finals")
             for window in (1, 3, 5):
-                if any((cutoff_day-date).days <= window for date in gaps.values()):
+                if any((cutoff_day-date).days <= window for date in recent_gaps.values()):
                     for stat in ("pitches", "outs"):
                         row[f"{side}_bullpen_{stat}_{window}d"] = None
         historical_team = None
@@ -510,8 +509,6 @@ def build(bundle, selected_date=None):
         elif context_matches:
             context_applied = False
             for side in ("home", "away"):
-                # A real immutable T-10 starter profile is more specific.  The
-                # V8 summary accelerates only rows lacking that identity.
                 if row.get(side+"_starter_id") is None:
                     row.update({f"{side}_pitcher_context_{key}": value
                                 for key, value in context["sides"][side].items()})
