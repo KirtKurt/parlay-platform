@@ -27,8 +27,9 @@ def test_gradient_pushes_overconfident_wrong_call_down():
     assert hess[0] > 0
 
 
-def test_booster_params_drop_builtin_objective():
+def test_booster_params_use_lightgbm_46_callable_api():
     params = booster_params({"objective": "binary", "n_estimators": 200, "num_leaves": 7})
-    assert "objective" not in params
+    assert params["objective"] is brier_objective
+    assert params["metric"] == "None"
     assert "n_estimators" not in params
     assert params["num_leaves"] == 7

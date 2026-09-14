@@ -28,6 +28,31 @@ def active_frozen(store):
     return store.load(pointer['artifact']) if pointer else None
 
 
+def fail_closed_starter_values(values,prior,statcast):
+    """Apply the serving coverage contract before evidence becomes immutable."""
+    coverage={
+        '30d':prior.get('current30CoverageComplete') is True
+              and statcast.get('current30CoverageComplete',statcast.get('coverageComplete')) is True,
+        'last3':prior.get('currentYearCoverageComplete') is True
+                and prior.get('priorYearCoverageComplete') is True
+                and statcast.get('currentYearCoverageComplete') is True
+                and statcast.get('priorYearCoverageComplete') is True,
+        'prior_year':prior.get('priorYearCoverageComplete') is True
+                     and statcast.get('priorYearCoverageComplete') is True,
+    }
+    result=dict(values)
+    if not coverage['30d']:
+        result.update({key:None for key in result if key.startswith('starter_')
+                       and key.endswith(('_7d','_10d','_30d'))})
+    if not coverage['last3']:
+        result.update({key:None for key in result if key.startswith('starter_')
+                       and key.endswith('_last3')})
+    if not coverage['prior_year']:
+        result.update({key:None for key in result if key.startswith('starter_')
+                       and (key.endswith('_prior_year') or key.endswith('_talent'))})
+    return result,coverage
+
+
 def snapshot(store,game,checkpoint,market,history,prior,statcast):
     minutes={'early':54,'T45':45,'T30':30,'T10':10}[checkpoint]
     cutoff=utc(game['gameDate'])-timedelta(minutes=minutes)
@@ -38,9 +63,32 @@ def snapshot(store,game,checkpoint,market,history,prior,statcast):
     completed={g['officialGamePk']:g for g in prior.get('games',[]) if utc(g['completedAtUtc'])<observed}
     observation=players.observe(game,payload,completed,observed)
     conditions=signals.conditions(game,payload,list(completed.values()),observed)
+    from ks1.features import Features, starter_matchup
+    engine=Features(list(completed.values()),statcast.get('rows',[]),
+                    statcast_complete=statcast.get('current30CoverageComplete',
+                                                   statcast.get('coverageComplete')) is True,
+                    prior_statcast_profiles=statcast.get('priorYearProfiles'),
+                    prior_statcast_year=statcast.get('priorYear'))
+    starter_features={}
+    for side,team in observation['teams'].items():
+        starter_id=team.get('starterId')
+        team_id=team.get('teamId') or game['teams'][side]['team']['id']
+        values=engine.at(observed.isoformat(),team_id,str(starter_id) if starter_id else None,
+                         game_date=utc(game['gameDate']).astimezone(source.ET).date().isoformat())
+        values,starter_coverage=fail_closed_starter_values(values,prior,statcast)
+        other='away' if side=='home' else 'home'
+        starter=[p for p in team.get('players',[]) if p.get('probableStarter')]
+        lineup=sorted((p for p in observation['teams'][other].get('players',[]) if p.get('lineupSlot')),
+                      key=lambda p:p['lineupSlot'])
+        matchup=starter_matchup(starter[0].get('pitchHand') if len(starter)==1 else None,
+                                [p.get('batSide') for p in lineup] if len(lineup)==9 else None)
+        values.update({'starter_'+key:value for key,value in matchup.items()})
+        starter_features.update({side+'_'+key:value for key,value in values.items()
+                                 if key.startswith('starter_')})
     features={**players.features(observation),
               **signals.prior_features(game,list(completed.values()),history,observed),
-              **signals.statcast_features(observation,statcast,observed), **conditions['features']}
+              **signals.statcast_features(observation,statcast,observed),
+              **starter_features, **conditions['features']}
     day=utc(game['gameDate']).astimezone(source.ET).date().isoformat()
     previous=None
     for cp in ('early','T45','T30'):
@@ -64,6 +112,7 @@ def snapshot(store,game,checkpoint,market,history,prior,statcast):
             'slateDateEt':utc(game['gameDate']).astimezone(source.ET).date().isoformat(),
             'commenceTime':game['gameDate'],'checkpoint':checkpoint,'featureCutoffUtc':cutoff.isoformat(),
             'capturedAtUtc':captured.isoformat(),'features':features,'featureFingerprint':digest(features),
+            'starterHistoryCoverage':starter_coverage,
             'playerWindows':observation,'conditions':conditions,'feedReceipt':receipt,
             'originalObservation':True,'outcomeKnownAtCapture':False,'productionAuthority':False}
 

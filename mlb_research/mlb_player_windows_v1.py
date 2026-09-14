@@ -6,8 +6,10 @@ import mlb_research_sources_v1 as source
 from mlb_research_store_v1 import utc
 
 VERSION = 'MLB-PLAYER-WINDOWS-v1-active-roster-original-observation'
-PITCHING = ('outs', 'earnedRuns', 'hits', 'baseOnBalls', 'strikeOuts', 'battersFaced', 'numberOfPitches')
+PITCHING = ('outs', 'earnedRuns', 'runs', 'hits', 'homeRuns', 'baseOnBalls', 'hitBatsmen',
+            'strikeOuts', 'battersFaced', 'numberOfPitches', 'wins', 'losses', 'gamesStarted')
 BATTING = ('atBats', 'hits', 'doubles', 'triples', 'homeRuns', 'baseOnBalls', 'hitByPitch', 'sacFlies', 'strikeOuts', 'plateAppearances')
+FIP_CONSTANT = 3.10
 
 
 def rates(stats, role):
@@ -16,7 +18,16 @@ def rates(stats, role):
     if role == 'pitching':
         return {'era': ratio(27*stats['earnedRuns'], stats['outs']),
                 'whip': ratio(3*(stats['hits']+stats['baseOnBalls']), stats['outs']),
-                'kMinusBbPct': ratio(100*(stats['strikeOuts']-stats['baseOnBalls']), stats['battersFaced'])}
+                'ra9': ratio(27*stats['runs'], stats['outs']),
+                'fip': (ratio(3*(13*stats['homeRuns'] + 3*(stats['baseOnBalls']+stats['hitBatsmen'])
+                                      - 2*stats['strikeOuts']), stats['outs']) + FIP_CONSTANT
+                        if stats['outs'] else None),
+                'fipConstant': FIP_CONSTANT,
+                'kPct': ratio(100*stats['strikeOuts'], stats['battersFaced']),
+                'bbPct': ratio(100*stats['baseOnBalls'], stats['battersFaced']),
+                'kMinusBbPct': ratio(100*(stats['strikeOuts']-stats['baseOnBalls']), stats['battersFaced']),
+                'wins': stats['wins'], 'losses': stats['losses'],
+                'winPct': ratio(stats['wins'], stats['wins']+stats['losses'])}
     ab, hits = stats['atBats'], stats['hits']
     obp = ratio(hits+stats['baseOnBalls']+stats['hitByPitch'], ab+stats['baseOnBalls']+stats['hitByPitch']+stats['sacFlies'])
     slg = ratio(hits+stats['doubles']+2*stats['triples']+3*stats['homeRuns'], ab)
@@ -34,7 +45,8 @@ def logs(person, role, completed_games, cutoff):
     if not blocks:
         return None
     result, seen = [], set()
-    lower = cutoff.astimezone(source.ET).date()-timedelta(days=30)
+    target_day = cutoff.astimezone(source.ET).date()
+    lower = date(target_day.year-1, 1, 1)
     for block in blocks:
         for split in block.get('splits', []):
             if split.get('gameType') not in source.GAME_TYPES or str(split.get('sport', {}).get('id', 1)) != '1':
@@ -70,6 +82,21 @@ def aggregate(entries, role, cutoff, days):
     chosen = [e for e in entries if lower <= date.fromisoformat(e['date']) <= upper]
     keys = PITCHING if role == 'pitching' else BATTING
     totals = {k: sum(e['stats'][k] for e in chosen) for k in keys}
+    return {'status': 'OBSERVED' if chosen else 'NO_APPEARANCES', 'appearances': len(chosen),
+            'stats': totals, 'rates': rates(totals, role), 'gameIds': [e['gamePk'] for e in chosen]}
+
+
+def last_starts(entries, role, count=3):
+    if role != 'pitching':
+        raise ValueError('last starts require pitching role')
+    if entries is None:
+        return {'status': 'INCOMPLETE', 'appearances': None, 'stats': None, 'rates': {}, 'gameIds': []}
+    chosen = sorted((e for e in entries if e['stats'].get('gamesStarted') == 1),
+                    key=lambda e: (e['date'], e['gamePk']), reverse=True)[:count]
+    if len(chosen) < count:
+        return {'status': 'INCOMPLETE', 'appearances': len(chosen), 'stats': None,
+                'rates': {}, 'gameIds': [e['gamePk'] for e in chosen]}
+    totals = {k: sum(e['stats'][k] for e in chosen) for k in PITCHING}
     return {'status': 'OBSERVED' if chosen else 'NO_APPEARANCES', 'appearances': len(chosen),
             'stats': totals, 'rates': rates(totals, role), 'gameIds': [e['gamePk'] for e in chosen]}
 
@@ -110,9 +137,13 @@ def observe(game, payload, completed_games, cutoff):
         # Date-bounded hydration keeps full-roster collection to one request
         # per team per season; late-year requests can include postseason logs.
         people = {}
-        lower = cutoff.astimezone(source.ET).date()-timedelta(days=30)
+        target_day = cutoff.astimezone(source.ET).date()
+        lower = date(target_day.year-1, 1, 1)
         for season in sorted({lower.year, cutoff.year}):
-            hydrate = f'stats(group=[pitching,hitting],type=[gameLog],season={season},startDate={lower},endDate={day})'
+            season_start=max(lower,date(season,1,1))
+            season_end=min(target_day,date(season,12,31))
+            hydrate = (f'stats(group=[pitching,hitting],type=[gameLog],season={season},'
+                       f'startDate={season_start},endDate={season_end})')
             data, receipt = source.fetch(source.API+'/v1/people?'+urlencode({'personIds': ','.join(map(str, ids)), 'hydrate': hydrate}))
             receipts.append(receipt)
             returned = data.get('people', [])
@@ -139,6 +170,7 @@ def observe(game, payload, completed_games, cutoff):
                     entries = None
                 value[role] = {str(n)+'d': aggregate(entries, role, cutoff, n) for n in (7, 15, 30)}
                 if role == 'pitching':
+                    value[role]['last3Starts'] = last_starts(entries, role)
                     value['workload'] = {}
                     for n in (1, 3, 5):
                         # Previous n calendar days plus completed games today.
@@ -167,12 +199,21 @@ def features(observation):
         result[side+'LineupConfirmed'] = float(team['lineupConfirmed'])
         result[side+'IncompletePitcherWindows'] = sum(p['pitching']['30d']['status'] == 'INCOMPLETE' for p in pitchers)
         for n in (7, 15, 30):
-            for group, members, role, keys in (('Starter', starter, 'pitching', ('era', 'whip', 'kMinusBbPct', 'outs')),
+            for group, members, role, keys in (('Starter', starter, 'pitching', ('era', 'whip', 'ra9', 'fip', 'kPct', 'bbPct', 'kMinusBbPct', 'wins', 'losses', 'winPct', 'outs')),
                     ('Bullpen', bullpen, 'pitching', ('era', 'whip', 'kMinusBbPct', 'outs')),
                     ('Lineup', lineup, 'hitting', ('ops', 'iso', 'obp', 'slg', 'kPct', 'bbPct'))):
                 values = pooled(members, n, role)
                 for key in keys:
                     result[f'{side}{group}{key[0].upper()+key[1:]}{n}d'] = values.get(key)
+        if len(starter) == 1:
+            latest = starter[0]['pitching']['last3Starts']
+            values = {**latest.get('rates', {}), **(latest.get('stats') or {})}
+        else:
+            latest, values = {'appearances': None, 'status': 'INCOMPLETE'}, {}
+        for key in ('era', 'whip', 'ra9', 'fip', 'kPct', 'bbPct', 'kMinusBbPct',
+                    'wins', 'losses', 'winPct', 'outs'):
+            result[f'{side}Starter{key[0].upper()+key[1:]}Last3'] = values.get(key)
+        result[f'{side}StarterAppearancesLast3'] = latest.get('appearances')
         for n in (1, 3, 5):
             vals = [p['workload'][str(n)+'d']['pitches'] for p in bullpen]
             result[f'{side}BullpenPitches{n}d'] = sum(vals) if vals and all(v is not None for v in vals) else None

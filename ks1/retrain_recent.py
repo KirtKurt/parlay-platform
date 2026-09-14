@@ -1,4 +1,4 @@
-"""Fixed September holdout for seven-day KS1 features; never publish predictions."""
+"""Rolling chronological holdout for seven-day KS1 features; never publish predictions."""
 import argparse
 import hashlib
 import json
@@ -9,17 +9,25 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss
 
-from ks1.features import ET, Features
+from ks1.features import Features, MATCHUP_METRICS
 from ks1.inventory import encode
+from ks1.passive_context import (LINEUP_FEATURES, BULLPEN_FEATURES,
+                                 MODEL_FEATURES as LINEUP_BULLPEN_FEATURES)
 from ks1.sources import aws_clients, load_existing
 from ks1.table import build, contract
 from ks1.train import PARAMS, select_features, save_artifact
 
-# Fixed before inspecting results. No holdout refit or hyperparameter search.
-SPLIT_DATE = '2026-09-01'
+# Feature-contract construction needs a valid timestamp but does not inspect data.
+FEATURE_CONTRACT_DATE = '2026-09-01'
 MIN_TRAIN = 500
-MIN_TEST = 100
-MIN_STARTER_ROWS = 100
+EVALUATION_GAMES = 300
+MIN_TEST = EVALUATION_GAMES
+MIN_STARTER_ROWS = EVALUATION_GAMES
+
+
+def completion_times(values):
+    """Parse retained completion timestamps, accepting valid mixed ISO-8601 forms."""
+    return pd.to_datetime(values, format='ISO8601', utc=True, errors='raise')
 
 
 def split_recent(frame):
@@ -28,20 +36,41 @@ def split_recent(frame):
     labeled = frame.loc[frame.home_win.notna() & frame.home_score.notna() & frame.away_score.notna()].copy()
     if not set(labeled.home_win.unique()).issubset({True, False, 0, 1}):
         raise ValueError('invalid labels')
-    # A resumed August game completed in September cannot supply a training
-    # label that was unavailable at the start of the holdout.
-    completed = pd.to_datetime(labeled.label_completed_at, format='ISO8601', utc=True, errors='raise')
-    boundary = pd.Timestamp(SPLIT_DATE, tz=ET).tz_convert('UTC')
-    train = labeled.loc[(labeled.date < SPLIT_DATE) & (completed < boundary)].sort_values(['date', 'game_id'])
-    test = labeled.loc[labeled.date >= SPLIT_DATE].sort_values(['date', 'game_id'])
-    if len(train) < MIN_TRAIN or len(test) < MIN_TEST:
+    completed = completion_times(labeled.label_completed_at)
+    predicted = completion_times(labeled.as_of_timestamp)
+    valid = completed.notna() & predicted.notna() & (predicted < completed)
+    eligible = labeled.loc[valid].assign(
+        _label_completed_at=completed.loc[valid],
+        _prediction_at=predicted.loc[valid],
+    ).sort_values(['_label_completed_at', 'game_id'])
+    if len(eligible) < MIN_TRAIN + MIN_TEST:
         raise ValueError('insufficient chronological train/test games')
+    test = eligible.tail(EVALUATION_GAMES)
+    boundary = test['_prediction_at'].min()
+    # No training label may become available after the first held-out feature
+    # vector was frozen, including overlapping games from the same slate.
+    train = eligible.loc[eligible['_label_completed_at'] < boundary]
+    if len(train) < MIN_TRAIN:
+        raise ValueError('insufficient chronological train/test games')
+    train = train.drop(columns=['_label_completed_at', '_prediction_at'])
+    test = test.drop(columns=['_label_completed_at', '_prediction_at'])
     return train, test
 
 
 def individual_feature(column):
-    return any(column.startswith(side+'_starter_'+metric) for side in ('home', 'away')
-               for metric in ('k_bb_pct_', 'whip_', 'bf_', 'appearances_'))
+    return any(column.startswith(side+'_starter_') for side in ('home', 'away'))
+
+
+def pitcher_context_feature(column):
+    return any(column.startswith(side+'_pitcher_context_') for side in ('home', 'away'))
+
+
+def lineup_feature(column):
+    return any(column == side+'_'+name for side in ('home', 'away') for name in LINEUP_FEATURES)
+
+
+def bullpen_context_feature(column):
+    return any(column == side+'_'+name for side in ('home', 'away') for name in BULLPEN_FEATURES)
 
 
 def choose_features(train):
@@ -51,15 +80,36 @@ def choose_features(train):
     # are never substituted. Require genuine prior pitcher history, not a prior
     # computed for an ID with zero recorded appearances.
     coverage = {side: int((train[side+'_starter_id'].notna() &
-                           (train[side+'_starter_bf_30d'].fillna(0) > 0)).sum())
+                           (pd.to_numeric(train[side+'_starter_bf_30d'], errors='coerce') > 0)).sum())
                 for side in ('home', 'away')}
     if min(coverage.values()) < MIN_STARTER_ROWS:
         rejected = [c for c in features if individual_feature(c)]
         features = [c for c in features if c not in rejected]
         omitted = sorted(set(omitted) | set(rejected))
+    # An observed starter ID does not prove that a particular box/Statcast
+    # metric is covered. Do not let LightGBM learn an advanced field from a
+    # handful of non-null rows while silently treating the rest as missing.
+    sparse = [c for c in features if individual_feature(c)
+              and int(train[c].notna().sum()) < MIN_STARTER_ROWS]
+    features = [c for c in features if c not in sparse]
+    omitted = sorted(set(omitted) | set(sparse))
+    # Historical point-in-time summaries can accelerate shadow learning without
+    # claiming confirmed identity.  Each learned field still needs the same
+    # 300-row floor on both sides.
+    context_sparse = [c for c in features if pitcher_context_feature(c)
+                      and int(train[c].notna().sum()) < MIN_STARTER_ROWS]
+    features = [c for c in features if c not in context_sparse]
+    omitted = sorted(set(omitted) | set(context_sparse))
+    passive_sparse = [c for c in features if (lineup_feature(c) or bullpen_context_feature(c))
+                      and int(train[c].notna().sum()) < EVALUATION_GAMES]
+    features = [c for c in features if c not in passive_sparse]
+    omitted = sorted(set(omitted) | set(passive_sparse))
     supported = {side+'_'+key for side in ('home', 'away')
-                 for key in Features([]).at(SPLIT_DATE+'T04:00:00Z', '0')}
+                 for key in Features([]).at(FEATURE_CONTRACT_DATE+'T04:00:00Z', '0')}
+    supported.update(side+'_starter_'+metric for side in ('home', 'away') for metric in MATCHUP_METRICS)
     supported.update(('market_home_prob', 'market_total', 'market_spread'))
+    supported.update(side+'_'+name for side in ('home', 'away')
+                     for name in LINEUP_BULLPEN_FEATURES)
     if set(features) - supported:
         raise ValueError('training features missing from daily inference: '+','.join(sorted(set(features)-supported)))
     if not any(c.endswith('_7d') for c in features):
@@ -82,12 +132,41 @@ def accepted(candidate, incumbent):
             and candidate['logloss'] <= incumbent['logloss'])
 
 
+def pitcher_promotion_ready(candidate, incumbent, context_features, prospective_rows):
+    return bool(accepted(candidate, incumbent) and context_features
+                and prospective_rows >= EVALUATION_GAMES)
+
+
+def prospective_context_coverage(frame, context_features):
+    prospective = frame.pitcher_context_evidence.eq(
+        'frozen_versioned_ks1_profile') & frame.historical_pitcher_context_mode.isna()
+    per_feature = {column: int((prospective & frame[column].notna()).sum())
+                   for column in context_features}
+    complete = frame[context_features].notna().all(axis=1) if context_features else False
+    return per_feature, int((prospective & complete).sum())
+
+
+def prospective_team_context_coverage(frame, features):
+    prospective = frame.lineup_bullpen_context_evidence.eq('frozen_versioned_ks1_profile')
+    per_feature = {column: int((prospective & frame[column].notna()).sum()) for column in features}
+    complete = frame[features].notna().all(axis=1) if features else pd.Series(False, index=frame.index)
+    return per_feature, int((prospective & complete).sum())
+
+
 def evaluate(frame, incumbent_bytes, output, proof):
     train, test = split_recent(frame)
     features, omitted, coverage = choose_features(train)
     y_train, y_test = train.home_win.astype(int), test.home_win.astype(int)
+    lineup_features = [c for c in features if lineup_feature(c)]
+    bullpen_features = [c for c in features if bullpen_context_feature(c)]
+    baseline_features = [c for c in features if c not in lineup_features+bullpen_features]
+    batter_features = baseline_features+lineup_features
     candidate = lgb.LGBMClassifier(**PARAMS).fit(train[features].astype(float), y_train)
     predictions = candidate.predict_proba(test[features].astype(float))[:, 1]
+    baseline = lgb.LGBMClassifier(**PARAMS).fit(train[baseline_features].astype(float), y_train)
+    baseline_predictions = baseline.predict_proba(test[baseline_features].astype(float))[:, 1]
+    batter = lgb.LGBMClassifier(**PARAMS).fit(train[batter_features].astype(float), y_train)
+    batter_predictions = batter.predict_proba(test[batter_features].astype(float))[:, 1]
     incumbent = lgb.Booster(model_str=incumbent_bytes.decode())
     old = incumbent.predict(test[incumbent.feature_name()].astype(float))
     # One prespecified ablation isolates the seven-day contribution from the
@@ -96,20 +175,54 @@ def evaluate(frame, incumbent_bytes, output, proof):
     ablation = lgb.LGBMClassifier(**PARAMS).fit(train[without_seven].astype(float), y_train)
     ablated = ablation.predict_proba(test[without_seven].astype(float))[:, 1]
     candidate_metrics, incumbent_metrics = metrics(y_test, predictions), metrics(y_test, old)
+    context_features = [c for c in features if pitcher_context_feature(c)]
+    prospective_feature_coverage, prospective_context_rows = prospective_context_coverage(
+        test, context_features)
+    team_features = lineup_features+bullpen_features
+    prospective_team_feature_coverage, prospective_team_rows = prospective_team_context_coverage(
+        test, team_features)
+    statistical_gate = accepted(candidate_metrics, incumbent_metrics)
+    promotion_ready = pitcher_promotion_ready(
+        candidate_metrics, incumbent_metrics, context_features, prospective_context_rows)
+    promotion_ready = bool(promotion_ready and lineup_features and bullpen_features
+                           and prospective_team_rows == EVALUATION_GAMES)
     output.mkdir(parents=True, exist_ok=True)
     candidate.booster_.save_model(str(output/'model.txt'))
     loaded = lgb.Booster(model_file=str(output/'model.txt'))
     np.testing.assert_allclose(loaded.predict(test[features].astype(float)), predictions, atol=1e-12, rtol=0)
-    report = {'system': 'KS1', 'split_date': SPLIT_DATE,
+    report = {'system': 'KS1', 'split_date': test.date.min(),
+              'split_completed_at': min(completion_times(test.label_completed_at)).isoformat(),
+              'split_prediction_at': min(completion_times(test.as_of_timestamp)).isoformat(),
               'train': {'start': train.date.min(), 'end': train.date.max(), 'games': len(train)},
               'test': {'start': test.date.min(), 'end': test.date.max(), 'games': len(test)},
               'candidate': candidate_metrics, 'incumbent': incumbent_metrics,
+              'ablation_baseline_without_lineup_or_bullpen': metrics(y_test, baseline_predictions),
+              'ablation_baseline_plus_batters': metrics(y_test, batter_predictions),
+              'ablation_baseline_plus_batters_and_bullpen': candidate_metrics,
               'without_seven_day': metrics(y_test, ablated),
-              'accepted': accepted(candidate_metrics, incumbent_metrics),
-              'promotion_rule': 'strictly lower Brier and no worse logloss than incumbent on identical September holdout',
+              'accepted': promotion_ready,
+              'statistical_gate_passed': statistical_gate,
+              'promotion_rule': 'strictly lower Brier and no worse logloss than incumbent on identical trailing 300-game holdout',
+              'pitcher_promotion_rule': 'candidate must learn verified pitcher context and all 300 holdout games must carry prospective pregame pitcher context',
+              'evaluation_window_games': EVALUATION_GAMES,
               'features': features, 'omitted_features': omitted,
               'individual_starter_training_rows': coverage,
               'individual_starter_features_learned': [c for c in features if individual_feature(c)],
+              'individual_feature_training_rows': {
+                  c: int(train[c].notna().sum()) for c in features if individual_feature(c)},
+              'historical_pitcher_context_training_rows': {
+                  side: int(train[side+'_pitcher_context_quality'].notna().sum())
+                  for side in ('home', 'away')},
+              'pitcher_context_features_learned': context_features,
+              'pitcher_context_feature_training_rows': {
+                  c: int(train[c].notna().sum()) for c in context_features},
+              'prospective_pitcher_context_feature_rows': prospective_feature_coverage,
+              'prospective_pitcher_context_test_rows': prospective_context_rows,
+              'lineup_features_learned': lineup_features,
+              'bullpen_features_learned': bullpen_features,
+              'prospective_lineup_bullpen_feature_rows': prospective_team_feature_coverage,
+              'prospective_lineup_bullpen_test_rows': prospective_team_rows,
+              'lineup_bullpen_promotion_rule': 'exactly 300 identical prospective frozen pre-T10 games with all learned lineup and bullpen features present; lower Brier and no-worse logloss',
               'minimum_individual_starter_rows_per_side': MIN_STARTER_ROWS,
               'parameters': PARAMS, 'test_used_for_tuning': False, 'holdout_refit': False,
               'model_reload_verified': True,
@@ -117,15 +230,17 @@ def evaluate(frame, incumbent_bytes, output, proof):
               'incumbent_sha256': hashlib.sha256(incumbent_bytes).hexdigest(),
               'input_table_sha256': proof['input_table_sha256'],
               'provider_calls': 0, 'prediction_writes': 0, 'official_ledger_writes': 0,
-              'limitations': ['Retrospective historical evaluation, not official live grades.',
+              'limitations': ['Rolling retrospective evaluation, not official live grades.',
                              'Prior box scores can include later scoring corrections.',
                              'Individual starter inputs require retained pregame identity and earlier pitcher boxes.',
-                             'September holdout is small; future performance remains unproven.']}
+                             'The trailing 300-game holdout does not establish future performance.']}
     (output/'metrics.json').write_bytes(encode(report))
     (output/'input_proof.json').write_bytes(encode(proof))
     (output/'feature_list.json').write_bytes(encode(features))
     rows = test[['date', 'game_id', 'home_win']].copy()
     rows['candidate_p_home'], rows['incumbent_p_home'], rows['without_seven_p_home'] = predictions, old, ablated
+    rows['baseline_without_lineup_or_bullpen_p_home'] = baseline_predictions
+    rows['baseline_plus_batters_p_home'] = batter_predictions
     rows.to_parquet(output/'test_predictions.parquet', index=False)
     print(json.dumps(report, indent=2))
     return report
@@ -152,6 +267,7 @@ def main():
         raise ValueError('incumbent hash mismatch')
     proof = {'input_table_sha256': hashlib.sha256((args.output/'input_table.parquet').read_bytes()).hexdigest(),
              'source_receipts': source_report['source_receipts'], 'source_coverage': source_report['coverage'],
+             'optional_reads': source_report['optional_reads'],
              'incumbent_ref': ref, 'provider_calls': 0}
     report = evaluate(frame, body, args.output, proof)
     # Only isolated experiment artifacts are saved. A separate reviewed model

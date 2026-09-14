@@ -20,6 +20,8 @@ PARAMS = {'objective': 'binary', 'n_estimators': 200, 'learning_rate': 0.03,
           'num_leaves': 7, 'min_child_samples': 60, 'reg_lambda': 10.0,
           'random_state': 1729, 'n_jobs': 2, 'deterministic': True,
           'force_col_wise': True, 'verbosity': -1}
+KS1_RECENT_WORKFLOW = 'KirtKurt/parlay-platform/.github/workflows/ks1-retrain-recent.yml'
+KS1_RECENT_TRUSTED_PR_BRANCH = 'codex/ks1-historical-starter-bridge-20260913'
 
 
 def split(frame):
@@ -138,11 +140,22 @@ def train_model(frame, baseline_history, output, input_proof):
     return report
 
 
+def artifact_write_authorized():
+    """Authorize isolated challenger artifacts, never a serving-model update."""
+    common = (os.environ.get('GITHUB_ACTIONS') == 'true' and
+              os.environ.get('GITHUB_REPOSITORY') == 'KirtKurt/parlay-platform' and
+              os.environ.get('GITHUB_WORKFLOW_REF', '').split('@', 1)[0] == KS1_RECENT_WORKFLOW)
+    event = os.environ.get('GITHUB_EVENT_NAME')
+    trusted_pr = (event == 'pull_request' and
+                  os.environ.get('GITHUB_HEAD_REF') == KS1_RECENT_TRUSTED_PR_BRANCH)
+    trusted_main = (event in ('schedule', 'workflow_dispatch') and
+                    os.environ.get('GITHUB_REF') == 'refs/heads/main')
+    return common and (trusted_pr or trusted_main)
+
+
 def save_artifact(s3, bucket, output):
-    if not (os.environ.get('GITHUB_ACTIONS') == 'true' and
-            os.environ.get('GITHUB_REPOSITORY') == 'KirtKurt/parlay-platform' and
-            os.environ.get('GITHUB_EVENT_NAME') == 'pull_request'):
-        raise ValueError('model artifact writes require the authorized repository PR training job')
+    if not artifact_write_authorized():
+        raise ValueError('model artifact writes require the exact authorized KS1 challenger workflow')
     files = sorted(p for p in output.iterdir() if p.is_file() and p.name != 'artifact.json')
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
     run_id = hashlib.sha256(encode(hashes)).hexdigest()

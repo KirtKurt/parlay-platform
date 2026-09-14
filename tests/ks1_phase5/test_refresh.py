@@ -13,7 +13,7 @@ import pytest
 from ks1 import daily
 from ks1.inventory import encode
 from ks1.live_inputs import ProviderFailure, lineup_feeds
-from ks1.refresh import observe, pregame_status
+from ks1.refresh import fingerprint, observe, pregame_status
 from ks1.publish import parquet_bytes
 
 DATE = '2026-09-10'
@@ -28,15 +28,21 @@ def envelope(payload, at=AT):
 
 
 def feed(game, confirmed=True):
-    boxes = {}
+    boxes, people = {}, {}
     for side in ('home', 'away'):
         tid = game['teams'][side]['team']['id']
         order = list(range(tid*100, tid*100+9)) if confirmed else []
         boxes[side] = {'team': game['teams'][side]['team'], 'battingOrder': order,
                        'players': {'ID'+str(pid): {'person': {'id': pid}, 'battingOrder': str(slot*100),
                                    'gameStatus': {'isSubstitute': False}} for slot, pid in enumerate(order, 1)}}
+        for pid in order:
+            people[str(pid)] = {'id': pid, 'batSide': {'code': 'R' if side == 'home' else 'L'}}
+        starter = game['teams'][side].get('probablePitcher', {}).get('id')
+        if starter:
+            people[str(starter)] = {'id': starter, 'pitchHand': {'code': 'L' if side == 'home' else 'R'}}
     return {'gameData': {'game': {'pk': game['gamePk']}, 'datetime': {'dateTime': game['gameDate']},
                          'status': {'abstractGameState': 'Preview'},
+                         'players': people,
                          'probablePitchers': {s: deepcopy(game['teams'][s].get('probablePitcher', {})) for s in ('home', 'away')}},
             'liveData': {'boxscore': {'teams': boxes}}}
 
@@ -126,6 +132,18 @@ def change_feed(folder, modify, pk='1'):
 def test_unchanged_poll_reuses_every_row_and_parquet_bytes_without_inference(capture):
     folder, output, calls, _ = capture
     first, _, out = daily.predict(folder, output)
+    for row in first.to_pylist():
+        profile = json.loads(row['starter_profile_json'])
+        assert row['starter_profile_contract'] == 'KS1-starter-profile-v2'
+        assert row['starter_profile_sha256'] == profile['sha256']
+        assert row['starter_profile_semantic_sha256'] == profile['semantic_sha256']
+        assert profile['source_roles']['fixture_crosscheck'] == 'Big_Balls_Data_matches_only'
+        assert profile['source_roles']['market_context'] == 'The_Odds_API_only'
+        assert profile['sides']['home']['starter_id'] == row['home_starter_id']
+        assert profile['sides']['home']['metrics']['pitch_hand_left'] == 1
+        assert profile['sides']['home']['metrics']['opponent_lhb_pct'] == 100
+        assert profile['sides']['home']['window_statuses']['30d'] == 'SOURCE_INCOMPLETE'
+        assert 'xera_30d' in profile['sides']['home']['unavailable_exact_metrics']
     body = (out/'predictions.parquet').read_bytes()
     advance(folder, out)
     history = json.loads(gzip.decompress((folder/'history.json.gz').read_bytes()))
@@ -135,6 +153,54 @@ def test_unchanged_poll_reuses_every_row_and_parquet_bytes_without_inference(cap
     assert first.equals(second) and body == (out/'predictions.parquet').read_bytes()
     assert calls == [2] and report['newly_scored'] == 0 and report['unchanged_rows'] == 2
     assert all(r['status'] == 'confirmed_lineups' for r in second.to_pylist())
+
+
+def test_incomplete_pitcher_history_masks_derived_context(capture, monkeypatch):
+    folder, output, _, _ = capture
+    seen = []
+    class ContextClassifier:
+        def feature_name(self):
+            return ['home_pitcher_context_quality', 'away_pitcher_context_quality']
+
+        def predict(self, values):
+            seen.append(values.copy())
+            return np.full(len(values), .5)
+
+    monkeypatch.setattr(daily.lgb, 'Booster', lambda **kwargs: ContextClassifier())
+    daily.predict(folder, output)
+    assert len(seen) == 1
+    assert seen[0].isna().all().all()
+
+
+def test_profile_semantics_refresh_but_audit_timestamp_does_not():
+    row = {'game_id': '1', 'starter_profile_semantic_sha256': 'semantic-one',
+           'starter_profile_sha256': 'full-one', 'starter_profile_json': '{"as_of":"one"}',
+           'as_of': '2026-09-10T10:00:00Z'}
+    features = {'market_home_prob': .5}
+    first = fingerprint(row, features, {'market_home_prob'})
+    audit_only = {**row, 'starter_profile_sha256': 'full-two',
+                  'starter_profile_json': '{"as_of":"two"}', 'as_of': '2026-09-10T10:01:00Z'}
+    assert fingerprint(audit_only, features, {'market_home_prob'}) == first
+    changed = {**audit_only, 'starter_profile_semantic_sha256': 'semantic-two'}
+    assert fingerprint(changed, features, {'market_home_prob'}) != first
+
+
+def test_profile_window_is_not_complete_when_exact_pitch_coverage_is_partial():
+    row = {'starter_source': 'official_MLB_probable_pitcher',
+           '_pitcher_history_coverage': {'7d': True},
+           'home_starter_id': '101', 'home_starter_name': 'Home Starter',
+           'home_starter_status': 'RESOLVED',
+           'away_starter_id': '102', 'away_starter_name': 'Away Starter',
+           'away_starter_status': 'RESOLVED'}
+    features = {
+        'home_starter_appearances_7d': 1, 'home_starter_complete_7d': 0,
+        'away_starter_appearances_7d': 1, 'away_starter_complete_7d': 0,
+    }
+
+    profile = daily.starter_profile(row, features, AT, AT)
+
+    assert profile['sides']['home']['window_statuses']['7d'] == 'SOURCE_INCOMPLETE'
+    assert profile['sides']['away']['window_statuses']['7d'] == 'SOURCE_INCOMPLETE'
 
 
 def start_adjusted_inputs(folder):
@@ -191,6 +257,40 @@ def test_adjusted_identity_does_not_admit_new_nonpregame_predictions(capture):
     result, report, _ = daily.predict(folder, output)
     assert result['game_id'].to_pylist() == ['2']
     assert report['exclusions'] == [{'game_id': '1', 'reason': 'not_scheduled_before_T10'}]
+
+
+def test_existing_prediction_survives_early_bbs_live_status_and_other_game_refreshes(capture):
+    folder, output, calls, _ = capture
+    first, _, out = daily.predict(folder, output)
+    original = next(r for r in first.to_pylist() if r['game_id'] == '1')
+    advance(folder, out)
+
+    official = json.loads((folder/'official.json').read_bytes())['payload']
+    official['dates'][0]['games'][0]['status'].update(
+        abstractGameState='Preview', detailedState='Delayed Start', reason='Wet Grounds')
+    official['dates'][0]['games'][1]['teams']['home']['probablePitcher'] = {
+        'id': 777, 'fullName': 'New starter'}
+    (folder/'official.json').write_bytes(encode(envelope(official, DATE+'T10:01:00+00:00')))
+    change_feed(folder, lambda p: p['gameData']['probablePitchers'].update(
+        home={'id': 777, 'fullName': 'New starter'}), pk='2')
+
+    bbs = json.loads((folder/'bbs.json').read_bytes())['payload']
+    bbs['data'][0]['status'] = 'live'
+    (folder/'bbs.json').write_bytes(encode(envelope(bbs, DATE+'T10:01:00+00:00')))
+    seal(folder, DATE+'T10:01:00+00:00')
+
+    result, report, _ = daily.predict(folder, output)
+    assert next(r for r in result.to_pylist() if r['game_id'] == '1') == original
+    assert next(r for r in result.to_pylist() if r['game_id'] == '2')['home_starter_id'] == '777'
+    assert calls == [2, 1]
+    assert report['provider_status_disagreement_retained_rows'] == 1
+    assert report['provider_status_disagreement_retained_game_ids'] == ['1']
+    assert report['exclusions'] == [{
+        'game_id': '1',
+        'reason': 'provider_pregame_status_disagreement_retained',
+        'official_detailed_state': 'Delayed Start',
+        'bbs_status': 'live',
+    }]
 
 
 def test_scratch_rebuilds_only_affected_game_and_next_rerun_is_noop(capture):

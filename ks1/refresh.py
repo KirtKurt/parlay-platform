@@ -66,7 +66,9 @@ def observe(game, entry, as_of):
         result.update({side+'_starter_id': str(identity) if player_id(identity) else None,
                        side+'_starter_name': probable.get('fullName') if player_id(identity) else None,
                        side+'_lineup_status': 'projected', side+'_lineup_ids': None,
-                       side+'_offense_source': 'team_prior'})
+                       side+'_offense_source': 'team_prior',
+                       '_'+side+'_lineup_bat_sides': None,
+                       '_'+side+'_starter_pitch_hand': None})
     payload, receipt = (entry or {}).get('payload'), (entry or {}).get('receipt', {})
     if payload is not None:
         if hashlib.sha256(encode(payload)).hexdigest() != receipt.get('sha256'):
@@ -86,16 +88,26 @@ def observe(game, entry, as_of):
         if valid:
             result['starter_source'] = 'existing_MLB_feed_probablePitchers'
             result['lineup_source_status'] = 'verified_pregame_feed'
+            people = mapping(data.get('players'))
+            def person(identity):
+                return mapping(people.get(str(identity)) or people.get('ID'+str(identity)))
             for side in SIDES:
                 order = batting_order(boxes[side])
                 probable = mapping(mapping(data.get('probablePitchers')).get(side))
                 identity = probable.get('id')
+                bat_sides = ([mapping(person(pid).get('batSide')).get('code') for pid in order]
+                             if order else None)
+                if bat_sides and not all(value in ('L', 'R', 'S') for value in bat_sides):
+                    bat_sides = None
+                pitch_hand = mapping(person(identity).get('pitchHand')).get('code') if player_id(identity) else None
                 # The later valid feed is authoritative, including a cleared
                 # probable. Never resurrect a scratched pitcher from schedule.
                 result.update({side+'_starter_id': str(identity) if player_id(identity) else None,
                                side+'_starter_name': probable.get('fullName') if player_id(identity) else None,
                                side+'_lineup_status': 'confirmed' if order else 'projected',
-                               side+'_lineup_ids': encode(order).decode() if order else None})
+                               side+'_lineup_ids': encode(order).decode() if order else None,
+                               '_'+side+'_lineup_bat_sides': bat_sides,
+                               '_'+side+'_starter_pitch_hand': pitch_hand if pitch_hand in ('L', 'R') else None})
         else:
             result['lineup_source_status'] = 'unverified_feed'
     for side in SIDES:
@@ -111,7 +123,10 @@ def observe(game, entry, as_of):
 def fingerprint(row, features, needed):
     # Retrieval timestamps are audit metadata; including them would rewrite
     # every game on every poll. Quote values/status DO participate in this hash.
-    values = {k: v for k, v in row.items() if k not in ('as_of', 'history_source_as_of', 'input_fingerprint')}
+    audit_only = ('as_of', 'history_source_as_of', 'input_fingerprint',
+                  'starter_profile_json', 'starter_profile_sha256',
+                  'lineup_bullpen_profile_json', 'lineup_bullpen_profile_sha256')
+    values = {k: v for k, v in row.items() if k not in audit_only}
     return hashlib.sha256(encode({'contract': CONTRACT, 'row': values,
                                  'features': {k: features[k] for k in sorted(needed)}})).hexdigest()
 

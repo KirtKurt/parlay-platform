@@ -16,11 +16,14 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from ks1.features import Features, day, utc
+from ks1.features import Features, day, pitcher_context, starter_matchup, utc
 from ks1.inventory import encode
 from ks1.poisson import home_probability, predict_exported
 from ks1.publish import parquet_bytes
 from ks1.refresh import change_reason, fingerprint, observe, pregame_status
+from ks1.passive_context import (CONTRACT as LINEUP_BULLPEN_CONTRACT,
+                                 MODEL_FEATURES as LINEUP_BULLPEN_FEATURES,
+                                 build_profile as lineup_bullpen_profile)
 from ks1.table import american, team_identity
 
 PREFIX = 'mlb/ks1/predictions-v1/'
@@ -34,13 +37,110 @@ STRINGS = ['date', 'game_id', 'bbs_game_id', 'odds_event_id', 'home_team', 'away
            'environment_status', 'history_status', 'input_fingerprint', 'status',
            'home_lineup_status', 'away_lineup_status', 'home_lineup_ids', 'away_lineup_ids',
            'home_offense_source', 'away_offense_source', 'lineup_source_status', 'starter_feature_source', 'calibration_version', 'calibration_method']
+STRINGS += ['signal_contributions_json']
+STRINGS += ['starter_profile_contract', 'starter_profile_sha256',
+            'starter_profile_semantic_sha256', 'starter_profile_json']
+STRINGS += ['lineup_bullpen_profile_contract', 'lineup_bullpen_profile_sha256',
+            'lineup_bullpen_profile_semantic_sha256', 'lineup_bullpen_profile_json',
+            'lineup_bullpen_profile_status']
 # Dictionary date also reads cleanly with Arrow's automatic Hive partitioning.
 SCHEMA = pa.schema([pa.field(k, pa.dictionary(pa.int32(), pa.string()) if k == 'date' else pa.string())
                     for k in STRINGS] + [pa.field(k, pa.float64()) for k in FLOATS])
+STARTER_PROFILE_CONTRACT = 'KS1-starter-profile-v2'
+STATCAST_METRICS = ('complete', 'pitches', 'hard_hit_pct', 'barrel_pct', 'avg_ev_allowed',
+                    'xwoba_contact', 'xwoba', 'xwoba_pa', 'swstr_pct', 'csw_pct', 'velocity',
+                    'spin', 'horizontal_break_in', 'vertical_break_in', 'extension', 'fly_balls',
+                    'active_spin_pct', 'stuff_plus', 'location_plus', 'pitching_plus')
+
+
+def starter_profile(row, features, as_of, history_as_of):
+    """Persist the full pregame starter inputs even before model promotion."""
+    profile = {
+        'contract': STARTER_PROFILE_CONTRACT,
+        'as_of': as_of,
+        'history_as_of': history_as_of,
+        'source_roles': {
+            'starter_identity': row['starter_source'],
+            'results_and_counts': 'official_MLB_completed_game_logs',
+            'contact_physics_and_arsenal': 'retained_Baseball_Savant_pitch_rows',
+            'fixture_crosscheck': 'Big_Balls_Data_matches_only',
+            'market_context': 'The_Odds_API_only',
+        },
+        'coverage': row.get('_pitcher_history_coverage', {}),
+        'sides': {},
+    }
+    for side in ('home', 'away'):
+        prefix = side+'_starter_'
+        metrics = {key.removeprefix(prefix): value for key, value in sorted(features.items())
+                   if key.startswith(prefix)}
+        unavailable = sorted(key for key, value in metrics.items()
+                             if value is None and any(name in key for name in
+                                ('xera', 'siera', 'stuff_plus', 'location_plus',
+                                 'pitching_plus', 'active_spin_pct')))
+        def window_status(window):
+            if row[side+'_starter_id'] is None:
+                return 'MISSING_STARTER'
+            if not row.get('_pitcher_history_coverage', {}).get(window):
+                return 'SOURCE_INCOMPLETE'
+            observed = (metrics.get('starts_observed_last3') == 3 if window == 'last3'
+                        else (metrics.get('appearances_'+window) or 0) > 0)
+            if not observed:
+                return 'NO_APPEARANCES_OR_INCOMPLETE'
+            return ('COMPLETE' if metrics.get('complete_'+window) == 1
+                    else 'SOURCE_INCOMPLETE')
+        profile['sides'][side] = {
+            'starter_id': row[side+'_starter_id'],
+            'starter_name': row[side+'_starter_name'],
+            'starter_status': row[side+'_starter_status'],
+            'metrics': metrics,
+            'window_statuses': {window: window_status(window)
+                                for window in ('7d', '30d', 'last3', 'prior_year')},
+            'unavailable_exact_metrics': unavailable,
+        }
+    semantic = {key: value for key, value in profile.items() if key not in ('as_of', 'history_as_of')}
+    profile['semantic_sha256'] = hashlib.sha256(encode(semantic)).hexdigest()
+    body = encode(profile)
+    return {**profile, 'sha256': hashlib.sha256(body).hexdigest()}
 
 
 def name_key(name):
     return re.sub(r'[^a-z0-9]', '', str(name).lower())
+
+
+def signal_contributions(classifier, values):
+    """Return signed LightGBM log-odds contributions and absolute influence."""
+    if not classifier.__class__.__module__.startswith('lightgbm'):
+        return [None]*len(values)
+    try:
+        matrix = np.asarray(classifier.predict(values, pred_contrib=True), dtype=float)
+    except (TypeError, ValueError, AttributeError):
+        return [None]*len(values)
+    names = classifier.feature_name()
+    if matrix.shape != (len(values), len(names)+1) or not np.isfinite(matrix).all():
+        raise ValueError('invalid LightGBM contribution matrix')
+    def group(name):
+        if name.startswith('market_'): return 'market'
+        if '_lineup_' in name: return 'batters'
+        if '_bullpen_' in name: return 'bullpen'
+        if '_starter_' in name or '_pitcher_context_' in name: return 'starter'
+        if '_offense_' in name or name.endswith(('_rest_days', '_history_games')): return 'team_form'
+        return 'other'
+    result = []
+    for vector in matrix:
+        grouped, grouped_abs = {}, {}
+        features = []
+        for name, score in zip(names, vector[:-1]):
+            bucket = group(name)
+            grouped[bucket] = grouped.get(bucket, 0.0)+float(score)
+            grouped_abs[bucket] = grouped_abs.get(bucket, 0.0)+abs(float(score))
+            features.append({'feature': name, 'score': float(score)})
+        denominator = sum(grouped_abs.values())
+        result.append({'scale': 'raw_log_odds_SHAP', 'bias': float(vector[-1]),
+                       'groups': {key: {'signal_score': value,
+                                        'decision_influence_pct': 100*grouped_abs[key]/denominator if denominator else 0.0}
+                                  for key, value in sorted(grouped.items())},
+                       'top_features': sorted(features, key=lambda item: abs(item['score']), reverse=True)[:10]})
+    return result
 
 
 class Crosswalk:
@@ -184,7 +284,7 @@ def load_inputs(folder):
     required = {'bbs.json', 'odds.json', 'official.json', 'history.json.gz', 'model.txt'}
     if manifest.get('phase', 4) >= 5:
         required.add('feeds.json')
-    required.update(name for name in ('feeds.json', 'previous.parquet') if (folder/name).exists())
+    required.update(name for name in ('feeds.json', 'passive_context.json', 'previous.parquet') if (folder/name).exists())
     if required - set(manifest['files']):
         raise ValueError('unbound capture input')
     for name, expected in manifest['files'].items():
@@ -201,6 +301,9 @@ def load_inputs(folder):
         values[provider] = value
     values['history'] = json.loads(gzip.decompress((folder/'history.json.gz').read_bytes()))
     values['feeds'] = json.loads((folder/'feeds.json').read_bytes()) if (folder/'feeds.json').exists() else {'games': {}}
+    values['passive_context'] = (json.loads((folder/'passive_context.json').read_bytes())
+                                 if (folder/'passive_context.json').exists()
+                                 else {'status': 'UNAVAILABLE_FAIL_CLOSED', 'games': {}})
     return manifest, values
 
 
@@ -259,9 +362,11 @@ def predict(folder, output):
     classifier = lgb.Booster(model_str=model_bytes.decode())
     poisson = json.loads(poisson_bytes)
     needed = set(classifier.feature_name()) | set(poisson['home']['features']) | set(poisson['away']['features'])
-    individual_learned = any(name.startswith(side+'_starter_'+metric)
-                             for name in classifier.feature_name() for side in ('home', 'away')
-                             for metric in ('k_bb_pct_', 'whip_', 'bf_', 'appearances_'))
+    individual_learned = any(name.startswith(side+'_starter_')
+                             for name in classifier.feature_name() for side in ('home', 'away'))
+    pitcher_context_learned = [name for name in classifier.feature_name()
+                               if any(name.startswith(side+'_pitcher_context_')
+                                      for side in ('home', 'away'))]
     model_version = 'KS1-LGB-'+refs['lightgbm']['sha256'][:12]+'-DP-'+refs['poisson']['sha256'][:12]
     official = inputs['official']['payload']
     schedule = [g for d in official['dates'] for g in d['games']]
@@ -271,12 +376,17 @@ def predict(folder, output):
     history = inputs['history']['games']
     crosswalk = Crosswalk(history, schedule)
     assignments = bbs_assignments(inputs['bbs']['payload'], schedule, crosswalk, target_date)
-    engine, rows, feature_rows, exclusions = Features(history), [], [], []
+    engine = Features(history, inputs['history'].get('statcast', []),
+                      statcast_complete=inputs['history'].get('statcast_coverage_complete') is True,
+                      prior_statcast_profiles=inputs['history'].get('prior_statcast_profiles'),
+                      prior_statcast_year=inputs['history'].get('prior_statcast_year'))
+    rows, feature_rows, exclusions = [], [], []
     previous = pq.ParquetFile(folder/'previous.parquet').read().to_pandas() if (folder/'previous.parquet').exists() else None
     frozen = preserve_frozen(previous.iloc[:0], previous, target_date, as_of) if previous is not None else pd.DataFrame()
     frozen_ids = set(frozen.game_id) if len(frozen) else set()
     prior_rows = {r['game_id']: r for r in pq.ParquetFile(folder/'previous.parquet').read().to_pylist()} if previous is not None else {}
     retained, changes, unchanged, withdrawals = [], [], [], []
+    provider_status_disagreement_retained = []
     # Frozen Phase 4 rows acquire only conservative status defaults; their
     # predictions and original cutoff are retained, never rescored postgame.
     migrated_frozen = []
@@ -308,20 +418,78 @@ def predict(folder, output):
             raise ValueError('scheduled official game missing from BBS: '+pk)
         bbs = assignments[pk]
         if bbs['status'].lower() != 'scheduled':
+            # BBS lifecycle state is supplemental identity evidence, not the
+            # official MLB game-state authority.  If the providers disagree,
+            # never score a new row or refresh an existing one.  A previously
+            # published pregame row can, however, be retained byte-for-byte so
+            # one early/incorrect BBS "live" transition does not abort every
+            # other game in the slate.  First publication still fails closed.
+            old = prior_rows.get(pk)
+            if old:
+                retained.append(old)
+                provider_status_disagreement_retained.append(pk)
+                exclusions.append({
+                    'game_id': pk,
+                    'reason': 'provider_pregame_status_disagreement_retained',
+                    'official_detailed_state': game.get('status', {}).get('detailedState'),
+                    'bbs_status': bbs.get('status'),
+                })
+                continue
             raise ValueError('BBS and official pregame status disagree: '+pk)
         row = {'date': target_date, 'game_id': pk, 'bbs_game_id': bbs['id'], 'commence_time': start.isoformat(),
                'model_version': model_version, 'as_of': as_of,
                'environment_status': 'unavailable_in_accepted_models',
                'history_status': 'available_retained_history',
                'history_source_as_of': inputs['history'].get('prior_observed_at')}
+        coverage = {
+            '7d': (inputs['history'].get('current30_history_complete') is True
+                   and inputs['history'].get('statcast_coverage_complete') is True),
+            '30d': (inputs['history'].get('current30_history_complete') is True
+                    and inputs['history'].get('statcast_coverage_complete') is True),
+            'last3': (inputs['history'].get('current_year_history_complete') is True
+                      and inputs['history'].get('prior_year_history_complete') is True
+                      and inputs['history'].get('current_year_statcast_complete') is True
+                      and inputs['history'].get('prior_year_statcast_complete') is True),
+            'current_season_context': (
+                inputs['history'].get('current_year_history_complete') is True),
+            'prior_year': (inputs['history'].get('prior_year_history_complete') is True
+                           and inputs['history'].get('prior_year_statcast_complete') is True),
+            'statcast_30d': inputs['history'].get('statcast_coverage_complete') is True,
+        }
+        row['_pitcher_history_coverage'] = coverage
+        if not all(coverage.values()):
+            row['history_status'] = 'partial_pitcher_history_fail_closed'
         row.update(observe(game, inputs['feeds']['games'].get(pk), as_of))
-        features = {}
+        features = {side+'_'+name: None for side in ('home', 'away')
+                    for name in LINEUP_BULLPEN_FEATURES}
         for side in ('home', 'away'):
             team = game['teams'][side]
             tid, name = team_identity(team)
             pid = row[side+'_starter_id']
             row.update({side+'_id': tid, side+'_team': name, 'bbs_'+side+'_id': str(bbs[side]['id'])})
-            features.update({side+'_'+k: v for k, v in engine.at(as_of, tid, pid, game_date=target_date).items()})
+            side_values = engine.at(as_of, tid, pid, game_date=target_date)
+            if not coverage['30d']:
+                side_values.update({key: None for key in side_values if key.startswith('starter_')
+                                    and key.endswith(('_7d', '_10d', '_30d'))})
+            if not coverage['last3']:
+                side_values.update({key: None for key in side_values if key.startswith('starter_')
+                                    and key.endswith('_last3')})
+            if not coverage['current_season_context']:
+                side_values.update({key: None for key in side_values
+                                    if key.startswith('starter_context_')})
+                side_values['starter_expected_innings_last5'] = None
+            if not coverage['prior_year']:
+                side_values.update({key: None for key in side_values if key.startswith('starter_')
+                                    and (key.endswith('_prior_year') or key.endswith('_talent'))})
+            # Derive context only after source-completeness masking.
+            side_values.update({'pitcher_context_'+key: value
+                                for key, value in pitcher_context(side_values).items()})
+            features.update({side+'_'+k: v for k, v in side_values.items()})
+            opposing = 'away' if side == 'home' else 'home'
+            bats = row.get('_'+opposing+'_lineup_bat_sides')
+            hand = row.get('_'+side+'_starter_pitch_hand')
+            features.update({side+'_starter_'+key: value
+                             for key, value in starter_matchup(hand, bats).items()})
             gaps = [g for g in missing_boxes if any(str(t['team']['id']) == tid for t in g['teams'].values())]
             for window in (1, 3, 5):
                 if any(0 < (calendar_date.fromisoformat(target_date)-day(g['gameDate'])).days <= window for g in gaps):
@@ -329,6 +497,38 @@ def predict(folder, output):
                         features[f'{side}_bullpen_{stat}_{window}d'] = None
             if gaps:
                 row['history_status'] = 'partial_known_missing_boxes'
+        passive = inputs['passive_context'].get('games', {}).get(pk)
+        if passive is None:
+            row['lineup_bullpen_profile_status'] = (
+                'SOURCE_UNAVAILABLE_FAIL_CLOSED'
+                if inputs['passive_context'].get('status') != 'READ'
+                else 'GAME_OBSERVATION_MISSING_FAIL_CLOSED')
+        else:
+            try:
+                context_profile, context_features = lineup_bullpen_profile(
+                    passive, game, row, as_of, engine,
+                    inputs['history'].get('prior_observed_at'),
+                    inputs['history'].get('statcast_observed_at'), coverage)
+            except (KeyError, TypeError, ValueError) as exc:
+                reason = re.sub(r'[^A-Z0-9]+', '_', str(exc).upper()).strip('_')
+                row['lineup_bullpen_profile_status'] = 'INVALID_FAIL_CLOSED:'+reason[:120]
+            else:
+                # Persist every supported signal now. Serving remains unchanged
+                # until a separately reviewed model explicitly names a feature.
+                features.update(context_features)
+                row.update(lineup_bullpen_profile_contract=LINEUP_BULLPEN_CONTRACT,
+                           lineup_bullpen_profile_sha256=context_profile['sha256'],
+                           lineup_bullpen_profile_semantic_sha256=context_profile['semantic_sha256'],
+                           lineup_bullpen_profile_json=encode(context_profile).decode(),
+                           lineup_bullpen_profile_status=context_profile['coverage_status'])
+                for side in ('home', 'away'):
+                    row.update({side+'_lineup_status': 'confirmed',
+                                side+'_lineup_ids': encode(context_profile['sides'][side]['lineup_ids']).decode(),
+                                side+'_offense_source': 'persisted_MLB_lineup_season_batting'})
+                row.update(lineup_status='confirmed',
+                           lineup_source_status='verified_persisted_pregame_observation')
+                if all(row[side+'_starter_id'] is not None for side in ('home', 'away')):
+                    row.update(status='confirmed_lineups', prediction_status='confirmed_lineups')
         row.update(market_for(game, inputs['odds']['payload'], crosswalk, as_of))
         features.update({key: row[key] for key in ('market_home_prob', 'market_total', 'market_spread')})
         if individual_learned:
@@ -337,6 +537,11 @@ def predict(folder, output):
                 row['starter_feature_source'] = 'individual_history_partial_with_team_prior'
         if needed - set(features):
             raise ValueError('inference feature contract missing: '+','.join(sorted(needed-set(features))))
+        profile = starter_profile(row, features, as_of, inputs['history'].get('prior_observed_at'))
+        row.update(starter_profile_contract=STARTER_PROFILE_CONTRACT,
+                   starter_profile_sha256=profile['sha256'],
+                   starter_profile_semantic_sha256=profile['semantic_sha256'],
+                   starter_profile_json=encode(profile).decode())
         row['input_fingerprint'] = fingerprint(row, features, needed)
         old = prior_rows.get(pk)
         if old and old.get('status') and old.get('input_fingerprint') == row['input_fingerprint']:
@@ -348,6 +553,7 @@ def predict(folder, output):
         features = pd.DataFrame(feature_rows)
         x = features[classifier.feature_name()].astype(float)
         p_home = classifier.predict(x)
+        contributions = signal_contributions(classifier, x)
         h, a = [predict_exported(poisson[side], features) for side in ('home', 'away')]
         p_poisson, _ = home_probability(h, a)
         if not (np.isfinite(p_home).all() and (p_home >= 0).all() and (p_home <= 1).all()):
@@ -357,6 +563,8 @@ def predict(folder, output):
                        proj_total=float(h[i]+a[i]), p_home_poisson=float(p_poisson[i]),
                        edge_home=float(p_home[i]-row['market_home_prob']) if row['market_home_prob'] is not None else None,
                        edge_total=float(h[i]+a[i]-row['market_total']) if row['market_total'] is not None else None)
+            row['signal_contributions_json'] = (encode(contributions[i]).decode()
+                                                if contributions[i] is not None else None)
     current = pa.Table.from_pylist(rows+retained, schema=SCHEMA).to_pandas()
     frame = current.sort_values(['commence_time', 'game_id']).reset_index(drop=True)
     table = pa.Table.from_pandas(frame, schema=SCHEMA, preserve_index=False)
@@ -370,6 +578,36 @@ def predict(folder, output):
         if not (np.isfinite(rates).all() and (rates > 0).all()):
             raise ValueError('invalid predicted runs')
         np.testing.assert_allclose(frame.proj_total, frame.lambda_home+frame.lambda_away, atol=1e-12, rtol=0)
+        for record in frame.loc[frame.starter_profile_json.notna()].itertuples():
+            profile = json.loads(record.starter_profile_json)
+            claimed = profile.pop('sha256')
+            semantic_claimed = profile['semantic_sha256']
+            semantic = {key: value for key, value in profile.items()
+                        if key not in ('as_of', 'history_as_of', 'semantic_sha256')}
+            if (record.starter_profile_contract != STARTER_PROFILE_CONTRACT
+                    or record.starter_profile_sha256 != claimed
+                    or record.starter_profile_semantic_sha256 != semantic_claimed
+                    or hashlib.sha256(encode(semantic)).hexdigest() != semantic_claimed
+                    or hashlib.sha256(encode(profile)).hexdigest() != claimed):
+                raise ValueError('starter profile binding failed')
+        for record in frame.loc[frame.lineup_bullpen_profile_json.notna()].itertuples():
+            profile = json.loads(record.lineup_bullpen_profile_json)
+            claimed = profile.pop('sha256')
+            semantic_claimed = profile.pop('semantic_sha256')
+            semantic = {key: value for key, value in profile.items() if key != 'as_of'}
+            if (record.lineup_bullpen_profile_contract != LINEUP_BULLPEN_CONTRACT
+                    or record.lineup_bullpen_profile_sha256 != claimed
+                    or record.lineup_bullpen_profile_semantic_sha256 != semantic_claimed
+                    or hashlib.sha256(encode(semantic)).hexdigest() != semantic_claimed
+                    or hashlib.sha256(encode({**profile, 'semantic_sha256': semantic_claimed})).hexdigest() != claimed
+                    or profile['game_id'] != record.game_id
+                    or utc(profile['as_of']) != utc(record.as_of)
+                    or (profile.get('history_as_of')
+                        and utc(profile['history_as_of']) > utc(profile['as_of']))
+                    or (profile.get('statcast_as_of')
+                        and utc(profile['statcast_as_of']) > utc(profile['as_of']))
+                    or utc(profile['as_of']) > utc(record.commence_time)-timedelta(minutes=10)):
+                raise ValueError('lineup/bullpen profile binding failed')
     output = output / ('date='+target_date); output.mkdir(parents=True, exist_ok=True)
     body = parquet_bytes(table)
     (output/'predictions.parquet').write_bytes(body)
@@ -386,7 +624,18 @@ def predict(folder, output):
     report = {'system': 'KS1', 'phase': 5, 'date': target_date, 'as_of': as_of, 'model_version': model_version,
               'learned_feature_names': classifier.feature_name(),
               'individual_starter_features_learned': individual_learned,
+              'pitcher_context_features_learned': pitcher_context_learned,
+              'lineup_bullpen_features_learned': [name for name in classifier.feature_name()
+                                                   if name in {side+'_'+feature for side in ('home', 'away')
+                                                               for feature in LINEUP_BULLPEN_FEATURES}],
+              'lineup_bullpen_profile_rows': int(frame.lineup_bullpen_profile_json.notna().sum()),
+              'lineup_bullpen_profile_status_counts': {
+                  str(key): int(value) for key, value in frame.lineup_bullpen_profile_status.value_counts(
+                      dropna=False).items()},
+              'passive_context_capture_status': inputs['passive_context'].get('status'),
               'rows': len(frame), 'newly_scored': len(rows), 'preserved_pregame_rows': len(frozen_ids),
+              'provider_status_disagreement_retained_rows': len(provider_status_disagreement_retained),
+              'provider_status_disagreement_retained_game_ids': provider_status_disagreement_retained,
               'unchanged_rows': len(unchanged), 'unchanged_game_ids': unchanged, 'changes': changes,
               'migrated_frozen_game_ids': migrated_frozen,
               'removed_game_ids': sorted(set(prior_rows)-set(frame.game_id)),
@@ -399,6 +648,7 @@ def predict(folder, output):
                   for g in schedule],
               'bbs_time_adjustments': crosswalk.game_time_adjustments,
               'with_both_starters': int((frame.home_starter_id.notna() & frame.away_starter_id.notna()).sum()),
+              'with_bound_starter_profiles': int(frame.starter_profile_json.notna().sum()),
               'with_market_home_prob': int(frame.market_home_prob.notna().sum()), 'with_market_total': int(frame.market_total.notna().sum()),
               'parquet_sha256': hashlib.sha256(body).hexdigest(), 'parquet_readback_verified': True,
               'source_capture': manifest, 'provider_receipts': {k: inputs[k]['receipt'] for k in ('bbs', 'odds', 'official')},
