@@ -790,6 +790,9 @@ Resources:
         Kss1Goals:
           Type: Api
           Properties: {Path: /v1/soccer-auto/kss1, Method: GET}
+        Kss1Picks:
+          Type: Api
+          Properties: {Path: /v1/soccer-auto/kss1/picks, Method: GET}
 
   SoccerCollectionDlqAlarm:
     Type: AWS::CloudWatch::Alarm

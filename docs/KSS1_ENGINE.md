@@ -107,6 +107,22 @@ pointer and blockers. Adding this code does not itself deploy or invoke the
 Lambda. Prospective goals grades and comparison against the incumbent market
 model are still required before any public qualification.
 
+## Recorded live shadow picks
+
+`GET /v1/soccer-auto/kss1/picks?date=2026-09-14&selection=12`
+reads persisted predictions for the requested America/New_York calendar day.
+Omit the date for today and omit selection to return all recorded books. The
+default requires a fitted goals model and an immutable on-or-before-T60 record
+matching the current fixture revision, teams and kickoff. `selection=12`
+returns actual threshold-qualified no-draw selections, not every fixture's
+no-draw probability. Missing forecasts are listed with explicit reasons.
+The response remains SHADOW_LEARNING and never promotes a model. For diagnosis,
+`trained_only=false` additionally exposes explicitly labelled untrained baselines.
+The deployment workflow invokes the separate goals trainer and verifies both
+the status and picks API handlers, retaining their results in its run summary.
+Successful infrastructure verification does not imply enough history to train,
+nonempty picks, or prospective qualification; those states remain explicit.
+
 ## Reproducible offline research
 
 Use `python scripts/train_kss1_goals.py --history history.json --out results`
