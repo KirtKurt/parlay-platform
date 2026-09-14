@@ -53,6 +53,12 @@ def test_old_unstamped_native_bind_is_also_preserved():
     assert not consider_public_bind(old, predict_match(payload(home_attack=2)))["accepted"]
 
 
+@pytest.mark.parametrize("observed", ["2026-09-12T15:00:01Z", "2026-09-12T15:50:00Z"])
+def test_old_late_unstamped_shadow_cannot_block_first_valid_bind(observed):
+    old = predict_match(payload(observed_at=observed))
+    assert consider_public_bind(old, predict_match(payload()))["accepted"]
+
+
 @pytest.mark.parametrize("observed", ["2026-09-12T15:00:01Z", "2026-09-12T15:15:00Z", "2026-09-12T15:50:00Z", "2026-09-12T16:01:00Z"])
 def test_late_candidate_cannot_acquire_t60_bind(observed):
     assert not consider_public_bind(None, predict_match(payload(observed_at=observed)))["accepted"]

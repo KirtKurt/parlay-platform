@@ -85,8 +85,11 @@ def void_for_postponement(existing_lock: dict[str, Any], new_commence_time: str)
 
 
 def first_bind_wins(existing: dict[str, Any] | None, candidate: dict[str, Any]) -> dict[str, Any]:
+    existing_observation = (existing or {}).get("observation") or {}
     if existing and (
-        existing.get("public_horizon") == PUBLIC_HORIZON
+        (existing.get("public_horizon") == PUBLIC_HORIZON
+         and existing_observation.get("action") == "public_eligible"
+         and existing_observation.get("horizon") == PUBLIC_HORIZON)
         or (existing.get("horizon") == PUBLIC_HORIZON and existing.get("immutable"))
     ):
         return {"accepted": False, "reason": "FIRST_T60_BIND_IMMUTABLE", "authority": existing}
