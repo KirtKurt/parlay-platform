@@ -8,7 +8,9 @@ import sys
 import time
 from publish_mlb_research_dataset import store_for_stack,publish_historical
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT))
 sys.path.insert(0,str(ROOT/'mlb_research'))
+from ks1.features import Features, number
 from mlb_research_store_v1 import now,utc,digest
 from mlb_research_dataset_v1 import publish_dataset
 import mlb_research_sources_v1 as source
@@ -158,7 +160,6 @@ def ingest(store,seconds=2400):
         prior_profiles={};last_start_rows=[]
         if (prior_complete and current_year_complete and prior['priorYearCoverageComplete']
                 and prior['currentYearCoverageComplete']):
-            from ks1.features import Features, number
             prior_rows=[row for value in sorted(d.isoformat() for d in prior_dates)
                         for row in statcast_by_date.get(value,())]
             engine=Features([g for g in sources if utc(g['startAtUtc']).astimezone(source.ET).date().year==prior_year],
