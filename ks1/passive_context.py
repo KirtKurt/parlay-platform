@@ -179,6 +179,10 @@ def build_profile(stored, game, row, as_of, history, history_as_of=None,
     sides = {}
     features = {}
     for side in ("home", "away"):
+        expected_team = _positive_id(row.get(side+"_id"))
+        if (_positive_id(lineup_block.get(side+"_team_id")) != expected_team
+                or _positive_id(bullpen_block.get(side+"_team_id")) != expected_team):
+            raise ValueError(side+" passive context team identity mismatch")
         ids, samples = _lineup(lineup_block, side)
         live_ids = json.loads(row[side+"_lineup_ids"]) if row.get(side+"_lineup_ids") else None
         if live_ids is not None and [str(value) for value in live_ids] != ids:

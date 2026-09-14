@@ -382,22 +382,29 @@ class Features:
             selected = [row for game_id in game_ids for row in self.statcast_by_game.get(game_id, ())
                         if str(row.get("pitcher")) in roster]
             if expected is not None and len(selected) == expected:
-                # Reuse the exact pitcher aggregator one reliever at a time and
-                # weight team values by observed pitches.
-                pieces = []
-                for pid in roster:
-                    ids = {r["game_id"] for r, stats in pairs
-                           if any(p["id"] == pid and p["stats"] is stats for p in r["players"])}
-                    count = sum(number(stats.get("numberOfPitches")) for r, stats in pairs
-                                if any(p["id"] == pid and p["stats"] is stats for p in r["players"]))
-                    if count:
-                        pieces.append((count, self.statcast(pid, ids, count)))
-                for metric in ("swstr_pct", "csw_pct", "xwoba", "barrel_pct",
-                               "hard_hit_pct", "avg_ev_allowed", "velocity"):
-                    values = [(weight, part.get(metric)) for weight, part in pieces
-                              if part.get(metric) is not None]
-                    statcast[metric] = (sum(weight*value for weight, value in values)
-                                        / sum(weight for weight, _ in values)) if values else None
+                descriptions = [str(row.get("description") or "").lower() for row in selected]
+                contacts = [row for row in selected if row.get("type") == "X"]
+                speeds = [self._finite(row.get("launch_speed")) for row in contacts]
+                barrels = [self._finite(row.get("launch_speed_angle")) for row in contacts]
+                pas = [row for row in selected if self._finite(row.get("woba_denom")) == 1]
+                expected_woba = [(self._finite(row.get("estimated_woba_using_speedangle"))
+                                  if row.get("type") == "X" else self._finite(row.get("woba_value")))
+                                 for row in pas]
+                release = [self._finite(row.get("release_speed")) for row in selected]
+                statcast.update({
+                    "swstr_pct": 100*sum(d in SWINGING_STRIKES for d in descriptions)/len(selected),
+                    "csw_pct": 100*sum(d in SWINGING_STRIKES | CALLED_STRIKES for d in descriptions)/len(selected),
+                    "xwoba": (sum(expected_woba)/len(expected_woba)
+                              if expected_woba and all(v is not None for v in expected_woba) else None),
+                    "barrel_pct": (100*sum(v == 6 for v in barrels)/len(barrels)
+                                   if barrels and all(v is not None for v in barrels) else None),
+                    "hard_hit_pct": (100*sum(v >= 95 for v in speeds)/len(speeds)
+                                     if speeds and all(v is not None for v in speeds) else None),
+                    "avg_ev_allowed": (sum(speeds)/len(speeds)
+                                       if speeds and all(v is not None for v in speeds) else None),
+                    "velocity": (sum(release)/len(release)
+                                 if release and all(v is not None for v in release) else None),
+                })
             for metric in ("swstr_pct", "csw_pct", "xwoba", "barrel_pct",
                            "hard_hit_pct", "avg_ev_allowed", "velocity"):
                 result[f"bullpen_context_{metric}_{window}d"] = statcast.get(metric)
@@ -593,9 +600,11 @@ class Features:
                 supported_mix = [(count, by_type.get(pitch_type, {}).get("xwoba"))
                                  for pitch_type, count in starter_mix.items()
                                  if by_type.get(pitch_type, {}).get("xwoba") is not None]
+                supported_pitches = sum(count for count, _ in supported_mix)
                 summary["pitch_type_matchup_xwoba"] = (
-                    sum(count*value for count, value in supported_mix)/sum(count for count, _ in supported_mix)
-                    if complete and starter_total and supported_mix else None)
+                    sum(count*value for count, value in supported_mix)/starter_total
+                    if (complete and starter_total == len(starter_rows)
+                        and supported_pitches == starter_total) else None)
                 summary["pitch_type_xwoba"] = by_type
                 profile["windows"][str(window)+"d"] = summary
             season = [stats for r, stats in pairs if r["day"].year == target.year]

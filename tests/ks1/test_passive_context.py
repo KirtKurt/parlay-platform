@@ -36,6 +36,9 @@ def stored_observation():
     bullpen = {"game_pk": game_id, "bullpenRosterObservationStatus": "OBSERVED_ROSTER_ONLY",
                "bullpenRosterSourceProvenance": provenance(game_id)}
     for side, base in (("home", 100), ("away", 200)):
+        team_id = 10 if side == "home" else 20
+        line[side+"_team_id"] = team_id
+        bullpen[side+"_team_id"] = team_id
         ids = list(range(base+1, base+10))
         line[side+"_lineup_confirmed"] = True
         line[side+"_batting_order"] = ids
@@ -120,6 +123,14 @@ def test_rejects_cross_team_roster_identity():
     stored = stored_observation(); game, row = game_row()
     stored["data"]["passiveTeamContext"]["bullpen_fatigue"]["away_bullpen_roster_player_ids"][0] = 151
     with pytest.raises(ValueError, match="cross-team identity overlap"):
+        build_profile(stored, game, row, "2026-09-14T16:05:00+00:00", History())
+
+
+def test_rejects_swapped_persisted_team_identity():
+    stored = stored_observation(); game, row = game_row()
+    line = stored["data"]["passiveTeamContext"]["confirmed_lineups"]
+    line["home_team_id"], line["away_team_id"] = line["away_team_id"], line["home_team_id"]
+    with pytest.raises(ValueError, match="team identity mismatch"):
         build_profile(stored, game, row, "2026-09-14T16:05:00+00:00", History())
 
 
@@ -217,3 +228,58 @@ def test_reliever_history_survives_trade_and_missing_pitch_count_is_unknown():
     assert values["bullpen_context_unknown_count"] == 1
     assert values["bullpen_context_fatigue_score"] is None
     assert values["bullpen_context_era_7d"] == 0
+
+
+def test_bullpen_contact_rates_use_pooled_contact_denominators():
+    def stats(pitches):
+        return {"outs": 3, "earnedRuns": 0, "runs": 0, "hits": 1, "homeRuns": 0,
+                "baseOnBalls": 0, "hitBatsmen": 0, "strikeOuts": 2,
+                "battersFaced": 4, "wins": 0, "losses": 0, "gamesStarted": 0,
+                "numberOfPitches": pitches}
+    game = {"officialGamePk": 10, "startAtUtc": "2026-09-09T18:00:00Z",
+            "completedAtUtc": "2026-09-09T21:00:00Z", "gameType": "R",
+            "teams": {side: {"team": {"id": tid, "name": side},
+                              "teamStats": {"batting": {}},
+                              "players": ({"ID151": {"person": {"id": 151},
+                                                       "stats": {"pitching": stats(100)}},
+                                           "ID152": {"person": {"id": 152},
+                                                       "stats": {"pitching": stats(10)}}}
+                                          if side == "home" else {})}
+                      for side, tid in (("home", 10), ("away", 20))}}
+    pitches = ([{"game_pk": "10", "pitcher": "151", "type": "X" if i == 0 else "B",
+                 "description": "hit_into_play" if i == 0 else "ball",
+                 "launch_speed": "100" if i == 0 else None,
+                 "launch_speed_angle": "6" if i == 0 else None,
+                 "release_speed": "95"} for i in range(100)]
+               + [{"game_pk": "10", "pitcher": "152", "type": "X",
+                   "description": "hit_into_play", "launch_speed": "80",
+                   "launch_speed_angle": "1", "release_speed": "90"}
+                  for _ in range(10)])
+    values = Features([game], pitches).bullpen_roster_at(
+        "2026-09-10T17:50:00Z", "10", ["151", "152"])
+    assert values["bullpen_context_barrel_pct_7d"] == pytest.approx(100/11)
+    assert values["bullpen_context_avg_ev_allowed_7d"] == pytest.approx(900/11)
+
+
+def test_pitch_matchup_requires_full_starter_mix_coverage():
+    batting = {"atBats": 4, "hits": 2, "baseOnBalls": 1, "hitByPitch": 0,
+               "sacFlies": 0, "doubles": 1, "triples": 0, "homeRuns": 0,
+               "strikeOuts": 1}
+    game = {"officialGamePk": 11, "startAtUtc": "2026-09-01T18:00:00Z",
+            "completedAtUtc": "2026-09-01T21:00:00Z", "gameType": "R",
+            "teams": {side: {"team": {"id": tid, "name": side},
+                              "teamStats": {"batting": batting},
+                              "players": ({"ID101": {"person": {"id": 101},
+                                                       "stats": {"batting": batting}}}
+                                          if side == "home" else {})}
+                      for side, tid in (("home", 10), ("away", 20))}}
+    pitches = [{"game_pk": "11", "pitcher": "500", "batter": "101", "pitch_type": "SL",
+                "type": "X", "description": "hit_into_play", "woba_denom": "1",
+                "woba_value": ".4", "estimated_woba_using_speedangle": ".5"}]
+    pitches += [{"game_pk": "11", "pitcher": "500", "batter": str(200+i), "pitch_type": "FF",
+                 "type": "B", "description": "ball", "woba_denom": "0"} for i in range(9)]
+    profiles, features = Features([game], pitches).lineup_batters_at(
+        "2026-09-10T17:50:00Z", list(range(101, 110)), "500", "R",
+        game_date="2026-09-10")
+    assert profiles[0]["windows"]["30d"]["pitch_type_xwoba"]["SL"]["xwoba"] == .5
+    assert features["lineup_pitch_type_matchup_xwoba_30d"] is None
