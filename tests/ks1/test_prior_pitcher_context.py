@@ -43,6 +43,10 @@ def target():
                 away_starter_status="missing_pregame_evidence")
 
 
+def verify(row):
+    return verified_reconstruction(row, PriorPitcherContext(Features(history()).rows, SOURCE))
+
+
 def attach(engine, row):
     proofs = {side: engine.at(row, side) for side in ("home", "away")}
     for side, proof in proofs.items():
@@ -55,7 +59,7 @@ def test_projection_matches_live_formulas_and_is_explicitly_unconfirmed():
     games, row = history(), target()
     features = Features(games)
     projected = attach(PriorPitcherContext(features.rows, SOURCE), row)
-    assert verified_reconstruction(projected)
+    assert verify(projected)
     proofs = json.loads(projected["reconstructed_pitcher_context_proof"])
     assert proofs["home"]["pitcher_id"] == "100"
     assert proofs["away"]["pitcher_id"] == "101"
@@ -82,13 +86,13 @@ def test_observed_identity_wins_over_rotation_projection():
     row = target()
     row.update(home_starter_id="104", home_starter_status="observed_versioned_t10")
     row = attach(PriorPitcherContext(Features(history()).rows, SOURCE), row)
-    assert verified_reconstruction(row)
+    assert verify(row)
     proof = json.loads(row["reconstructed_pitcher_context_proof"])["home"]
     assert proof["pitcher_id"] == "104"
     assert proof["identity_mode"] == "observed_pregame_identity_reconstructed_stats"
 
 
-@pytest.mark.parametrize("mutation", ["swapped_side", "value", "identity", "late_input", "target_input", "source", "late_cutoff"])
+@pytest.mark.parametrize("mutation", ["swapped_side", "value", "identity", "late_input", "target_input", "source", "late_cutoff", "empty_metrics", "partial_metrics", "arbitrary_pitcher", "counts_hash", "forged_source", "null_metric"])
 def test_qualification_rejects_unbound_or_temporally_invalid_side(mutation):
     row = attach(PriorPitcherContext(Features(history()).rows, SOURCE), target())
     proofs = json.loads(row["reconstructed_pitcher_context_proof"])
@@ -105,13 +109,25 @@ def test_qualification_rejects_unbound_or_temporally_invalid_side(mutation):
         proof["inputs"][0]["game_id"] = row["game_id"]
     elif mutation == "source":
         proof["source"]["versionId"] = "null"
+    elif mutation == "empty_metrics":
+        proof["metrics"] = {}
+    elif mutation == "partial_metrics":
+        proof["metrics"].pop("quality")
+    elif mutation == "arbitrary_pitcher":
+        proof["pitcher_id"] = "999"
+    elif mutation == "counts_hash":
+        proof["pitching_counts_sha256"] = "f"*64
+    elif mutation == "forged_source":
+        proof["source"]["sha256"] = "f"*64
+    elif mutation == "null_metric":
+        proof["metrics"]["quality"] = None
     else:
         row["as_of_timestamp"] = "2026-08-11T19:51:00Z"
     # Even a newly signed malformed proof cannot cross temporal/identity gates.
     for proof in proofs.values():
         proof["sha256"] = digest({k: v for k, v in proof.items() if k != "sha256"})
     row["reconstructed_pitcher_context_proof"] = json.dumps(proofs)
-    assert not verified_reconstruction(row)
+    assert not verify(row)
 
 
 def test_missing_source_history_or_counts_remain_missing():
@@ -136,7 +152,12 @@ def test_table_reconstructs_two_sides_without_using_target_box_identity():
     row = build(bundle)[0].to_pylist()[0]
     assert row["home_actual_starter_id"] == "999"
     assert row["home_starter_id"] is None
-    assert verified_reconstruction(row)
+    assert verify(row)
     proof = row["reconstructed_pitcher_context_proof"]
     bundle["full"][-1] = full_game(99, "2026-08-11", 666, {**STATS, "earnedRuns": 20})
     assert build(bundle)[0].to_pylist()[0]["reconstructed_pitcher_context_proof"] == proof
+
+
+def test_proof_cannot_qualify_without_independently_loaded_official_source():
+    row = attach(PriorPitcherContext(Features(history()).rows, SOURCE), target())
+    assert not verified_reconstruction(row)

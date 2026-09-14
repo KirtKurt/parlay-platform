@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss
 
-from ks1.features import Features, MATCHUP_METRICS
+from ks1.features import Features, MATCHUP_METRICS, normalize
 from ks1.historical_starters import V8_MANIFEST_PREFIX
 from ks1.inventory import encode
 from ks1.passive_context import (LINEUP_FEATURES, BULLPEN_FEATURES,
@@ -18,7 +18,7 @@ from ks1.passive_context import (LINEUP_FEATURES, BULLPEN_FEATURES,
 from ks1.sources import aws_clients, load_existing
 from ks1.table import build, contract
 from ks1.train import PARAMS, select_features, save_artifact
-from ks1.prior_pitcher_context import verified_reconstruction
+from ks1.prior_pitcher_context import PriorPitcherContext, verified_reconstruction
 
 # Feature-contract construction needs a valid timestamp but does not inspect data.
 FEATURE_CONTRACT_DATE = '2026-09-01'
@@ -178,9 +178,9 @@ def historical_context_mask(frame):
     return frame.apply(verified, axis=1).astype(bool)
 
 
-def qualified_context_coverage(frame, context_features):
-    reconstruction = frame.apply(verified_reconstruction, axis=1).astype(bool)
-    historical = historical_context_mask(frame) | reconstruction
+def qualified_context_coverage(frame, context_features, *, reconstruction=None):
+    reconstructed = frame.apply(lambda row: verified_reconstruction(row, reconstruction), axis=1).astype(bool)
+    historical = historical_context_mask(frame) | reconstructed
     prospective = (frame.pitcher_context_evidence.eq('frozen_versioned_ks1_profile')
                    & frame.historical_pitcher_context_mode.isna())
     values = frame[context_features].apply(pd.to_numeric, errors='coerce')
@@ -189,7 +189,7 @@ def qualified_context_coverage(frame, context_features):
     qualified = historical | prospective
     return {
         'historical_rows': int((historical & complete).sum()),
-        'reconstructed_official_rows': int((reconstruction & complete).sum()),
+        'reconstructed_official_rows': int((reconstructed & complete).sum()),
         'prospective_rows': int((prospective & complete).sum()),
         'qualified_rows': int((qualified & complete).sum()),
         'per_feature': {c: int((qualified & finite[c]).sum()) for c in context_features},
@@ -222,7 +222,7 @@ def prospective_team_context_coverage(frame, features):
     return per_feature, int((prospective & complete).sum())
 
 
-def evaluate(frame, incumbent_bytes, output, proof):
+def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
     train, test = split_recent(frame)
     features, omitted, coverage = choose_features(train)
     y_train, y_test = train.home_win.astype(int), test.home_win.astype(int)
@@ -252,7 +252,7 @@ def evaluate(frame, incumbent_bytes, output, proof):
     without_pitcher = pitcher_ablation.predict_proba(test[without_context].astype(float))[:, 1]
     prospective_feature_coverage, prospective_context_rows = prospective_context_coverage(
         test, context_features)
-    context_qualification = qualified_context_coverage(test, context_features)
+    context_qualification = qualified_context_coverage(test, context_features, reconstruction=reconstruction)
     team_features = lineup_features+bullpen_features
     prospective_team_feature_coverage, prospective_team_rows = prospective_team_context_coverage(
         test, team_features)
@@ -355,7 +355,10 @@ def main():
              'source_receipts': source_report['source_receipts'], 'source_coverage': source_report['coverage'],
              'optional_reads': source_report['optional_reads'],
              'incumbent_ref': ref, 'provider_calls': 0}
-    report = evaluate(frame, body, args.output, proof)
+    proof['official_history_source'] = bundle.get('official_history_source')
+    reconstruction = PriorPitcherContext(normalize(bundle.get('full', [])),
+                                         bundle.get('official_history_source', {}))
+    report = evaluate(frame, body, args.output, proof, reconstruction=reconstruction)
     # Only isolated experiment artifacts are saved. A separate reviewed model
     # reference change is required for serving; no authority or ledger write.
     save_artifact(s3, bucket, args.output)

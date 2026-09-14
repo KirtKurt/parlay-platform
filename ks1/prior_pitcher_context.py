@@ -119,8 +119,14 @@ class PriorPitcherContext:
         return evidence
 
 
-def verified_reconstruction(row):
-    """Check each team's identity, values and receipt independently."""
+def verified_reconstruction(row, reconstruction=None):
+    """Recompute both sides against the independently loaded official artifact.
+
+    Self-signed table metadata is not an authenticated source. Without the
+    retained box-score reconstruction engine, qualification fails closed.
+    """
+    if reconstruction is None or reconstruction.source is None:
+        return False
     try:
         proofs = json.loads(row["reconstructed_pitcher_context_proof"])
         cutoff, start = utc(row["as_of_timestamp"]), utc(row["commence_time"])
@@ -131,6 +137,9 @@ def verified_reconstruction(row):
             material = {k: v for k, v in proof.items() if k != "sha256"}
             if (proof.get("sha256") != digest(material) or proof.get("version") != VERSION
                     or not valid_source(proof["source"])
+                    or proof["source"] != reconstruction.source
+                    or set(proof["metrics"]) != set(FIELDS)
+                    or not re.fullmatch('[0-9a-f]{64}', str(proof.get('pitching_counts_sha256', '')))
                     or proof["game_id"] != str(row["game_id"])
                     or proof["team_id"] != str(row[side+"_id"]) or proof["side"] != side
                     or proof["as_of"] != row["as_of_timestamp"]
@@ -156,8 +165,16 @@ def verified_reconstruction(row):
                 return False
             for key, value in proof["metrics"].items():
                 actual = row.get(side+"_pitcher_context_"+key)
-                if value is not None and (actual is None or float(actual) != value):
+                missing_value = actual is None or str(actual) in ('nan', '<NA>')
+                if ((value is None and not missing_value)
+                        or (value is not None and (missing_value or isinstance(value, bool)
+                                                  or float(actual) != value))):
                     return False
+            # Re-run fixed selection and aggregation from the exact full boxes
+            # admitted by Reader; this also binds candidate membership, rest,
+            # source-game completeness, and all prior pitching counts.
+            if reconstruction.at(row, side) != proof:
+                return False
         return True
     except (KeyError, TypeError, ValueError):
         return False
