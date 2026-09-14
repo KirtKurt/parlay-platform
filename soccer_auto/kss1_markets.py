@@ -83,12 +83,17 @@ def markets_from_grid(grid: list[list[float]]) -> dict[str, Any]:
     }
 
 
-def apply_abstain(markets: dict[str, Any], *, min_1x2: float = 0.46, min_other: float = 0.55, component_spread: float = 0.18) -> dict[str, Any]:
-    """Selective book. Coverage of a fixture does not force every market."""
+def apply_abstain(markets: dict[str, Any], *, min_1x2: float = 0.46, min_other: float = 0.55, min_double_chance: float = 0.70, component_spread: float = 0.18) -> dict[str, Any]:
+    """Selective shadow book; the DC threshold exceeds its 2/3 trivial floor.
+
+    The 0.70 default is an explicit selection rule, not fitted calibration.
+    """
+    if not 2 / 3 < min_double_chance <= 1:
+        raise ValueError("double-chance threshold must be greater than 2/3 and at most 1")
     out = dict(markets)
     out["1x2_published"] = markets["1x2_pick"] if markets["1x2_probability"] >= min_1x2 else ABSTAIN
     out["double_chance_published"] = (
-        markets["double_chance_pick"] if markets["double_chance_probability"] >= min_other else ABSTAIN
+        markets["double_chance_pick"] if markets["double_chance_probability"] >= min_double_chance else ABSTAIN
     )
     out["ou25_published"] = (
         markets["ou25_pick"] if max(markets["p_over_25"], markets["p_under_25"]) >= min_other else ABSTAIN
