@@ -132,6 +132,42 @@ def test_missing_or_unbound_evidence_never_counts_as_a_lock():
         assert result['missing_locked_game_ids'] == ['1']
 
 
+def test_null_schema_expansion_preserves_original_lock_proof(tmp_path):
+    retained = row(1, DATE+'T19:40:00Z')
+    expanded = dict(retained, starter_profile_json=None,
+                    lineup_bullpen_profile_sha256=None)
+    inputs, output = setup_artifact(tmp_path, [expanded],
+                                   [game(1, retained['commence_time'])])
+    s3 = VersionedS3([version([retained], 'original', DATE+'T19:45:00Z', latest=False),
+                      version([expanded], 'expanded', DATE+'T23:00:00Z')])
+    result = build(inputs, output, s3=s3)
+    assert result['valid_locked_game_ids'] == ['1']
+    assert result['valid_locked_evidence']['1']['version_id'] == 'original'
+    assert result['aws_writes'] == 0
+
+
+@pytest.mark.parametrize('change', [
+    {'starter_profile_json': '{}'}, {'p_home': .600000000000001},
+    {'p_home': None}, {'as_of': DATE+'T19:41:00Z'},
+    {'commence_time': DATE+'T21:00:00Z'}, {'model_version': 'new-model'},
+])
+def test_schema_expansion_does_not_hide_changed_frozen_values(change):
+    retained = row(1, DATE+'T19:40:00Z')
+    changed = dict(retained, starter_profile_json=None)
+    changed.update(change)
+    result = measure([game(1, retained['commence_time'])], [changed], DATE, NOW,
+                     evidence(retained))
+    assert result['valid_locked_games'] == 0
+
+
+def test_original_null_field_cannot_be_removed_from_retained_row():
+    retained = dict(row(1, DATE+'T19:40:00Z'), original_field=None)
+    current = {k: v for k, v in retained.items() if k != 'original_field'}
+    result = measure([game(1, retained['commence_time'])], [current], DATE, NOW,
+                     evidence(retained))
+    assert result['valid_locked_games'] == 0
+
+
 @pytest.mark.parametrize('new_start', [DATE+'T19:45:00Z', DATE+'T21:00:00Z'])
 def test_schedule_revisions_do_not_revalidate_a_retained_row(new_start):
     retained = row(1, DATE+'T19:40:00Z')

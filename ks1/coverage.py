@@ -34,9 +34,13 @@ def measure(schedule, prediction_rows, target_date, as_of, locked_predictions=()
     for entry in locked_predictions:
         row, proof = entry['row'], entry['evidence']
         pk = str(row['game_id'])
-        # Evidence is tied to the complete retained row, not just its ID or
-        # capture timestamp. A later rewrite cannot borrow an older proof.
-        if rows.get(pk) != row or row.get('date') != target_date:
+        # Parquet schema expansion can add null columns to preserved rows.
+        # Require every original field unchanged, and permit only null-valued
+        # additions. Non-null enrichment cannot borrow an older lock proof.
+        retained = rows.get(pk)
+        if (retained is None or row.get('date') != target_date
+                or any(k not in retained or retained[k] != v for k, v in row.items())
+                or any(v is not None for k, v in retained.items() if k not in row)):
             continue
         row_cutoff = utc(row['commence_time']) - timedelta(minutes=10)
         if (proof.get('version_id') and proof['version_id'] != 'null'
