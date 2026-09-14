@@ -34,6 +34,12 @@ be measured in the hosted workflow, and may remain blocked if the provider
 continues returning incomplete fields. Tests demonstrating a complete response
 are synthetic regression evidence, not claims of recovered production dates.
 
+The hosted raw-only recovery subsequently fetched 64 dates successfully but
+recovered none because their PA outcome fields were still incomplete. See
+[official outcome reconciliation](official-outcome-reconciliation-20260914.md)
+for the independently evidenced follow-up. It preserves raw fields and derives
+only deterministic accounting in a separately verified payload.
+
 ## Development before qualification
 
 `ks1/qualification_holdout_20260914.json` reserves the original ordered 300 game

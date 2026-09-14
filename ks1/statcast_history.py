@@ -64,8 +64,14 @@ def pitch_complete_dates(sources, statcast_by_date, expected_by_date):
                   if pitches_complete(rows, expected_by_date[value], expected, invalid))
 
 
-def validation_reason(payload, value, games, expected, invalid):
+def validation_reason(payload, value, games, expected, invalid, completed_by_game=None, scheduled_by_game=None):
     """Explain rejection without changing the physical/PA/outcome predicate."""
+    if 'outcome_reconciliation' in payload or 'raw_statcast' in payload:
+        from ks1.official_outcomes import verify_reconciliation
+        try:
+            verify_reconciliation(payload, completed_by_game or {}, scheduled_by_game)
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return 'official_outcome_reconciliation_unverified'
     rows = payload.get('rows', [])
     if payload.get('date') != value or any(row.get('game_date') != value for row in rows):
         return 'date_mismatch'
@@ -114,6 +120,9 @@ def load_training_statcast(bundle, s3, bucket):
         else:
             unfinished.add(value)
     expected, invalid = official_pitch_counts(bundle['full'])
+    completed_by_game = {str(g['officialGamePk']): g.get('completedAtUtc') for g in bundle['full']}
+    from ks1.official_outcomes import schedule_times
+    scheduled_by_game = schedule_times(schedule)
 
     def read_date(value):
         games = expected_dates[value]
@@ -130,7 +139,7 @@ def load_training_statcast(bundle, s3, bucket):
             try:
                 payload = reader.read(key)
                 receipt = reader.receipts[-1]
-                reason = validation_reason(payload, value, games, expected, invalid)
+                reason = validation_reason(payload, value, games, expected, invalid, completed_by_game, scheduled_by_game)
                 if receipt.get('versionId') in (None, '', 'null'):
                     reason = 'unversioned_source'
                 if reason:
@@ -144,7 +153,7 @@ def load_training_statcast(bundle, s3, bucket):
             from ks1.statcast_recovery import read_recovery
             payload, recovery_receipts = read_recovery(s3, bucket, value)
             if payload is not None:
-                reason = validation_reason(payload, value, games, expected, invalid)
+                reason = validation_reason(payload, value, games, expected, invalid, completed_by_game, scheduled_by_game)
                 if reason is None:
                     return value, payload['rows'], recovery_receipts, None
                 reasons.append('recovered_' + reason)
