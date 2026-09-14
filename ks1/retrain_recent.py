@@ -15,7 +15,8 @@ from sklearn.metrics import accuracy_score, brier_score_loss, log_loss
 from ks1.features import Features, MATCHUP_METRICS, normalize
 from ks1.historical_starters import V8_MANIFEST_PREFIX
 from ks1.inventory import encode
-from ks1.passive_context import (LINEUP_FEATURES, BULLPEN_FEATURES,
+from ks1.passive_context import (LINEUP_FEATURES, LINEUP_VALUE_FEATURES,
+                                 BULLPEN_FEATURES, BULLPEN_VALUE_FEATURES,
                                  MODEL_FEATURES as LINEUP_BULLPEN_FEATURES)
 from ks1.sources import aws_clients, load_existing
 from ks1.table import build, contract
@@ -80,6 +81,16 @@ def lineup_feature(column):
 
 def bullpen_context_feature(column):
     return any(column == side+'_'+name for side in ('home', 'away') for name in BULLPEN_FEATURES)
+
+
+def lineup_value_feature(column):
+    return any(column == side+'_'+name
+               for side in ('home', 'away') for name in LINEUP_VALUE_FEATURES)
+
+
+def bullpen_context_value_feature(column):
+    return any(column == side+'_'+name
+               for side in ('home', 'away') for name in BULLPEN_VALUE_FEATURES)
 
 
 def choose_features(train):
@@ -340,6 +351,12 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
                                                if lineup_feature(c) and split_counts[c] > 0],
             'bullpen_features_used_in_splits': [c for c in columns
                                                 if bullpen_context_feature(c) and split_counts[c] > 0],
+            'lineup_value_features_used_in_splits': [c for c in columns
+                                                     if lineup_value_feature(c)
+                                                     and split_counts[c] > 0],
+            'bullpen_value_features_used_in_splits': [c for c in columns
+                                                      if bullpen_context_value_feature(c)
+                                                      and split_counts[c] > 0],
             'feature_split_counts': split_counts,
             'model_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
             'model_reload_verified': True,
@@ -370,11 +387,11 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
             comparison['requested_group_usage_passed'] = True
         elif name == 'starter_plus_batters':
             comparison['requested_group_usage_passed'] = bool(
-                comparison['lineup_features_used_in_splits'])
+                comparison['lineup_value_features_used_in_splits'])
         else:
             comparison['requested_group_usage_passed'] = bool(
-                comparison['lineup_features_used_in_splits']
-                and comparison['bullpen_features_used_in_splits'])
+                comparison['lineup_value_features_used_in_splits']
+                and comparison['bullpen_value_features_used_in_splits'])
         comparison['qualified'] = bool(
             comparison['statistical_gate_passed']
             and used_pitcher_context
@@ -471,10 +488,12 @@ def evaluate(frame, incumbent_bytes, output, proof, *, reconstruction=None):
               'bullpen_features_learned': [c for c in selected_features if bullpen_context_feature(c)],
               'lineup_features_used_in_splits': comparisons[selected]['lineup_features_used_in_splits'],
               'bullpen_features_used_in_splits': comparisons[selected]['bullpen_features_used_in_splits'],
+              'lineup_value_features_used_in_splits': comparisons[selected]['lineup_value_features_used_in_splits'],
+              'bullpen_value_features_used_in_splits': comparisons[selected]['bullpen_value_features_used_in_splits'],
               'prospective_lineup_bullpen_feature_rows': prospective_team_feature_coverage,
               'prospective_lineup_bullpen_test_rows': prospective_team_rows,
               'lineup_bullpen_context_qualification': team_context_qualification,
-              'lineup_bullpen_promotion_rule': 'the full candidate must use both lineup and individual-bullpen fields in tree splits, and every consumed training and exact-300 holdout value must have frozen or MLB-timecoded pre-T10 evidence',
+              'lineup_bullpen_promotion_rule': 'the full candidate must use substantive lineup and individual-bullpen value fields, not only missingness indicators, in tree splits; every consumed training and exact-300 holdout value must have frozen or MLB-timecoded pre-T10 evidence',
               'minimum_individual_starter_rows_per_side': MIN_STARTER_ROWS,
               'parameters': PARAMS, 'test_used_for_tuning': False, 'holdout_refit': False,
               'model_reload_verified': True,
