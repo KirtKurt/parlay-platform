@@ -72,3 +72,11 @@ The prespecified development search, fixed 300-game qualification cohort,
 Brier/log-loss gates, feature-usage checks, model references, T-10 rules and
 2 a.m. audit are unchanged. A hosted run must establish real coverage and a
 qualifying candidate before any separate serving promotion.
+
+## Hosted result and follow-up
+
+The first official-reconciliation run recovered six dates but exposed a broad
+zero-weight assumption and catcher-interference denominator differences.
+[Denominator-only follow-up](denominator-accounting-20260914.md) records the
+measured result and the versioned replacement policy. The v1 description above
+remains the historical contract for already retained v1 objects.

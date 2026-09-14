@@ -13,7 +13,8 @@ from ks1.inventory import encode
 from ks1.statcast_events import (PLATE_APPEARANCE_EVENTS, WOBA_EXCLUDED_EVENTS,
                                 complete_pa_outcome, is_plate_appearance)
 
-METHOD = 'official_pa_woba_accounting_v1'
+LEGACY_METHOD = 'official_pa_woba_accounting_v1'
+METHOD = 'official_pa_woba_denominator_v2'
 FIELDS = ('gameData,game,pk,datetime,dateTime,status,abstractGameState,liveData,'
           'plays,allPlays,result,eventType,about,atBatIndex,isComplete,endTime,'
           'matchup,batter,pitcher,id')
@@ -44,12 +45,27 @@ def missing(value):
     return value is None or value == ''
 
 
-def needed_games(raw):
+def denominator_change(row):
+    event = event_name(row.get('events'))
+    if missing(row.get('woba_denom')):
+        return 0 if event in WOBA_EXCLUDED_EVENTS else 1
+    # This is a canonical denominator convention, not a replacement raw
+    # observation. Only an explicit counted PA can be normalized to exclusion.
+    if (event in WOBA_EXCLUDED_EVENTS
+            and not isinstance(row.get('woba_denom'), bool)
+            and row.get('woba_denom') in (1, '1', '1.0')):
+        return 0
+    return None
+
+
+def needed_games(raw, method=METHOD):
     return sorted({positive_id(row['game_pk']) for row in raw['rows']
                    if is_plate_appearance(row) and not complete_pa_outcome(row)
-                   and (missing(row.get('woba_denom'))
-                        or (event_name(row.get('events')) in ZERO_EVENTS
-                            and missing(row.get('woba_value'))))})
+                   and ((method == METHOD and denominator_change(row) is not None)
+                        or (method == LEGACY_METHOD and
+                            (missing(row.get('woba_denom'))
+                             or (event_name(row.get('events')) in ZERO_EVENTS
+                                 and missing(row.get('woba_value'))))))})
 
 
 def schedule_times(schedule):
@@ -113,8 +129,10 @@ def official_index(evidence, game_id, value, raw_rows, *, require_retained=True,
     return result
 
 
-def reconciled_rows(raw, evidence, scheduled_by_game=None):
-    if set(evidence) != set(needed_games(raw)):
+def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
+    if method not in (METHOD, LEGACY_METHOD):
+        raise ValueError('unsupported outcome reconciliation method')
+    if set(evidence) != set(needed_games(raw, method)):
         raise ValueError('official PA evidence set mismatch')
     for pk, source in evidence.items():
         official_index(source, pk, raw['date'],
@@ -127,18 +145,29 @@ def reconciled_rows(raw, evidence, scheduled_by_game=None):
             continue
         event = event_name(row['events'])
         fields = {}
-        if missing(row.get('woba_denom')):
-            fields['woba_denom'] = 0 if event in WOBA_EXCLUDED_EVENTS else 1
-        if event in ZERO_EVENTS:
-            if missing(row.get('woba_value')):
-                fields['woba_value'] = 0
-            elif float(row['woba_value']) != 0:
-                raise ValueError('observed wOBA value contradicts official zero outcome')
+        if method == LEGACY_METHOD:
+            # Reproduce previously retained v1 objects exactly. New payloads
+            # never derive or second-guess a provider's wOBA event weight.
+            if missing(row.get('woba_denom')):
+                fields['woba_denom'] = 0 if event in WOBA_EXCLUDED_EVENTS else 1
+            if event in ZERO_EVENTS:
+                if missing(row.get('woba_value')):
+                    fields['woba_value'] = 0
+                elif float(row['woba_value']) != 0:
+                    raise ValueError('observed wOBA value contradicts official zero outcome')
+        else:
+            denom = denominator_change(row)
+            if denom is not None:
+                fields['woba_denom'] = denom
         if fields:
+            prior = {key: row.get(key) for key in fields}
             row.update(fields)
-            changes.append({'row_index': index, 'game_pk': pk,
-                            'at_bat_number': str(row['at_bat_number']),
-                            'fields': fields, 'official_source_sha256': evidence[pk]['receipt']['sha256']})
+            change = {'row_index': index, 'game_pk': pk,
+                      'at_bat_number': str(row['at_bat_number']),
+                      'fields': fields, 'official_source_sha256': evidence[pk]['receipt']['sha256']}
+            if method == METHOD:
+                change.update(original_fields=prior, derivation_kind='official_pa_denominator')
+            changes.append(change)
     return rows, changes
 
 
@@ -164,7 +193,7 @@ def verify_official_time(evidence, completed_at):
 def verify_reconciliation(payload, completed_by_game, scheduled_by_game=None):
     proof = payload['outcome_reconciliation']
     raw = payload['raw_statcast']
-    if (proof['method'] != METHOD or raw['date'] != payload['date']
+    if (proof['method'] not in (METHOD, LEGACY_METHOD) or raw['date'] != payload['date']
             or 'outcome_reconciliation' in raw or 'raw_statcast' in raw):
         raise ValueError('invalid outcome reconciliation envelope')
     pointer = proof['raw_receipt']
@@ -173,7 +202,7 @@ def verify_reconciliation(payload, completed_by_game, scheduled_by_game=None):
             or pointer['name'] != f"sources/statcast-recovery-v1/{raw['date']}/raw/{digest(raw)}.json"
             or pointer['versionId'] in (None, '', 'null')):
         raise ValueError('retained raw Statcast receipt mismatch')
-    rows, changes = reconciled_rows(raw, proof['official_sources'], scheduled_by_game)
+    rows, changes = reconciled_rows(raw, proof['official_sources'], scheduled_by_game, proof['method'])
     if not changes or rows != payload['rows'] or changes != proof['derivations']:
         raise ValueError('derived PA accounting cannot be reproduced')
     for pk, evidence in proof['official_sources'].items():

@@ -46,7 +46,7 @@ def raw_receipt(raw):
 def raw_fixture():
     bundle, raw, key = fixture()
     terminal = raw['rows'][1]
-    terminal.update(events='field_out', woba_denom='', woba_value='')
+    terminal.update(events='field_out', woba_denom='', woba_value='0')
     return bundle, raw, key
 
 
@@ -69,7 +69,7 @@ def test_independent_official_outcomes_restore_accounting_without_editing_raw(mo
     payload, _ = read_recovery(s3, 'b', raw['date'])
     assert payload['raw_statcast'] == original
     assert payload['rows'][1]['woba_denom'] == 1
-    assert payload['rows'][1]['woba_value'] == 0
+    assert payload['rows'][1]['woba_value'] == '0'
     assert payload['rows'][1]['estimated_woba_using_speedangle'] == '.5'
     assert len(payload['outcome_reconciliation']['derivations']) == 1
     assert load_training_statcast(bundle, s3, 'b')['errors'] == []
@@ -270,3 +270,60 @@ def test_deleted_exact_evidence_version_invalidates_composite(monkeypatch, missi
         read_recovery(s3, 'b', raw['date'])
     assert load_training_statcast(bundle, s3, 'b')['errors']
     assert raw['date'] not in bundle['statcast_retained_dates']
+
+
+def test_denominator_only_method_preserves_supplied_nonzero_event_weights():
+    bundle, raw, _ = raw_fixture()
+    raw['rows'][3].update(events='field_error', woba_value='0.9')
+    payload = reconcile(raw, lambda pk, rows: evidence(raw), raw_receipt(raw))
+    assert payload['rows'][3] == raw['rows'][3]
+    assert all(set(change['fields']) == {'woba_denom'}
+               for change in payload['outcome_reconciliation']['derivations'])
+    verify_reconciliation(payload, {'1': bundle['full'][0]['completedAtUtc']})
+
+
+@pytest.mark.parametrize('event', ['catcher_interf', 'intent_walk', 'sac_bunt', 'sac_bunt_double_play'])
+def test_official_exclusion_keeps_raw_denominator_and_records_canonical_difference(event):
+    bundle, raw, _ = raw_fixture()
+    raw['rows'][1].update(events=event, woba_denom='1', woba_value='0.7')
+    original = deepcopy(raw)
+    source = evidence(raw)
+    payload = reconcile(raw, lambda pk, rows: source, raw_receipt(raw))
+    assert raw == original == payload['raw_statcast']
+    assert payload['rows'][1]['woba_denom'] == 0
+    assert payload['rows'][1]['woba_value'] == '0.7'
+    change = payload['outcome_reconciliation']['derivations'][0]
+    assert change['original_fields'] == {'woba_denom': '1'}
+    assert change['fields'] == {'woba_denom': 0}
+    verify_reconciliation(payload, {'1': bundle['full'][0]['completedAtUtc']})
+    expected, invalid = official_pitch_counts(bundle['full'])
+    assert validation_reason(payload, raw['date'], {1}, expected, invalid,
+                             {'1': bundle['full'][0]['completedAtUtc']}) is None
+    change['original_fields']['woba_denom'] = ''
+    with pytest.raises(ValueError, match='cannot be reproduced'):
+        verify_reconciliation(payload, {'1': bundle['full'][0]['completedAtUtc']})
+
+
+def test_new_method_never_infers_a_missing_zero_weight():
+    bundle, raw, _ = raw_fixture()
+    raw['rows'][1]['woba_value'] = ''
+    payload = reconcile(raw, lambda pk, rows: evidence(raw), raw_receipt(raw))
+    assert payload['rows'][1]['woba_value'] == ''
+    expected, invalid = official_pitch_counts(bundle['full'])
+    assert validation_reason(payload, raw['date'], {1}, expected, invalid,
+                             {'1': bundle['full'][0]['completedAtUtc']}) == 'incomplete_pa_outcome_fields'
+
+
+def test_previously_retained_v1_derivations_remain_reproducible():
+    from ks1.official_outcomes import LEGACY_METHOD, reconciled_rows
+    bundle, raw, _ = raw_fixture()
+    raw['rows'][1]['woba_value'] = ''
+    sources = {'1': evidence(raw)}
+    rows, changes = reconciled_rows(raw, sources, method=LEGACY_METHOD)
+    payload = {'date': raw['date'], 'rows': rows, 'raw_statcast': raw,
+               'outcome_reconciliation': {'method': LEGACY_METHOD,
+                                         'official_sources': sources,
+                                         'raw_receipt': raw_receipt(raw),
+                                         'derivations': changes}}
+    assert rows[1]['woba_value'] == 0
+    verify_reconciliation(payload, {'1': bundle['full'][0]['completedAtUtc']})
