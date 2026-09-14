@@ -734,7 +734,7 @@ def main():
             and os.environ.get('GITHUB_EVENT_NAME') in ('push', 'schedule', 'workflow_dispatch')):
         from ks1.statcast_recovery import recover
         record_progress(args.output, 'recovering_historical_pitches')
-        recovery_report = recover(bundle, s3, bucket, statcast_report)
+        recovery_report = recover(bundle, s3, bucket, statcast_report, reconcile_official=True)
         (args.output/'statcast_recovery_report.json').write_bytes(encode(recovery_report))
         if recovery_report['recovered_dates']:
             statcast_report = load_training_statcast(bundle, s3, bucket)

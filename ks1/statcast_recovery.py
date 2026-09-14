@@ -17,6 +17,10 @@ PREFIX = 'sources/statcast-recovery-v1/'
 MAX_DATES = 64
 
 
+class RecoveryBudgetExhausted(Exception):
+    pass
+
+
 def recovery_pointer_key(value):
     return RESEARCH + PREFIX + value + '/latest.json'
 
@@ -36,7 +40,7 @@ def read_recovery(s3, bucket, value):
 
 
 def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DATES,
-            seconds=1200):
+            seconds=1200, reconcile_official=False, fetch_official=None):
     from ks1.train import artifact_write_authorized
     if (not artifact_write_authorized()
             or os.environ.get('GITHUB_REF') != 'refs/heads/main'
@@ -47,12 +51,17 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
     # These are the existing provider/store adapters, not a new credential path.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'mlb_research'))
     from mlb_research_store_v1 import Store
-    from mlb_research_sources_v1 import statcast
+    from mlb_research_sources_v1 import statcast, fetch as source_fetch
+    from ks1.official_outcomes import (METHOD, digest, endpoint, reconcile,
+                                       outcome_diagnostics, official_index, verify_official_time)
     store = Store(bucket, s3)
     fetch = fetch or statcast
+    fetch_official = fetch_official or source_fetch
+    method = METHOD if reconcile_official else 'raw_statcast_recovery_v1'
     deadline = time.monotonic() + seconds
     today = datetime.now(timezone.utc).date().isoformat()
     expected, invalid = official_pitch_counts(bundle['full'])
+    completed_by_game = {str(g['officialGamePk']): g.get('completedAtUtc') for g in bundle['full']}
     scheduled = {}
     from ks1.features import day
     for game in bundle['schedule']:
@@ -62,7 +71,29 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                 and not game.get('resumedFrom')):
             scheduled.setdefault(day(game['gameDate']).isoformat(), set()).add(int(game['gamePk']))
     report = {'provider_requests': 0, 'recovered_dates': [], 'attempts': [],
-              'deferred_dates': [], 'prediction_writes': 0, 'max_dates': max_dates}
+              'deferred_dates': [], 'prediction_writes': 0, 'max_dates': max_dates,
+              'statcast_provider_requests': 0, 'official_provider_requests': 0,
+              'recovery_method': method}
+
+    def official_source(pk, rows):
+        if time.monotonic() >= deadline:
+            raise RecoveryBudgetExhausted()
+        # The cache is bound to this exact raw game, not merely its game ID.
+        name = 'sources/official-pa-accounting-v1/' + pk + '/' + digest(rows) + '.json'
+        evidence = store.get(name)
+        if evidence is None:
+            report['provider_requests'] += 1
+            report['official_provider_requests'] += 1
+            data, receipt = fetch_official(endpoint(pk))
+            evidence = {'data': data, 'receipt': receipt}
+            official_index(evidence, pk, value, rows, require_retained=False)
+            verify_official_time(evidence, completed_by_game[pk])
+            evidence = store.once(name, evidence)
+        source_reader = Reader(s3, bucket)
+        retained = source_reader.read(RESEARCH + name, sha=digest(evidence))
+        receipt = source_reader.receipts[-1]
+        return {**retained, 'retained_receipt': {
+            'name': name, 'versionId': receipt['versionId'], 'sha256': receipt['sha256']}}
     candidates = []
     for error in sorted(initial_report['errors'], key=lambda item: item['date'], reverse=True):
         value = error['date']
@@ -76,7 +107,8 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
         # Storage denial/corruption is a hard error, not permission to replace it.
         state = store.get(name) or {}
         game_set_hash = hashlib.sha256(encode(sorted(games))).hexdigest()
-        if state.get('attempt_date') == today and state.get('game_set_sha256') == game_set_hash:
+        if (state.get('attempt_date') == today and state.get('game_set_sha256') == game_set_hash
+                and state.get('recovery_method', 'raw_statcast_recovery_v1') == method):
             report['deferred_dates'].append({'date': value, 'reason': 'already_attempted_today'})
             continue
         previous = state.get('verified_artifact') if state.get('game_set_sha256') == game_set_hash else None
@@ -85,24 +117,61 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
     # Never-attempted dates first, recent first within that group. This advances
     # through older gaps across days as well as multiple runs on the same day.
     for _, _, value, games, name, game_set_hash, previous in sorted(candidates):
-        if report['provider_requests'] >= max_dates or time.monotonic() >= deadline:
+        if len(report['attempts']) >= max_dates or time.monotonic() >= deadline:
             report['deferred_dates'].append({'date': value, 'reason': 'recovery_budget'})
             continue
-        report['provider_requests'] += 1
         # A transient object read failure is not evidence that a retained
         # version disappeared. Keep it reachable after a failed provider retry;
         # load_training_statcast still revalidates it before any admission.
         pointer = previous
         stop_provider = False
+        diagnostics = None
         try:
-            payload = fetch(value)
+            payload = None
+            if reconcile_official:
+                # Use retained raw observations before repeating a download that
+                # already failed for missing deterministic accounting fields.
+                try:
+                    raw_reader = Reader(s3, bucket)
+                    retained = raw_reader.read(RESEARCH + f'sources/statcast-v2/{value}.json')
+                    if (raw_reader.receipts[-1].get('versionId') not in (None, '', 'null')
+                            and validation_reason(retained, value, games, expected, invalid, completed_by_game)
+                            in (None, 'incomplete_pa_outcome_fields')):
+                        payload = retained
+                except Exception:
+                    pass  # A fresh response can independently replace an unreadable archive.
+            if payload is None:
+                report['provider_requests'] += 1
+                report['statcast_provider_requests'] += 1
+                payload = fetch(value)
             # The provider also returns spring/exhibition games. Select only the
             # independent official game set, exactly as the existing collector.
             payload = {**payload, 'rows': [row for row in payload['rows']
                        if str(row.get('game_pk')) in {str(pk) for pk in games}]}
-            reason = validation_reason(payload, value, games, expected, invalid)
+            reason = validation_reason(payload, value, games, expected, invalid, completed_by_game)
+            diagnostics = outcome_diagnostics(payload)
+            if reason == 'incomplete_pa_outcome_fields' and reconcile_official:
+                # Retain the selected raw records separately. This object is
+                # evidence, never a qualified replacement by itself.
+                raw_name = PREFIX + value + '/raw/' + digest(payload) + '.json'
+                store.once(raw_name, payload)
+                raw_reader = Reader(s3, bucket)
+                raw = raw_reader.read(RESEARCH + raw_name, sha=digest(payload))
+                receipt = raw_reader.receipts[-1]
+                raw_pointer = {'name': raw_name, 'versionId': receipt['versionId'],
+                               'sha256': receipt['sha256']}
+                payload = reconcile(raw, official_source, raw_pointer)
+                reason = validation_reason(payload, value, games, expected, invalid, completed_by_game)
+                diagnostics['derived_fields'] = sum(len(item['fields']) for item in
+                    payload.get('outcome_reconciliation', {}).get('derivations', []))
+                diagnostics['remaining'] = outcome_diagnostics(payload)
+        except RecoveryBudgetExhausted:
+            report['deferred_dates'].append({'date': value, 'reason': 'recovery_budget'})
+            break  # Cached official responses make this date resumable next run.
         except Exception as exc:
             reason = 'provider_error:' + type(exc).__name__
+            if isinstance(exc, ValueError):
+                reason = 'official_reconciliation_rejected:' + str(exc)[:180]
             status = getattr(exc, 'code', None)
             if status in (401, 403, 429):
                 reason += ':' + str(status)
@@ -116,13 +185,14 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
             retained = reader.read(RESEARCH + object_name, sha=content_hash)
             receipt = reader.receipts[-1]
             if (receipt.get('versionId') in (None, '', 'null')
-                    or validation_reason(retained, value, games, expected, invalid) is not None):
+                    or validation_reason(retained, value, games, expected, invalid, completed_by_game) is not None):
                 raise ValueError('recovered source readback failed')
             pointer = {'name': object_name, 'versionId': receipt['versionId'], 'sha256': content_hash}
             report['recovered_dates'].append(value)
         store.latest(name, {'attempt_date': today, 'game_set_sha256': game_set_hash,
-                            'reason': reason, 'verified_artifact': pointer})
-        report['attempts'].append({'date': value, 'reason': reason, 'verified_artifact': pointer})
+                            'recovery_method': method, 'reason': reason, 'verified_artifact': pointer})
+        report['attempts'].append({'date': value, 'reason': reason, 'verified_artifact': pointer,
+                                  'outcome_diagnostics': diagnostics})
         if stop_provider:
             report['stopped_reason'] = reason
             break
