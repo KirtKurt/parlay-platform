@@ -483,7 +483,7 @@ class Features:
         states = {"AVAILABLE": 0, "LIMITED": 0, "LIKELY_UNAVAILABLE": 0, "UNKNOWN": 0}
         reliever_profiles, state_by_pitcher = [], {}
         workload_score = 0.0
-        workload_complete = True
+        workload_complete = bool(roster)
         for pid in roster:
             recent = [(r, stats) for r, stats in appearances if any(
                 p["id"] == pid and p["stats"] is stats for p in r["players"])]
@@ -503,7 +503,7 @@ class Features:
             for age in range(1, 8):
                 if by_age[age]: consecutive += 1
                 else: break
-            counts_known = not known or (pitches1 is not None and pitches3 is not None)
+            counts_known = known and pitches1 is not None and pitches3 is not None
             workload_complete = workload_complete and counts_known
             if known and counts_known:
                 workload_score += pitches1 + .35*max(0, pitches3-pitches1)

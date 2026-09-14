@@ -333,6 +333,16 @@ def test_rested_reliever_has_low_workload_but_unconfirmed_availability():
     assert profile["availability_state"] == "AVAILABLE"
     assert profile["availability_state_basis"] == "strict_prior_workload_v1"
     assert profile["actual_availability_status"] == "UNKNOWN_NO_CONFIRMED_SOURCE"
+    assert values["bullpen_context_fatigue_score"] == 0
+
+    partial = Features([game], []).bullpen_roster_at(
+        "2026-09-10T17:50:00Z", "10", ["151", "999"], game_date="2026-09-10")
+    assert partial["bullpen_context_unknown_count"] == 1
+    assert partial["bullpen_context_fatigue_score"] is None
+    absent = Features([], []).bullpen_roster_at(
+        "2026-09-10T17:50:00Z", "10", ["999"], game_date="2026-09-10")
+    assert absent["bullpen_context_unknown_count"] == 1
+    assert absent["bullpen_context_fatigue_score"] is None
 
 
 def test_zero_pitch_relief_window_keeps_statcast_rates_null():
