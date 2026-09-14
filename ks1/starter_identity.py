@@ -27,9 +27,5 @@ def published_starter_index(entries, *, fixtures):
             continue
         if (row.get("date"), utc(row["commence_time"])) == targets[pk]:
             matching.append(entry)
-    return {
-        pk: {"game_id": pk, "date": targets[pk][0],
-             "commence_time": value["commence_time"], "as_of": value["as_of"],
-             "source": value["source"], **value["sides"]}
-        for pk, value in _proven_index(matching).items()
-    }
+    # Preserve the canonical sides/teams/contexts shape used by table.build.
+    return _proven_index(matching)

@@ -38,8 +38,8 @@ def test_latest_matching_pregame_identity_preserves_provenance_without_labels():
     early = proven(as_of=DATE + 'T19:20:00Z', home_starter_id='11')
     late = proven(as_of=DATE + 'T19:51:00Z', home_starter_id='77')
     indexed = published_starter_index([proven(), late, early], fixtures=[TARGET])['3']
-    assert indexed['home']['id'] == '99'
-    assert indexed['away']['id'] == '199'
+    assert indexed['sides']['home']['id'] == '99'
+    assert indexed['sides']['away']['id'] == '199'
     assert indexed['date'] == DATE
     assert indexed['commence_time'] == TARGET['commence_time']
     assert indexed['as_of'] == DATE + 'T19:40:00Z'
@@ -81,7 +81,7 @@ def test_fixture_filter_precedes_latest_selection_and_accepts_equivalent_offsets
                    as_of='2026-08-04T19:40:00Z', home_starter_id='77')
     other['evidence']['stored_at'] = '2026-08-04T19:45:00Z'
     target = {**TARGET, 'commence_time': DATE + 'T16:00:00-04:00'}
-    assert published_starter_index([proven(), other], fixtures=[target])['3']['home']['id'] == '99'
+    assert published_starter_index([proven(), other], fixtures=[target])['3']['sides']['home']['id'] == '99'
     with pytest.raises(ValueError, match='duplicate target'):
         published_starter_index([proven()], fixtures=[TARGET, target])
     with pytest.raises(TypeError):
@@ -244,4 +244,25 @@ def test_existing_table_join_rejects_date_mismatch_despite_matching_id_and_start
     result = table.to_pylist()[0]
     assert result['home_starter_id'] == '99' and result['away_starter_id'] == '199'
     assert result['pregame_version_id'] == 'v1'
+    assert report['exclusions'] == []
+
+
+def test_table_filters_wrong_date_before_latest_selection_from_versioned_partitions():
+    correct = version('correct', DATE + 'T19:45:00Z')
+    wrong = version('wrong', DATE + 'T19:49:00Z',
+                    key=KS1_PREDICTION_PREFIX + 'date=2026-08-02/predictions.parquet',
+                    rows=[row(date='2026-08-02', as_of=DATE + 'T19:48:00Z',
+                              home_starter_id='77', away_starter_id='177')])
+    entries, _ = read_locked_predictions(VersionedS3([correct, wrong]), 'test', AFTER)
+    assert len(entries) == 2
+    bundle = {'published_predictions': entries, 'schedule': [{
+        'gamePk': 3, 'gameDate': TARGET['commence_time'], 'season': '2026', 'gameType': 'R',
+        'status': {'abstractGameState': 'Preview'},
+        'teams': {side: {'team': {'id': tid, 'name': side.title()}}
+                  for side, tid in (('home', 1), ('away', 2))}}]}
+    table, report, *_ = build(bundle)
+    result = table.to_pylist()[0]
+    assert result['home_starter_id'] == '99' and result['away_starter_id'] == '199'
+    assert result['pregame_version_id'] == 'correct'
+    assert utc(result['as_of_timestamp']) == utc(DATE + 'T19:40:00Z')
     assert report['exclusions'] == []
