@@ -26,7 +26,10 @@ separate payload against MLB's official completed plate appearances.
   contact estimates are never inferred; unavailable values remain unknown.
 - Each changed field identifies its row, PA and official-source checksum. Raw
   records, official responses and their exact-version storage receipts are
-  retained. Every read recomputes the derived payload and checks the chain.
+  retained. Every read fetches those exact source versions, checks their contents
+  against the embedded evidence, recomputes the derived payload, and adds all
+  underlying receipts to the downstream provenance chain. A missing version
+  cannot be replaced with the latest version or an embedded copy.
 - Official play completion must not exceed the independently retained game
   completion time or the source retrieval time. The feed timestamp must match
   the independently retained schedule's exact original or resume timestamp; PAs

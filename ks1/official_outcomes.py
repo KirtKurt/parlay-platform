@@ -180,6 +180,26 @@ def verify_reconciliation(payload, completed_by_game, scheduled_by_game=None):
         verify_official_time(evidence, completed_by_game[pk])
 
 
+def read_retained_evidence(payload, reader):
+    """Require each claimed exact source version, not just embedded copies."""
+    if 'outcome_reconciliation' not in payload:
+        return
+    proof = payload['outcome_reconciliation']
+    sources = [(proof['raw_receipt'], payload['raw_statcast'])]
+    sources.extend((source['retained_receipt'],
+                    {key: source[key] for key in ('data', 'receipt')})
+                   for source in proof['official_sources'].values())
+    for pointer, expected in sources:
+        if (set(pointer) != {'name', 'versionId', 'sha256'}
+                or pointer['versionId'] in (None, '', 'null')
+                or not pointer['name'].startswith(('sources/statcast-recovery-v1/',
+                                                   'sources/official-pa-accounting-v1/'))):
+            raise ValueError('invalid retained outcome source pointer')
+        if (reader.pointer(pointer) != expected
+                or reader.receipts[-1]['versionId'] != pointer['versionId']):
+            raise ValueError('retained outcome source version mismatch')
+
+
 def outcome_diagnostics(payload):
     from collections import Counter
     invalid = [row for row in payload['rows']

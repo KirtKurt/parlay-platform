@@ -36,6 +36,8 @@ def read_recovery(s3, bucket, value):
             or pointer['name'] != expected_prefix + pointer['sha256'] + '.json'):
         raise ValueError('recovery pointer not bound to date and content')
     payload = reader.pointer(pointer)
+    from ks1.official_outcomes import read_retained_evidence
+    read_retained_evidence(payload, reader)
     return payload, reader.receipts
 
 
@@ -53,7 +55,7 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
     from mlb_research_store_v1 import Store
     from mlb_research_sources_v1 import statcast, fetch as source_fetch
     from ks1.official_outcomes import (METHOD, digest, endpoint, reconcile,
-                                       outcome_diagnostics, official_index, verify_official_time, schedule_times)
+                                       outcome_diagnostics, official_index, verify_official_time, schedule_times, read_retained_evidence)
     store = Store(bucket, s3)
     fetch = fetch or statcast
     fetch_official = fetch_official or source_fetch
@@ -191,6 +193,7 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
             reader = Reader(s3, bucket)
             retained = reader.read(RESEARCH + object_name, sha=content_hash)
             receipt = reader.receipts[-1]
+            read_retained_evidence(retained, reader)
             if (receipt.get('versionId') in (None, '', 'null')
                     or validation_reason(retained, value, games, expected, invalid, completed_by_game, scheduled_by_game) is not None):
                 raise ValueError('recovered source readback failed')

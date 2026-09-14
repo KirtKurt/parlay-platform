@@ -237,3 +237,36 @@ def test_suspended_game_requires_exact_retained_resume_time(monkeypatch, feed_ti
     # A payload cannot authorize its own resume time on a later read.
     bundle['schedule'][0].pop('resumeDate')
     assert load_training_statcast(bundle, s3, 'b')['errors']
+
+
+@pytest.mark.parametrize('missing_source', ['raw', 'official'])
+def test_deleted_exact_evidence_version_invalidates_composite(monkeypatch, missing_source):
+    from ks1.inventory import RESEARCH
+    authorize(monkeypatch)
+    bundle, raw, key = raw_fixture()
+    source = evidence(raw)
+    s3 = MemoryS3()
+    s3.seed(key, raw)
+    initial = load_training_statcast(bundle, s3, 'b')
+    recovered = recover(bundle, s3, 'b', initial, reconcile_official=True,
+                        fetch_official=lambda url: (source['data'], source['receipt']))
+    assert recovered['recovered_dates'] == [raw['date']]
+    payload, receipts = read_recovery(s3, 'b', raw['date'])
+    proof = payload['outcome_reconciliation']
+    pointers = [proof['raw_receipt'], proof['official_sources']['1']['retained_receipt']]
+    assert len(receipts) == 4  # State, composite, raw source, official source.
+    for pointer in pointers:
+        assert any(r['key'] == RESEARCH + pointer['name']
+                   and r['versionId'] == pointer['versionId']
+                   and r['sha256'] == pointer['sha256'] for r in receipts)
+    assert load_training_statcast(bundle, s3, 'b')['errors'] == []
+    assert all(any(r['key'] == receipt['key'] and r['versionId'] == receipt['versionId']
+                   for r in bundle['source_receipts']) for receipt in receipts)
+    pointer = pointers[missing_source == 'official']
+    # Leave the latest object and embedded copy intact; the exact version is gone.
+    del s3.versions[RESEARCH + pointer['name'], pointer['versionId']]
+    from botocore.exceptions import ClientError
+    with pytest.raises(ClientError):
+        read_recovery(s3, 'b', raw['date'])
+    assert load_training_statcast(bundle, s3, 'b')['errors']
+    assert raw['date'] not in bundle['statcast_retained_dates']
