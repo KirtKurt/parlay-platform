@@ -127,14 +127,24 @@ def predict_match(payload: dict[str, Any], *, goals_model=None, goals_features=N
         lam, mu = rates(goals_model, goals_features)
         has_xg = bool(goals_model["use_xg"] and goals_features["xg_complete"])
     grid = score_matrix(lam, mu)
-    # A fitted model must use exactly the inference evaluated on its holdout.
     if goals_model is None:
         grid = blend_with_market(grid, payload.get("market_1x2"))
-    markets = apply_abstain(markets_from_grid(grid), min_1x2=0.40, min_other=0.51)
+    books = {
+        "1x2": payload.get("market_1x2"),
+        "dc": payload.get("market_dc"),
+        "ou25": payload.get("market_ou25"),
+        "btts": payload.get("market_btts"),
+    }
+    markets = apply_abstain(
+        markets_from_grid(grid),
+        min_1x2=0.40,
+        min_other=0.51,
+        books=books,
+        require_positive_edge=goals_model is not None,
+    )
     if mapping.get("publish_ou_btts") is not True:
         markets["ou25_published"] = "ABSTAIN"
         markets["btts_published"] = "ABSTAIN"
-    # Quarantined cups stay off. Missing BBD does not blank a shadow book.
     if mapping.get("tier") == "Q" or mapping.get("goals_model_eligible") is False:
         for key in ("1x2_published", "double_chance_published", "ou25_published", "btts_published"):
             markets[key] = "ABSTAIN"
@@ -155,8 +165,6 @@ def predict_match(payload: dict[str, Any], *, goals_model=None, goals_features=N
         "lambda_home": lam,
         "lambda_away": mu,
         "has_xg": has_xg,
-        # Learned coverage comes from the shared receipt-bearing feature set.
-        # Legacy callers only report the numeric values they supplied.
         "input_coverage": {
             "defaulted_fields": defaulted,
             "team_strength_complete": goals_features["team_strength_complete"] if goals_features else not any(
