@@ -67,7 +67,7 @@ def test_third_runner_out_restores_both_gates_with_exact_retained_proof(monkeypa
     detached['rows'][-1]['events'] = 'official_non_pa_inning_ending'
     assert physical_validation_reason(detached, raw['date'], {1}, expected, batters, invalid)
     for k, v in list(s3.versions):
-        if 'official-game-advisory-inning-v1/' in k: del s3.versions[k, v]
+        if 'official-game-advisory-count-inning-v1/' in k: del s3.versions[k, v]
     assert load_training_statcast(bundle, s3, 'b')['errors']
 
 

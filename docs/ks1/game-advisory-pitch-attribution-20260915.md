@@ -46,6 +46,8 @@ false`, `type: no_pitch`, has automatic-ball code `VP`, and contains no pitch da
   ball's impossible release speed. The raw Savant object remains unchanged.
 - Retained v1-v10 evidence remains replayable against its original endpoint and
   namespace; no prior source object is upgraded or reinterpreted as v11 evidence.
+  V11 uses a distinct count namespace for pitch, taxonomy, and inning objects;
+  even the URL-identical inning projection cannot reuse a weaker v10 cache entry.
 - Negative tests reject a non-first plate appearance, altered count, pitch or
   substitution flags, pitch data, pitch number, wrong event type or count, broken
   continuity, late ending, and a chain that does not bracket scheduled start.

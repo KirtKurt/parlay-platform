@@ -185,7 +185,7 @@ def test_v11_requests_and_retains_complete_advisory_count_evidence():
     assert source_name('1', [], pitch_evidence=True) != source_name(
         '1', [], pitch_evidence=True, game_advisories=False)
     assert endpoint('1', inning_evidence=True).count('outs') == 1
-    assert source_name('1', [], inning_evidence=True) == source_name(
+    assert source_name('1', [], inning_evidence=True) != source_name(
         '1', [], inning_evidence=True, advisory_outs=False)
 
 

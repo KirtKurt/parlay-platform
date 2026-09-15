@@ -67,9 +67,10 @@ def source_name(game_id, rows, *, pitch_evidence=False, accounting_evidence=Fals
     if inning_evidence:
         prefix = 'official-inning-ending-v1'
     if game_advisories and (pitch_evidence or accounting_evidence or inning_evidence):
-        # Inning evidence already retained outs under v7-v10, so only the
-        # pitch/taxonomy shapes need a new namespace for v11 count evidence.
-        version = 'count-' if advisory_outs and not inning_evidence else ''
+        # The v11 global advisory-count contract is stronger even where the
+        # endpoint projection already contained ``outs``. Keep every v11
+        # object separate so a v10 cache entry can never block a fresh fetch.
+        version = 'count-' if advisory_outs else ''
         prefix = (f'official-game-advisory-{version}inning-v1' if inning_evidence
                   else f'official-game-advisory-{version}taxonomy-v1' if accounting_evidence
                   else f'official-game-advisory-{version}pitch-v1')
@@ -428,7 +429,8 @@ def read_retained_evidence(payload, reader):
                                                        'sources/official-game-advisory-taxonomy-v1/',
                                                        'sources/official-game-advisory-inning-v1/',
                                                        'sources/official-game-advisory-count-pitch-v1/',
-                                                       'sources/official-game-advisory-count-taxonomy-v1/'))):
+                                                       'sources/official-game-advisory-count-taxonomy-v1/',
+                                                       'sources/official-game-advisory-count-inning-v1/'))):
             raise ValueError('invalid retained outcome source pointer')
         if (reader.pointer(pointer) != expected
                 or reader.receipts[-1]['versionId'] != pointer['versionId']):
