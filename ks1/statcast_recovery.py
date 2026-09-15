@@ -198,7 +198,7 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                         continue
                     try:
                         ready, candidate_reason, candidate_diagnostics = prepare_candidate(retained)
-                    except ValueError as exc:
+                    except (ValueError, KeyError, TypeError, AttributeError, OverflowError) as exc:
                         candidate_rejections.append({'name': raw_name, 'reason': str(exc)[:180]})
                         continue
                     if candidate_reason is None:

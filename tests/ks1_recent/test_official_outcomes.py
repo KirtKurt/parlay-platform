@@ -434,3 +434,20 @@ def test_derived_non_pa_cannot_enter_denominator_based_profiles(denom):
     baseline = Features([], payload['rows'][:-2]).statcast('151', {'1'}, 18)
     assert actual['xwoba_pa'] == baseline['xwoba_pa'] == 9
     assert actual['xwoba'] == baseline['xwoba']
+
+
+@pytest.mark.parametrize('bad', [{}, {'rows': None}, {'rows': [None]}, {'rows': [3]}, []])
+def test_structurally_invalid_base_cannot_hide_valid_revision(monkeypatch, bad):
+    from ks1.inventory import RESEARCH
+    authorize(monkeypatch)
+    bundle, raw, key, source = unfinished_fixture('')
+    s3 = MemoryS3(); s3.seed(key, bad)
+    s3.seed(RESEARCH + f"sources/statcast-v2-revisions/{raw['date']}/{digest([1])}.json", raw)
+    initial = load_training_statcast(bundle, s3, 'b')
+    result = recover(bundle, s3, 'b', initial, reconcile_official=True,
+                     fetch=lambda value: pytest.fail('valid retained revision is available'),
+                     fetch_official=lambda url: (source['data'], source['receipt']))
+    assert result['recovered_dates'] == [raw['date']]
+    assert result['attempts'][0]['retained_candidate_rejections']
+    assert result['statcast_provider_requests'] == 0
+    assert load_training_statcast(bundle, s3, 'b')['errors'] == []
