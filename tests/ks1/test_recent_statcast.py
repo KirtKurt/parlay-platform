@@ -147,5 +147,21 @@ def test_missing_retained_timestamp_cannot_claim_pregame_availability(monkeypatc
     before = deepcopy(history); receipts = history['source_receipts']
     report = restore_recent_history(history, prior, receipt, s3, 'b', '2026-09-02')
     assert report['status'] == 'restored_observation_time_unavailable'
+    assert report['restored_evidence_applied'] is False
+    assert history == before
+    assert history['source_receipts'] is receipts
+
+
+@pytest.mark.parametrize('timestamp', [None, 'invalid'])
+def test_unknown_official_time_rejects_even_receiptless_empty_date_coverage(
+        monkeypatch, timestamp):
+    history, prior, receipt, s3, raw = retained_fixture(monkeypatch)
+    receipt['stored_at'] = timestamp
+    # The target window contains empty dates that can change coverage without
+    # adding a daily pitch receipt; their official source time must still bind.
+    before = deepcopy(history); receipts = history['source_receipts']
+    report = restore_recent_history(history, prior, receipt, s3, 'b', '2026-09-02')
+    assert report['status'] == 'restored_observation_time_unavailable'
+    assert report['restored_evidence_applied'] is False
     assert history == before
     assert history['source_receipts'] is receipts

@@ -42,22 +42,24 @@ def restore_recent_history(history, prior, prior_receipt, s3, bucket, target_dat
     bundle['source_receipts'] = list(history['source_receipts'])
     report = load_training_statcast(bundle, s3, bucket, requested_dates=requested)
     added = bundle['source_receipts'][receipt_count:]
-    observed_at = history.get('statcast_observed_at')
-    if added:
-        # Never backdate newly restored evidence to the compact artifact's old
-        # observation time. The existing T-10 profile validator consumes this.
-        times = [history.get('statcast_observed_at'), prior_receipt.get('stored_at')]
-        times.extend(receipt.get('stored_at') for receipt in added)
-        try:
-            if any(value is None for value in times):
-                raise ValueError('source observation time unavailable')
-            observed_at = max(utc(value) for value in times).isoformat()
-        except (TypeError, ValueError):
-            return {**report, 'source_writes': 0, 'requested_dates': sorted(requested),
-                    'status': 'restored_observation_time_unavailable'}
+    # Every requested date produces a new coverage decision. Empty verified
+    # dates have no pitch receipt, but still depend on the official-history
+    # receipt, so validate the complete time chain even when ``added`` is empty.
+    times = [history.get('statcast_observed_at'), prior_receipt.get('stored_at')]
+    times.extend(receipt.get('stored_at') for receipt in added)
+    try:
+        if any(value is None for value in times):
+            raise ValueError('source observation time unavailable')
+        observed_at = max(utc(value) for value in times).isoformat()
+    except (TypeError, ValueError):
+        return {'provider_requests': 0, 'source_writes': 0,
+                'requested_dates': sorted(requested),
+                'status': 'restored_observation_time_unavailable',
+                'restored_evidence_applied': False}
     for key in HISTORY_KEYS:
         history[key] = bundle[key]
     history['source_receipts'].extend(added)
     history['statcast_observed_at'] = observed_at
     return {**report, 'source_writes': 0, 'requested_dates': sorted(requested),
-            'status': 'verified_retained_windows_loaded'}
+            'status': 'verified_retained_windows_loaded',
+            'restored_evidence_applied': True}
