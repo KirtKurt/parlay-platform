@@ -121,7 +121,11 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
             report['deferred_dates'].append({'date': value, 'reason': 'already_attempted_today'})
             continue
         previous = state.get('verified_artifact') if state.get('game_set_sha256') == game_set_hash else None
-        candidates.append((state.get('attempt_date', ''), -date.fromisoformat(value).toordinal(),
+        # A new reconciliation method has not tried these dates yet. Do not
+        # let failures under an older policy push recent windows behind older gaps.
+        attempted = (state.get('attempt_date', '')
+                     if state.get('recovery_method', 'raw_statcast_recovery_v1') == method else '')
+        candidates.append((attempted, -date.fromisoformat(value).toordinal(),
                            value, games, name, game_set_hash, previous))
     # Never-attempted dates first, recent first within that group. This advances
     # through older gaps across days as well as multiple runs on the same day.
