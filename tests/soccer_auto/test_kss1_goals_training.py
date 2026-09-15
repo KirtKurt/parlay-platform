@@ -129,6 +129,40 @@ def test_late_context_and_late_shadow_write_are_rejected():
     assert write_kss1_shadow(NoWrites(), fixture(), "2025-10-01T15:01:00Z", goals_context=context)["reason"] == "MISSED_T60_GOALS_SHADOW"
 
 
+def test_same_model_new_context_records_a_fresh_immutable_pick_before_t60():
+    from soccer_auto.kss1_picks import recorded_picks
+    rows = history(45)
+    table = [r for r in build_training_table(HistoryIndex(rows)) if r["features"]["team_strength_complete"]]
+    model = fit(table, use_xg=False, ridge=.1, fitted_as_of="2025-03-01T00:00:00Z")
+    old = {"context_as_of": "2025-09-30T00:00:00Z", "created_at": "2025-09-30T00:00:00Z", "history": rows, "model": model}
+    fresh = dict(old, context_as_of="2025-10-01T14:59:30Z", created_at="2025-10-01T14:59:30Z")
+    target = fixture() | {"SK": "METADATA", "entity_type": "SOCCER_EVENT", "schedule_revision": 1}
+    class Store:
+        def __init__(self):
+            self.saved = {}; self.events = [target]; self.predictions = self
+        def put_prediction(self, row):
+            if row["SK"] in self.saved:
+                return False
+            self.saved[row["SK"]] = deepcopy(row)
+            return True
+        def scan_all(self, table, **kwargs):
+            return iter(table)
+        def query(self, **kwargs):
+            return {"Items": list(self.saved.values())}
+    store = Store()
+    first = write_kss1_shadow(store, target, "2025-10-01T14:59:00Z", goals_context=old)
+    second = write_kss1_shadow(store, target, "2025-10-01T15:00:00Z", goals_context=fresh)
+    assert first["written"] and second["written"] and first["sk"] != second["sk"]
+    assert not write_kss1_shadow(store, target, "2025-10-01T15:00:00Z", goals_context=fresh)["written"]
+    assert not write_kss1_shadow(store, target, "2025-10-01T15:00:01Z", goals_context=fresh)["written"]
+    assert len(store.saved) == 2
+    assert store.saved[first["sk"]]["goals_context_as_of"] == old["context_as_of"]
+    picks = recorded_picks(store, "2025-10-01")
+    assert picks["count"] == 1
+    assert picks["picks"][0]["model_digest"] == model["model_digest"]
+    assert picks["picks"][0]["goals_context_as_of"] == fresh["context_as_of"]
+
+
 def test_holdout_labels_never_choose_or_fit_the_model():
     rows = history(220)
     before = train_and_validate(build_training_table(HistoryIndex(rows)), min_train=60, min_test=25)

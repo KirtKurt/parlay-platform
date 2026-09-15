@@ -29,10 +29,13 @@ def market_prior_from_lock(lock: Mapping[str, Any]) -> dict[str, float] | None:
     }
 
 
-def kss1_prediction_sk(lock: Mapping[str, Any], model_digest: str = ENGINE_ID) -> str:
+def kss1_prediction_sk(lock: Mapping[str, Any], model_digest: str = ENGINE_ID, *, goals_context_as_of=None) -> str:
+    # Deterministic refits can keep the same model but publish a new context.
+    # Preserve both immutable observations and idempotency within one context.
+    context_suffix = f"#CONTEXT#{digest(goals_context_as_of)}" if goals_context_as_of is not None else ""
     return (
         f"PRED#KSS1#REV#{int(lock.get('schedule_revision') or 0)}"
-        f"#TARGET#kss1_book#MODEL#{model_digest}"
+        f"#TARGET#kss1_book#MODEL#{model_digest}{context_suffix}"
     )
 
 
@@ -84,9 +87,10 @@ def build_kss1_shadow_item(lock: Mapping[str, Any], observed_at: str, *, goals_c
         goals_features=features,
     )
     model_digest = model["model_digest"] if model else ENGINE_ID
+    context_as_of = goals_context["context_as_of"] if goals_context else None
     return {
         "PK": lock["event_key"],
-        "SK": kss1_prediction_sk(lock, model_digest),
+        "SK": kss1_prediction_sk(lock, model_digest, goals_context_as_of=context_as_of),
         "entity_type": "SOCCER_MODEL_PREDICTION",
         "event_key": lock["event_key"],
         "event_id": lock.get("event_id"),
@@ -105,7 +109,7 @@ def build_kss1_shadow_item(lock: Mapping[str, Any], observed_at: str, *, goals_c
         "automatic_prediction_allowed": False,
         "kss1": book,
         "goals_features": features,
-        "goals_context_as_of": goals_context["context_as_of"] if goals_context else None,
+        "goals_context_as_of": context_as_of,
         "immutable": True,
         "created_at": observed_at,
     }

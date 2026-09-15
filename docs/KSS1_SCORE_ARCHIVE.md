@@ -78,6 +78,9 @@ empty card pass. The readback repairs also address #897's reviewed findings:
   proof; other models or older contexts cannot falsely fail a valid fresh card.
 - Query both Eastern dates covered by the actual T90 capture window, including
   midnight/DST boundaries. Any truncated/failed date response still blocks proof.
+- Include the goals context in immutable prediction identity. Retraining the
+  same model can then record a fresh context before T60 without overwriting an
+  older pick; retries within one context remain idempotent.
 
 Example local audit (no AWS writes):
 

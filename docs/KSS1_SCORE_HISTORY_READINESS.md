@@ -73,3 +73,16 @@ future selection before a successful 12-pick proof is possible. Past games are
 never backfilled with predictions. Fitted KSS1 records remain shadow output;
 prospective qualification and comparison with the incumbent are still required
 before any separate public-authority promotion.
+
+Readback filters the dated card to the fresh candidate model and exact
+`goals_context_as_of`; earlier models/contexts cannot prove this rollout and
+do not invalidate a valid fresh candidate. Matching rows still undergo all
+identity, history, selection, duplicate and T60 checks. The freeze response
+reports the exact existing 90-minute capture window, and the deployment reads
+every Eastern date it covers, including midnight and DST transitions. A
+partial or mismatched dated API response remains a failed proof.
+
+Immutable KSS1 prediction keys also include the goals context identity. A
+deterministic refit with the same model digest can record its new context before
+T60 while retaining the older observation. Retries within the same context are
+still idempotent, and a late context or write cannot create readiness evidence.
