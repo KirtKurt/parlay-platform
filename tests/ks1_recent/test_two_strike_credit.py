@@ -67,7 +67,7 @@ def test_two_strike_strikeout_retains_pitch_batters_and_credits_predecessor(monk
     altered['outcome_reconciliation']['derivations'][-1]['credited_batter'] = '201'
     with pytest.raises(ValueError): verified_batter_credits(altered)
     for k, v in list(s3.versions):
-            if 'official-game-advisory-pitch-v1/' in k: del s3.versions[k, v]
+            if 'official-game-advisory-count-pitch-v1/' in k: del s3.versions[k, v]
     assert load_training_statcast(bundle, s3, 'b')['errors']
     assert raw['date'] not in bundle['statcast_retained_dates']
 

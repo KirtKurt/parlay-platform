@@ -36,9 +36,16 @@ false`, `type: no_pitch`, has automatic-ball code `VP`, and contains no pitch da
 
 - Policy v9 rejects the source with `official pitch-event chronology invalid` because
   the administrative events predate the scheduled start.
-- Policy v10 accepts only this exact administrative shape and derives only the
-  already-supported changes for the game, including clearing the automatic ball's
-  impossible release speed. The raw Savant object remains unchanged.
+- The first v10 main replay (`34980534826`) still failed closed because its filtered
+  request retained the advisory descriptions but omitted `count.outs`. That was a
+  source-contract defect, not permission to assume a zero count.
+- Policy v11 requests and retains both the exact descriptions and all three count
+  fields in a new content-addressed namespace. The filtered endpoint independently
+  returns `balls: 0`, `strikes: 0`, and `outs: 0` for each advisory. V11 then derives
+  only the already-supported changes for the game, including clearing the automatic
+  ball's impossible release speed. The raw Savant object remains unchanged.
+- Retained v1-v10 evidence remains replayable against its original endpoint and
+  namespace; no prior source object is upgraded or reinterpreted as v11 evidence.
 - Negative tests reject a non-first plate appearance, altered count, pitch or
   substitution flags, pitch data, pitch number, wrong event type or count, broken
   continuity, late ending, and a chain that does not bracket scheduled start.

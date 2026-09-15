@@ -2,7 +2,8 @@ from copy import deepcopy
 
 import pytest
 
-from ks1.official_outcomes import (ACCOUNTING_METHOD, MOUND_VISIT_METHOD, PITCH_METHOD,
+from ks1.official_outcomes import (ACCOUNTING_METHOD, GAME_ADVISORY_METHOD,
+                                  MOUND_VISIT_METHOD, PITCH_METHOD,
                                   TWO_STRIKE_METHOD, digest, endpoint, reconcile,
                                   reconciled_rows, source_name)
 from ks1.statcast_history import load_training_statcast
@@ -156,12 +157,35 @@ def test_retained_v9_endpoint_and_namespace_remain_reproducible():
     assert len(changes) == 1
 
 
-def test_v10_requests_and_retains_advisory_description_evidence():
+def test_v11_requests_and_retains_complete_advisory_count_evidence():
     assert 'description' in endpoint('1', pitch_evidence=True)
+    assert 'outs' in endpoint('1', pitch_evidence=True)
+    assert 'description' in endpoint('1', pitch_evidence=True, advisory_outs=False)
+    assert 'outs' not in endpoint('1', pitch_evidence=True, advisory_outs=False)
     assert 'description' not in endpoint('1', pitch_evidence=True,
                                          game_advisories=False)
     assert source_name('1', [], pitch_evidence=True) != source_name(
+        '1', [], pitch_evidence=True, advisory_outs=False)
+    assert source_name('1', [], pitch_evidence=True) != source_name(
         '1', [], pitch_evidence=True, game_advisories=False)
+    assert endpoint('1', inning_evidence=True).count('outs') == 1
+    assert source_name('1', [], inning_evidence=True) == source_name(
+        '1', [], inning_evidence=True, advisory_outs=False)
+
+
+def test_retained_v10_endpoint_and_namespace_remain_reproducible():
+    _, raw, _, source = pitch_fixture('automatic')
+    source['receipt'].update(endpoint=endpoint('1', pitch_evidence=True,
+                                               advisory_outs=False),
+                             sha256=digest(source['data']))
+    source['retained_receipt'] = {
+        'name': source_name('1', raw['rows'], pitch_evidence=True,
+                            advisory_outs=False),
+        'versionId': 'official-v10',
+        'sha256': digest({key: source[key] for key in ('data', 'receipt')})}
+    rows, changes = reconciled_rows(raw, {'1': source}, method=GAME_ADVISORY_METHOD)
+    assert rows[1]['release_speed'] == ''
+    assert len(changes) == 1
 
 
 @pytest.mark.parametrize('defect', ['not_first_pa', 'count', 'pitch', 'substitution',
