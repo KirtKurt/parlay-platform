@@ -57,7 +57,7 @@ def test_selection_is_independent_of_final_holdout_values():
     other_train, _ = frozen_split(changed, alternate)
     assert select(other_train) == first
     assert first[1]['final_holdout_used_for_selection'] is False
-    assert len(first[1]['trials']['starter']['trials']) == 4
+    assert len(first[1]['trials']['starter']['trials']) == 5
 
 
 def test_repository_manifest_is_bound_to_the_existing_300_game_experiment():
