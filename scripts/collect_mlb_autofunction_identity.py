@@ -83,6 +83,36 @@ def resource_environment(environment, resources):
     return result
 
 
+def environment_snapshot(config):
+    """Distinguish explicit variables from omitted, errored or malformed reads.
+
+    Never retain an AWS error message or interpret unavailable variables as an
+    empty environment. The returned values stay in memory for comparison only.
+    """
+    if "Environment" not in config:
+        return {"status": "not_returned"}, None
+    response = config["Environment"]
+    if not isinstance(response, dict):
+        return {"status": "malformed"}, None
+    if "Error" in response:
+        error = response["Error"]
+        code = error.get("ErrorCode") if isinstance(error, dict) else None
+        known_codes = {
+            "KMSAccessDeniedException", "KMSDisabledException", "KMSInvalidStateException",
+            "KMSNotFoundException", "AccessDeniedException", "InvalidParameterValueException",
+        }
+        safe_code = code if isinstance(code, str) and code in known_codes else "UnclassifiedError"
+        return {"status": "error", "errorCode": safe_code}, None
+    if "Variables" not in response:
+        return {"status": "not_returned"}, None
+    variables = response["Variables"]
+    if not isinstance(variables, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in variables.items()
+    ):
+        return {"status": "malformed"}, None
+    return {"status": "returned", "keyCount": len(variables)}, variables
+
+
 def source_summary(artifact):
     result = []
     with ZipFile(BytesIO(artifact)) as archive:
@@ -173,8 +203,10 @@ def collect(clients, download_artifact=download):
                                    "inputSha256": hashlib.sha256(json.dumps({k: t[k] for k in ("Input", "InputPath", "InputTransformer") if k in t}, sort_keys=True).encode()).hexdigest()}
                                   for t in targets]})
     after = call(clients, "lambda", "get_function_configuration", FunctionName=arn)
-    environment = (config.get("Environment") or {}).get("Variables") or {}
-    bindings = resource_environment(environment, resources)
+    before_environment, before_values = environment_snapshot(config)
+    after_environment, after_values = environment_snapshot(after)
+    values_match = (before_values == after_values
+                    if before_values is not None and after_values is not None else None)
     stack_account = stack["StackId"].split(":")[4]
     checks = {
         "stackName": stack.get("StackName") == STACK,
@@ -188,8 +220,10 @@ def collect(clients, download_artifact=download):
         "roleArnBinding": role.get("Arn") == role_arn,
         "roleStackOwnership": any(r.get("ResourceType") == "AWS::IAM::Role" and r.get("PhysicalResourceId") == role_name for r in resources),
     }
+    environment_complete = values_match is True and checks["stableRevision"]
+    environment = before_values if environment_complete else None
     return {
-        "schema": "KS1-SEPARATE-AUTOFUNCTION-READONLY-IDENTITY-v1",
+        "schema": "KS1-SEPARATE-AUTOFUNCTION-READONLY-IDENTITY-v2",
         "observedAt": datetime.now(timezone.utc).isoformat(),
         "identityVerified": all(checks.values()), "checks": checks,
         "isolationAuthorized": False, "isolationDecision": "requires_review_of_permissions_and_storage_scope",
@@ -198,7 +232,14 @@ def collect(clients, download_artifact=download):
         "stack": {k: stack.get(k) for k in ("StackName", "StackId", "StackStatus")},
         "resources": [{k: r.get(k) for k in ("LogicalResourceId", "PhysicalResourceId", "ResourceType", "ResourceStatus")} for r in resources],
         "function": {k: config.get(k) for k in ("FunctionName", "FunctionArn", "Handler", "Runtime", "Role", "CodeSha256", "RevisionId", "LastModified", "State", "LastUpdateStatus")},
-        "environmentKeys": sorted(environment), "resourceBindings": bindings,
+        "environmentEvidence": {
+            "getFunction": before_environment,
+            "getFunctionConfiguration": after_environment,
+            "valuesMatch": values_match,
+            "complete": environment_complete,
+        },
+        "environmentKeys": sorted(environment) if environment is not None else None,
+        "resourceBindings": resource_environment(environment, resources) if environment is not None else None,
         "artifact": {**manifest, "downloadCodeSha256": actual_hash},
         "sourceSummary": source_summary(artifact),
         "role": {k: role.get(k) for k in ("Arn", "RoleId", "PermissionsBoundary", "AssumeRolePolicyDocument")},
@@ -225,7 +266,7 @@ def main():
             report["failedRead"] = str(exc)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
-    print(json.dumps({k: report.get(k) for k in ("identityVerified", "isolationAuthorized", "checks", "errorType")}))
+    print(json.dumps({k: report.get(k) for k in ("identityVerified", "isolationAuthorized", "checks", "environmentEvidence", "errorType")}))
     return 0 if report.get("identityVerified") else 1
 
 
