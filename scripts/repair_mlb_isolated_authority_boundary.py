@@ -17,6 +17,15 @@ VERIFIER = Path("scripts/verify_mlb_deploy_identity.py")
 HARDENED_VERIFIER_SHA256 = (
     "bebd5ae70877564c1903f40f445f7d7b740e074b1de77855242f01d36bebda7d"
 )
+ISOLATED_AUTHORITY_PARTIAL_MARKERS = (
+    "ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN",
+    "ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN",
+    "ISOLATED_THREE_SOURCE_REQUIRED_ENVIRONMENT",
+    "ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT",
+    "def _is_authorized_isolated_three_source_auto",
+    "def _root_authority_lambda_functions",
+    "isolated_writer_functions_by_arn",
+)
 
 
 def _replace_once(text: str, old: str, new: str, label: str) -> str:
@@ -27,16 +36,13 @@ def _replace_once(text: str, old: str, new: str, label: str) -> str:
 
 
 def repair(path: Path = VERIFIER) -> bool:
-    source = path.read_text(encoding="utf-8")
-    original = source
-
-    source_sha256 = hashlib.sha256(source.encode("utf-8")).hexdigest()
+    raw_source = path.read_bytes()
+    source_sha256 = hashlib.sha256(raw_source).hexdigest()
     if source_sha256 == HARDENED_VERIFIER_SHA256:
         return False
-    if (
-        "ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN" in source
-        or "isolated_writer_functions_by_arn" in source
-    ):
+    source = raw_source.decode("utf-8")
+    original = source
+    if any(marker in source for marker in ISOLATED_AUTHORITY_PARTIAL_MARKERS):
         raise RuntimeError(
             "hardened isolated authority contract is incomplete: "
             f"verifier_sha256={source_sha256}"

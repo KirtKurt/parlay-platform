@@ -47,12 +47,40 @@ def test_authorized_isolated_three_source_auto_is_outside_root_scan() -> None:
 
 
 def test_deterministic_repair_is_noop_on_hardened_verifier(tmp_path) -> None:
-    source = repair_boundary.VERIFIER.read_text(encoding="utf-8")
+    source = repair_boundary.VERIFIER.read_bytes()
     verifier = tmp_path / "verify_mlb_deploy_identity.py"
-    verifier.write_text(source, encoding="utf-8")
+    verifier.write_bytes(source)
 
     assert repair_boundary.repair(verifier) is False
-    assert verifier.read_text(encoding="utf-8") == source
+    assert verifier.read_bytes() == source
+
+
+def test_deterministic_repair_rejects_newline_normalized_hardened_verifier(
+    tmp_path,
+) -> None:
+    source = repair_boundary.VERIFIER.read_bytes()
+    verifier = tmp_path / "verify_mlb_deploy_identity.py"
+    verifier.write_bytes(source.replace(b"\n", b"\r\n"))
+
+    try:
+        repair_boundary.repair(verifier)
+    except RuntimeError as error:
+        assert "hardened isolated authority contract is incomplete" in str(error)
+    else:
+        raise AssertionError("newline-mutated verifier bytes were accepted")
+
+
+def test_deterministic_repair_rejects_every_legacy_partial_marker(tmp_path) -> None:
+    for index, marker in enumerate(repair_boundary.ISOLATED_AUTHORITY_PARTIAL_MARKERS):
+        verifier = tmp_path / f"legacy_partial_{index}.py"
+        verifier.write_text(f"# partial repair\n{marker}\n", encoding="utf-8")
+
+        try:
+            repair_boundary.repair(verifier)
+        except RuntimeError as error:
+            assert "hardened isolated authority contract is incomplete" in str(error)
+        else:
+            raise AssertionError(f"legacy partial marker was accepted: {marker}")
 
 
 def test_deterministic_repair_rejects_partial_hardened_verifier(tmp_path) -> None:
