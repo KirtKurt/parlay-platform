@@ -98,6 +98,10 @@ def test_invalid_response_body_fails_closed(transport, body, operation):
     b'{"data": [{"id": NaN}]}',
     b'{"data": [{"start_time": Infinity}]}',
     b'{"data": [{"start_time": -Infinity}]}',
+    b'{"data": [{"id": 1e999}]}',
+    b'{"data": [{"start_time": -1E999}]}',
+    b'{"data": [{"home": {"id": 1.8e308}}]}',
+    b'{"data": [], "metadata": [1e309]}',
 ])
 @pytest.mark.parametrize("operation", ["health", "sports", "events"])
 def test_ambiguous_or_nonstandard_json_fails_closed(transport, body, operation):
@@ -127,6 +131,19 @@ def test_valid_json_preserves_separate_objects_and_string_constants(transport):
     assert result["ok"] is True
     assert [event["bbd_event_id"] for event in result["events"]] == ["one", "two"]
     assert [event["status"] for event in result["events"]] == ["NaN", "Infinity"]
+    assert responses[0].closed
+
+
+def test_valid_json_preserves_finite_numbers_and_quoted_exponents(transport):
+    install, _, responses = transport
+    install(200, body=b'{"data": [{"id": "1e999", "metadata": '
+                      b'[1.5, -2.5e2, 1e308, -1e308, 0.0]}]}')
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is True
+    assert result["events"][0]["bbd_event_id"] == "1e999"
+    assert result["events"][0]["raw"]["metadata"] == [1.5, -250.0, 1e308, -1e308, 0.0]
     assert responses[0].closed
 
 
