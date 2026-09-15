@@ -26,19 +26,36 @@ def repair(path: Path = VERIFIER) -> bool:
     source = path.read_text(encoding="utf-8")
     original = source
 
-    hardened_contract_markers = (
-        "ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN",
-        "ISOLATED_THREE_SOURCE_TABLE_NAME_PATTERN",
-        "ISOLATED_THREE_SOURCE_SECRET_ARN_PATTERN",
-        "ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT",
+    hardened_contract_expressions = (
+        "ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN.fullmatch(name)",
+        "handler in ISOLATED_THREE_SOURCE_HANDLERS",
+        "ISOLATED_THREE_SOURCE_TABLE_NAME_PATTERN.fullmatch(isolated_table)",
+        "and forbidden_absent",
+        "and unexpected_provider_authority_absent",
+        "ISOLATED_THREE_SOURCE_SECRET_ARN_PATTERN.fullmatch(secret_arn)",
         '"PREDICTIONS_TABLE"',
-        "unexpected_provider_authority_absent",
+        '"SIGNAL_LEDGER_TABLE"',
         "isolated_writer_functions_by_arn",
         '"authorizedIsolatedWriterFunctions"',
-        "target_is_unqualified",
+        "if target_is_unqualified\n                    else None",
+        "ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN\n"
+        "                            in _authority_text(",
     )
-    if all(marker in source for marker in hardened_contract_markers):
+    if all(expression in source for expression in hardened_contract_expressions):
         return False
+    if (
+        "ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN" in source
+        or "isolated_writer_functions_by_arn" in source
+    ):
+        missing = [
+            expression
+            for expression in hardened_contract_expressions
+            if expression not in source
+        ]
+        raise RuntimeError(
+            "hardened isolated authority contract is incomplete: "
+            + ",".join(missing)
+        )
 
     constants_marker = '''HISTORICAL_NONCANONICAL_WRITER_TOKENS = (
     "HISTORICALOPTIMIZER",

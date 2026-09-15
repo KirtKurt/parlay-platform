@@ -55,6 +55,29 @@ def test_deterministic_repair_is_noop_on_hardened_verifier(tmp_path) -> None:
     assert verifier.read_text(encoding="utf-8") == source
 
 
+def test_deterministic_repair_rejects_partial_hardened_verifier(tmp_path) -> None:
+    source = repair_boundary.VERIFIER.read_text(encoding="utf-8")
+    enforcement_expressions = (
+        "ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN.fullmatch(name)",
+        "handler in ISOLATED_THREE_SOURCE_HANDLERS",
+        "ISOLATED_THREE_SOURCE_TABLE_NAME_PATTERN.fullmatch(isolated_table)",
+        "and forbidden_absent",
+        "and unexpected_provider_authority_absent",
+        "ISOLATED_THREE_SOURCE_SECRET_ARN_PATTERN.fullmatch(secret_arn)",
+        "if target_is_unqualified\n                    else None",
+    )
+    for index, expression in enumerate(enforcement_expressions):
+        verifier = tmp_path / f"partial_{index}.py"
+        verifier.write_text(source.replace(expression, "", 1), encoding="utf-8")
+
+        try:
+            repair_boundary.repair(verifier)
+        except RuntimeError as error:
+            assert "hardened isolated authority contract is incomplete" in str(error)
+        else:
+            raise AssertionError(f"partial contract was accepted: {expression}")
+
+
 def test_isolated_lookalike_with_any_root_authority_binding_is_rejected() -> None:
     for key in (
         "SNAPSHOTS_TABLE",
