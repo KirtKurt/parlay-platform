@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from scripts import verify_mlb_deploy_identity as deploy_identity
+from scripts import repair_mlb_isolated_authority_boundary as repair_boundary
 
 
 class _LambdaClient:
@@ -43,6 +44,136 @@ def test_authorized_isolated_three_source_auto_is_outside_root_scan() -> None:
 
     assert deploy_identity._is_authorized_isolated_three_source_auto(function) is True
     assert deploy_identity._root_authority_lambda_functions(_LambdaClient([function])) == []
+
+
+def test_deterministic_repair_is_noop_on_hardened_verifier(tmp_path) -> None:
+    source = repair_boundary.VERIFIER.read_bytes()
+    verifier = tmp_path / "verify_mlb_deploy_identity.py"
+    verifier.write_bytes(source)
+
+    assert repair_boundary.repair(verifier) is False
+    assert verifier.read_bytes() == source
+
+
+def test_deterministic_repair_rejects_newline_normalized_hardened_verifier(
+    tmp_path,
+) -> None:
+    source = repair_boundary.VERIFIER.read_bytes()
+    verifier = tmp_path / "verify_mlb_deploy_identity.py"
+    verifier.write_bytes(source.replace(b"\n", b"\r\n"))
+
+    try:
+        repair_boundary.repair(verifier)
+    except RuntimeError as error:
+        assert "hardened isolated authority contract is incomplete" in str(error)
+    else:
+        raise AssertionError("newline-mutated verifier bytes were accepted")
+
+
+def test_deterministic_repair_rejects_legacy_and_partial_inputs(tmp_path) -> None:
+    legacy_fragments = (
+        "# pristine legacy verifier\n",
+        "ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN = 'legacy'\n",
+        "for function in _root_authority_lambda_functions(lambdas):\n",
+    )
+    for index, source in enumerate(legacy_fragments):
+        verifier = tmp_path / f"legacy_partial_{index}.py"
+        verifier.write_text(source, encoding="utf-8")
+
+        try:
+            repair_boundary.repair(verifier)
+        except RuntimeError as error:
+            assert "hardened isolated authority contract is incomplete" in str(error)
+        else:
+            raise AssertionError(f"legacy or partial source was accepted: {index}")
+
+
+def test_deterministic_repair_rejects_partial_hardened_verifier(tmp_path) -> None:
+    source = repair_boundary.VERIFIER.read_text(encoding="utf-8")
+    enforcement_expressions = (
+        "ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN.fullmatch(name)",
+        "handler in ISOLATED_THREE_SOURCE_HANDLERS",
+        "ISOLATED_THREE_SOURCE_TABLE_NAME_PATTERN.fullmatch(isolated_table)",
+        "and forbidden_absent",
+        "and unexpected_provider_authority_absent",
+        "ISOLATED_THREE_SOURCE_SECRET_ARN_PATTERN.fullmatch(secret_arn)",
+        "if target_is_unqualified\n                    else None",
+    )
+    for index, expression in enumerate(enforcement_expressions):
+        verifier = tmp_path / f"partial_{index}.py"
+        verifier.write_text(source.replace(expression, "", 1), encoding="utf-8")
+
+        try:
+            repair_boundary.repair(verifier)
+        except RuntimeError as error:
+            assert "hardened isolated authority contract is incomplete" in str(error)
+        else:
+            raise AssertionError(f"partial contract was accepted: {expression}")
+
+
+def test_deterministic_repair_rejects_each_missing_root_binding(tmp_path) -> None:
+    source = repair_boundary.VERIFIER.read_text(encoding="utf-8")
+    assignment = "ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT = ("
+    start = source.index(assignment)
+    end = source.index("\n)\n", start) + 3
+    block = source[start:end]
+
+    for index, key in enumerate(
+        (
+            "SNAPSHOTS_TABLE",
+            "SIGNALS_TABLE",
+            "SIGNAL_LEDGER_TABLE",
+            "PREDICTIONS_TABLE",
+            "OUTCOMES_TABLE",
+            "MLB_ML_ARTIFACTS_BUCKET",
+        )
+    ):
+        verifier = tmp_path / f"missing_root_binding_{index}.py"
+        partial_block = block.replace(f'    "{key}",\n', "", 1)
+        verifier.write_text(
+            source[:start] + partial_block + source[end:],
+            encoding="utf-8",
+        )
+
+        try:
+            repair_boundary.repair(verifier)
+        except RuntimeError as error:
+            assert "hardened isolated authority contract is incomplete" in str(error)
+        else:
+            raise AssertionError(f"missing root binding was accepted: {key}")
+
+
+def test_deterministic_repair_rejects_other_authority_weakening_edits(
+    tmp_path,
+) -> None:
+    source = repair_boundary.VERIFIER.read_text(encoding="utf-8")
+    mutations = (
+        source.replace(
+            "ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN = re.compile(\n",
+            "ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN = re.compile(\n"
+            "    r\"(?i)\",\n",
+            1,
+        ),
+        source.replace("        and forbidden_absent\n", "        and forbidden_absent or True\n", 1),
+        source.replace(
+            "            if not _is_authorized_isolated_three_source_auto(function):\n"
+            "                continue\n",
+            "",
+            1,
+        ),
+        source
+        + "\nISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT *= 0\n",
+    )
+    for index, mutated in enumerate(mutations):
+        verifier = tmp_path / f"authority_weakening_{index}.py"
+        verifier.write_text(mutated, encoding="utf-8")
+
+        try:
+            repair_boundary.repair(verifier)
+        except RuntimeError as error:
+            assert "hardened isolated authority contract is incomplete" in str(error)
+        else:
+            raise AssertionError(f"authority weakening was accepted: {index}")
 
 
 def test_isolated_lookalike_with_any_root_authority_binding_is_rejected() -> None:
