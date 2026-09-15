@@ -339,3 +339,138 @@ def test_workflow_principal_check_precedes_checkout(tmp_path, monkeypatch, accou
             exec(compile(code, '<restricted-caller-check>', 'exec'), {})
         assert json.loads(path.read_text())['failedStage'] == 'restricted_principal_binding'
     assert calls == ['sts']
+
+
+@pytest.mark.parametrize('operation,field', [
+    ('list_rules', 'Rules'),
+    ('list_targets_by_rule', 'Targets'),
+    ('list_role_policies', 'PolicyNames'),
+    ('list_attached_role_policies', 'AttachedPolicies'),
+    ('list_stack_resources', 'StackResourceSummaries'),
+])
+@pytest.mark.parametrize('payload', ['absent', None, {}, '', 0])
+def test_missing_or_malformed_inventory_is_not_empty(fixture, operation, field, payload):
+    fixture[1][operation] = {} if payload == 'absent' else {field: payload}
+    with pytest.raises((ValueError, RuntimeError)):
+        run(fixture)
+
+
+@pytest.mark.parametrize('token', [0, False, '', [], {}, 42])
+def test_invalid_page_token_cannot_truncate_inventory(fixture, token):
+    fixture[1]['list_rules'] = {'Rules': [], 'NextToken': token}
+    with pytest.raises((ValueError, RuntimeError)):
+        run(fixture)
+
+
+def test_malformed_target_cannot_hide_a_scheduled_writer(fixture):
+    fixture[1]['list_targets_by_rule'] = {'Targets': [{'Id': 'target'}]}
+    with pytest.raises((ValueError, RuntimeError)):
+        run(fixture)
+
+
+def test_duplicate_inventory_identity_fails_closed(fixture):
+    rule = fixture[1]['list_rules']['Rules'][0]
+    fixture[1]['list_rules'] = [
+        {'Rules': [rule], 'NextToken': 'next'}, {'Rules': [rule]}]
+    with pytest.raises((ValueError, RuntimeError)):
+        run(fixture)
+
+
+def test_explicit_empty_inventory_is_still_valid(fixture):
+    fixture[1]['list_rules'] = {'Rules': []}
+    fixture[1]['list_role_policies'] = {'PolicyNames': []}
+    fixture[1]['list_attached_role_policies'] = {'AttachedPolicies': []}
+    report = run(fixture)
+    assert report['rules'] == []
+    assert report['policies'] == []
+    assert report['ruleInventoryComplete'] is True
+    assert report['isolationAuthorized'] is False
+
+
+@pytest.mark.parametrize('field,value', [
+    ('Handler', 'unrelated.handler'),
+    ('CodeSha256', 'different'),
+    ('FunctionName', 'lookalike'),
+])
+def test_storage_bindings_require_positive_function_identity(fixture, field, value):
+    fixture[1]['get_function']['Configuration'][field] = value
+    report = run(fixture)
+    assert report['identityVerified'] is False
+    assert report['environmentEvidence']['complete'] is False
+    assert report['resourceBindings'] is None
+
+
+@pytest.mark.parametrize('source', [
+    'import os\nx = os.environ["MLB_AUTO_STATE_TABLE"]',
+    'import os as runtime_os\nx = runtime_os.environ["MLB_AUTO_STATE_TABLE"]',
+    'from os import environ\nx = environ["MLB_AUTO_STATE_TABLE"]',
+    'from os import environ as env\nx = env["MLB_AUTO_STATE_TABLE"]',
+    'from os import getenv as read_env\nx = read_env("MLB_AUTO_STATE_TABLE")',
+])
+def test_source_summary_sees_direct_environment_reads(source):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w') as archive:
+        archive.writestr('mlb_auto/storage.py', source)
+    row = subject.source_summary(buffer.getvalue())[0]
+    assert 'MLB_AUTO_STATE_TABLE' in row['possibleEnvironmentKeys']
+    assert row['analysisScope'] == 'heuristic_ast_only_not_isolation_proof'
+
+
+def test_dynamic_environment_source_is_explicitly_unknown():
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w') as archive:
+        archive.writestr('mlb_auto/storage.py', 'import os\nx = os.environ[key]\ny = os.getenv(other)\n')
+    row = subject.source_summary(buffer.getvalue())[0]
+    assert row['dynamicEnvironmentAccessCount'] == 2
+    assert row['possibleEnvironmentKeys'] == []
+
+
+def test_incomplete_inventory_failure_retains_redacted_negative_receipt(fixture, tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    clients, responses, artifact, _ = fixture
+    responses['list_rules'] = {'NextToken': 'must-not-leak'}
+    monkeypatch.setitem(sys.modules, 'boto3', SimpleNamespace(client=lambda service, **kw: clients[service]))
+    original = subject.collect
+    monkeypatch.setattr(subject, 'collect', lambda clients: original(clients, lambda location: artifact))
+    output = tmp_path / 'negative.json'
+    monkeypatch.setattr(sys, 'argv', ['collector', '--output', str(output)])
+    assert subject.main() == 1
+    report = json.loads(output.read_text())
+    assert report['identityVerified'] is False
+    assert report['isolationAuthorized'] is False
+    assert report['awsWrites'] == report['lambdaInvocations'] == 0
+    assert report['failedRead'] == 'events.list_rules:IncompleteInventoryResponse'
+    assert 'must-not-leak' not in output.read_text()
+
+
+@pytest.mark.parametrize('page', [
+    {'Rules': [], 'IsTruncated': 'false'},
+    {'Rules': [], 'IsTruncated': 0},
+    {'Rules': [], 'IsTruncated': False, 'NextToken': 'secret-cursor'},
+])
+def test_contradictory_or_malformed_pagination_is_negative(fixture, page):
+    fixture[1]['list_rules'] = page
+    with pytest.raises(subject.InventoryEvidenceError) as error:
+        run(fixture)
+    assert 'secret-cursor' not in str(error.value)
+
+
+def test_unique_cursors_cannot_bypass_page_bound(fixture, monkeypatch):
+    monkeypatch.setattr(subject, 'MAX_METADATA_PAGES', 2)
+    fixture[1]['list_rules'] = [
+        {'Rules': [], 'NextToken': 'first'}, {'Rules': [], 'NextToken': 'second'}]
+    with pytest.raises(subject.InventoryEvidenceError, match='PaginationLimitExceeded'):
+        run(fixture)
+    assert sum(operation == 'list_rules' for _, operation, _ in fixture[3]) == 2
+
+
+def test_source_observations_do_not_expose_defaults_or_dynamic_values():
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w') as archive:
+        archive.writestr('mlb_auto/storage.py',
+                         'from os import getenv as env\nx = env("TABLE_NAME", "must-not-leak")\ny = env(key="lowercase_name")\n')
+    row = subject.source_summary(buffer.getvalue())[0]
+    assert row['possibleEnvironmentKeys'] == ['TABLE_NAME', 'lowercase_name']
+    assert row['dynamicEnvironmentAccessCount'] == 0
+    assert 'must-not-leak' not in json.dumps(row)

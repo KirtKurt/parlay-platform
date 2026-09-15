@@ -53,21 +53,70 @@ def call(clients, service, operation, **kwargs):
         raise RuntimeError(f"{service}.{operation}:{code}") from None
 
 
+# Required identifiers let an empty list remain valid without treating a
+# missing/malformed response or a duplicated page as a complete inventory.
+INVENTORY_FIELDS = {
+    ("cloudformation", "list_stack_resources", "StackResourceSummaries"):
+        ("LogicalResourceId", "ResourceType"),
+    ("iam", "list_role_policies", "PolicyNames"): (),
+    ("iam", "list_attached_role_policies", "AttachedPolicies"): ("PolicyArn",),
+    ("events", "list_rules", "Rules"): ("Name", "Arn", "State"),
+    ("events", "list_targets_by_rule", "Targets"): ("Id", "Arn"),
+}
+MAX_METADATA_PAGES = 1000
+
+
+class InventoryEvidenceError(ValueError):
+    """A fixed validation code; no AWS payload or pagination token is retained."""
+
+    def __init__(self, service, operation, reason):
+        self.failed_read = f"{service}.{operation}:{reason}"
+        super().__init__(reason)
+
+
 def pages(clients, service, operation, field, request_token="NextToken",
           response_token="NextToken", **kwargs):
-    result, seen = [], set()
-    while True:
+    required = INVENTORY_FIELDS.get((service, operation, field))
+    if required is None:
+        raise ValueError("Unsupported AWS inventory shape")
+    result, seen_tokens, seen_rows = [], set(), set()
+    for _ in range(MAX_METADATA_PAGES):
         page = call(clients, service, operation, **kwargs)
-        result.extend(page.get(field) or [])
+        if not isinstance(page, dict) or not isinstance(page.get(field), list):
+            raise InventoryEvidenceError(service, operation, "IncompleteInventoryResponse")
+        for row in page[field]:
+            if required:
+                valid = isinstance(row, dict) and all(
+                    isinstance(row.get(key), str) and bool(row[key])
+                    for key in required
+                )
+                identity = row.get(required[0]) if valid else None
+            else:
+                valid = isinstance(row, str) and bool(row)
+                identity = row if valid else None
+            if not valid:
+                raise InventoryEvidenceError(service, operation, "MalformedInventoryEntry")
+            if identity in seen_rows:
+                raise InventoryEvidenceError(service, operation, "DuplicateInventoryIdentity")
+            seen_rows.add(identity)
+            result.append(row)
+        truncated = page.get("IsTruncated")
+        if "IsTruncated" in page and not isinstance(truncated, bool):
+            raise InventoryEvidenceError(service, operation, "MalformedTruncationFlag")
         token = page.get(response_token)
-        if not token:
-            if page.get("IsTruncated"):
-                raise ValueError("Truncated AWS evidence without a pagination token")
+        if token is None:
+            if truncated:
+                raise InventoryEvidenceError(service, operation, "TruncatedInventoryWithoutToken")
             return result
-        if token in seen:
-            raise ValueError("Repeated AWS pagination token")
-        seen.add(token)
+        if not isinstance(token, str) or not token:
+            raise InventoryEvidenceError(service, operation, "MalformedPaginationToken")
+        if truncated is False:
+            raise InventoryEvidenceError(service, operation, "ContradictoryPagination")
+        if token in seen_tokens:
+            raise InventoryEvidenceError(service, operation, "RepeatedPaginationToken")
+        seen_tokens.add(token)
         kwargs[request_token] = token
+    raise InventoryEvidenceError(service, operation, "PaginationLimitExceeded")
 
 
 def resource_environment(environment, resources):
@@ -113,6 +162,56 @@ def environment_snapshot(config):
     return {"status": "returned", "keyCount": len(variables)}, variables
 
 
+def environment_source_observations(tree):
+    """Heuristic key observations only; never a proof of complete code scope.
+
+    Include direct os.environ subscriptions and imported aliases. Values,
+    defaults, dynamic expressions and source text are never included.
+    """
+    os_names, environ_names, getenv_names = set(), set(), set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            os_names.update(alias.asname or "os" for alias in node.names if alias.name == "os")
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module == "os":
+            for alias in node.names:
+                if alias.name == "environ":
+                    environ_names.add(alias.asname or alias.name)
+                elif alias.name == "getenv":
+                    getenv_names.add(alias.asname or alias.name)
+
+    def os_attribute(node, attribute):
+        return (isinstance(node, ast.Attribute) and node.attr == attribute
+                and isinstance(node.value, ast.Name) and node.value.id in os_names)
+
+    def environment(node):
+        return (os_attribute(node, "environ") or
+                isinstance(node, ast.Name) and node.id in environ_names)
+
+    keys, dynamic = set(), 0
+    for node in ast.walk(tree):
+        key = None
+        if isinstance(node, ast.Subscript) and environment(node.value):
+            key = node.slice
+        elif isinstance(node, ast.Call):
+            function = node.func
+            is_read = (os_attribute(function, "getenv") or
+                       isinstance(function, ast.Name) and function.id in getenv_names or
+                       isinstance(function, ast.Attribute) and function.attr == "get"
+                       and environment(function.value))
+            if not is_read:
+                continue
+            key = node.args[0] if node.args else next(
+                (kw.value for kw in node.keywords if kw.arg == "key"), None)
+        else:
+            continue
+        if (isinstance(key, ast.Constant) and isinstance(key.value, str)
+                and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]+", key.value)):
+            keys.add(key.value)
+        else:
+            dynamic += 1
+    return keys, dynamic
+
+
 def source_summary(artifact):
     result = []
     with ZipFile(BytesIO(artifact)) as archive:
@@ -126,9 +225,12 @@ def source_summary(artifact):
                 result.append({"path": name, "sha256": hashlib.sha256(content).hexdigest(),
                                "parseStatus": "unavailable_in_collector_runtime",
                                "parseErrorType": type(exc).__name__,
+                               "analysisScope": "heuristic_ast_only_not_isolation_proof",
+                               "dynamicEnvironmentAccessCount": None,
                                "imports": [], "possibleEnvironmentKeys": [], "calledMethods": []})
                 continue
-            imports, env_keys, methods = set(), set(), set()
+            env_keys, dynamic = environment_source_observations(tree)
+            imports, methods = set(), set()
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
                     imports.update(alias.name for alias in node.names)
@@ -144,7 +246,9 @@ def source_summary(artifact):
                             and re.fullmatch(r"[A-Z][A-Z0-9_]+", node.args[0].value)):
                         env_keys.add(node.args[0].value)
             result.append({"path": name, "sha256": hashlib.sha256(content).hexdigest(),
-                           "parseStatus": "parsed", "imports": sorted(imports), "possibleEnvironmentKeys": sorted(env_keys),
+                           "parseStatus": "parsed", "analysisScope": "heuristic_ast_only_not_isolation_proof",
+                           "dynamicEnvironmentAccessCount": dynamic,
+                           "imports": sorted(imports), "possibleEnvironmentKeys": sorted(env_keys),
                            "calledMethods": sorted(methods)})
     return result
 
@@ -220,7 +324,7 @@ def collect(clients, download_artifact=download):
         "roleArnBinding": role.get("Arn") == role_arn,
         "roleStackOwnership": any(r.get("ResourceType") == "AWS::IAM::Role" and r.get("PhysicalResourceId") == role_name for r in resources),
     }
-    environment_complete = values_match is True and checks["stableRevision"]
+    environment_complete = values_match is True and all(checks.values())
     environment = before_values if environment_complete else None
     return {
         "schema": "KS1-SEPARATE-AUTOFUNCTION-READONLY-IDENTITY-v2",
@@ -262,6 +366,8 @@ def main():
         # AWS exception strings and URLs can expose environment or signed data.
         report = {"identityVerified": False, "isolationAuthorized": False,
                   "errorType": type(exc).__name__, "awsWrites": 0, "lambdaInvocations": 0}
+        if isinstance(exc, InventoryEvidenceError):
+            report["failedRead"] = exc.failed_read
         if isinstance(exc, RuntimeError) and re.fullmatch(r"[a-z]+\.[a-z_]+:[A-Za-z0-9_.-]+", str(exc)):
             report["failedRead"] = str(exc)
     args.output.parent.mkdir(parents=True, exist_ok=True)
