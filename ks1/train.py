@@ -177,8 +177,12 @@ def save_artifact(s3, bucket, output):
     receipt = {'bucket': bucket, 'prefix': prefix, 'files': receipts, 'deployed': False,
                'registered_for_serving': False}
     (output/'artifact.json').write_bytes(encode(receipt))
-    print(json.dumps({'artifact': f's3://{bucket}/{prefix}model.txt', 'readback_verified': True,
-                      'deployed': False, 'model_receipts': [item for item in receipts
+    from ks1.run_summary import artifact_summary
+    print(json.dumps({'artifact': f's3://{bucket}/{prefix}model.txt' if 'model.txt' in hashes else None,
+                      'artifact_prefix': f's3://{bucket}/{prefix}', 'readback_verified': True,
+                      'deployed': False, 'registered_for_serving': False,
+                      'run_summary': artifact_summary(output),
+                      'model_receipts': [item for item in receipts
                           if item['key'].endswith('.txt') and item['key'].rsplit('/', 1)[-1].startswith('model')]}, indent=2))
 
 

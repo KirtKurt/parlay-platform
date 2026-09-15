@@ -43,3 +43,8 @@ V1 through v7 retain their original policies and cannot accept this new case.
 Existing trusted-main source-write authorization, recovery budget, 300-row
 feature floor, frozen qualification cohort, Brier/log-loss and substantive
 feature-usage requirements, T-10 behavior, and serving references are unchanged.
+
+The post-readback log also reports the actual recovery receipt pointers,
+development decision and matchup-value usage. Deferred runs report no model
+artifact instead of the former misleading path to a nonexistent `model.txt`.
+These summaries do not participate in qualification or alter artifact identity.
