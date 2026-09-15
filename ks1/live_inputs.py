@@ -181,6 +181,7 @@ def capture(target_date, output):
     (output/'passive_context.json').write_bytes(encode(passive))
     reader = Reader(s3, bucket)
     prior = reader.pointer(reader.read(RESEARCH+'prior-games.json')['artifact'])
+    prior_receipt = dict(reader.receipts[-1])
     with ThreadPoolExecutor(max_workers=8) as pool:
         compact = list(pool.map(reader.read, sorted(reader.keys(RECONSTRUCTED+'source-games/'))))
     games = {str(g['officialGamePk']): g for g in compact}
@@ -207,6 +208,9 @@ def capture(target_date, output):
                'prior_statcast_year': statcast.get('priorYear'),
                'statcast_observed_at': statcast.get('updatedAtUtc') or statcast.get('receipt', {}).get('retrievedAtUtc'),
                'prior_observed_at': prior.get('updatedAtUtc') or prior.get('receipt', {}).get('retrievedAtUtc')}
+    from ks1.recent_statcast import restore_recent_history
+    history['recent_statcast_report'] = restore_recent_history(
+        history, prior, prior_receipt, s3, bucket, target_date)
     (output / 'history.json.gz').write_bytes(gzip.compress(encode(history), mtime=0))
     refs = json.loads((Path(__file__).parent/'model_refs.json').read_bytes())
     ref = refs['lightgbm']
