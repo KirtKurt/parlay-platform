@@ -2,11 +2,11 @@ from copy import deepcopy
 
 import pytest
 
-from ks1.official_outcomes import (ACCOUNTING_METHOD, PITCH_METHOD, TWO_STRIKE_METHOD,
-                                  reconcile, reconciled_rows)
+from ks1.official_outcomes import (ACCOUNTING_METHOD, MOUND_VISIT_METHOD, PITCH_METHOD,
+                                  TWO_STRIKE_METHOD, reconcile, reconciled_rows)
 from ks1.statcast_history import load_training_statcast
 from ks1.statcast_recovery import recover
-from tests.ks1_recent.test_official_outcomes import raw_receipt
+from tests.ks1_recent.test_official_outcomes import evidence, raw_receipt
 from tests.ks1_recent.test_pitch_attribution import pitch_fixture, reseal
 from tests.ks1_recent.test_recovery import MemoryS3, authorize
 
@@ -38,6 +38,35 @@ def mound_visit_fixture():
         'details': {'eventType': 'mound_visit'},
         'count': {'balls': 0, 'strikes': 0}})
     for i, event in enumerate(events): event['index'] = i
+    reseal(source, raw)
+    return bundle, raw, key, source
+
+
+def game_advisory_fixture():
+    bundle, raw, key, source = pitch_fixture('automatic')
+    # The general Statcast fixture deliberately uses player IDs as at-bat IDs.
+    # Reindex it to a real game-wide PA sequence so the candidate is play zero.
+    at_bats = {value: str(index + 1) for index, value in enumerate(dict.fromkeys(
+        row['at_bat_number'] for row in raw['rows']))}
+    for row in raw['rows']:
+        row['at_bat_number'] = at_bats[row['at_bat_number']]
+    pitch_events = deepcopy(source['data']['liveData']['plays']['allPlays'][0]['playEvents'])
+    source = evidence(raw)
+    play = source['data']['liveData']['plays']['allPlays'][0]
+    events = play['playEvents'] = pitch_events
+    advisories = [
+        ('2026-09-01T17:00:00Z', '2026-09-01T17:30:00Z'),
+        ('2026-09-01T17:30:00Z', '2026-09-01T17:50:00Z'),
+        ('2026-09-01T17:50:00Z', events[0]['startTime']),
+    ]
+    events[:0] = [{'index': index, 'isPitch': False, 'type': 'action',
+        'startTime': start, 'endTime': end,
+        'details': {'eventType': 'game_advisory'},
+        'count': {'balls': 0, 'strikes': 0, 'outs': 0}}
+        for index, (start, end) in enumerate(advisories)]
+    play['about']['atBatIndex'] = play['atBatIndex'] = 0
+    for index, event in enumerate(events):
+        event['index'] = index
     reseal(source, raw)
     return bundle, raw, key, source
 
@@ -99,6 +128,39 @@ def test_zero_count_mound_visit_may_precede_prefix_pitching_change():
     assert payload['rows'][1]['release_speed'] == ''
     with pytest.raises(ValueError, match='unexpected substitution'):
         reconciled_rows(raw, {'1': source}, method=TWO_STRIKE_METHOD)
+
+
+def test_contiguous_pregame_advisories_may_precede_first_count_event():
+    _, raw, _, source = game_advisory_fixture()
+    payload = reconcile(raw, lambda *a: source, raw_receipt(raw))
+    assert payload['rows'][1]['release_speed'] == ''
+    with pytest.raises(ValueError, match='chronology'):
+        reconciled_rows(raw, {'1': source}, method=MOUND_VISIT_METHOD)
+
+
+@pytest.mark.parametrize('defect', ['not_first_pa', 'count', 'pitch', 'substitution',
+                                  'pitch_data', 'pitch_number', 'event_type',
+                                  'wrong_length', 'gap', 'late_end', 'does_not_bracket_start'])
+def test_pregame_advisory_prelude_is_narrow_and_fail_closed(defect):
+    _, raw, _, source = game_advisory_fixture()
+    play = source['data']['liveData']['plays']['allPlays'][0]
+    events, advisory = play['playEvents'], play['playEvents'][0]
+    if defect == 'not_first_pa': play['about']['atBatIndex'] = play['atBatIndex'] = 1
+    elif defect == 'count': advisory['count']['outs'] = 1
+    elif defect == 'pitch': advisory['isPitch'] = True
+    elif defect == 'substitution': advisory['isSubstitution'] = True
+    elif defect == 'pitch_data': advisory['pitchData'] = {'startSpeed': 94.3}
+    elif defect == 'pitch_number': advisory['pitchNumber'] = 1
+    elif defect == 'event_type': advisory['details']['eventType'] = 'mound_visit'
+    elif defect == 'wrong_length': events.pop(0)
+    elif defect == 'gap': events[1]['startTime'] = '2026-09-01T17:31:00Z'
+    elif defect == 'late_end': events[2]['endTime'] = '2026-09-01T18:10:01Z'
+    elif defect == 'does_not_bracket_start': advisory['startTime'] = '2026-09-01T18:01:00Z'
+    for index, event in enumerate(events):
+        event['index'] = index
+    reseal(source, raw)
+    with pytest.raises(ValueError):
+        reconcile(raw, lambda *a: source, raw_receipt(raw))
 
 
 @pytest.mark.parametrize('defect', ['event_type', 'count', 'pitch', 'substitution',
