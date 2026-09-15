@@ -66,7 +66,7 @@ def test_exact_official_pitch_evidence_recovers_both_coverage_gates(monkeypatch,
     assert load_training_statcast(bundle, s3, 'b')['errors'] == []
     assert bundle['statcast_physical_dates'] == bundle['statcast_retained_dates']
     for key, version in list(s3.versions):
-        if 'official-game-advisory-pitch-v1/' in key:
+        if 'official-game-advisory-count-pitch-v1/' in key:
             del s3.versions[key, version]
     assert load_training_statcast(bundle, s3, 'b')['errors']
     assert raw['date'] not in bundle['statcast_physical_dates']

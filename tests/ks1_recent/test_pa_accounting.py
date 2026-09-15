@@ -58,9 +58,9 @@ def test_force_out_taxonomy_requires_retained_runner_and_pitch_proof(monkeypatch
     assert payload['rows'][1] == before['rows'][1]
     assert payload['rows'][3]['woba_denom'] == 1
     assert load_training_statcast(bundle, s3, 'b')['errors'] == []
-    assert any('official-game-advisory-taxonomy-v1/' in r['key'] for r in receipts)
+    assert any('official-game-advisory-count-taxonomy-v1/' in r['key'] for r in receipts)
     for key, version in list(s3.versions):
-        if 'official-game-advisory-taxonomy-v1/' in key:
+        if 'official-game-advisory-count-taxonomy-v1/' in key:
             del s3.versions[key, version]
     # The original physically complete rows can remain physical-only; the
     # missing outcome denominator cannot regain outcome coverage without proof.
@@ -126,6 +126,14 @@ def test_retry_reuses_retained_taxonomy_source_with_provider_offline(monkeypatch
 def test_retained_v4_attribution_objects_remain_reproducible(kind):
     from tests.ks1_recent.test_pitch_attribution import pitch_fixture, walkoff_fixture
     bundle, raw, _, source = walkoff_fixture() if kind == 'walkoff' else pitch_fixture(kind)
+    source['receipt'].update(endpoint=endpoint('1', pitch_evidence=True,
+                                               game_advisories=False),
+                             sha256=digest(source['data']))
+    source['retained_receipt'] = {
+        'name': source_name('1', raw['rows'], pitch_evidence=True,
+                            game_advisories=False),
+        'versionId': 'official-v4',
+        'sha256': digest({key: source[key] for key in ('data', 'receipt')})}
     rows, changes = reconciled_rows(raw, {'1': source}, method=PITCH_METHOD)
     payload = {'date': raw['date'], 'raw_statcast': raw, 'rows': rows,
                'outcome_reconciliation': {'method': PITCH_METHOD, 'official_sources': {'1': source},
