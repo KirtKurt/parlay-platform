@@ -16,7 +16,9 @@ import mlb_research_provenance_v1 as provenance
 @pytest.fixture
 def source_tree(tmp_path):
     for name in provenance.SOURCE_FILES:
-        (tmp_path / name).write_bytes(('test fixture for ' + name + '\n').encode())
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(('test fixture for ' + name + '\n').encode())
     return tmp_path
 
 

@@ -24,6 +24,8 @@ SOURCE_FILES = (
     'mlb_research_signals_v1.py',
     'mlb_research_sources_v1.py',
     'mlb_research_store_v1.py',
+    'ks1/features.py',
+    'ks1/statcast_events.py',
     'requirements.txt',
 )
 

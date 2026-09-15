@@ -8,6 +8,8 @@ on:
       - 'hello_world/api.py'
       - 'hello_world/mlb_*.py'
       - 'mlb_research/**'
+      - 'ks1/features.py'
+      - 'ks1/statcast_events.py'
       - 'hello_world/pull_dedupe_guard.py'
       - 'hello_world/sitecustomize.py'
       - 'hello_world/requirements.txt'
@@ -55,6 +57,8 @@ on:
       - 'hello_world/api.py'
       - 'hello_world/mlb_*.py'
       - 'mlb_research/**'
+      - 'ks1/features.py'
+      - 'ks1/statcast_events.py'
       - 'hello_world/pull_dedupe_guard.py'
       - 'hello_world/sitecustomize.py'
       - 'hello_world/requirements.txt'
@@ -243,6 +247,7 @@ jobs:
             tests/unit/test_run_mlb_ml_v3_audit_report.py
           python -m pytest -q tests/unit/test_mlb_deployed_audit_binding.py tests/unit/test_mlb_security_setup.py
           python -m pytest -q tests/unit/test_mlb_research_v1.py
+          python -m pytest -q tests/unit/test_mlb_research_lambda_packaging.py
           python -m pytest -q tests/unit/test_mlb_successor.py tests/unit/test_mlb_statsapi_starter_context.py tests/unit/test_mlb_statsapi_team_context.py
 
       - name: Compile deployment and acceptance tooling
