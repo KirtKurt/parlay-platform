@@ -203,6 +203,7 @@ def load_training_statcast(bundle, s3, bucket, *, requested_dates=None):
     KS1. A missing/truncated daily object stays unqualified. Empty dates require
     the same complete schedule evidence; an unfinished game is not an off day.
     """
+    bundle.pop('historical_pitch_scope', None)
     years = sorted(bundle.get('official_history_source', {}).get('complete_years', []))[-2:]
     if not years or not bundle.get('full'):
         raise ValueError('historical Statcast requires complete official history')
@@ -364,10 +365,15 @@ def load_training_statcast(bundle, s3, bucket, *, requested_dates=None):
         if existing_game_dates.get(str(pk))
         and existing_game_dates[str(pk)] not in expected_dates}
     bundle['statcast_physical_games'] = sorted(existing_physical_games | loaded_games)
-    # Preserve the existing global source-completeness gates. Individual
-    # windows additionally require every date in statcast_retained_dates.
+    # Preserve global delivery flags. A separate version-bound scope can prove
+    # historical windows without treating an unrelated later delivery as data.
     bundle['source_receipts'].extend(receipts)
+    from ks1.historical_pitch_scope import issue_scope
+    scope = issue_scope(bundle, verified_physical, verified_outcomes, receipts)
+    if scope is not None:
+        bundle['historical_pitch_scope'] = scope
     return {'source': RESEARCH+'sources/statcast-v2/', 'provider_requests': 0,
+            'historical_window_scope': scope.report() if scope is not None else None,
             'complete_official_years': years, 'expected_dates': len(expected_dates),
             'verified_physical_dates': len(verified_physical),
             'verified_outcome_dates': len(verified_outcomes),

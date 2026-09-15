@@ -779,6 +779,10 @@ def main():
     reconstruction = PriorPitcherContext(normalize(bundle.get('full', [])),
                                          bundle.get('official_history_source', {}),
                                          pregame_identity_index(bundle))
+    # Preserve the exact source inventory even when admission fails before a
+    # candidate can be fitted or an experiment artifact can be saved.
+    (args.output/'input_proof.json').write_bytes(encode(proof))
+    (args.output/'source_report.json').write_bytes(encode(source_report))
     record_progress(args.output, 'evaluating_candidates', rows=len(frame))
     from ks1.development import HOLDOUT
     manifest = json.loads(HOLDOUT.read_bytes())

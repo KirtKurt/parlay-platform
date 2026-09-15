@@ -135,16 +135,23 @@ def build(bundle, selected_date=None):
                         'source': value['source'],
                         'side': side,
                     })
-    team_context_history_complete = all(bundle.get(key) is True for key in (
+    from ks1.historical_pitch_scope import matching_scope
+    historical_pitch_scope = matching_scope(bundle)
+    official_team_history_complete = all(bundle.get(key) is True for key in (
         "current30_history_complete", "current_year_history_complete",
-        "prior_year_history_complete", "statcast_coverage_complete",
+        "prior_year_history_complete"))
+    delivered_statcast_complete = all(bundle.get(key) is True for key in (
+        "statcast_coverage_complete",
         "current_year_statcast_complete", "prior_year_statcast_complete"))
+    team_context_history_complete = (official_team_history_complete
+        and (delivered_statcast_complete or historical_pitch_scope is not None))
     complete_official_years = set(bundle.get("official_history_source", {}).get("complete_years", []))
     history = Features(list(games.values()), bundle.get("statcast", []),
                        statcast_retained_dates=bundle.get("statcast_retained_dates", []),
                        statcast_verified_games=bundle.get("statcast_verified_games", []),
                        statcast_physical_dates=bundle.get("statcast_physical_dates"),
-                       statcast_physical_games=bundle.get("statcast_physical_games"),
+                        statcast_physical_games=bundle.get("statcast_physical_games"),
+                        historical_pitch_scope=historical_pitch_scope,
                        statcast_complete=bundle.get("statcast_coverage_complete") is True,
                        prior_statcast_profiles=bundle.get("prior_statcast_profiles"),
                        prior_statcast_year=bundle.get("prior_statcast_year"))

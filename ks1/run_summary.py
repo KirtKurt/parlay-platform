@@ -21,7 +21,11 @@ def artifact_summary(output):
         'decision': decisions,
         'coverage': {k: coverage.get(k) for k in
                      ('verified_physical_pitch_objects', 'verified_pitch_objects',
-                      'retained_pitch_rows')},
+                      'retained_pitch_rows', 'historical_window_scope')},
+        'training_population': {key: metrics.get('training_population', {}).get(key)
+                                for key in ('rule', 'input_games', 'retained_games',
+                                            'outcomes_used_for_filtering', 'final_holdout_filtered',
+                                            'same_population_for_all_recipes')},
         'recovery': {
             'method': recovery.get('recovery_method'),
             'prediction_writes': recovery.get('prediction_writes'),

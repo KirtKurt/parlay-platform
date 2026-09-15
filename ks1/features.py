@@ -298,12 +298,16 @@ def normalize(games):
 class Features:
     def __init__(self, games, statcast_rows=None, *, statcast_complete=True,
                  prior_statcast_profiles=None, prior_statcast_year=None,
-                 statcast_retained_dates=None, statcast_verified_games=None,
-                 statcast_physical_dates=None, statcast_physical_games=None):
+                  statcast_retained_dates=None, statcast_verified_games=None,
+                  statcast_physical_dates=None, statcast_physical_games=None,
+                  historical_pitch_scope=None):
         self.rows = normalize(games)
         self.game_dates = {row['game_id']: row['day'].isoformat() for row in self.rows}
         self.statcast_rows = list(statcast_rows or [])
         self.statcast_complete = bool(statcast_complete)
+        from ks1.historical_pitch_scope import HistoricalPitchScope
+        self.historical_pitch_scope = (historical_pitch_scope
+            if isinstance(historical_pitch_scope, HistoricalPitchScope) else None)
         self.statcast_retained_dates = (None if statcast_retained_dates is None
                                        else set(statcast_retained_dates))
         self.statcast_verified_games = {str(pk) for pk in (statcast_verified_games or [])}
@@ -341,14 +345,18 @@ class Features:
 
     def team_statcast_window_complete(self, target, window):
         """Require exact loaded-date proof for physical pitch measurements."""
-        return self.statcast_complete and (
+        scoped = (self.historical_pitch_scope is not None
+                  and self.historical_pitch_scope.covers(target, window))
+        return (self.statcast_complete or scoped) and (
             self.statcast_physical_dates is None or all(
                 (target-timedelta(days=age)).isoformat() in self.statcast_physical_dates
                 for age in range(1, window+1)))
 
     def team_statcast_outcome_window_complete(self, target, window):
         """Require the stricter complete-PA proof for xwOBA-style outcomes."""
-        return self.statcast_complete and (
+        scoped = (self.historical_pitch_scope is not None
+                  and self.historical_pitch_scope.covers(target, window, outcomes=True))
+        return (self.statcast_complete or scoped) and (
             self.statcast_retained_dates is None or all(
                 (target-timedelta(days=age)).isoformat() in self.statcast_retained_dates
                 for age in range(1, window+1)))
