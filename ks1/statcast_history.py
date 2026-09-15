@@ -105,7 +105,9 @@ def physical_pitches_complete(rows, games, expected, batters, invalid, *, batter
     actual_batters = Counter(
         (game_id, (batter_credits or {}).get((game_id, at_bat), next(iter(values))))
         for (game_id, at_bat), values in at_bat_batters.items()
-        if (game_id, at_bat) in credited)
+        if (game_id, at_bat) in credited
+        and ((game_id, at_bat) not in (batter_credits or {})
+             or batter_credits[game_id, at_bat] is not None))
     wanted_batters = {key: count for pk in games
                       for key, count in batters[pk].items() if count}
     return dict(actual_batters) == wanted_batters

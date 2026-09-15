@@ -160,7 +160,7 @@ def test_walkoff_baserunning_requires_rich_retained_game_ending_evidence(monkeyp
     assert urls == [endpoint('1'), endpoint('1', pitch_evidence=True)]
     assert report['recovered_dates'] == [raw['date']]
     payload, _ = read_recovery(s3, 'b', raw['date'])
-    assert payload['rows'][-1]['events'] == 'official_non_pa_walkoff'
+    assert payload['rows'][-1]['events'] == raw['rows'][-1]['events']
     assert payload['rows'][-1]['woba_denom'] == 0
     assert payload['raw_statcast'] == raw
     assert load_training_statcast(bundle, s3, 'b')['errors'] == []
@@ -223,3 +223,15 @@ def test_conflicting_official_code_fields_cannot_derive_an_automatic_event():
     reseal(source, raw)
     with pytest.raises(ValueError, match='code fields contradict'):
         reconcile(raw, lambda *a: source, raw_receipt(raw))
+
+
+def test_walkoff_credit_cannot_be_detached_from_its_reproducible_proof():
+    from ks1.statcast_history import official_physical_pitch_counts, physical_validation_reason
+    bundle, raw, _, source = walkoff_fixture()
+    payload = reconcile(raw, lambda *a: source, raw_receipt(raw))
+    expected, batters, invalid = official_physical_pitch_counts(bundle['full'])
+    assert physical_validation_reason(payload, raw['date'], {1}, expected, batters, invalid) is None
+    detached = {'date': raw['date'], 'rows': deepcopy(payload['rows'])}
+    assert physical_validation_reason(detached, raw['date'], {1}, expected, batters, invalid) is not None
+    detached['rows'][-1]['events'] = 'official_non_pa_walkoff'
+    assert physical_validation_reason(detached, raw['date'], {1}, expected, batters, invalid) is not None

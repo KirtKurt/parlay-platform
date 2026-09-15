@@ -243,15 +243,16 @@ def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
                 denom = current.get('woba_denom')
                 if isinstance(denom, bool) or denom not in (None, '', 0, '0', '0.0', 1, '1', '1.0'):
                     raise ValueError('unfinished at-bat has an invalid wOBA denominator')
-                fields = {'events': 'official_non_pa_walkoff' if walkoff else event} if i == index else {}
+                fields = {'events': event} if i == index and not walkoff else {}
                 if denom in (None, '', 1, '1', '1.0'):
                     fields['woba_denom'] = 0
-                if not fields:
+                if not fields and not (walkoff and i == index):
                     continue
                 changes.append({'row_index': i, 'game_pk': pk, 'at_bat_number': ab,
                                 'fields': fields,
                                 'original_fields': {key: current.get(key) for key in fields},
                                 'derivation_kind': 'official_non_pa_walkoff' if walkoff else 'official_non_pa_ending',
+                                **({'credited_batter': None} if walkoff and i == index else {}),
                                 'official_source_sha256': source['receipt']['sha256']})
                 current.update(fields)
     if method == METHOD:
@@ -334,7 +335,7 @@ def outcome_diagnostics(payload):
 def verified_batter_credits(payload, scheduled_by_game=None):
     proof = payload.get('outcome_reconciliation', {})
     if proof.get('method') != METHOD or not any(
-            item.get('derivation_kind') == 'official_mid_at_bat_credit'
+            item.get('derivation_kind') in ('official_mid_at_bat_credit', 'official_non_pa_walkoff')
             for item in proof.get('derivations', [])):
         return {}
     raw = payload['raw_statcast']
@@ -342,4 +343,5 @@ def verified_batter_credits(payload, scheduled_by_game=None):
     if rows != payload['rows'] or changes != proof['derivations']:
         raise ValueError('official batter credits cannot be reproduced')
     return {(item['game_pk'], item['at_bat_number']): item['credited_batter']
-            for item in changes if item['derivation_kind'] == 'official_mid_at_bat_credit'}
+            for item in changes if item['derivation_kind'] in
+            ('official_mid_at_bat_credit', 'official_non_pa_walkoff') and 'credited_batter' in item}

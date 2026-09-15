@@ -30,3 +30,5 @@ Both additional complete daily inputs pass local physical and outcome replay:
 Training artifact names now include the workflow attempt as well as run ID. Additional authorized bounded main recovery attempts can retain separate audit artifacts instead of colliding with the first attempt. Existing source-write authorization, per-attempt budgets, same-day retry guard, and qualification gates are unchanged.
 
 Review follow-up: automatic codes are read from `details.code` with compatible `details.call.code` fallback; contradictory simultaneous codes are rejected. The independently retained original/resume schedule is also passed through physical batter-credit verification. Regression tests cover both official code layouts, their disagreement, and a mixed-batter at-bat in a suspended game.
+
+Walk-off credit is carried only in reproducible reconciliation evidence, with an explicit null credited batter. The raw event label is preserved even in the derived rows. Removing the envelope or inventing a standalone non-PA label cannot satisfy individual batter PA reconciliation. Regression tests exercise both detached-proof cases.
