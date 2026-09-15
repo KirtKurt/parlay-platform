@@ -209,11 +209,25 @@ def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
                     for i in indices)
                     or positive_id(row['pitcher']) != positive_id(play['matchup']['pitcher']['id'])):
                 raise ValueError('unfinished at-bat official player attribution differs')
-            changes.append({'row_index': index, 'game_pk': pk, 'at_bat_number': ab,
-                            'fields': {'events': event}, 'original_fields': {'events': row.get('events')},
-                            'derivation_kind': 'official_non_pa_ending',
-                            'official_source_sha256': source['receipt']['sha256']})
-            row['events'] = event
+            # Every row in this proven non-PA group has zero wOBA exposure.
+            # Feature consumers use the denominator, so deriving only the
+            # terminal event would leave a contradictory raw 1 in the sample.
+            for i in ordered:
+                current = rows[i]
+                denom = current.get('woba_denom')
+                if isinstance(denom, bool) or denom not in (None, '', 0, '0', '0.0', 1, '1', '1.0'):
+                    raise ValueError('unfinished at-bat has an invalid wOBA denominator')
+                fields = {'events': event} if i == index else {}
+                if denom in (None, '', 1, '1', '1.0'):
+                    fields['woba_denom'] = 0
+                if not fields:
+                    continue
+                changes.append({'row_index': i, 'game_pk': pk, 'at_bat_number': ab,
+                                'fields': fields,
+                                'original_fields': {key: current.get(key) for key in fields},
+                                'derivation_kind': 'official_non_pa_ending',
+                                'official_source_sha256': source['receipt']['sha256']})
+                current.update(fields)
     return rows, changes
 
 

@@ -22,13 +22,17 @@ wholly blank/truncated at-bat is a reconciliation candidate. It requires the
 entire game's recognized PA identity/outcome set to match the official source,
 and an exact, unique, completed official non-PA ending for the candidate at-bat.
 The batter must match on every row and the terminal pitcher must match. Only the
-terminal row's event is derived; pitch fields, weights, and contact estimates
+terminal row's event is derived; every row in that proven non-PA group has
+zero denominator exposure. Raw pitch fields, weights, and contact estimates
 remain intact. Prior fields and official source hashes accompany each derivation.
 Unknown events, missing official PAs, ambiguous identities and incomplete endings
 fail closed. Blank/truncated labels alone never exempt a PA from counting.
 
 The trusted-main recovery can now attempt this reconciliation on a retained
-physical-attribution mismatch. Admission still requires the unchanged exact
+physical-attribution mismatch with an exact thrown-pitch inventory. Each retained
+candidate is fully reconciled and validated before selection; a rejected base
+object cannot hide a usable game-set revision or prevent a fresh provider attempt.
+Admission still requires the unchanged exact
 physical pitch, individual batter PA, complete outcome and provenance predicates.
 Raw/official sources must be retained and reread by exact S3 version and SHA;
 all derivations are recomputed on read. v1 and v2 artifacts remain reproducible
@@ -40,7 +44,8 @@ Local replay verified the raw hashes against the exported retained receipts:
 - 2026-06-04: `368e9208d5cf94a46a606b548ca7d1a7246ed84989e0858eda58145b06b19887`
 
 Both dates pass the unchanged physical and outcome predicates after reconciliation:
-three non-PA event derivations and five denominator derivations across 5,947 rows.
+three non-PA event derivations and ten denominator derivations across 5,947 rows
+(five PA accounting fixes and five non-PA exclusions).
 This is local algorithm replay with public official responses, not an S3 admission
 or qualification claim. Hosted versioned recovery and development evaluation must
 still complete. Serving reference, fixed 300-game qualification cohort, Brier,
