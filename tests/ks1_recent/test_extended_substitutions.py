@@ -232,6 +232,25 @@ def test_v11_validates_counts_on_every_retained_game_advisory():
         reconcile(raw, lambda *args: source, raw_receipt(raw))
 
 
+def test_v10_inning_artifact_does_not_inherit_v11_global_count_validation():
+    from tests.ks1_recent.test_inning_ending import fixture as inning_fixture
+    _, raw, _, source = inning_fixture()
+    source['data']['liveData']['plays']['allPlays'][-1]['playEvents'] = [{
+        'details': {'eventType': 'game_advisory'},
+        'count': {'balls': 0, 'strikes': 0}}]
+    source['receipt'].update(endpoint=endpoint('1', inning_evidence=True,
+                                               advisory_outs=False),
+                             sha256=digest(source['data']))
+    source['retained_receipt'] = {
+        'name': source_name('1', raw['rows'], inning_evidence=True,
+                            advisory_outs=False),
+        'versionId': 'official-v10',
+        'sha256': digest({key: source[key] for key in ('data', 'receipt')})}
+    rows, changes = reconciled_rows(raw, {'1': source}, method=GAME_ADVISORY_METHOD)
+    assert rows[-1]['woba_denom'] == 0
+    assert changes
+
+
 @pytest.mark.parametrize('defect', ['not_first_pa', 'count', 'pitch', 'substitution',
                                   'pitch_data', 'pitch_number', 'event_type',
                                   'description', 'wrong_length', 'gap', 'late_end',

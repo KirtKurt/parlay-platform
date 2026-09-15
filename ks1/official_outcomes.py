@@ -250,9 +250,10 @@ def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
             endpoint(pk, pitch_evidence=True, advisory_outs=False),
             endpoint(pk, accounting_evidence=True, advisory_outs=False),
             endpoint(pk, inning_evidence=True, advisory_outs=False)}
-        advisory_outs = source_endpoint in {
-            endpoint(pk, pitch_evidence=True), endpoint(pk, accounting_evidence=True),
-            endpoint(pk, inning_evidence=True)}
+        # The v10/v11 inning endpoints intentionally collide because inning
+        # evidence already requested ``outs``. Only the reconciliation method
+        # can say whether every advisory must satisfy the v11 count contract.
+        advisory_outs = method == METHOD and source_endpoint in current_endpoints
         official_index(source, pk, raw['date'],
                        [row for row in raw['rows'] if str(row['game_pk']) == pk],
                        scheduled_times=scheduled_by_game[pk] if scheduled_by_game is not None else None,
