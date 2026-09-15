@@ -189,23 +189,34 @@ def test_startup_failure_writes_redacted_negative_evidence(tmp_path, monkeypatch
     assert 'must-not-leak' not in output.read_text()
 
 
-def test_workflow_dependency_and_bootstrap_boundary():
-    import ast
+def test_workflow_has_only_restricted_oidc_authentication():
     text = Path('.github/workflows/mlb-autofunction-identity-readonly.yml').read_text()
     assert text.count("- 'scripts/mlb_lambda_artifact_identity.py'") == 2
-    assert 'get_federation_token' not in text  # Federated tokens cannot read IAM APIs.
-    assert 'sts.assume_role(' in text
-    assert "{'Effect': 'Deny', 'NotAction': actions, 'Resource': '*'}" in text
+    assert 'secrets.AWS_ACCESS_KEY_ID' not in text
+    assert 'secrets.AWS_SECRET_ACCESS_KEY' not in text
+    assert 'create_role' not in text and 'put_role_policy' not in text
+    assert 'id-token: write' in text
+    assert 'role-session-name: ks1-autofunction-readonly' in text
+    assert "allowed-account-ids: '735707987003'" in text
+    assert 'role/ks1-autofunction-identity-reader' in text
     evidence = text.split('  evidence:')[1]
-    assert evidence.index('sts.assume_role(') < evidence.index('uses: actions/checkout@v4')
-    code = text.split("          python - <<'PYTHON'\n")[1].split('          PYTHON')[0]
-    code = '\n'.join(line[10:] if line.startswith('          ') else line for line in code.splitlines())
-    tree = ast.parse(code)
-    actions = next(ast.literal_eval(n.value) for n in ast.walk(tree)
-                   if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'actions' for t in n.targets))
-    assert len(actions) == 13
-    assert all(a.split(':')[1].startswith(('Get', 'List', 'Describe')) for a in actions)
-    assert 'lambda:InvokeFunction' not in actions
-    assert len(json.dumps({'Version':'2012-10-17','Statement':[
-        {'Effect':'Allow','Action':actions,'Resource':'*'},
-        {'Effect':'Deny','NotAction':actions,'Resource':'*'}]},separators=(',',':'))) < 2048
+    assert evidence.index('failedStage') < evidence.index('uses: aws-actions/configure-aws-credentials')
+    policy_text = evidence.split('inline-session-policy: >-\n')[1].split('\n      - ')[0].strip()
+    policy = json.loads(policy_text)
+    allow, deny = policy['Statement']
+    assert allow['Effect'] == 'Allow' and deny['Effect'] == 'Deny'
+    assert set(allow['Action']) == set(deny['NotAction'])
+    assert all(a.split(':')[1].startswith(('Get', 'List', 'Describe')) for a in allow['Action'])
+    assert 'lambda:InvokeFunction' not in allow['Action']
+    assert len(policy_text) < 2048
+
+
+def test_newer_runtime_grammar_preserves_identity_and_hashes(fixture, monkeypatch):
+    def unsupported(*a, **kw):
+        raise SyntaxError('new grammar')
+    monkeypatch.setattr(subject.ast, 'parse', unsupported)
+    report = run(fixture)
+    assert report['identityVerified'] is True
+    assert report['isolationAuthorized'] is False
+    assert report['sourceSummary'][0]['parseStatus'] == 'unavailable_in_collector_runtime'
+    assert report['sourceSummary'][0]['sha256']

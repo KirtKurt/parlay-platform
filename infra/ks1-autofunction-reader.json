@@ -1,0 +1,128 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Dedicated metadata-only KS1 AutoFunction identity reader; no algorithm resources.",
+  "Parameters": {
+    "ExistingGitHubOidcProviderArn": {
+      "Type": "String",
+      "Default": "",
+      "AllowedPattern": "^$|^arn:aws:iam::735707987003:oidc-provider/token.actions.githubusercontent.com$"
+    }
+  },
+  "Conditions": {
+    "CreateGitHubOidcProvider": {
+      "Fn::Equals": [
+        {
+          "Ref": "ExistingGitHubOidcProviderArn"
+        },
+        ""
+      ]
+    }
+  },
+  "Resources": {
+    "GitHubOidcProvider": {
+      "Type": "AWS::IAM::OIDCProvider",
+      "Condition": "CreateGitHubOidcProvider",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Url": "https://token.actions.githubusercontent.com",
+        "ClientIdList": [
+          "sts.amazonaws.com"
+        ]
+      }
+    },
+    "IdentityReaderRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "ks1-autofunction-identity-reader",
+        "MaxSessionDuration": 3600,
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Federated": {
+                  "Fn::If": [
+                    "CreateGitHubOidcProvider",
+                    {
+                      "Ref": "GitHubOidcProvider"
+                    },
+                    {
+                      "Ref": "ExistingGitHubOidcProviderArn"
+                    }
+                  ]
+                }
+              },
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringEquals": {
+                  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                  "token.actions.githubusercontent.com:sub": "repo:KirtKurt/parlay-platform:ref:refs/heads/main"
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "metadata-only-explicit-deny",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "sts:GetCallerIdentity",
+                    "cloudformation:DescribeStacks",
+                    "cloudformation:ListStackResources",
+                    "lambda:GetFunction",
+                    "lambda:GetFunctionConfiguration",
+                    "iam:GetRole",
+                    "iam:ListRolePolicies",
+                    "iam:GetRolePolicy",
+                    "iam:ListAttachedRolePolicies",
+                    "iam:GetPolicy",
+                    "iam:GetPolicyVersion",
+                    "events:ListRules",
+                    "events:ListTargetsByRule"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Deny",
+                  "NotAction": [
+                    "sts:GetCallerIdentity",
+                    "cloudformation:DescribeStacks",
+                    "cloudformation:ListStackResources",
+                    "lambda:GetFunction",
+                    "lambda:GetFunctionConfiguration",
+                    "iam:GetRole",
+                    "iam:ListRolePolicies",
+                    "iam:ListAttachedRolePolicies",
+                    "iam:GetRolePolicy",
+                    "iam:GetPolicy",
+                    "iam:GetPolicyVersion",
+                    "events:ListRules",
+                    "events:ListTargetsByRule"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "ReaderRoleArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "IdentityReaderRole",
+          "Arn"
+        ]
+      }
+    }
+  }
+}

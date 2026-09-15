@@ -90,7 +90,14 @@ def source_summary(artifact):
             if not name.startswith("mlb_auto/") or not name.endswith(".py"):
                 continue
             content = archive.read(name)
-            tree = ast.parse(content.decode("utf-8"))
+            try:
+                tree = ast.parse(content)
+            except (SyntaxError, UnicodeDecodeError) as exc:
+                result.append({"path": name, "sha256": hashlib.sha256(content).hexdigest(),
+                               "parseStatus": "unavailable_in_collector_runtime",
+                               "parseErrorType": type(exc).__name__,
+                               "imports": [], "possibleEnvironmentKeys": [], "calledMethods": []})
+                continue
             imports, env_keys, methods = set(), set(), set()
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
@@ -107,7 +114,7 @@ def source_summary(artifact):
                             and re.fullmatch(r"[A-Z][A-Z0-9_]+", node.args[0].value)):
                         env_keys.add(node.args[0].value)
             result.append({"path": name, "sha256": hashlib.sha256(content).hexdigest(),
-                           "imports": sorted(imports), "possibleEnvironmentKeys": sorted(env_keys),
+                           "parseStatus": "parsed", "imports": sorted(imports), "possibleEnvironmentKeys": sorted(env_keys),
                            "calledMethods": sorted(methods)})
     return result
 
