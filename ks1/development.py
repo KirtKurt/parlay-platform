@@ -32,6 +32,45 @@ def digest(value):
     return hashlib.sha256(encode(value)).hexdigest()
 
 
+def matchup_admission_report(fit, admitted):
+    """Describe value admission from development fit only; never change it."""
+    from ks1.retrain_recent import EVALUATION_GAMES
+    result = {}
+    for side in ('home', 'away'):
+        for metric in ('platoon_xwoba', 'pitch_type_matchup_xwoba',
+                       'pitch_type_matchup_whiff_pct'):
+            for window in ('7d', '30d'):
+                column = f'{side}_lineup_{metric}_{window}'
+                present = column in fit.columns
+                values = fit[column] if present else pd.Series(dtype=float)
+                count = int(values.notna().sum())
+                unique = int(values.nunique(dropna=True))
+                numeric = pd.api.types.is_numeric_dtype(values)
+                reasons = []
+                if not present:
+                    reasons.append('column_absent')
+                else:
+                    if not numeric:
+                        reasons.append('non_numeric')
+                    if unique <= 1:
+                        reasons.append('unavailable_or_constant')
+                    if count < EVALUATION_GAMES:
+                        reasons.append('below_development_fit_nonmissing_floor')
+                is_admitted = column in admitted
+                if not is_admitted and not reasons:
+                    reasons.append('excluded_by_feature_contract')
+                result[column] = {
+                    'fit_games': len(fit), 'nonmissing_games': count,
+                    'distinct_nonmissing_values': unique,
+                    'required_nonmissing_games': EVALUATION_GAMES,
+                    'admitted': is_admitted,
+                    'exclusion_reasons': [] if is_admitted else reasons,
+                    'group': ('pitch_type_matchup' if metric.startswith('pitch_type_')
+                              else 'platoon'),
+                }
+    return result
+
+
 def frozen_split(frame, manifest):
     """Reserve exact identities; new games cannot move the evaluation window."""
     from ks1.retrain_recent import completion_times, MIN_TRAIN
@@ -111,6 +150,7 @@ def select(train):
               'trials': evidence, 'final_holdout_used_for_selection': False,
               'feature_admission_games': len(fit), 'omitted_features': omitted,
               'feature_admission_starter_coverage': coverage,
+              'matchup_value_admission': matchup_admission_report(fit, admitted),
               'fit_game_ids_sha256': digest(fit.game_id.tolist()),
               'development_game_ids_sha256': digest(validation.game_id.tolist()),
               'search_space_sha256': digest(TRIALS)}

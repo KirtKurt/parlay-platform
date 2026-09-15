@@ -83,6 +83,55 @@ def test_development_tail_cannot_satisfy_feature_admission_threshold():
     assert select(train)[1] == report
 
 
+def test_matchup_admission_distinguishes_sparse_constant_and_admitted_values():
+    from ks1.development import matchup_admission_report
+    from ks1.retrain_recent import choose_features
+    fit = frame()[0].iloc[:500].copy()
+    sparse = 'home_lineup_pitch_type_matchup_whiff_pct_30d'
+    enough = 'away_lineup_pitch_type_matchup_whiff_pct_30d'
+    constant = 'home_lineup_pitch_type_matchup_xwoba_7d'
+    absent = 'away_lineup_pitch_type_matchup_xwoba_7d'
+    text_value = 'home_lineup_pitch_type_matchup_xwoba_30d'
+    fit[sparse] = np.nan
+    fit.loc[:298, sparse] = np.arange(299) / 1000
+    fit[enough] = np.nan
+    fit.loc[:299, enough] = np.arange(300) / 1000
+    fit[constant] = .5
+    fit[text_value] = ['not-numeric', 'also-not-numeric'] * 250
+    before = fit.copy(deep=True)
+    admitted, omitted, _ = choose_features(fit)
+    report = matchup_admission_report(fit, admitted)
+    assert len(report) == 12
+    assert report[sparse]['nonmissing_games'] == 299
+    assert report[sparse]['exclusion_reasons'] == ['below_development_fit_nonmissing_floor']
+    assert report[enough]['nonmissing_games'] == 300
+    assert report[enough]['admitted'] and report[enough]['exclusion_reasons'] == []
+    assert report[constant]['exclusion_reasons'] == ['unavailable_or_constant']
+    assert report[absent]['exclusion_reasons'] == ['column_absent']
+    assert report[text_value]['exclusion_reasons'] == ['non_numeric']
+    assert report[enough]['group'] == 'pitch_type_matchup'
+    assert report['home_lineup_platoon_xwoba_7d']['group'] == 'platoon'
+    assert sparse in omitted and enough in admitted
+    pd.testing.assert_frame_equal(fit, before)
+
+
+def test_matchup_report_cannot_use_development_tail_to_claim_coverage():
+    data, manifest = frame()
+    train, _ = frozen_split(data, manifest)
+    column = 'home_lineup_pitch_type_matchup_whiff_pct_30d'
+    train[column] = np.nan
+    train.loc[train.index[:299], column] = np.arange(299) / 1000
+    from ks1.retrain_recent import split_development
+    _, validation = split_development(train)
+    train.loc[validation.index, column] = .9
+    _, report = select(train)
+    entry = report['matchup_value_admission'][column]
+    assert entry['nonmissing_games'] == 299 and not entry['admitted']
+    assert entry['fit_games'] == report['fit_games']
+    train.loc[validation.index, column] = np.nan
+    assert select(train)[1]['matchup_value_admission'] == report['matchup_value_admission']
+
+
 @pytest.mark.parametrize('bad', [2, -1, .5, '1'])
 def test_frozen_training_population_rejects_nonbinary_labels(bad):
     data, manifest = frame()
