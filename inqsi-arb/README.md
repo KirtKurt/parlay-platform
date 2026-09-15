@@ -23,9 +23,10 @@ Extended market example:
 The service rejects incomplete outcome universes and never labels unknown/incompatible rule identities as an arb. Quote/book links and provider timestamps are retained where the provider supplies them.
 
 Production defaults to worldwide settlement scope (`*`) and the configured
-global provider regions. Supplying a jurisdiction narrows validation to that
-ruleset; explicit `regions` or `bookmakers` parameters remain available for
-diagnostic scans. Scan history
+global provider regions. The desk is book-first: users choose sportsbooks with
+`books=`. State packs remain an internal house-rule/license footprint and are
+not the product taxonomy. Unreviewed combinations remain visible but fail
+closed. Explicit `regions` remains available for diagnostic scans. Scan history
 persists bounded leg-level evidence for verified, held-back, rejected, and
 exchange-pending candidates. Lay markets are never evaluated as ordinary
 sportsbook back markets; they are reported separately until the commission,

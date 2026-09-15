@@ -86,13 +86,16 @@ def test_scan_reads_store_without_live_provider(monkeypatch):
     response = lambda_handler({
         "httpMethod": "GET",
         "path": "/v1/arb/scan",
-        "queryStringParameters": {"sport": "baseball_mlb", "markets": "h2h", "jurisdiction": "az", "source": "store"},
+        "queryStringParameters": {"sport": "baseball_mlb", "markets": "h2h", "source": "store"},
     }, None)
     body = json.loads(response["body"])
     assert response["statusCode"] == 200
     assert body["source"] == "store"
-    assert body["n_arbs"] == 1
-    assert body["pack"]["state"] == "az"
+    assert "pack" not in body
+    assert body["product_filter"] == "books"
+    assert body["books"] is None
+    assert body["n_arbs"] == 0
+    assert body["n_held_unverified"] >= 1
     reset_memory()
 
 
