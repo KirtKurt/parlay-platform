@@ -135,8 +135,16 @@ def evaluate(model: dict[str, Any] | None, rows: list[dict[str, Any]]) -> dict[s
 
 def train_and_validate(table: list[dict[str, Any]], *, min_train: int = 100, min_test: int = 50) -> dict[str, Any]:
     rows = sorted([r for r in table if r["features"]["team_strength_complete"]], key=lambda r: (r["commence_time"], r["event_key"]))
+    readiness = {
+        "input_rows": len(table), "eligible_rows": len(rows),
+        "excluded_insufficient_team_history": len(table) - len(rows),
+        "required_minimum": min_train + 2 * min_test,
+        "additional_eligible_rows_lower_bound": max(0, min_train + 2 * min_test - len(rows)),
+        "required_split_counts": {"train": min_train, "validation": min_test, "holdout": min_test},
+        "xg_required": False,
+    }
     if len(rows) < min_train + 2 * min_test:
-        return {"trained": False, "reason": "INSUFFICIENT_TEAM_HISTORY", "eligible_rows": len(rows), "required_minimum": min_train + 2 * min_test}
+        return {**readiness, "trained": False, "reason": "INSUFFICIENT_TEAM_HISTORY"}
     # Boundaries are fixed from time ordering before evaluating any candidate.
     validation_start = parse_utc(rows[int(len(rows) * .60)]["commence_time"]).replace(hour=0, minute=0, second=0, microsecond=0)
     test_start = parse_utc(rows[int(len(rows) * .80)]["commence_time"]).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -146,7 +154,7 @@ def train_and_validate(table: list[dict[str, Any]], *, min_train: int = 100, min
     valid = [r for r in rows if validation_start <= parse_utc(r["commence_time"]) < refit_cutoff and parse_utc(r["label_available_at"]) < refit_cutoff]
     test = [r for r in rows if parse_utc(r["commence_time"]) >= test_start]
     if len(train) < min_train or min(len(valid), len(test)) < min_test:
-        return {"trained": False, "reason": "INSUFFICIENT_CHRONOLOGICAL_SPLITS", "split_counts": [len(train), len(valid), len(test)]}
+        return {**readiness, "trained": False, "reason": "INSUFFICIENT_CHRONOLOGICAL_SPLITS", "split_counts": {"train": len(train), "validation": len(valid), "holdout": len(test)}}
     candidates = []
     xg_count = sum(r["features"]["xg_complete"] for r in train)
     for use_xg in (False, True):
@@ -160,6 +168,7 @@ def train_and_validate(table: list[dict[str, Any]], *, min_train: int = 100, min
     model = fit(refit, use_xg=selected["use_xg"], ridge=selected["ridge"], fitted_as_of=iso_utc(refit_cutoff))
     baseline, test_metrics = evaluate(None, test), evaluate(model, test)
     report = {
+        **readiness,
         "trained": True, "model": model, "selection_basis": "validation log loss only; holdout never selects model",
         "input_rows": len(table), "eligible_rows": len(rows), "excluded_insufficient_team_history": len(table) - len(rows),
         "baseline_definition": "existing untrained goals grid (1.45 home, 1.15 away); no market odds supplied",

@@ -53,3 +53,26 @@ def test_unquarantined_historical_integrity_failures_still_block_health(defect):
     assert result["integrity_failures"] == 1
     assert result["healthy"] is False
     assert result["state"] == "DEGRADED_INTEGRITY"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("feature_hash", "tampered"),
+    ("schedule_identity", "tampered"),
+    ("feature_schema_version", "tampered"),
+    ("source_settlement_digest", "tampered"),
+])
+def test_conflict_cannot_hide_independent_historical_lock_corruption(field, value):
+    final = settlement()
+    lock = historical_lock(final)
+    lock[field] = value
+    conflict = {"PK": "SETTLEMENT_CONFLICT", "SK": final["event_key"],
+                "event_key": final["event_key"], "training_blocked": True,
+                "reason": "SETTLEMENT_EVIDENCE_CONFLICT"}
+    result = prediction_and_training_health(
+        Store(events=[], locks=[lock], settlements=[final], conflicts=[conflict]),
+        observed=OBSERVED,
+    )
+    assert result["training"]["training_rows_ready"] == 0
+    assert result["training"]["invalid_existing_locks"] == 1
+    assert result["integrity_failures"] == 1
+    assert result["healthy"] is False

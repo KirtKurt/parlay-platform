@@ -345,8 +345,6 @@ def training_candidate(
         return None, "invalid"
     if not settlement_training_admissible(settlement):
         return None, "settlement_ineligible"
-    if conflicted:
-        return None, "settlement_conflict"
     lock_schedule = _training_schedule_identity(lock)
     if (
         lock_schedule is None
@@ -421,6 +419,11 @@ def training_candidate(
             }
     except (KeyError, TypeError, ValueError):
         return None, "invalid"
+    # Quarantine labels only after checking the lock independently. Otherwise
+    # an existing conflict can conceal corrupt schedule/provenance/hash evidence
+    # from health while both conditions still prohibit training.
+    if conflicted:
+        return None, "settlement_conflict"
     return TrainingCandidate(row, historical_entry), None
 
 

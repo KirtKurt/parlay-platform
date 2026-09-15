@@ -5,4 +5,4 @@
 build-%:
 	mkdir -p "$(ARTIFACTS_DIR)/soccer_auto"
 	cp *.py "$(ARTIFACTS_DIR)/soccer_auto/"
-
+	cp kss1_archive_teams.json "$(ARTIFACTS_DIR)/soccer_auto/"

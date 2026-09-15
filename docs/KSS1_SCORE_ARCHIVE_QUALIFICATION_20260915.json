@@ -1,0 +1,1445 @@
+{
+  "archive_digest": "e9534a4f151db955e09502684f199888055cd1476bc506ef7fdf57cf2edf1ac4",
+  "archive_retrieved_at": "2026-09-15T02:30:39.903803Z",
+  "installed": false,
+  "preserved_gates": {
+    "T10_unchanged": true,
+    "T60_unchanged": true,
+    "history_cap": 5000,
+    "minimum_splits": {
+      "holdout": 100,
+      "train": 500,
+      "validation": 100
+    },
+    "minimum_team_games": 5,
+    "purge_days": 2,
+    "xg_optional": true
+  },
+  "scope": "Local source-only qualification; not AWS installation, combined live-settlement qualification, or public authority promotion",
+  "source_audit": {
+    "accepted_by_competition": {
+      "soccer_epl": 1133,
+      "soccer_france_ligue_one": 914,
+      "soccer_germany_bundesliga": 916,
+      "soccer_italy_serie_a": 1125,
+      "soccer_spain_la_liga": 1128
+    },
+    "accepted_scores": 5216,
+    "captures": 925,
+    "conflicted_events": 18,
+    "conflicted_identities": [
+      [
+        "soccer_epl",
+        "everton",
+        "arsenal",
+        "2025-12-20"
+      ],
+      [
+        "soccer_epl",
+        "everton",
+        "arsenal",
+        "2025-12-21"
+      ],
+      [
+        "soccer_epl",
+        "everton",
+        "newcastle united",
+        "2025-11-29"
+      ],
+      [
+        "soccer_epl",
+        "leeds united",
+        "crystal palace",
+        "2025-12-20"
+      ],
+      [
+        "soccer_epl",
+        "leeds united",
+        "crystal palace",
+        "2025-12-21"
+      ],
+      [
+        "soccer_epl",
+        "leicester city",
+        "southampton",
+        "2025-05-03"
+      ],
+      [
+        "soccer_epl",
+        "manchester city",
+        "leeds united",
+        "2025-11-29"
+      ],
+      [
+        "soccer_epl",
+        "sunderland",
+        "bournemouth",
+        "2025-11-29"
+      ],
+      [
+        "soccer_epl",
+        "tottenham hotspur",
+        "fulham",
+        "2025-11-29"
+      ],
+      [
+        "soccer_france_ligue_one",
+        "metz",
+        "marseille",
+        "2025-10-04"
+      ],
+      [
+        "soccer_france_ligue_one",
+        "montpellier",
+        "saint etienne",
+        "2025-03-16"
+      ],
+      [
+        "soccer_germany_bundesliga",
+        "union berlin",
+        "vfl bochum",
+        "2024-12-14"
+      ],
+      [
+        "soccer_germany_bundesliga",
+        "vfl bochum",
+        "eintracht frankfurt",
+        "2025-03-16"
+      ],
+      [
+        "soccer_italy_serie_a",
+        "ac milan",
+        "bologna",
+        "2025-05-09"
+      ],
+      [
+        "soccer_italy_serie_a",
+        "ac milan",
+        "bologna",
+        "2025-05-11"
+      ],
+      [
+        "soccer_italy_serie_a",
+        "como",
+        "torino",
+        "2025-04-13"
+      ],
+      [
+        "soccer_italy_serie_a",
+        "cremonese",
+        "torino",
+        "2026-04-19"
+      ],
+      [
+        "soccer_italy_serie_a",
+        "empoli",
+        "lazio",
+        "2025-05-04"
+      ],
+      [
+        "soccer_italy_serie_a",
+        "hellas verona",
+        "lecce",
+        "2026-04-25"
+      ],
+      [
+        "soccer_spain_la_liga",
+        "barcelona",
+        "real madrid",
+        "2025-05-11"
+      ],
+      [
+        "soccer_spain_la_liga",
+        "mallorca",
+        "valladolid",
+        "2025-05-10"
+      ]
+    ],
+    "excluded_observations": {
+      "NO_FINAL_SCORE": 54209,
+      "REGULATION_SEMANTICS_UNRESOLVED": 102
+    },
+    "invalid_files": [
+      {
+        "blob": "3eab3da90068a0fab82355989c13f6184f42db38",
+        "path": "2025-26/en.1.json",
+        "reason": "INVALID_SOURCE_JSON",
+        "witness": 42
+      }
+    ],
+    "newest_available_at": "2026-06-04T15:05:28.382000Z",
+    "oldest_available_at": "2024-08-31T13:53:01.155000Z",
+    "quarantined_season_identities": [
+      [
+        "soccer_epl",
+        "2024-25",
+        "leicester city",
+        "southampton"
+      ],
+      [
+        "soccer_epl",
+        "2025-26",
+        "everton",
+        "arsenal"
+      ],
+      [
+        "soccer_epl",
+        "2025-26",
+        "everton",
+        "newcastle united"
+      ],
+      [
+        "soccer_epl",
+        "2025-26",
+        "leeds united",
+        "crystal palace"
+      ],
+      [
+        "soccer_epl",
+        "2025-26",
+        "manchester city",
+        "leeds united"
+      ],
+      [
+        "soccer_epl",
+        "2025-26",
+        "sunderland",
+        "bournemouth"
+      ],
+      [
+        "soccer_epl",
+        "2025-26",
+        "tottenham hotspur",
+        "fulham"
+      ],
+      [
+        "soccer_france_ligue_one",
+        "2024-25",
+        "montpellier",
+        "saint etienne"
+      ],
+      [
+        "soccer_france_ligue_one",
+        "2025-26",
+        "metz",
+        "marseille"
+      ],
+      [
+        "soccer_germany_bundesliga",
+        "2024-25",
+        "union berlin",
+        "vfl bochum"
+      ],
+      [
+        "soccer_germany_bundesliga",
+        "2024-25",
+        "vfl bochum",
+        "eintracht frankfurt"
+      ],
+      [
+        "soccer_italy_serie_a",
+        "2024-25",
+        "ac milan",
+        "bologna"
+      ],
+      [
+        "soccer_italy_serie_a",
+        "2024-25",
+        "como",
+        "torino"
+      ],
+      [
+        "soccer_italy_serie_a",
+        "2024-25",
+        "empoli",
+        "lazio"
+      ],
+      [
+        "soccer_italy_serie_a",
+        "2025-26",
+        "cremonese",
+        "torino"
+      ],
+      [
+        "soccer_italy_serie_a",
+        "2025-26",
+        "hellas verona",
+        "lecce"
+      ],
+      [
+        "soccer_spain_la_liga",
+        "2024-25",
+        "barcelona",
+        "real madrid"
+      ],
+      [
+        "soccer_spain_la_liga",
+        "2024-25",
+        "mallorca",
+        "valladolid"
+      ]
+    ],
+    "regulation_flagged_identities": 2,
+    "source": "openfootball_software_heritage",
+    "witnesses": 72
+  },
+  "training_report": {
+    "additional_eligible_rows_lower_bound": 0,
+    "automatic_prediction_allowed": false,
+    "baseline": {
+      "accuracy": 0.4381846635367762,
+      "brier": 0.6510732597271859,
+      "brier_definition": "mean sum of squared errors across home/draw/away; range 0..2",
+      "correct": 280,
+      "count": 639,
+      "event_manifest": "d0546092bcfe0cac1bb79b146a46310d9b8c962ea089b3a0e2c71c143e689fef",
+      "log_loss": 1.0763438823760194,
+      "markets": {
+        "12": {
+          "accuracy": 0.7496087636932708,
+          "brier": 0.1894767432744656,
+          "count": 639,
+          "log_loss": 0.5672011002479634
+        },
+        "1X": {
+          "accuracy": 0.6885758998435054,
+          "brier": 0.21520816282648866,
+          "count": 639,
+          "log_loss": 0.6220925194274306
+        },
+        "X2": {
+          "accuracy": 0.5618153364632238,
+          "brier": 0.24638835362623004,
+          "count": 639,
+          "log_loss": 0.6859130593707075
+        },
+        "btts": {
+          "accuracy": 0.5633802816901409,
+          "brier": 0.24656940157990218,
+          "count": 639,
+          "log_loss": 0.6862750526092748
+        },
+        "over_2_5": {
+          "accuracy": 0.4538341158059468,
+          "brier": 0.2520429479929591,
+          "count": 639,
+          "log_loss": 0.6972350854218938
+        }
+      }
+    },
+    "baseline_definition": "existing untrained goals grid (1.45 home, 1.15 away); no market odds supplied",
+    "candidates": [
+      {
+        "ridge": 0.01,
+        "use_xg": false,
+        "validation": {
+          "accuracy": 0.5069444444444444,
+          "brier": 0.6124417479233216,
+          "brier_definition": "mean sum of squared errors across home/draw/away; range 0..2",
+          "correct": 73,
+          "count": 144,
+          "event_manifest": "129654b46c04c1a39b2f2803eb27918de2a81553da1fc575cd66a9a70012482e",
+          "log_loss": 1.0238000311123296,
+          "markets": {
+            "12": {
+              "accuracy": 0.7430555555555556,
+              "brier": 0.19119376372293345,
+              "count": 144,
+              "log_loss": 0.5703997319874269
+            },
+            "1X": {
+              "accuracy": 0.7222222222222222,
+              "brier": 0.18663097194433856,
+              "count": 144,
+              "log_loss": 0.5573145824406001
+            },
+            "X2": {
+              "accuracy": 0.6388888888888888,
+              "brier": 0.23461701225604958,
+              "count": 144,
+              "log_loss": 0.6625547881463973
+            },
+            "btts": {
+              "accuracy": 0.5138888888888888,
+              "brier": 0.2525202839987721,
+              "count": 144,
+              "log_loss": 0.6986176313039565
+            },
+            "over_2_5": {
+              "accuracy": 0.5833333333333334,
+              "brier": 0.24533588338567341,
+              "count": 144,
+              "log_loss": 0.6838806662452277
+            }
+          }
+        }
+      },
+      {
+        "ridge": 0.1,
+        "use_xg": false,
+        "validation": {
+          "accuracy": 0.5208333333333334,
+          "brier": 0.626764018307907,
+          "brier_definition": "mean sum of squared errors across home/draw/away; range 0..2",
+          "correct": 75,
+          "count": 144,
+          "event_manifest": "129654b46c04c1a39b2f2803eb27918de2a81553da1fc575cd66a9a70012482e",
+          "log_loss": 1.0424033393572534,
+          "markets": {
+            "12": {
+              "accuracy": 0.7430555555555556,
+              "brier": 0.19135884572164208,
+              "count": 144,
+              "log_loss": 0.5709079410694294
+            },
+            "1X": {
+              "accuracy": 0.7222222222222222,
+              "brier": 0.1931713690873892,
+              "count": 144,
+              "log_loss": 0.5736287457709268
+            },
+            "X2": {
+              "accuracy": 0.5555555555555556,
+              "brier": 0.2422338034988757,
+              "count": 144,
+              "log_loss": 0.6772489688734245
+            },
+            "btts": {
+              "accuracy": 0.4791666666666667,
+              "brier": 0.25418854891303616,
+              "count": 144,
+              "log_loss": 0.7017669790196847
+            },
+            "over_2_5": {
+              "accuracy": 0.5972222222222222,
+              "brier": 0.24404620829229387,
+              "count": 144,
+              "log_loss": 0.6811908792683123
+            }
+          }
+        }
+      },
+      {
+        "ridge": 1.0,
+        "use_xg": false,
+        "validation": {
+          "accuracy": 0.4513888888888889,
+          "brier": 0.6467935135085078,
+          "brier_definition": "mean sum of squared errors across home/draw/away; range 0..2",
+          "correct": 65,
+          "count": 144,
+          "event_manifest": "129654b46c04c1a39b2f2803eb27918de2a81553da1fc575cd66a9a70012482e",
+          "log_loss": 1.0696537747102135,
+          "markets": {
+            "12": {
+              "accuracy": 0.7430555555555556,
+              "brier": 0.1913169782066314,
+              "count": 144,
+              "log_loss": 0.5708539143408156
+            },
+            "1X": {
+              "accuracy": 0.7222222222222222,
+              "brier": 0.20227449657326685,
+              "count": 144,
+              "log_loss": 0.594663351101601
+            },
+            "X2": {
+              "accuracy": 0.5347222222222222,
+              "brier": 0.2532020387286096,
+              "count": 144,
+              "log_loss": 0.6998367648295469
+            },
+            "btts": {
+              "accuracy": 0.4722222222222222,
+              "brier": 0.25536485733086256,
+              "count": 144,
+              "log_loss": 0.7040170775735143
+            },
+            "over_2_5": {
+              "accuracy": 0.5555555555555556,
+              "brier": 0.24492272821599903,
+              "count": 144,
+              "log_loss": 0.6829405993210903
+            }
+          }
+        }
+      }
+    ],
+    "eligible_rows": 3165,
+    "excluded_insufficient_team_history": 1835,
+    "feature_usage": {
+      "away": {
+        "intercept": {
+          "coefficient": -0.008615340631863724,
+          "holdout_mean_absolute_log_rate_contribution": 0.008615340631863724
+        },
+        "log_attack": {
+          "coefficient": 0.6497311175451328,
+          "holdout_mean_absolute_log_rate_contribution": 0.1355514465883066
+        },
+        "log_opponent_defence": {
+          "coefficient": 0.5847522853835613,
+          "holdout_mean_absolute_log_rate_contribution": 0.09172521921644364
+        }
+      },
+      "home": {
+        "intercept": {
+          "coefficient": -0.03604330876571323,
+          "holdout_mean_absolute_log_rate_contribution": 0.03604330876571323
+        },
+        "log_attack": {
+          "coefficient": 0.909168871941349,
+          "holdout_mean_absolute_log_rate_contribution": 0.18973277338944305
+        },
+        "log_opponent_defence": {
+          "coefficient": 0.4411876427173175,
+          "holdout_mean_absolute_log_rate_contribution": 0.06878849049700243
+        }
+      }
+    },
+    "holdout": {
+      "accuracy": 0.48513302034428796,
+      "brier": 0.6140684637554343,
+      "brier_definition": "mean sum of squared errors across home/draw/away; range 0..2",
+      "correct": 310,
+      "count": 639,
+      "event_manifest": "d0546092bcfe0cac1bb79b146a46310d9b8c962ea089b3a0e2c71c143e689fef",
+      "log_loss": 1.0244009688613294,
+      "markets": {
+        "12": {
+          "accuracy": 0.7496087636932708,
+          "brier": 0.18830944015838924,
+          "count": 639,
+          "log_loss": 0.5641968667235752
+        },
+        "1X": {
+          "accuracy": 0.6995305164319249,
+          "brier": 0.1979718409059695,
+          "count": 639,
+          "log_loss": 0.5816091357611516
+        },
+        "X2": {
+          "accuracy": 0.6134585289514867,
+          "brier": 0.22778718269107562,
+          "count": 639,
+          "log_loss": 0.6461652643561002
+        },
+        "btts": {
+          "accuracy": 0.568075117370892,
+          "brier": 0.2440083402146301,
+          "count": 639,
+          "log_loss": 0.6811913195827951
+        },
+        "over_2_5": {
+          "accuracy": 0.5446009389671361,
+          "brier": 0.24654767487683363,
+          "count": 639,
+          "log_loss": 0.686457505506049
+        }
+      }
+    },
+    "input_rows": 5000,
+    "lower_brier_no_worse_log_loss": true,
+    "model": {
+      "automatic_prediction_allowed": false,
+      "away_coefficients": [
+        -0.008615340631863724,
+        0.6497311175451328,
+        0.5847522853835613
+      ],
+      "family": "kss1-fitted-poisson-v1",
+      "feature_names": [
+        "intercept",
+        "log_attack",
+        "log_opponent_defence"
+      ],
+      "feature_schema": "kss1-team-history-v1",
+      "fitted_as_of": "2026-02-12T00:00:00Z",
+      "home_coefficients": [
+        -0.03604330876571323,
+        0.909168871941349,
+        0.4411876427173175
+      ],
+      "model_digest": "0c20189ed1edce7e67c4510e5ef90d8e15e0294f0a133a9e2afcc7658a001098",
+      "research_only": false,
+      "ridge": 0.01,
+      "training_end": "2025-12-30T20:15:00Z",
+      "training_manifest": "bc3ae979c211f123f297dd181f02452529dda71ff1dd0d1066a7eb19d2ca7df7",
+      "training_rows": 1748,
+      "use_xg": false
+    },
+    "prospective_qualified": false,
+    "qualification_blockers": [
+      "PROSPECTIVE_GOALS_GRADES_REQUIRED",
+      "INCUMBENT_MARKET_MODEL_COMPARISON_NOT_RUN"
+    ],
+    "required_minimum": 700,
+    "required_split_counts": {
+      "holdout": 100,
+      "train": 500,
+      "validation": 100
+    },
+    "research_only": false,
+    "selected": {
+      "ridge": 0.01,
+      "use_xg": false,
+      "validation": {
+        "accuracy": 0.5069444444444444,
+        "brier": 0.6124417479233216,
+        "brier_definition": "mean sum of squared errors across home/draw/away; range 0..2",
+        "correct": 73,
+        "count": 144,
+        "event_manifest": "129654b46c04c1a39b2f2803eb27918de2a81553da1fc575cd66a9a70012482e",
+        "log_loss": 1.0238000311123296,
+        "markets": {
+          "12": {
+            "accuracy": 0.7430555555555556,
+            "brier": 0.19119376372293345,
+            "count": 144,
+            "log_loss": 0.5703997319874269
+          },
+          "1X": {
+            "accuracy": 0.7222222222222222,
+            "brier": 0.18663097194433856,
+            "count": 144,
+            "log_loss": 0.5573145824406001
+          },
+          "X2": {
+            "accuracy": 0.6388888888888888,
+            "brier": 0.23461701225604958,
+            "count": 144,
+            "log_loss": 0.6625547881463973
+          },
+          "btts": {
+            "accuracy": 0.5138888888888888,
+            "brier": 0.2525202839987721,
+            "count": 144,
+            "log_loss": 0.6986176313039565
+          },
+          "over_2_5": {
+            "accuracy": 0.5833333333333334,
+            "brier": 0.24533588338567341,
+            "count": 144,
+            "log_loss": 0.6838806662452277
+          }
+        }
+      }
+    },
+    "selection_basis": "validation log loss only; holdout never selects model",
+    "split_boundaries": {
+      "holdout_start": "2026-02-14T00:00:00Z",
+      "refit_cutoff": "2026-02-12T00:00:00Z",
+      "train_cutoff": "2025-10-30T00:00:00Z",
+      "validation_start": "2025-11-01T00:00:00Z"
+    },
+    "split_counts": {
+      "holdout": 639,
+      "train": 1604,
+      "validation": 144
+    },
+    "trained": true,
+    "xg_candidate_skipped": "INSUFFICIENT_PRIOR_MATCH_XG",
+    "xg_required": false,
+    "xg_training_rows": 0
+  },
+  "witness_verification": {
+    "independent_api_inventory_sha256": "2b993766a9e4806400263cac45d586c21192f7c2a16ea342daa812d4e95413db",
+    "inventory_visits": 92,
+    "method": "retained independent API inventory and recomputed intrinsic snapshot/Git object hashes",
+    "verified_witnesses": 72,
+    "visit_bindings": [
+      {
+        "date": "2024-03-10T21:26:50.860000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/21/",
+        "snapshot": "259f1e0e7c8d4eee0d2153ffa2105e823a95d35b",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/259f1e0e7c8d4eee0d2153ffa2105e823a95d35b/",
+        "status": "full",
+        "type": "git",
+        "visit": 21
+      },
+      {
+        "date": "2024-08-31T13:53:01.155000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/22/",
+        "snapshot": "39098a592d0fcece4dc61cc7963dc00b3b434b40",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/39098a592d0fcece4dc61cc7963dc00b3b434b40/",
+        "status": "full",
+        "type": "git",
+        "visit": 22
+      },
+      {
+        "date": "2024-10-04T12:27:33.189000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/23/",
+        "snapshot": "97880d7251872ca6e09ad3cb2093cc83bc1954b2",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/97880d7251872ca6e09ad3cb2093cc83bc1954b2/",
+        "status": "full",
+        "type": "git",
+        "visit": 23
+      },
+      {
+        "date": "2024-10-22T17:21:09.427000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/24/",
+        "snapshot": "25aae03a67823a5e11e82278738aa84866dbd34b",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/25aae03a67823a5e11e82278738aa84866dbd34b/",
+        "status": "full",
+        "type": "git",
+        "visit": 24
+      },
+      {
+        "date": "2024-11-20T12:07:50.674000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/25/",
+        "snapshot": "dc82e590799d27b49066bcbed164398c4a9fd37f",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/dc82e590799d27b49066bcbed164398c4a9fd37f/",
+        "status": "full",
+        "type": "git",
+        "visit": 25
+      },
+      {
+        "date": "2024-12-05T16:22:19.781000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/26/",
+        "snapshot": "d6098b04e6b3498a0b9d3a36e3c90474df714295",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/d6098b04e6b3498a0b9d3a36e3c90474df714295/",
+        "status": "full",
+        "type": "git",
+        "visit": 26
+      },
+      {
+        "date": "2025-01-05T03:00:06.239000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/27/",
+        "snapshot": "183f25782f1736bd92ea882c3766141c92fc4d19",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/183f25782f1736bd92ea882c3766141c92fc4d19/",
+        "status": "full",
+        "type": "git",
+        "visit": 27
+      },
+      {
+        "date": "2025-01-20T18:10:03.245000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/28/",
+        "snapshot": "85ae748fa75cc0c0979ab553963e08c471311c3b",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/85ae748fa75cc0c0979ab553963e08c471311c3b/",
+        "status": "full",
+        "type": "git",
+        "visit": 28
+      },
+      {
+        "date": "2025-02-08T17:29:46.767000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/29/",
+        "snapshot": "068389b92eedce1d7bb77855328e06ee8163ec70",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/068389b92eedce1d7bb77855328e06ee8163ec70/",
+        "status": "full",
+        "type": "git",
+        "visit": 29
+      },
+      {
+        "date": "2025-02-17T10:14:49.316000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/30/",
+        "snapshot": "45dc87b7d9d5d50e4020701df1070607d49924e4",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/45dc87b7d9d5d50e4020701df1070607d49924e4/",
+        "status": "full",
+        "type": "git",
+        "visit": 30
+      },
+      {
+        "date": "2025-02-20T02:59:48.081000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/31/",
+        "snapshot": "ca335867db4314b61437a8244f87b06e84afadb1",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/ca335867db4314b61437a8244f87b06e84afadb1/",
+        "status": "full",
+        "type": "git",
+        "visit": 31
+      },
+      {
+        "date": "2025-03-05T11:03:18.812000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/32/",
+        "snapshot": "f3f0090ec3035c6c0695cf6a6aef8adb93e8024d",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/f3f0090ec3035c6c0695cf6a6aef8adb93e8024d/",
+        "status": "full",
+        "type": "git",
+        "visit": 32
+      },
+      {
+        "date": "2025-03-16T18:59:13.896000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/33/",
+        "snapshot": "3bf55a38fc805aed0d5c7995adc9492916e5eae1",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/3bf55a38fc805aed0d5c7995adc9492916e5eae1/",
+        "status": "full",
+        "type": "git",
+        "visit": 33
+      },
+      {
+        "date": "2025-03-30T07:44:49.043000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/34/",
+        "snapshot": "3aa99b38482021a9dce43c4fc29abc20f7c8a3fe",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/3aa99b38482021a9dce43c4fc29abc20f7c8a3fe/",
+        "status": "full",
+        "type": "git",
+        "visit": 34
+      },
+      {
+        "date": "2025-04-06T15:04:23.464000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/35/",
+        "snapshot": "96ed6aa34b15dc00ee9744d7b89a7441cd339374",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/96ed6aa34b15dc00ee9744d7b89a7441cd339374/",
+        "status": "full",
+        "type": "git",
+        "visit": 35
+      },
+      {
+        "date": "2025-04-12T11:47:07.052000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/36/",
+        "snapshot": "3e3aa1d9e664c3c7775bf9cf66a1fd02b8570c3d",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/3e3aa1d9e664c3c7775bf9cf66a1fd02b8570c3d/",
+        "status": "full",
+        "type": "git",
+        "visit": 36
+      },
+      {
+        "date": "2025-04-15T20:33:27.638000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/37/",
+        "snapshot": "3e3aa1d9e664c3c7775bf9cf66a1fd02b8570c3d",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/3e3aa1d9e664c3c7775bf9cf66a1fd02b8570c3d/",
+        "status": "full",
+        "type": "git",
+        "visit": 37
+      },
+      {
+        "date": "2025-04-22T05:24:04.757000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/38/",
+        "snapshot": "b0871acd96916c22e3f0b66515ddd29a8866307b",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/b0871acd96916c22e3f0b66515ddd29a8866307b/",
+        "status": "full",
+        "type": "git",
+        "visit": 38
+      },
+      {
+        "date": "2025-04-30T04:25:03.386000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/39/",
+        "snapshot": "b497be48f46940b99cbbcf0551679a58aad160ba",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/b497be48f46940b99cbbcf0551679a58aad160ba/",
+        "status": "full",
+        "type": "git",
+        "visit": 39
+      },
+      {
+        "date": "2025-05-03T10:33:31.638000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/40/",
+        "snapshot": "10f092c104b9dd78b2fc74ec5b32aec4342807fc",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/10f092c104b9dd78b2fc74ec5b32aec4342807fc/",
+        "status": "full",
+        "type": "git",
+        "visit": 40
+      },
+      {
+        "date": "2025-05-12T04:51:27.596000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/41/",
+        "snapshot": "aa01671e0d8fbd59c6d7c285b5bb597132cac794",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/aa01671e0d8fbd59c6d7c285b5bb597132cac794/",
+        "status": "full",
+        "type": "git",
+        "visit": 41
+      },
+      {
+        "date": "2025-05-28T01:38:03.747000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/42/",
+        "snapshot": "8c1f9b647659941cdce2d8eafd302df07b47aa07",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/8c1f9b647659941cdce2d8eafd302df07b47aa07/",
+        "status": "full",
+        "type": "git",
+        "visit": 42
+      },
+      {
+        "date": "2025-06-01T20:09:05.809000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/43/",
+        "snapshot": "53658e5e52ceeffda2ef2992a3d76eba45c35f7a",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/53658e5e52ceeffda2ef2992a3d76eba45c35f7a/",
+        "status": "full",
+        "type": "git",
+        "visit": 43
+      },
+      {
+        "date": "2025-06-06T16:36:00.007000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/44/",
+        "snapshot": "53658e5e52ceeffda2ef2992a3d76eba45c35f7a",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/53658e5e52ceeffda2ef2992a3d76eba45c35f7a/",
+        "status": "full",
+        "type": "git",
+        "visit": 44
+      },
+      {
+        "date": "2025-06-22T00:39:36.607000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/45/",
+        "snapshot": "53658e5e52ceeffda2ef2992a3d76eba45c35f7a",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/53658e5e52ceeffda2ef2992a3d76eba45c35f7a/",
+        "status": "full",
+        "type": "git",
+        "visit": 45
+      },
+      {
+        "date": "2025-06-30T11:10:19.652000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/46/",
+        "snapshot": "53658e5e52ceeffda2ef2992a3d76eba45c35f7a",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/53658e5e52ceeffda2ef2992a3d76eba45c35f7a/",
+        "status": "full",
+        "type": "git",
+        "visit": 46
+      },
+      {
+        "date": "2025-07-02T04:05:24.385000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/47/",
+        "snapshot": "53658e5e52ceeffda2ef2992a3d76eba45c35f7a",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/53658e5e52ceeffda2ef2992a3d76eba45c35f7a/",
+        "status": "full",
+        "type": "git",
+        "visit": 47
+      },
+      {
+        "date": "2025-07-11T12:12:33.727000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/48/",
+        "snapshot": "53658e5e52ceeffda2ef2992a3d76eba45c35f7a",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/53658e5e52ceeffda2ef2992a3d76eba45c35f7a/",
+        "status": "full",
+        "type": "git",
+        "visit": 48
+      },
+      {
+        "date": "2025-07-17T15:57:01.969000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/49/",
+        "snapshot": "53658e5e52ceeffda2ef2992a3d76eba45c35f7a",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/53658e5e52ceeffda2ef2992a3d76eba45c35f7a/",
+        "status": "full",
+        "type": "git",
+        "visit": 49
+      },
+      {
+        "date": "2025-08-04T01:10:05.614000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/50/",
+        "snapshot": "5d66e1893d208cc711215b22abdb763ac863e71f",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5d66e1893d208cc711215b22abdb763ac863e71f/",
+        "status": "full",
+        "type": "git",
+        "visit": 50
+      },
+      {
+        "date": "2025-08-07T21:40:58.541000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/51/",
+        "snapshot": "5d66e1893d208cc711215b22abdb763ac863e71f",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5d66e1893d208cc711215b22abdb763ac863e71f/",
+        "status": "full",
+        "type": "git",
+        "visit": 51
+      },
+      {
+        "date": "2025-09-02T08:19:19.624000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/52/",
+        "snapshot": "5d66e1893d208cc711215b22abdb763ac863e71f",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5d66e1893d208cc711215b22abdb763ac863e71f/",
+        "status": "full",
+        "type": "git",
+        "visit": 52
+      },
+      {
+        "date": "2025-09-08T04:18:16.391000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/53/",
+        "snapshot": "5d66e1893d208cc711215b22abdb763ac863e71f",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5d66e1893d208cc711215b22abdb763ac863e71f/",
+        "status": "full",
+        "type": "git",
+        "visit": 53
+      },
+      {
+        "date": "2025-09-13T13:39:03.820000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/54/",
+        "snapshot": "5d66e1893d208cc711215b22abdb763ac863e71f",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5d66e1893d208cc711215b22abdb763ac863e71f/",
+        "status": "full",
+        "type": "git",
+        "visit": 54
+      },
+      {
+        "date": "2025-09-30T11:13:20.154000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/55/",
+        "snapshot": "5d66e1893d208cc711215b22abdb763ac863e71f",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5d66e1893d208cc711215b22abdb763ac863e71f/",
+        "status": "full",
+        "type": "git",
+        "visit": 55
+      },
+      {
+        "date": "2025-10-08T18:57:54.205000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/56/",
+        "snapshot": "5d66e1893d208cc711215b22abdb763ac863e71f",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5d66e1893d208cc711215b22abdb763ac863e71f/",
+        "status": "full",
+        "type": "git",
+        "visit": 56
+      },
+      {
+        "date": "2025-10-12T00:42:48.085000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/57/",
+        "snapshot": "5d66e1893d208cc711215b22abdb763ac863e71f",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5d66e1893d208cc711215b22abdb763ac863e71f/",
+        "status": "full",
+        "type": "git",
+        "visit": 57
+      },
+      {
+        "date": "2025-10-25T22:40:10.708000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/58/",
+        "snapshot": "a8f7b47495385cd014f88c4993d9ef0c4e105cca",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/a8f7b47495385cd014f88c4993d9ef0c4e105cca/",
+        "status": "full",
+        "type": "git",
+        "visit": 58
+      },
+      {
+        "date": "2025-10-26T18:22:27.264000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/59/",
+        "snapshot": "a8f7b47495385cd014f88c4993d9ef0c4e105cca",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/a8f7b47495385cd014f88c4993d9ef0c4e105cca/",
+        "status": "full",
+        "type": "git",
+        "visit": 59
+      },
+      {
+        "date": "2025-11-09T20:01:39.480000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/60/",
+        "snapshot": "dc25da0c6abfb8dc886d19c090e698a6739dd76c",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/dc25da0c6abfb8dc886d19c090e698a6739dd76c/",
+        "status": "full",
+        "type": "git",
+        "visit": 60
+      },
+      {
+        "date": "2025-11-19T06:27:12.928000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/61/",
+        "snapshot": "ac2eb35e168ade14eb7b5db9b229f64485758b11",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/ac2eb35e168ade14eb7b5db9b229f64485758b11/",
+        "status": "full",
+        "type": "git",
+        "visit": 61
+      },
+      {
+        "date": "2025-11-23T17:36:54.053000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/62/",
+        "snapshot": "ac2eb35e168ade14eb7b5db9b229f64485758b11",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/ac2eb35e168ade14eb7b5db9b229f64485758b11/",
+        "status": "full",
+        "type": "git",
+        "visit": 62
+      },
+      {
+        "date": "2025-12-07T11:29:52.913000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/63/",
+        "snapshot": "f9785481610dd3201f93f768bef0ae4cc50f464b",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/f9785481610dd3201f93f768bef0ae4cc50f464b/",
+        "status": "full",
+        "type": "git",
+        "visit": 63
+      },
+      {
+        "date": "2025-12-10T05:56:47.500000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/64/",
+        "snapshot": "5adb93377d3d11be042903e6fcedff829a00e0e3",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5adb93377d3d11be042903e6fcedff829a00e0e3/",
+        "status": "full",
+        "type": "git",
+        "visit": 64
+      },
+      {
+        "date": "2025-12-10T19:56:37.088000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/65/",
+        "snapshot": "5adb93377d3d11be042903e6fcedff829a00e0e3",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5adb93377d3d11be042903e6fcedff829a00e0e3/",
+        "status": "full",
+        "type": "git",
+        "visit": 65
+      },
+      {
+        "date": "2025-12-19T11:21:03.130000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/66/",
+        "snapshot": "5adb93377d3d11be042903e6fcedff829a00e0e3",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5adb93377d3d11be042903e6fcedff829a00e0e3/",
+        "status": "full",
+        "type": "git",
+        "visit": 66
+      },
+      {
+        "date": "2025-12-28T08:29:07.390000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/67/",
+        "snapshot": "5adb93377d3d11be042903e6fcedff829a00e0e3",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5adb93377d3d11be042903e6fcedff829a00e0e3/",
+        "status": "full",
+        "type": "git",
+        "visit": 67
+      },
+      {
+        "date": "2026-01-06T19:23:03.132000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/68/",
+        "snapshot": "5adb93377d3d11be042903e6fcedff829a00e0e3",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5adb93377d3d11be042903e6fcedff829a00e0e3/",
+        "status": "full",
+        "type": "git",
+        "visit": 68
+      },
+      {
+        "date": "2026-01-11T14:04:14.755000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/69/",
+        "snapshot": "541f8779e7b7bd5e2e4e64b7e9e634f197e977ce",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/541f8779e7b7bd5e2e4e64b7e9e634f197e977ce/",
+        "status": "full",
+        "type": "git",
+        "visit": 69
+      },
+      {
+        "date": "2026-01-16T17:36:57.412000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/70/",
+        "snapshot": "541f8779e7b7bd5e2e4e64b7e9e634f197e977ce",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/541f8779e7b7bd5e2e4e64b7e9e634f197e977ce/",
+        "status": "full",
+        "type": "git",
+        "visit": 70
+      },
+      {
+        "date": "2026-02-04T13:46:01.806000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/71/",
+        "snapshot": "541f8779e7b7bd5e2e4e64b7e9e634f197e977ce",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/541f8779e7b7bd5e2e4e64b7e9e634f197e977ce/",
+        "status": "full",
+        "type": "git",
+        "visit": 71
+      },
+      {
+        "date": "2026-02-06T08:47:21.408000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/72/",
+        "snapshot": "541f8779e7b7bd5e2e4e64b7e9e634f197e977ce",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/541f8779e7b7bd5e2e4e64b7e9e634f197e977ce/",
+        "status": "full",
+        "type": "git",
+        "visit": 72
+      },
+      {
+        "date": "2026-02-07T00:55:38.513000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/73/",
+        "snapshot": "541f8779e7b7bd5e2e4e64b7e9e634f197e977ce",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/541f8779e7b7bd5e2e4e64b7e9e634f197e977ce/",
+        "status": "full",
+        "type": "git",
+        "visit": 73
+      },
+      {
+        "date": "2026-02-24T11:47:06.172000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/74/",
+        "snapshot": "70c094b50023756ec6a2a4dbf2945d6fc958662c",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/70c094b50023756ec6a2a4dbf2945d6fc958662c/",
+        "status": "full",
+        "type": "git",
+        "visit": 74
+      },
+      {
+        "date": "2026-03-01T11:51:45.411000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/75/",
+        "snapshot": "cf8e3698ff33da5a9edbf4642e3027fa494f22fa",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/cf8e3698ff33da5a9edbf4642e3027fa494f22fa/",
+        "status": "full",
+        "type": "git",
+        "visit": 75
+      },
+      {
+        "date": "2026-03-03T00:02:36.462000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/76/",
+        "snapshot": "cf8e3698ff33da5a9edbf4642e3027fa494f22fa",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/cf8e3698ff33da5a9edbf4642e3027fa494f22fa/",
+        "status": "full",
+        "type": "git",
+        "visit": 76
+      },
+      {
+        "date": "2026-03-08T10:54:13.824000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/77/",
+        "snapshot": "25dd14c10f6b5e7719341ca2dc7cb81d13e5f312",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/25dd14c10f6b5e7719341ca2dc7cb81d13e5f312/",
+        "status": "full",
+        "type": "git",
+        "visit": 77
+      },
+      {
+        "date": "2026-03-26T06:01:47.443000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/78/",
+        "snapshot": "577ff3f792fdcf24efee6ec442cb4a60a730369f",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/577ff3f792fdcf24efee6ec442cb4a60a730369f/",
+        "status": "full",
+        "type": "git",
+        "visit": 78
+      },
+      {
+        "date": "2026-04-11T16:21:06.335000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/79/",
+        "snapshot": "577ff3f792fdcf24efee6ec442cb4a60a730369f",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/577ff3f792fdcf24efee6ec442cb4a60a730369f/",
+        "status": "full",
+        "type": "git",
+        "visit": 79
+      },
+      {
+        "date": "2026-04-12T20:13:17.963000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/80/",
+        "snapshot": "577ff3f792fdcf24efee6ec442cb4a60a730369f",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/577ff3f792fdcf24efee6ec442cb4a60a730369f/",
+        "status": "full",
+        "type": "git",
+        "visit": 80
+      },
+      {
+        "date": "2026-04-17T22:10:58.705000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/81/",
+        "snapshot": "577ff3f792fdcf24efee6ec442cb4a60a730369f",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/577ff3f792fdcf24efee6ec442cb4a60a730369f/",
+        "status": "full",
+        "type": "git",
+        "visit": 81
+      },
+      {
+        "date": "2026-04-30T05:12:42.446000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/82/",
+        "snapshot": "4ceb2421f9aed157b4b160a50637c34f268edcfd",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/4ceb2421f9aed157b4b160a50637c34f268edcfd/",
+        "status": "full",
+        "type": "git",
+        "visit": 82
+      },
+      {
+        "date": "2026-05-01T10:21:52.051000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/83/",
+        "snapshot": "4ceb2421f9aed157b4b160a50637c34f268edcfd",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/4ceb2421f9aed157b4b160a50637c34f268edcfd/",
+        "status": "full",
+        "type": "git",
+        "visit": 83
+      },
+      {
+        "date": "2026-05-10T08:21:56.721000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/84/",
+        "snapshot": "aafebc15175623d17584503ab464dc33a4eb0671",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/aafebc15175623d17584503ab464dc33a4eb0671/",
+        "status": "full",
+        "type": "git",
+        "visit": 84
+      },
+      {
+        "date": "2026-05-13T16:43:15.102000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/85/",
+        "snapshot": "aafebc15175623d17584503ab464dc33a4eb0671",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/aafebc15175623d17584503ab464dc33a4eb0671/",
+        "status": "full",
+        "type": "git",
+        "visit": 85
+      },
+      {
+        "date": "2026-05-17T09:06:21.714000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/86/",
+        "snapshot": "69e95fc9e9601650e999a9473d994582bd9b2740",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/69e95fc9e9601650e999a9473d994582bd9b2740/",
+        "status": "full",
+        "type": "git",
+        "visit": 86
+      },
+      {
+        "date": "2026-06-04T15:05:28.382000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/87/",
+        "snapshot": "5efaf1fe121e0adc6f081921cbbf067524f9f196",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5efaf1fe121e0adc6f081921cbbf067524f9f196/",
+        "status": "full",
+        "type": "git",
+        "visit": 87
+      },
+      {
+        "date": "2026-06-14T19:16:01.009000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/88/",
+        "snapshot": "5efaf1fe121e0adc6f081921cbbf067524f9f196",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5efaf1fe121e0adc6f081921cbbf067524f9f196/",
+        "status": "full",
+        "type": "git",
+        "visit": 88
+      },
+      {
+        "date": "2026-06-30T10:27:56.538000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/89/",
+        "snapshot": "5efaf1fe121e0adc6f081921cbbf067524f9f196",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5efaf1fe121e0adc6f081921cbbf067524f9f196/",
+        "status": "full",
+        "type": "git",
+        "visit": 89
+      },
+      {
+        "date": "2026-08-13T07:51:35.221000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/90/",
+        "snapshot": "5efaf1fe121e0adc6f081921cbbf067524f9f196",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/5efaf1fe121e0adc6f081921cbbf067524f9f196/",
+        "status": "full",
+        "type": "git",
+        "visit": 90
+      },
+      {
+        "date": "2026-08-21T12:42:30.620000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/91/",
+        "snapshot": "0af9ca569a9c017c4955dcddaa04487d4c2d003f",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/0af9ca569a9c017c4955dcddaa04487d4c2d003f/",
+        "status": "full",
+        "type": "git",
+        "visit": 91
+      },
+      {
+        "date": "2026-09-13T23:33:29.953000+00:00",
+        "metadata": {},
+        "origin": "https://github.com/openfootball/football.json",
+        "origin_visit_url": "https://archive.softwareheritage.org/api/1/origin/https://github.com/openfootball/football.json/visit/92/",
+        "snapshot": "a977546e058c3d4f1116baf39a865a8d0a19ec26",
+        "snapshot_url": "https://archive.softwareheritage.org/api/1/snapshot/a977546e058c3d4f1116baf39a865a8d0a19ec26/",
+        "status": "full",
+        "type": "git",
+        "visit": 92
+      }
+    ]
+  }
+}
