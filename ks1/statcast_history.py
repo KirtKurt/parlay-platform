@@ -60,7 +60,7 @@ def official_physical_pitch_counts(sources):
     return expected, batters, invalid
 
 
-def physical_pitch_inventory_complete(rows, games, expected, batters, invalid):
+def physical_pitch_inventory_complete(rows, games, expected, batters, invalid, *, batter_credits=None):
     """Exact thrown-pitch inventory and row identities, before PA credit.
 
     This is only a recovery precondition. It cannot admit a date without the
@@ -86,13 +86,15 @@ def physical_pitch_inventory_complete(rows, games, expected, batters, invalid):
             (str(row.get('game_pk')), str(row.get('at_bat_number'))),
             set()).add(str(row.get('batter')))
     return (len(identities) == len(rows) and dict(actual) == wanted
-            and all(len(values) == 1 for values in at_bat_batters.values()))
+            and all(len(values) == 1 or (batter_credits or {}).get(key) in values
+                    for key, values in at_bat_batters.items()))
 
 
-def physical_pitches_complete(rows, games, expected, batters, invalid):
+def physical_pitches_complete(rows, games, expected, batters, invalid, *, batter_credits=None):
     """Require the exact pitch inventory and each official batter PA total."""
     games = {str(pk) for pk in games}
-    if not physical_pitch_inventory_complete(rows, games, expected, batters, invalid):
+    if not physical_pitch_inventory_complete(rows, games, expected, batters, invalid,
+                                             batter_credits=batter_credits):
         return False
     at_bat_batters = {}
     for row in rows:
@@ -101,9 +103,9 @@ def physical_pitches_complete(rows, games, expected, batters, invalid):
             set()).add(str(row.get('batter')))
     credited = credited_at_bat_ids(rows)
     actual_batters = Counter(
-        (game_id, next(iter(values)))
+        (game_id, (batter_credits or {}).get((game_id, at_bat), next(iter(values))))
         for (game_id, at_bat), values in at_bat_batters.items()
-        if len(values) == 1 and (game_id, at_bat) in credited)
+        if (game_id, at_bat) in credited)
     wanted_batters = {key: count for pk in games
                       for key, count in batters[pk].items() if count}
     return dict(actual_batters) == wanted_batters
@@ -159,7 +161,12 @@ def physical_validation_reason(payload, value, games, expected, batters, invalid
         return 'date_mismatch'
     if {str(row.get('game_pk')) for row in rows} != {str(pk) for pk in games}:
         return 'game_set_mismatch'
-    if not physical_pitches_complete(rows, games, expected, batters, invalid):
+    from ks1.official_outcomes import verified_batter_credits
+    try:
+        credits = verified_batter_credits(payload)
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return 'official_batter_credit_unverified'
+    if not physical_pitches_complete(rows, games, expected, batters, invalid, batter_credits=credits):
         return 'physical_pitch_or_batter_attribution_mismatch'
     return None
 
@@ -246,6 +253,7 @@ def load_training_statcast(bundle, s3, bucket, *, requested_dates=None):
         reasons = []
         physical_candidate = None
         for key in keys:
+            receipt_start = len(reader.receipts)
             try:
                 payload = reader.read(key)
                 receipt = reader.receipts[-1]
@@ -256,11 +264,16 @@ def load_training_statcast(bundle, s3, bucket, *, requested_dates=None):
                                            completed_by_game, scheduled_by_game)
                 if receipt.get('versionId') in (None, '', 'null'):
                     physical_reason = reason = 'unversioned_source'
+                if 'outcome_reconciliation' in payload or 'raw_statcast' in payload:
+                    from ks1.official_outcomes import read_retained_evidence
+                    read_retained_evidence(payload, reader)
+                    if reason is not None:
+                        physical_reason = reason
                 if physical_reason:
                     reasons.append(physical_reason)
                     continue
                 if reason is None:
-                    return value, payload['rows'], [receipt], None, True, None
+                    return value, payload['rows'], list(reader.receipts[receipt_start:]), None, True, None
                 reasons.append(reason)
                 if physical_candidate is None:
                     physical_candidate = (payload['rows'], [receipt], reason)

@@ -42,9 +42,12 @@ jobs:
       - name: Diagnose retained physical attribution without source writes
         if: >-
           github.head_ref == 'codex/ks1-physical-count-diagnostics-20260915' ||
-          github.head_ref == 'codex/ks1-live-retained-statcast-20260915'
+          github.head_ref == 'codex/ks1-live-retained-statcast-20260915' ||
+          github.head_ref == 'codex/ks1-official-pitch-attribution-20260915'
         run: |
-          if [[ "$GITHUB_HEAD_REF" == 'codex/ks1-live-retained-statcast-20260915' ]]; then
+          if [[ "$GITHUB_HEAD_REF" == 'codex/ks1-official-pitch-attribution-20260915' ]]; then
+            python -m ks1.statcast_diagnostics --date 2026-08-06 --date 2026-08-26 --output /tmp/ks1-physical-diagnostics
+          elif [[ "$GITHUB_HEAD_REF" == 'codex/ks1-live-retained-statcast-20260915' ]]; then
             python -m ks1.statcast_diagnostics --date 2026-07-28 --date 2026-09-01 --output /tmp/ks1-physical-diagnostics
           else
             python -m ks1.statcast_diagnostics --date 2026-05-04 --date 2026-06-04 --output /tmp/ks1-physical-diagnostics
@@ -52,7 +55,8 @@ jobs:
       - name: Publish bounded diagnostic replay before the full build
         if: >-
           github.head_ref == 'codex/ks1-physical-count-diagnostics-20260915' ||
-          github.head_ref == 'codex/ks1-live-retained-statcast-20260915'
+          github.head_ref == 'codex/ks1-live-retained-statcast-20260915' ||
+          github.head_ref == 'codex/ks1-official-pitch-attribution-20260915'
         uses: actions/upload-artifact@v4
         with:
           name: ks1-physical-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
