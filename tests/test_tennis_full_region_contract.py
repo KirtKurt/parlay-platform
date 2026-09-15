@@ -70,6 +70,17 @@ def test_daily_card_preserves_threshold_and_t10_instead_of_forcing_picks():
     assert "unpredicted_match_count" in CARD
 
 
+def test_daily_card_exposes_the_schedule_authority_used_for_t10():
+    assert "timing_receipt(" in CARD
+    assert "'t10_schedule_source'" in CARD
+    assert "'t10_commence_time_utc'" in CARD
+    assert "'display_commence_time_utc'" in CARD
+    assert "'schedule_start_consistent'" in CARD
+    assert "'t10_cutoff_utc'" in CARD
+    assert "'t10_compliant': compliant" in CARD
+    assert "'schedule_start_conflict_count'" in CARD
+
+
 def test_daily_card_enforces_all_h2h_regions_and_zero_coverage_failures():
     assert "REQUIRED_H2H_REGIONS: 'us,us2,uk,eu,au,fr,se,us_ex'" in CARD
     assert "NON_H2H_PROVIDER_REGIONS: 'us_dfs'" in CARD
