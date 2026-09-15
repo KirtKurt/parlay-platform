@@ -475,6 +475,15 @@ def _is_authorized_isolated_three_source_auto(function: Any) -> bool:
         not str(environment.get(key) or "").strip()
         for key in ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT
     )
+    unexpected_provider_authority_absent = all(
+        key == "BBS" + "_API_SECRET_ARN"
+        or not (
+            key in RETIRED_PROVIDER_ENVIRONMENT
+            or str(key).startswith("BBS" + "_")
+            or str(key).startswith("Bbs" + "Api")
+        )
+        for key in environment
+    )
     secret_arn = str(environment.get("BBS" + "_API_SECRET_ARN") or "")
     return bool(
         ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN.fullmatch(name)
@@ -482,6 +491,7 @@ def _is_authorized_isolated_three_source_auto(function: Any) -> bool:
         and handler in ISOLATED_THREE_SOURCE_HANDLERS
         and ISOLATED_THREE_SOURCE_TABLE_NAME_PATTERN.fullmatch(isolated_table)
         and forbidden_absent
+        and unexpected_provider_authority_absent
         and ISOLATED_THREE_SOURCE_SECRET_ARN_PATTERN.fullmatch(secret_arn)
     )
 
@@ -1538,8 +1548,9 @@ def verify(
             isolated_writer_functions.append(proof)
 
         for function in all_functions:
-            if _is_authorized_isolated_three_source_auto(function):
-                continue
+            authorized_isolated = _is_authorized_isolated_three_source_auto(
+                function
+            )
             name = str(function.get("FunctionName") or "")
             arn = str(function.get("FunctionArn") or "")
             handler = str(function.get("Handler") or "")
@@ -1548,9 +1559,15 @@ def verify(
             retired_present = sorted(
                 key
                 for key in environment
-                if key in RETIRED_PROVIDER_ENVIRONMENT
-                or str(key).startswith("BBS" + "_")
-                or str(key).startswith("Bbs" + "Api")
+                if (
+                    key in RETIRED_PROVIDER_ENVIRONMENT
+                    or str(key).startswith("BBS" + "_")
+                    or str(key).startswith("Bbs" + "Api")
+                )
+                and not (
+                    authorized_isolated
+                    and key == "BBS" + "_API_SECRET_ARN"
+                )
             )
             if retired_present:
                 provider_credential_proof["retiredProviderEnvironmentAbsent"] = False
@@ -1567,6 +1584,8 @@ def verify(
                     f"RETIRED_PROVIDER_ENVIRONMENT_PRESENT_ON_DISCOVERED_LAMBDA:{name}:"
                     + ",".join(retired_present)
                 )
+            if authorized_isolated:
+                continue
             if not arn or not _is_mlb_pull_or_training_writer(
                 name, handler, description
             ):
@@ -1603,6 +1622,13 @@ def verify(
                 target_looks_like_writer = bool(
                     function
                     or isolated_function
+                    or (
+                        observed_function
+                        and observed_function.get(
+                            "isolatedNameContractMatches"
+                        )
+                        is True
+                    )
                     or _is_mlb_pull_or_training_writer(target_arn)
                 )
                 rule_has_writer_target = (

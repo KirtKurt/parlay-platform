@@ -1419,7 +1419,7 @@ def test_allows_enabled_positively_identified_isolated_mlb_auto_writer(aws) -> N
             ),
         }},
     }
-    aws["events"].rules["parlay-platform-mlb-auto-prod-train-1h"] = {
+    aws["events"].rules["hourly-automation"] = {
         "State": "ENABLED",
         "ScheduleExpression": "rate(1 hour)",
         "Arn": isolated_arn,
@@ -1460,7 +1460,7 @@ def test_rejects_qualified_target_without_qualifier_configuration_proof(aws) -> 
             ),
         }},
     }
-    aws["events"].rules["parlay-platform-mlb-auto-prod-train-1h"] = {
+    aws["events"].rules["hourly-automation"] = {
         "State": "ENABLED",
         "ScheduleExpression": "rate(1 hour)",
         "Arn": f"{isolated_arn}:live",
@@ -1520,6 +1520,48 @@ def test_rejects_unclassified_second_lambda_on_isolated_schedule(aws) -> None:
     assert len(targets) == 2
     assert targets[0]["authorizedIsolatedWriter"] is True
     assert targets[1]["authorizedIsolatedWriter"] is False
+
+
+def test_rejects_isolated_writer_with_extra_retired_provider_authority(aws) -> None:
+    isolated_arn = _arn(
+        "parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-AbCd1234"
+    )
+    aws["lambda"].configurations["isolated-mlb-auto"] = {
+        "FunctionName": (
+            "parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-AbCd1234"
+        ),
+        "FunctionArn": isolated_arn,
+        "Handler": "orchestrator_v3.lambda_handler",
+        "Runtime": "python3.11",
+        "Environment": {"Variables": {
+            "MLB_AUTO_TABLE": (
+                "parlay-platform-mlb-auto-llm-MLBAutoLLMTable-AbCd1234"
+            ),
+            "BBS_API_SECRET_ARN": (
+                "arn:aws:secretsmanager:us-east-1:123456789012:secret:isolated"
+            ),
+            "BBS_API_KEY": "plaintext-must-not-be-authorized",
+        }},
+    }
+    aws["events"].rules["hourly-automation"] = {
+        "State": "ENABLED",
+        "ScheduleExpression": "rate(1 hour)",
+        "Arn": isolated_arn,
+    }
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["alternateWriterAuthority"][
+        "authorizedIsolatedWriterFunctions"
+    ] == []
+    assert any(
+        blocker.startswith(
+            "RETIRED_PROVIDER_ENVIRONMENT_PRESENT_ON_DISCOVERED_LAMBDA:"
+        )
+        and "BBS_API_KEY" in blocker
+        for blocker in result["blockers"]
+    )
 
 
 def test_rejects_mlb_auto_writer_when_isolation_contract_is_incomplete(aws) -> None:
