@@ -26,6 +26,20 @@ def repair(path: Path = VERIFIER) -> bool:
     source = path.read_text(encoding="utf-8")
     original = source
 
+    hardened_contract_markers = (
+        "ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN",
+        "ISOLATED_THREE_SOURCE_TABLE_NAME_PATTERN",
+        "ISOLATED_THREE_SOURCE_SECRET_ARN_PATTERN",
+        "ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT",
+        '"PREDICTIONS_TABLE"',
+        "unexpected_provider_authority_absent",
+        "isolated_writer_functions_by_arn",
+        '"authorizedIsolatedWriterFunctions"',
+        "target_is_unqualified",
+    )
+    if all(marker in source for marker in hardened_contract_markers):
+        return False
+
     constants_marker = '''HISTORICAL_NONCANONICAL_WRITER_TOKENS = (
     "HISTORICALOPTIMIZER",
     "HISTORICALOPTIMIZERV7RECOVERYENTRYPOINT",

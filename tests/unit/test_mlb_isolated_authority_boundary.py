@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from scripts import verify_mlb_deploy_identity as deploy_identity
+from scripts import repair_mlb_isolated_authority_boundary as repair_boundary
 
 
 class _LambdaClient:
@@ -43,6 +44,15 @@ def test_authorized_isolated_three_source_auto_is_outside_root_scan() -> None:
 
     assert deploy_identity._is_authorized_isolated_three_source_auto(function) is True
     assert deploy_identity._root_authority_lambda_functions(_LambdaClient([function])) == []
+
+
+def test_deterministic_repair_is_noop_on_hardened_verifier(tmp_path) -> None:
+    source = repair_boundary.VERIFIER.read_text(encoding="utf-8")
+    verifier = tmp_path / "verify_mlb_deploy_identity.py"
+    verifier.write_text(source, encoding="utf-8")
+
+    assert repair_boundary.repair(verifier) is False
+    assert verifier.read_text(encoding="utf-8") == source
 
 
 def test_isolated_lookalike_with_any_root_authority_binding_is_rejected() -> None:
