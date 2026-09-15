@@ -1088,6 +1088,81 @@ class DeepGateTests(unittest.TestCase):
             store.manifests[0][0][0]["required_discovery_observed_at"], ""
         )
 
+    def test_near_t10_cadence_is_one_minute(self) -> None:
+        from soccer_auto.collector import _cadence_seconds
+
+        observed = datetime(2026, 8, 14, 13, 48, tzinfo=timezone.utc)
+        self.assertEqual(
+            _cadence_seconds("2026-08-14T14:00:00Z", observed),
+            60,
+        )
+        six_hours = datetime(2026, 8, 14, 9, 0, tzinfo=timezone.utc)
+        self.assertEqual(
+            _cadence_seconds("2026-08-14T14:00:00Z", six_hours),
+            300,
+        )
+
+    def test_dispatch_bursts_incomplete_coverage_inside_t10_window(self) -> None:
+        row = {
+            **event_at(),
+            "last_seen_at": "2026-08-14T13:40:00Z",
+            "last_dispatched_at": "2026-08-14T13:48:30Z",
+        }
+        row["schedule_identity"] = schedule_identity(row)
+        summary = {
+            "entity_type": "SOCCER_EVENT_COVERAGE_LATEST",
+            "event_key": row["event_key"],
+            "discovery_observed_at": "2026-08-14T13:48:30Z",
+            "discovery_status": "PLAN_READY",
+            "plan_version": COVERAGE_PLAN_VERSION,
+            "plan_observed_at": "2026-08-14T13:48:30Z",
+            "plan_digest": "in-flight-plan",
+            "request_markets": ["h2h", "totals"],
+            "schedule_revision": row["schedule_revision"],
+            "schedule_identity": row["schedule_identity"],
+        }
+        store = RecoverablePlanDispatchStore(row, summary)
+        observed = datetime(2026, 8, 14, 13, 49, tzinfo=timezone.utc)
+
+        with patch("soccer_auto.collector.SoccerStore", return_value=store), patch(
+            "soccer_auto.collector.now_utc", return_value=observed
+        ):
+            result = dispatch_handler({}, None)
+
+        self.assertEqual(result["enqueued"], 1)
+        self.assertGreaterEqual(len(store.jobs), 1)
+
+    def test_dispatch_does_not_burst_complete_coverage_inside_t10_window(self) -> None:
+        row = {
+            **event_at(),
+            "last_seen_at": "2026-08-14T13:40:00Z",
+            "last_dispatched_at": "2026-08-14T13:48:30Z",
+        }
+        row["schedule_identity"] = schedule_identity(row)
+        summary = {
+            "entity_type": "SOCCER_EVENT_COVERAGE_LATEST",
+            "event_key": row["event_key"],
+            "discovery_observed_at": "2026-08-14T13:48:30Z",
+            "discovery_status": "HTTP_200",
+            "plan_version": COVERAGE_PLAN_VERSION,
+            "plan_observed_at": "2026-08-14T13:48:30Z",
+            "plan_digest": "completed-plan",
+            "request_markets": ["h2h", "totals"],
+            "schedule_revision": row["schedule_revision"],
+            "schedule_identity": row["schedule_identity"],
+        }
+        store = RecoverablePlanDispatchStore(row, summary)
+        observed = datetime(2026, 8, 14, 13, 49, tzinfo=timezone.utc)
+
+        with patch("soccer_auto.collector.SoccerStore", return_value=store), patch(
+            "soccer_auto.collector.now_utc", return_value=observed
+        ):
+            result = dispatch_handler({}, None)
+
+        self.assertEqual(result["enqueued"], 0)
+        self.assertEqual(result["skipped"], 1)
+        self.assertEqual(store.jobs, [])
+
     def test_dispatch_never_requests_post_kickoff_events(self) -> None:
         class EmptyStore:
             def __init__(self):

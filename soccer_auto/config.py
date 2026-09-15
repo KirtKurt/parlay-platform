@@ -168,11 +168,20 @@ PLAYER_MARKET_PREFIXES: Final[tuple[str, ...]] = ("player_",)
 
 # Information-value cadence.  The one-minute scheduler asks what is due; it does
 # not blindly call the provider every minute for every future event.
+# The T10 capture window is only ~90 seconds (lead + headroom before T-10).
+# A 300s cadence in that last stretch leaves at most one freeze tick with
+# stale or in-flight coverage, which is how on-time events miss T10 forever.
 CADENCE_SECONDS_BY_HOURS_TO_START: Final[tuple[tuple[float, int], ...]] = (
     (0.0, 60),          # live/recently due
+    (0.35, 60),         # final ~21 minutes, covering the 90s T10 window
     (6.0, 300),         # final six hours
     (float("inf"), 900),  # every open match-day game, at least every 15 minutes
 )
+
+# Freeze scans this far ahead of kickoff. T45 is due at T-45; the extra slack
+# keeps T45 events in the scan if a previous invocation ran long. T10 events
+# (kickoff in ~10-12 minutes) are a subset. Do not backfill after T10 closes.
+FREEZE_EVENT_LOOKAHEAD_MINUTES: Final[int] = 60
 
 HISTORICAL_FEATURED_START: Final[str] = "2020-06-06T10:05:00Z"
 HISTORICAL_ADDITIONAL_START: Final[str] = "2023-05-03T05:30:00Z"

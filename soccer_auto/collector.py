@@ -22,8 +22,11 @@ from .config import (
     ALL_BOOKMAKER_REGIONS,
     CADENCE_SECONDS_BY_HOURS_TO_START,
     FEATURED_GAME_MARKETS,
+    FINAL_DECISION_CAPTURE_LEAD_SECONDS,
     PLAYER_MARKET_PREFIXES,
     PLAYER_PROP_COMPETITIONS,
+    PUBLICATION_COMMIT_HEADROOM_SECONDS,
+    PUBLICATION_CUTOFF_MINUTES,
     SOCCER_MARKET_SEEDS,
 )
 from .odds_api import (
@@ -530,6 +533,33 @@ def _cadence_seconds(commence_time: str, observed: datetime) -> int:
     return CADENCE_SECONDS_BY_HOURS_TO_START[-1][1]
 
 
+def _t10_capture_needs_collection(
+    commence_time: str,
+    observed: datetime,
+    *,
+    summary_current: bool,
+    discovery_status: str,
+) -> bool:
+    """Force a collection burst for the 90-second T10 window.
+
+    On-time events miss T10 when the last cadence tick left coverage
+    incomplete and the next 300s tick falls after the commit deadline.
+    Do not collect after the deadline; that would be a post-cutoff backfill.
+    """
+    commence = parse_utc(commence_time)
+    cutoff = commence - timedelta(minutes=PUBLICATION_CUTOFF_MINUTES)
+    deadline = cutoff - timedelta(seconds=PUBLICATION_COMMIT_HEADROOM_SECONDS)
+    capture_open = deadline - timedelta(
+        seconds=FINAL_DECISION_CAPTURE_LEAD_SECONDS
+    )
+    burst_open = capture_open - timedelta(minutes=2)
+    if observed < burst_open or observed > deadline:
+        return False
+    if not summary_current:
+        return True
+    return str(discovery_status or "") != "HTTP_200"
+
+
 def dispatch_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, Any]:
     """Dispatch odds work only after the daily first-kickoff T-10 gate opens."""
     store = SoccerStore()
@@ -571,6 +601,12 @@ def dispatch_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str,
             not summary_current
             or not last
             or (observed - parse_utc(last)).total_seconds() >= cadence
+            or _t10_capture_needs_collection(
+                row["commence_time"],
+                observed,
+                summary_current=summary_current,
+                discovery_status=str(latest_summary.get("discovery_status") or ""),
+            )
         )
         # A discovery worker can persist an immutable plan and then fail while
         # publishing its multi-batch fanout.  Its SQS delivery is invisible for

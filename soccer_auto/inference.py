@@ -20,6 +20,7 @@ from .canonical import (
 )
 from .config import (
     FINAL_DECISION_CAPTURE_LEAD_SECONDS,
+    FREEZE_EVENT_LOOKAHEAD_MINUTES,
     LOCK_MINUTES_BY_HORIZON,
     LOCK_VERSION_BY_HORIZON,
     PUBLIC_DECISION_HORIZON,
@@ -1150,7 +1151,30 @@ def freeze_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, A
     observed_at = iso_utc(observed)
     events = store.active_events_between(
         iso_utc(observed),
-        iso_utc(observed + timedelta(minutes=50)),
+        iso_utc(observed + timedelta(minutes=FREEZE_EVENT_LOOKAHEAD_MINUTES)),
+    )
+
+    def _t10_capture_open(row: Mapping[str, Any]) -> bool:
+        try:
+            commence = parse_utc(str(row["commence_time"]))
+        except (KeyError, TypeError, ValueError):
+            return False
+        timing = _lock_timing(
+            commence,
+            horizon=PUBLIC_DECISION_HORIZON,
+            observed=observed,
+        )
+        return timing["capture_opens_at"] <= observed <= timing["commit_deadline"]
+
+    # The T10 window is ~90 seconds. Process those events before T45 S3
+    # cohort loads so a long freeze cannot burn the only EventBridge tick.
+    events = sorted(
+        events,
+        key=lambda row: (
+            0 if _t10_capture_open(row) else 1,
+            str(row.get("commence_time") or ""),
+            str(row.get("event_key") or row.get("PK") or ""),
+        ),
     )
     horizons = (TRAINING_LOCK_HORIZON, PUBLIC_DECISION_HORIZON)
     created_by_horizon = {horizon: 0 for horizon in horizons}

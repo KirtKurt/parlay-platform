@@ -16,6 +16,19 @@ Shipped 12 September 2026 on `soccer_auto` as isolated modules.
 
 Existing soccer_auto public bind remains **T-10** until inference contract tests are cut over. The engine already enforces T-60 for KSS1 picks.
 
+Run 34871343076 (14 Sep 2026) classified 19 missing T-10 locks. All 19 were
+on-time (`late_discovered_due_events=0`); none may be backfilled after cutoff.
+The 90-second T10 capture window sat inside a 300-second collection cadence, so
+an in-flight coverage plan burned the only freeze tick. Collection now uses a
+60-second cadence for the last ~21 minutes and forces a burst when T10 is open
+and discovery is not `HTTP_200`. Freeze scans 60 minutes ahead and processes
+open T10 events before T45 S3 loads. `PUBLICATION_CUTOFF_MINUTES` is unchanged.
+
+Deploy Isolated Soccer Auto splits KSS1 trainer/readback (`verify-and-deploy`)
+from champion T-10 health (`prove-isolated-runtime`). The health contract is
+still `soccer-auto-health-proof-v1`; the assert is not dropped. A
+`DEGRADED_INTEGRITY` proof fails the second job only.
+
 ## Not in this drop
 
 - Promotion out of shadow
