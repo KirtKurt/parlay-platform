@@ -71,5 +71,5 @@ def recorded_picks(store, day=None, *, selection=None, trained_only=True):
         # on which the probability of no draw happens to exceed one half.
         if selection and markets.get("double_chance_published") != selection:
             continue
-        picks.append({key: row.get(key) for key in ("event_key", "home_team", "away_team", "commence_time", "created_at", "model_digest")} | {"model_state": "FITTED_SHADOW" if book.get("goals_model_digest") else "UNTRAINED_BASELINE", "markets": markets, "input_coverage": book.get("input_coverage")})
+        picks.append({key: row.get(key) for key in ("event_key", "home_team", "away_team", "commence_time", "created_at", "model_digest", "goals_context_as_of")} | {"model_state": "FITTED_SHADOW" if book.get("goals_model_digest") else "UNTRAINED_BASELINE", "markets": markets, "input_coverage": book.get("input_coverage")})
     return {"ok": True, "system": "kss1_goals", "date": day.isoformat(), "timezone": "America/New_York", "authority": "SHADOW_LEARNING", "automatic_prediction_allowed": False, "trained_only": trained_only, "selection": selection, "fixture_count": len(fixtures), "truncated": len(fixtures) > 500, "count": len(picks), "picks": picks, "missing": missing, "reason": "NO_MATCHING_RECORDED_PICKS" if not picks else None}

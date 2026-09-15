@@ -116,7 +116,21 @@ def test_source_audit_separates_invalid_regulation_and_competition_exclusions():
 def test_final_training_proof_runs_after_integrity_and_settlement_reconciliation():
     root = Path(__file__).resolve().parents[2]
     workflow = yaml.safe_load((root / ".github/workflows/deploy-soccer-auto.yml").read_text())
-    steps = workflow["jobs"]["verify-and-deploy"]["steps"]
-    assert steps[-1]["name"] == "Train KSS1 goals and verify recorded-picks readback"
-    assert "verify_rollout(training['goals_training']" in steps[-1]["run"]
-    assert any("assert health['healthy'] is True" in step.get("run", "") for step in steps[:-1])
+    deploy_steps = workflow["jobs"]["verify-and-deploy"]["steps"]
+    names = [step.get("name") for step in deploy_steps]
+    assert "Admit independently witnessed KSS1 score history" in names
+    assert "Train KSS1 goals and verify recorded-picks readback" in names
+    assert names.index("Deploy isolated soccer_auto stack") < names.index(
+        "Admit independently witnessed KSS1 score history"
+    )
+    assert names.index("Admit independently witnessed KSS1 score history") < names.index(
+        "Train KSS1 goals and verify recorded-picks readback"
+    )
+    trainer = next(
+        step for step in deploy_steps
+        if step.get("name") == "Train KSS1 goals and verify recorded-picks readback"
+    )
+    assert "verify_rollout(training['goals_training']" in trainer["run"]
+    prove_steps = workflow["jobs"]["prove-isolated-runtime"]["steps"]
+    assert any("assert health['healthy'] is True" in step.get("run", "") for step in prove_steps)
+    assert all(step.get("name") != "Admit independently witnessed KSS1 score history" for step in prove_steps)
