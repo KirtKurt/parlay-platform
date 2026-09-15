@@ -25,7 +25,7 @@ def candidate_groups(rows):
 
 
 def derive(rows, evidence, scheduled_by_game, *, extended_substitutions=False,
-           two_strike_strikeouts=False, raw_rows=None):
+           two_strike_strikeouts=False, prefix_mound_visits=False, raw_rows=None):
     from ks1.official_outcomes import positive_id, event_name
     from ks1.statcast_events import is_plate_appearance
     from ks1.features import utc
@@ -56,6 +56,7 @@ def derive(rows, evidence, scheduled_by_game, *, extended_substitutions=False,
         terminal_batter = positive_id(play['matchup']['batter']['id'])
         credited_batter = terminal_batter
         pitcher = positive_id(play['matchup']['pitcher']['id'])
+        administrative_prelude_ids = set()
         if mixed:
             # Rule 9.15(b) charges a two-strike substitute's strikeout to the
             # predecessor. Other completed outcomes belong to the substitute,
@@ -88,18 +89,34 @@ def derive(rows, evidence, scheduled_by_game, *, extended_substitutions=False,
                 credited_batter = current_batter
         else:
             # A zero-count pitching change before every count event leaves all
-            # rows attributed to the incoming pitcher. Mid-count changes and
-            # batter/runner/defensive substitutions remain unsupported here.
+            # rows attributed to the incoming pitcher. An official mound visit
+            # may precede that change, but it must be a zero-count,
+            # non-substitution action. Mid-count changes and batter/runner/
+            # defensive substitutions remain unsupported here.
             prefix_pitching_change = False
             if extended_substitutions and len(substitutions) == 1:
                 sub = substitutions[0]
-                prefix_pitching_change = (events[0] is sub and sub.get('isPitch') is False
+                sub_index = events.index(sub)
+                prelude = events[:sub_index]
+                proven_prelude = (not prelude or prefix_mound_visits and all(
+                    event.get('isPitch') is False
+                    and event.get('isSubstitution') is not True
+                    and event.get('type') == 'action'
+                    and event.get('details', {}).get('eventType') == 'mound_visit'
+                    and all(type(event.get('count', {}).get(k)) is int
+                            and event['count'][k] == 0 for k in ('balls', 'strikes'))
+                    and utc(start) <= utc(event['startTime']) <= utc(sub['startTime'])
+                    and utc(event['startTime']) <= utc(event['endTime']) <= utc(about['endTime'])
+                    for event in prelude))
+                prefix_pitching_change = (proven_prelude and sub.get('isPitch') is False
                     and sub.get('type') == 'action'
                     and sub.get('details', {}).get('eventType') == 'pitching_substitution'
                     and sub.get('position', {}).get('abbreviation') == 'P'
                     and positive_id(sub['player']['id']) == pitcher
                     and all(type(sub.get('count', {}).get(k)) is int and sub['count'][k] == 0
                             for k in ('balls', 'strikes')))
+                if prefix_pitching_change:
+                    administrative_prelude_ids = {id(event) for event in prelude}
             if substitutions and not prefix_pitching_change:
                 raise ValueError('unexpected substitution in automatic count-event proof')
             current_batter = terminal_batter
@@ -107,10 +124,14 @@ def derive(rows, evidence, scheduled_by_game, *, extended_substitutions=False,
         previous_end = utc(start)
         physical_number = 0
         for event in events:
-            if utc(event['startTime']) < previous_end or utc(event['endTime']) < utc(event['startTime']):
+            event_start, event_end = utc(event['startTime']), utc(event['endTime'])
+            if (event_start < utc(start) or event_end < event_start
+                    or (id(event) not in administrative_prelude_ids
+                        and event_start < previous_end)):
                 raise ValueError('official pitch-event chronology invalid')
-            previous_end = utc(event['endTime'])
-            if previous_end > utc(about['endTime']):
+            if id(event) not in administrative_prelude_ids:
+                previous_end = event_end
+            if event_end > utc(about['endTime']):
                 raise ValueError('official pitch exceeds completed at-bat')
             if event in substitutions:
                 current_batter = terminal_batter
