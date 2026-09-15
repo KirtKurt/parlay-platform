@@ -12,7 +12,7 @@ splitting the position into sub-legs. Unknown states fail closed.
 from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Dict, Iterable, List, Mapping, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 CENT = Decimal("0.01")
 
@@ -132,3 +132,60 @@ def split_quarter_line_leg(*, leg_id: str, book: str, stake: Any,
             "payout_multiplier_by_state": dict(upper_state_multipliers),
         },
     ]
+
+
+def _is_integer_line(point: Any) -> bool:
+    try:
+        value = abs(float(point))
+    except (TypeError, ValueError):
+        return False
+    return abs(value - round(value)) < 1e-9
+
+
+def _line_market(market: str) -> bool:
+    key = str(market or "").lower()
+    return "spread" in key or "handicap" in key or "total" in key
+
+
+def prove_quoted_market(*, market: str, legs: Sequence[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Prove the declared win/loss/push universe for a live 2-way or N-way quote.
+
+    Spreads and totals with an integer line include PUSH as a refund state.
+    Half-point lines and moneylines do not invent a push. A zero-profit push is
+    not a strict surebet.
+    """
+    prepared = [dict(leg) for leg in legs or [] if leg.get("stake") and leg.get("outcome")]
+    if len(prepared) < 2:
+        return None
+    outcomes = [str(leg.get("outcome") or "") for leg in prepared]
+    if len(set(outcomes)) != len(outcomes):
+        raise SettlementProofError("duplicate outcomes cannot prove settlement states")
+    points = [leg.get("point") for leg in prepared if leg.get("point") is not None]
+    include_push = bool(points) and all(_is_integer_line(point) for point in points) and _line_market(market)
+    states = list(outcomes)
+    if include_push:
+        states.append("PUSH")
+    matrix_legs = []
+    for leg in prepared:
+        outcome = str(leg.get("outcome") or "")
+        decimal = _d(leg.get("net_decimal") if leg.get("net_decimal") is not None else leg.get("decimal"))
+        if decimal <= 1:
+            raise SettlementProofError("decimal odds must be greater than 1")
+        mapping: Dict[str, Any] = {}
+        for state in states:
+            if state == "PUSH":
+                mapping[state] = 1
+            elif state == outcome:
+                mapping[state] = decimal
+            else:
+                mapping[state] = 0
+        matrix_legs.append({
+            "leg_id": str(leg.get("leg_id") or outcome),
+            "book": str(leg.get("book") or ""),
+            "stake": leg.get("stake"),
+            "payout_multiplier_by_state": mapping,
+        })
+    result = evaluate_states(states=states, legs=matrix_legs)
+    result["includes_push"] = include_push
+    result["market"] = str(market or "")
+    return result

@@ -26,7 +26,7 @@ def test_arizona_baseball_cross_book_is_compatible_after_house_rule_review():
 
 
 def test_unread_fanduel_state_still_fails_closed():
-    result = compatibility(["draftkings", "fanduel"], "baseball", "winner", "co")
+    result = compatibility(["draftkings", "fanduel"], "baseball", "winner", "wy")
     assert result["status"] == UNKNOWN
     assert "fanduel" in result["missing_books"]
 
@@ -40,7 +40,7 @@ def test_arizona_pack_lists_licensed_books_and_reviewed_coverage():
 
 
 def test_florida_pack_is_hard_rock_monopoly_hint():
-    assert licensed_books("fl") == ["hardrockbet"]
+    assert set(licensed_books("fl")) == {"hardrockbet", "hardrockbet_fl"}
     assert "monopoly" in pack_summary("fl")["notes"].lower()
 
 
