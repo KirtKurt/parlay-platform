@@ -21,6 +21,10 @@ TRIALS = {
                     'n_estimators': 100, 'reg_lambda': 50.0},
     'shallow_long': {'num_leaves': 3, 'min_child_samples': 100,
                      'n_estimators': 200, 'reg_lambda': 50.0},
+    # Selected for inclusion from development-only exploration after v4
+    # coverage recovery; qualification predictions remain inaccessible here.
+    'shallow_shrink': {'num_leaves': 3, 'n_estimators': 150,
+                       'learning_rate': .02, 'reg_lambda': 100.0},
 }
 
 
