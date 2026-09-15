@@ -127,6 +127,12 @@ def test_final_training_proof_runs_after_integrity_and_settlement_reconciliation
     assert names.index("Admit independently witnessed KSS1 score history") < names.index(
         "Train KSS1 goals and verify recorded-picks readback"
     )
+    admit = next(
+        step for step in deploy_steps
+        if step.get("name") == "Admit independently witnessed KSS1 score history"
+    )
+    assert "scripts/kss1_admit_or_reuse.py" in admit["run"]
+    assert "NO_REUSABLE_INSTALLED_ARCHIVE" in admit["run"]
     trainer = next(
         step for step in deploy_steps
         if step.get("name") == "Train KSS1 goals and verify recorded-picks readback"

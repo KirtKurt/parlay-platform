@@ -113,18 +113,30 @@ jobs:
       - name: Admit independently witnessed KSS1 score history
         run: |
           set -euo pipefail
-          python scripts/import_kss1_score_archive.py --out /tmp/kss1-score-archive
           python - <<'PY'
-          import boto3, json, os
-          from scripts.import_kss1_score_archive import install_bundle
+          import boto3, json, os, subprocess, sys
           from soccer_auto.storage import SoccerStore
           cloud = boto3.client('cloudformation')
           response = cloud.describe_stack_resource(StackName='parlay-platform-soccer-auto', LogicalResourceId='SoccerGoalsTrainerFunction')
           function = response['StackResourceDetail']['PhysicalResourceId']
           config = boto3.client('lambda').get_function_configuration(FunctionName=function)
           os.environ.update(config['Environment']['Variables'])
-          bundle = json.load(open('/tmp/kss1-score-archive/score_archive.json'))
-          result = install_bundle(SoccerStore(), bundle)
+          store = SoccerStore()
+          result = None
+          heritage_error = None
+          try:
+              subprocess.check_call([sys.executable, 'scripts/import_kss1_score_archive.py',
+                                     '--out', '/tmp/kss1-score-archive'])
+              from scripts.import_kss1_score_archive import install_bundle
+              bundle = json.load(open('/tmp/kss1-score-archive/score_archive.json'))
+              result = install_bundle(store, bundle)
+          except Exception as exc:
+              heritage_error = f"{type(exc).__name__}: {exc}"
+              print('heritage_admission_failed', heritage_error, flush=True)
+              rc = subprocess.call([sys.executable, 'scripts/kss1_admit_or_reuse.py'])
+              if rc != 0:
+                  raise SystemExit('NO_REUSABLE_INSTALLED_ARCHIVE after Heritage failure: ' + heritage_error)
+              result = {'installed': True, 'reused': True, 'heritage_error': heritage_error}
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
               output.write('\n### Verified score archive admission\n```json\n' + json.dumps(result, indent=2) + '\n```\n')
           print(json.dumps(result, sort_keys=True))
