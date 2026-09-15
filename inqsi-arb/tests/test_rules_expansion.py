@@ -41,7 +41,10 @@ def test_unknown_jurisdiction_still_fails_closed_for_state_specific_fanduel_rule
 def test_registry_sources_are_current_official_https_pages():
     rows = registry_rows()
     ny = [r for r in rows if r["jurisdiction"] == "ny"]
-    assert len(ny) >= 30
+    dk_national = [r for r in rows if r["book"] == "draftkings" and r["jurisdiction"] == "*"]
+    assert len(ny) >= 18
+    assert len(dk_national) >= 15
     assert all(r["reviewed"] for r in ny)
     assert all(r["version"] == "2026-09-11" for r in ny)
     assert all(r["source"].startswith("https://") for r in ny)
+    assert lookup("draftkings", "americanfootball", "winner", "co") is not None

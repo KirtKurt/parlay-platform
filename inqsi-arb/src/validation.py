@@ -14,6 +14,7 @@ from typing import Any, Dict, Iterable, List
 from freshness import assess_quote
 from rules import UNKNOWN, compatibility, lookup
 import rules_fanatics  # noqa: F401  # reviewed supplemental registrations
+import rules_state_packs  # noqa: F401  # reviewed US state house-rule packs
 
 
 def sport_family(sport_key: str) -> str:

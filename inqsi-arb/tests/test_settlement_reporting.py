@@ -217,6 +217,8 @@ def test_get_scan_applies_worldwide_default_without_bookmaker_filter(monkeypatch
         observed.update({"sport": sport, **kwargs})
         return {"bankroll": kwargs["bankroll"], "events": [], "status": {"ok": True}}
 
+    from quote_store import reset_memory
+    reset_memory()
     monkeypatch.setattr(app, "scan_sport_payload", fake_scan)
     response = app.lambda_handler({
         "httpMethod": "GET",

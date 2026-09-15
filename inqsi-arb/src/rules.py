@@ -127,6 +127,7 @@ def _register_full_game_triplet(
     shortened_game_policy: str,
     push_policy: str = "push",
     notes: str,
+    version: str = REVIEW_DATE,
 ) -> None:
     for family in ("winner", "spreads", "totals"):
         register(Rule(
@@ -135,7 +136,7 @@ def _register_full_game_triplet(
             market_family=family,
             jurisdiction=jurisdiction,
             reviewed=True,
-            version=REVIEW_DATE,
+            version=version,
             source=source,
             settlement_profile=profile,
             overtime=overtime,
@@ -197,10 +198,10 @@ for _jurisdiction, _source in (("in", _FD_IN), ("ny", _FD_NY)):
 # interruption/retirement rules differ between books. This makes those book pairs
 # explicitly INCOMPATIBLE instead of incorrectly calling a mathematical arb safe.
 _register_full_game_triplet(
-    book="draftkings", sport="americanfootball", jurisdiction="ny", source=_DK_FOOTBALL,
+    book="draftkings", sport="americanfootball", jurisdiction="*", source=_DK_FOOTBALL,
     profile="dk_ny_football_full_game_v1", overtime=True,
     shortened_game_policy="interrupted_full_game_void_if_not_naturally_concluded_within_48h_unless_unconditionally_determined",
-    notes="Full-game 2-way football winner/spread/total only; period and player markets are excluded.",
+    notes="Full-game 2-way football winner/spread/total only; period and player markets are excluded. DraftKings publishes national sport rules, not a state page.",
 )
 _register_full_game_triplet(
     book="fanduel", sport="americanfootball", jurisdiction="ny", source=_FD_NY,
@@ -210,10 +211,10 @@ _register_full_game_triplet(
 )
 
 _register_full_game_triplet(
-    book="draftkings", sport="basketball", jurisdiction="ny", source=_DK_BASKETBALL,
+    book="draftkings", sport="basketball", jurisdiction="*", source=_DK_BASKETBALL,
     profile="dk_ny_basketball_full_game_v1", overtime=True,
     shortened_game_policy="interrupted_full_game_void_if_not_naturally_concluded_within_48h_unless_unconditionally_determined",
-    notes="Full-game basketball winner/spread/total only; quarter/half and player markets are excluded.",
+    notes="Full-game basketball winner/spread/total only; quarter/half and player markets are excluded. DraftKings publishes national sport rules, not a state page.",
 )
 _register_full_game_triplet(
     book="fanduel", sport="basketball", jurisdiction="ny", source=_FD_NY,
@@ -223,10 +224,10 @@ _register_full_game_triplet(
 )
 
 _register_full_game_triplet(
-    book="draftkings", sport="icehockey", jurisdiction="ny", source=_DK_HOCKEY,
+    book="draftkings", sport="icehockey", jurisdiction="*", source=_DK_HOCKEY,
     profile="dk_ny_hockey_full_game_v1", overtime=True,
     shortened_game_policy="interrupted_full_game_void_if_not_naturally_concluded_within_48h_unless_unconditionally_determined",
-    notes="Full-game hockey winner/spread/total including OT and standard shootout settlement; regulation-only markets are excluded.",
+    notes="Full-game hockey winner/spread/total including OT and standard shootout settlement; regulation-only markets are excluded. DraftKings publishes national sport rules, not a state page.",
 )
 _register_full_game_triplet(
     book="fanduel", sport="icehockey", jurisdiction="ny", source=_FD_NY,
@@ -236,10 +237,10 @@ _register_full_game_triplet(
 )
 
 _register_full_game_triplet(
-    book="draftkings", sport="soccer", jurisdiction="ny", source=_DK_SOCCER,
+    book="draftkings", sport="soccer", jurisdiction="*", source=_DK_SOCCER,
     profile="dk_ny_soccer_regulation_v1", overtime=False,
     shortened_game_policy="regulation_match_must_naturally_conclude_except_documented_friendly_interruption_rules",
-    notes="Standard regulation-time soccer winner/spread/total only; extra-time, to-qualify, period and prop markets are excluded.",
+    notes="Standard regulation-time soccer winner/spread/total only; extra-time, to-qualify, period and prop markets are excluded. DraftKings publishes national sport rules, not a state page.",
 )
 _register_full_game_triplet(
     book="fanduel", sport="soccer", jurisdiction="ny", source=_FD_NY,
@@ -252,7 +253,7 @@ _register_full_game_triplet(
 # deliberately distinct and never cross-qualified at the broad tennis-family level.
 for _family in ("winner", "spreads", "totals"):
     register(Rule(
-        book="draftkings", sport="tennis", market_family=_family, jurisdiction="ny",
+        book="draftkings", sport="tennis", market_family=_family, jurisdiction="*",
         reviewed=True, version=REVIEW_DATE, source=_DK_TENNIS,
         settlement_profile="dk_ny_tennis_full_match_v1",
         overtime=None, participation_required=True,
@@ -271,3 +272,4 @@ for _family in ("winner", "spreads", "totals"):
         push_policy="market_specific",
         notes="New York tennis rule profile; kept distinct from DraftKings due materially different retirement treatment, especially lower-tier matches.",
     ))
+
