@@ -232,9 +232,18 @@ jobs:
           for event_id, event in coverage.items():
               pred = latest.get(event_id)
               if pred is None:
+                  timing = deadline_receipts.get(event_id)
+                  if timing is None:
+                      timing = timing_receipt(
+                          displayed_commence_time=event['commence_time_utc'],
+                          live_commence_time=None,
+                          cutoff_minutes=cutoff_minutes,
+                      )
+                      deadline_receipts[event_id] = timing
                   unpredicted_matches.append(
                       {
                           **event,
+                          **timing,
                           'reason': (
                               event['evaluation_reason']
                               or event['evaluation_status']
@@ -249,6 +258,7 @@ jobs:
                   unpredicted_matches.append(
                       {
                           **event,
+                          **deadline_receipts[event_id],
                           'reason': 'MALFORMED_PREDICTION_PROBABILITY',
                       }
                   )
@@ -338,7 +348,8 @@ jobs:
                   malformed_prediction_timestamps
               ),
               'schedule_start_conflict_count': sum(
-                  not p['schedule_start_consistent'] for p in picks
+                  not row['schedule_start_consistent']
+                  for row in picks + unpredicted_matches
               ),
               'malformed_coverage_rows': malformed_coverage_rows,
               'coverage_failure_count': len(coverage_failures),
