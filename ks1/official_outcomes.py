@@ -160,6 +160,13 @@ def official_index(evidence, game_id, value, raw_rows, *, require_retained=True,
             or feed_start not in allowed
             or identity['status']['abstractGameState'] != 'Final'):
         raise ValueError('official PA game/date/finality mismatch')
+    if game_advisories and advisory_outs:
+        advisories = [event for play in body['liveData']['plays']['allPlays']
+                      for event in play.get('playEvents', [])
+                      if event.get('details', {}).get('eventType') == 'game_advisory']
+        if any(any(type(event.get('count', {}).get(key)) is not int
+                   for key in ('balls', 'strikes', 'outs')) for event in advisories):
+            raise ValueError('game advisory count evidence incomplete')
     result, plays_by_ab = {}, {}
     for play in body['liveData']['plays']['allPlays']:
         event = event_name(play['result'].get('eventType'))
@@ -207,6 +214,24 @@ def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
         raise ValueError('official PA evidence set mismatch')
     for pk, source in evidence.items():
         source_endpoint = source['receipt']['endpoint']
+        current_endpoints = {
+            endpoint(pk, pitch_evidence=True),
+            endpoint(pk, accounting_evidence=True),
+            endpoint(pk, inning_evidence=True)}
+        v10_endpoints = {
+            endpoint(pk, pitch_evidence=True, advisory_outs=False),
+            endpoint(pk, accounting_evidence=True, advisory_outs=False),
+            endpoint(pk, inning_evidence=True, advisory_outs=False)}
+        legacy_endpoints = {
+            endpoint(pk, pitch_evidence=True, game_advisories=False),
+            endpoint(pk, accounting_evidence=True, game_advisories=False),
+            endpoint(pk, inning_evidence=True, game_advisories=False)}
+        if (source_endpoint in current_endpoints | v10_endpoints | legacy_endpoints
+                and ((method == METHOD and source_endpoint not in current_endpoints)
+                     or (method == GAME_ADVISORY_METHOD and source_endpoint not in v10_endpoints)
+                     or (method not in (METHOD, GAME_ADVISORY_METHOD)
+                         and source_endpoint not in legacy_endpoints))):
+            raise ValueError('official PA source endpoint does not match reconciliation method')
         pitch_evidence = source_endpoint in {
             endpoint(pk, pitch_evidence=True),
             endpoint(pk, pitch_evidence=True, advisory_outs=False),

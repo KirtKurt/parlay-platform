@@ -111,6 +111,14 @@ def test_v6_substitution_artifacts_still_reproduce(kind):
     from tests.ks1_recent.test_extended_substitutions import extended_fixture
     from ks1.official_outcomes import verify_reconciliation
     bundle, raw, _, source = extended_fixture(kind)
+    source['receipt'].update(endpoint=endpoint('1', pitch_evidence=True,
+                                               game_advisories=False),
+                             sha256=digest(source['data']))
+    source['retained_receipt'] = {
+        'name': source_name('1', raw['rows'], pitch_evidence=True,
+                            game_advisories=False),
+        'versionId': 'official-v6',
+        'sha256': digest({key: source[key] for key in ('data', 'receipt')})}
     rows, changes = reconciled_rows(raw, {'1': source}, method=SUBSTITUTION_METHOD)
     payload = {'date': raw['date'], 'raw_statcast': raw, 'rows': rows,
         'outcome_reconciliation': {'method': SUBSTITUTION_METHOD, 'official_sources': {'1': source},

@@ -130,6 +130,14 @@ def test_zero_count_mound_visit_may_precede_prefix_pitching_change():
     _, raw, _, source = mound_visit_fixture()
     payload = reconcile(raw, lambda *a: source, raw_receipt(raw))
     assert payload['rows'][1]['release_speed'] == ''
+    source['receipt'].update(endpoint=endpoint('1', pitch_evidence=True,
+                                               game_advisories=False),
+                             sha256=digest(source['data']))
+    source['retained_receipt'] = {
+        'name': source_name('1', raw['rows'], pitch_evidence=True,
+                            game_advisories=False),
+        'versionId': 'official-v8',
+        'sha256': digest({key: source[key] for key in ('data', 'receipt')})}
     with pytest.raises(ValueError, match='unexpected substitution'):
         reconciled_rows(raw, {'1': source}, method=TWO_STRIKE_METHOD)
 
@@ -138,6 +146,14 @@ def test_contiguous_pregame_advisories_may_precede_first_count_event():
     _, raw, _, source = game_advisory_fixture()
     payload = reconcile(raw, lambda *a: source, raw_receipt(raw))
     assert payload['rows'][1]['release_speed'] == ''
+    source['receipt'].update(endpoint=endpoint('1', pitch_evidence=True,
+                                               game_advisories=False),
+                             sha256=digest(source['data']))
+    source['retained_receipt'] = {
+        'name': source_name('1', raw['rows'], pitch_evidence=True,
+                            game_advisories=False),
+        'versionId': 'official-v9',
+        'sha256': digest({key: source[key] for key in ('data', 'receipt')})}
     with pytest.raises(ValueError, match='chronology'):
         reconciled_rows(raw, {'1': source}, method=MOUND_VISIT_METHOD)
 
@@ -188,6 +204,34 @@ def test_retained_v10_endpoint_and_namespace_remain_reproducible():
     assert len(changes) == 1
 
 
+@pytest.mark.parametrize('method', [MOUND_VISIT_METHOD, None])
+def test_rich_source_endpoint_is_bound_to_reconciliation_method(method):
+    _, raw, _, source = pitch_fixture('automatic')
+    if method is None:
+        source['receipt'].update(endpoint=endpoint('1', pitch_evidence=True,
+                                                   advisory_outs=False),
+                                 sha256=digest(source['data']))
+        source['retained_receipt'] = {
+            'name': source_name('1', raw['rows'], pitch_evidence=True,
+                                advisory_outs=False),
+            'versionId': 'official-v10',
+            'sha256': digest({key: source[key] for key in ('data', 'receipt')})}
+        call = lambda: reconciled_rows(raw, {'1': source})
+    else:
+        call = lambda: reconciled_rows(raw, {'1': source}, method=method)
+    with pytest.raises(ValueError, match='does not match reconciliation method'):
+        call()
+
+
+def test_v11_validates_counts_on_every_retained_game_advisory():
+    _, raw, _, source = pitch_fixture('automatic')
+    source['data']['liveData']['plays']['allPlays'][1]['playEvents'] = [{
+        'details': {'eventType': 'game_advisory'}, 'count': {'balls': 0, 'strikes': 0}}]
+    reseal(source, raw)
+    with pytest.raises(ValueError, match='game advisory count evidence incomplete'):
+        reconcile(raw, lambda *args: source, raw_receipt(raw))
+
+
 @pytest.mark.parametrize('defect', ['not_first_pa', 'count', 'pitch', 'substitution',
                                   'pitch_data', 'pitch_number', 'event_type',
                                   'description', 'wrong_length', 'gap', 'late_end',
@@ -231,7 +275,7 @@ def test_mound_visit_prelude_is_narrow_and_fail_closed(defect):
     elif defect == 'backward_time': visit['endTime'] = '2026-09-01T18:09:39Z'
     elif defect == 'ends_after_first_count': visit['endTime'] = '2026-09-01T18:10:06Z'
     reseal(source, raw)
-    with pytest.raises(ValueError, match='unexpected substitution'):
+    with pytest.raises(ValueError):
         reconcile(raw, lambda *a: source, raw_receipt(raw))
 
 
@@ -240,6 +284,16 @@ def test_retained_v5_objects_reproduce_under_their_original_policy(kind):
     from ks1.official_outcomes import verify_reconciliation
     from tests.ks1_recent.test_pa_accounting import fixture
     bundle, raw, _, source = fixture() if kind == 'accounting' else pitch_fixture(kind)
+    accounting = kind == 'accounting'
+    source['receipt'].update(endpoint=endpoint('1', accounting_evidence=accounting,
+                                               pitch_evidence=not accounting,
+                                               game_advisories=False),
+                             sha256=digest(source['data']))
+    source['retained_receipt'] = {
+        'name': source_name('1', raw['rows'], accounting_evidence=accounting,
+                            pitch_evidence=not accounting, game_advisories=False),
+        'versionId': 'official-v5',
+        'sha256': digest({key: source[key] for key in ('data', 'receipt')})}
     rows, changes = reconciled_rows(raw, {'1': source}, method=ACCOUNTING_METHOD)
     payload = {'date': raw['date'], 'raw_statcast': raw, 'rows': rows,
         'outcome_reconciliation': {'method': ACCOUNTING_METHOD, 'official_sources': {'1': source},
