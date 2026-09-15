@@ -232,7 +232,7 @@ class FakeEvents:
             "RuleNames": [
                 name
                 for name, rule in self.rules.items()
-                if rule["Arn"] == target_arn
+                if target_arn in rule.get("Arns", [rule["Arn"]])
             ]
         }
 
@@ -246,7 +246,12 @@ class FakeEvents:
 
     def list_targets_by_rule(self, **kwargs: Any) -> dict[str, Any]:
         rule_name = kwargs["Rule"]
-        target = {"Arn": self.rules[rule_name]["Arn"]}
+        targets = [
+            {"Arn": arn}
+            for arn in self.rules[rule_name].get(
+                "Arns", [self.rules[rule_name]["Arn"]]
+            )
+        ]
         role = (
             rule_name.split("-", 1)[1].split("-", 1)[0]
             if "-" in rule_name
@@ -255,20 +260,22 @@ class FakeEvents:
         expected_policies = deploy_identity.SCHEDULE_RETRY_POLICIES.get(role)
         if expected_policies is not None:
             schedule = self.rules[rule_name]["ScheduleExpression"]
-            target.update(
-                {
-                    "RetryPolicy": dict(
-                        expected_policies.get(
-                            schedule,
-                            next(iter(expected_policies.values())),
-                        )
-                    ),
-                }
-            )
+            for target in targets:
+                target.update(
+                    {
+                        "RetryPolicy": dict(
+                            expected_policies.get(
+                                schedule,
+                                next(iter(expected_policies.values())),
+                            )
+                        ),
+                    }
+                )
         for selector in ("Input", "InputPath", "InputTransformer"):
             if selector in self.rules[rule_name]:
-                target[selector] = self.rules[rule_name][selector]
-        return {"Targets": [target]}
+                for target in targets:
+                    target[selector] = self.rules[rule_name][selector]
+        return {"Targets": targets}
 
     def list_rules(self, **kwargs: Any) -> dict[str, Any]:
         return {"Rules": [{"Name": name} for name in self.rules]}
@@ -1404,7 +1411,9 @@ def test_allows_enabled_positively_identified_isolated_mlb_auto_writer(aws) -> N
         "Handler": "orchestrator_v3.lambda_handler",
         "Runtime": "python3.11",
         "Environment": {"Variables": {
-            "MLB_AUTO_TABLE": "isolated-table",
+            "MLB_AUTO_TABLE": (
+                "parlay-platform-mlb-auto-llm-MLBAutoLLMTable-AbCd1234"
+            ),
             "BBS_API_SECRET_ARN": (
                 "arn:aws:secretsmanager:us-east-1:123456789012:secret:isolated"
             ),
@@ -1431,6 +1440,88 @@ def test_allows_enabled_positively_identified_isolated_mlb_auto_writer(aws) -> N
     }]
 
 
+def test_rejects_qualified_target_without_qualifier_configuration_proof(aws) -> None:
+    isolated_arn = _arn(
+        "parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-AbCd1234"
+    )
+    aws["lambda"].configurations["isolated-mlb-auto"] = {
+        "FunctionName": (
+            "parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-AbCd1234"
+        ),
+        "FunctionArn": isolated_arn,
+        "Handler": "orchestrator_v3.lambda_handler",
+        "Runtime": "python3.11",
+        "Environment": {"Variables": {
+            "MLB_AUTO_TABLE": (
+                "parlay-platform-mlb-auto-llm-MLBAutoLLMTable-AbCd1234"
+            ),
+            "BBS_API_SECRET_ARN": (
+                "arn:aws:secretsmanager:us-east-1:123456789012:secret:isolated"
+            ),
+        }},
+    }
+    aws["events"].rules["parlay-platform-mlb-auto-prod-train-1h"] = {
+        "State": "ENABLED",
+        "ScheduleExpression": "rate(1 hour)",
+        "Arn": f"{isolated_arn}:live",
+    }
+
+    result = _verify()
+
+    assert result["ok"] is False
+    target = result["alternateWriterAuthority"]["enabledAlternateRules"][0][
+        "targets"
+    ][0]
+    assert target["authorizedIsolatedWriter"] is False
+    assert target["isolatedWriterFunction"] is None
+
+
+def test_rejects_unclassified_second_lambda_on_isolated_schedule(aws) -> None:
+    isolated_arn = _arn(
+        "parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-AbCd1234"
+    )
+    other_arn = _arn("unclassified-function")
+    aws["lambda"].configurations["isolated-mlb-auto"] = {
+        "FunctionName": (
+            "parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-AbCd1234"
+        ),
+        "FunctionArn": isolated_arn,
+        "Handler": "orchestrator_v3.lambda_handler",
+        "Runtime": "python3.11",
+        "Environment": {"Variables": {
+            "MLB_AUTO_TABLE": (
+                "parlay-platform-mlb-auto-llm-MLBAutoLLMTable-AbCd1234"
+            ),
+            "BBS_API_SECRET_ARN": (
+                "arn:aws:secretsmanager:us-east-1:123456789012:secret:isolated"
+            ),
+        }},
+    }
+    aws["lambda"].configurations["other"] = {
+        "FunctionName": "unclassified-function",
+        "FunctionArn": other_arn,
+        "Handler": "other.lambda_handler",
+        "Runtime": "python3.11",
+        "Environment": {"Variables": {}},
+    }
+    aws["events"].rules["hourly-automation"] = {
+        "State": "ENABLED",
+        "ScheduleExpression": "rate(1 hour)",
+        "Arn": isolated_arn,
+        "Arns": [isolated_arn, other_arn],
+    }
+
+    result = _verify()
+
+    assert result["ok"] is False
+    targets = result["alternateWriterAuthority"]["enabledAlternateRules"][0][
+        "targets"
+    ]
+    assert len(targets) == 2
+    assert targets[0]["authorizedIsolatedWriter"] is True
+    assert targets[1]["authorizedIsolatedWriter"] is False
+
+
 def test_rejects_mlb_auto_writer_when_isolation_contract_is_incomplete(aws) -> None:
     isolated_arn = _arn(
         "parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-AbCd1234"
@@ -1443,7 +1534,9 @@ def test_rejects_mlb_auto_writer_when_isolation_contract_is_incomplete(aws) -> N
         "Handler": "orchestrator_v3.lambda_handler",
         "Runtime": "python3.11",
         "Environment": {"Variables": {
-            "MLB_AUTO_TABLE": "isolated-table",
+            "MLB_AUTO_TABLE": (
+                "parlay-platform-mlb-auto-llm-MLBAutoLLMTable-AbCd1234"
+            ),
             "BBS_API_SECRET_ARN": (
                 "arn:aws:secretsmanager:us-east-1:123456789012:secret:isolated"
             ),

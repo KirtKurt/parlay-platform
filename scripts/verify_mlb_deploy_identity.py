@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -305,6 +306,16 @@ HISTORICAL_NONCANONICAL_WRITER_TOKENS = (
 ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN = (
     "PARLAYPLATFORMMLBAUTOLLMMLBAUTOLLMFUNCTION"
 )
+ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN = re.compile(
+    r"^parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-[A-Za-z0-9]+$"
+)
+ISOLATED_THREE_SOURCE_TABLE_NAME_PATTERN = re.compile(
+    r"^parlay-platform-mlb-auto-llm-MLBAutoLLMTable-[A-Za-z0-9]+$"
+)
+ISOLATED_THREE_SOURCE_SECRET_ARN_PATTERN = re.compile(
+    r"^arn:(?:aws|aws-us-gov|aws-cn):secretsmanager:[a-z0-9-]+:"
+    r"[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$"
+)
 ISOLATED_THREE_SOURCE_HANDLER = "orchestrator.lambda_handler"
 ISOLATED_THREE_SOURCE_HANDLERS = (
     ISOLATED_THREE_SOURCE_HANDLER,
@@ -459,23 +470,19 @@ def _is_authorized_isolated_three_source_auto(function: Any) -> bool:
     if not isinstance(environment, dict):
         return False
 
-    boundary_present = all(
-        str(environment.get(key) or "").strip()
-        for key in ISOLATED_THREE_SOURCE_BOUNDARY_ENVIRONMENT
-    )
+    isolated_table = str(environment.get("MLB_AUTO_TABLE") or "").strip()
     forbidden_absent = all(
         not str(environment.get(key) or "").strip()
         for key in ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT
     )
     secret_arn = str(environment.get("BBS" + "_API_SECRET_ARN") or "")
     return bool(
-        ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN in _authority_text(name)
+        ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN.fullmatch(name)
         and arn
         and handler in ISOLATED_THREE_SOURCE_HANDLERS
-        and boundary_present
+        and ISOLATED_THREE_SOURCE_TABLE_NAME_PATTERN.fullmatch(isolated_table)
         and forbidden_absent
-        and secret_arn.startswith("arn:")
-        and ":secretsmanager:" in secret_arn
+        and ISOLATED_THREE_SOURCE_SECRET_ARN_PATTERN.fullmatch(secret_arn)
     )
 
 
@@ -1498,8 +1505,10 @@ def verify(
                 "functionArn": function_arn,
                 "handler": function_handler or None,
                 "isolatedNameContractMatches": (
-                    ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN
-                    in _authority_text(function_name)
+                    ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN.fullmatch(
+                        function_name
+                    )
+                    is not None
                 ),
                 "isolatedBoundaryEnvironmentPresent": sorted(
                     key
@@ -1578,13 +1587,17 @@ def verify(
             rule_name = str(rule.get("name") or "")
             targets = rule.get("targets") or []
             rule_looks_like_writer = _is_mlb_pull_or_training_writer(rule_name)
-            relevant_targets = []
+            lambda_targets = []
+            rule_has_writer_target = False
             for target in targets:
                 target_arn = str(target.get("Arn") or "")
                 target_base_arn = _base_lambda_arn(target_arn)
                 function = writer_functions_by_arn.get(target_base_arn)
-                isolated_function = isolated_writer_functions_by_arn.get(
-                    target_base_arn
+                target_is_unqualified = target_arn == target_base_arn
+                isolated_function = (
+                    isolated_writer_functions_by_arn.get(target_base_arn)
+                    if target_is_unqualified
+                    else None
                 )
                 observed_function = all_functions_by_arn.get(target_base_arn)
                 target_looks_like_writer = bool(
@@ -1592,9 +1605,10 @@ def verify(
                     or isolated_function
                     or _is_mlb_pull_or_training_writer(target_arn)
                 )
-                if not rule_looks_like_writer and not target_looks_like_writer:
-                    continue
-                relevant_targets.append({
+                rule_has_writer_target = (
+                    rule_has_writer_target or target_looks_like_writer
+                )
+                lambda_targets.append({
                     "arn": target_arn,
                     "id": target.get("Id"),
                     "knownWriterFunction": function,
@@ -1603,6 +1617,9 @@ def verify(
                     "authorizedIsolatedWriter": bool(isolated_function),
                     "isolatedWriterFunction": isolated_function,
                 })
+            if not rule_looks_like_writer and not rule_has_writer_target:
+                continue
+            relevant_targets = lambda_targets
             if not relevant_targets:
                 continue
             alternate_targets = [

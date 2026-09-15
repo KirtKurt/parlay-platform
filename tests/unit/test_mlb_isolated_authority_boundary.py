@@ -23,7 +23,9 @@ def _isolated_function() -> dict:
         "Handler": "orchestrator.lambda_handler",
         "Environment": {
             "Variables": {
-                "MLB_AUTO_TABLE": "isolated-table",
+                "MLB_AUTO_TABLE": (
+                    "parlay-platform-mlb-auto-llm-MLBAutoLLMTable-AbCd1234"
+                ),
                 "ODDS_API_KEY": "configured",
                 "BBS_API_SECRET_ARN": (
                     "arn:aws:secretsmanager:us-east-1:123456789012:"
