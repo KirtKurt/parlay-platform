@@ -183,6 +183,26 @@ jobs:
               assert state == 'ENABLED', (name, state)
           print('historical_rules_enabled', names)
           PY
+
+
+  # Step A split (2026-09-15): KSS1 trainer/readback stays in verify-and-deploy
+  # so champion T-10 health cannot block it. soccer-auto-health-proof-v1 is
+  # unchanged and still asserted here. Do not drop that assert. A red
+  # DEGRADED_INTEGRITY fails this job only.
+  prove-isolated-runtime:
+    name: Prove isolated runtime integrations
+    needs: verify-and-deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
       - name: Prove isolated runtime integrations
         env:
           SOCCER_AWS_REGION: ${{ secrets.AWS_REGION }}

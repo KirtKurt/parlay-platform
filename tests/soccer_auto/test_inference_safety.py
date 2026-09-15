@@ -406,6 +406,53 @@ class InferenceSafetyTests(unittest.TestCase):
         self.assertEqual(result["predictions_written"], 1)
         self.assertFalse(store.put_lock_called)
 
+    def test_freeze_scans_sixty_minutes_and_processes_open_t10_first(self):
+        class OrderStore(FreezeStore):
+            def __init__(self):
+                super().__init__()
+                later = event_row(commence_time="2026-08-14T14:40:00Z")
+                later["event_key"] = "EVENT#later"
+                t10 = event_row(commence_time="2026-08-14T14:00:00Z")
+                t10["event_key"] = EVENT_KEY
+                self.rows = [later, t10]
+                self.requested = None
+                self.seen_keys = []
+
+            def active_events_between(self, start, end):
+                self.requested = (start, end)
+                return list(self.rows)
+
+            def get_lock(
+                self,
+                event_key,
+                target="result_1x2",
+                *,
+                schedule_revision=None,
+                horizon=TRAINING_LOCK_HORIZON,
+            ):
+                self.seen_keys.append((event_key, horizon))
+                return super().get_lock(
+                    event_key,
+                    target,
+                    schedule_revision=schedule_revision,
+                    horizon=horizon,
+                )
+
+        store = OrderStore()
+        observed = datetime(2026, 8, 14, 13, 49, 0, tzinfo=timezone.utc)
+        with patch("soccer_auto.inference.SoccerStore", return_value=store), patch(
+            "soccer_auto.inference.now_utc", return_value=observed
+        ), patch("soccer_auto.inference._active_models", return_value=[CHAMPION]), patch(
+            "soccer_auto.inference._load_model", return_value=FakeModel()
+        ):
+            freeze_handler({}, None)
+
+        self.assertEqual(store.requested[0], "2026-08-14T13:49:00Z")
+        self.assertEqual(store.requested[1], "2026-08-14T14:49:00Z")
+        t10_keys = [key for key, horizon in store.seen_keys if horizon == "T10"]
+        self.assertEqual(t10_keys[0], EVENT_KEY)
+        self.assertIn("EVENT#later", t10_keys)
+
     def test_revision_versions_lock_and_stale_lock_cannot_infer(self):
         build_store = LockBuildStore()
         lock = build_frozen_lock(

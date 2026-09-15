@@ -229,9 +229,14 @@ class IsolationTests(unittest.TestCase):
         self.assertFalse((ROOT / "soccer_auto/.deploy-manifest-proof-once").exists())
         self.assertFalse((ROOT / "soccer_auto/.deploy-repair-once").exists())
         workflow_data = yaml.load(workflow, Loader=yaml.BaseLoader)
+        self.assertIn("prove-isolated-runtime", workflow_data["jobs"])
+        self.assertEqual(
+            workflow_data["jobs"]["prove-isolated-runtime"]["needs"],
+            "verify-and-deploy",
+        )
         runtime_step = next(
             step
-            for step in workflow_data["jobs"]["verify-and-deploy"]["steps"]
+            for step in workflow_data["jobs"]["prove-isolated-runtime"]["steps"]
             if step.get("name") == "Prove isolated runtime integrations"
         )
         self.assertNotIn("${{", runtime_step["run"])
@@ -239,6 +244,12 @@ class IsolationTests(unittest.TestCase):
             set(runtime_step["env"]),
             {"SOCCER_AWS_REGION", "SOCCER_SHARED_QUOTA_RESERVE_PERCENT"},
         )
+        trainer_names = {
+            step.get("name")
+            for step in workflow_data["jobs"]["verify-and-deploy"]["steps"]
+        }
+        self.assertIn("Train KSS1 goals and verify recorded-picks readback", trainer_names)
+        self.assertNotIn("Prove isolated runtime integrations", trainer_names)
 
     def test_historical_backfill_defaults_on_and_remains_observable_with_kill_switch(self) -> None:
         template = yaml.load(
