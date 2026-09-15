@@ -5,20 +5,25 @@ import pytest
 from ks1.inventory import RESEARCH
 from ks1.recent_statcast import restore_recent_history
 from ks1.statcast_history import load_training_statcast
-from ks1.statcast_recovery import recover
+from ks1.statcast_recovery import PREFIX, recovery_pointer_key
+from ks1.official_outcomes import digest, reconcile, schedule_times
+from mlb_research.mlb_research_store_v1 import Store
 from tests.ks1_recent.test_official_outcomes import unfinished_fixture
-from tests.ks1_recent.test_recovery import MemoryS3, authorize
+from tests.ks1_recent.test_recovery import MemoryS3
 
 
 def retained_fixture(monkeypatch):
-    authorize(monkeypatch)
     bundle, raw, key, source = unfinished_fixture('')
     s3 = MemoryS3(); s3.seed(key, raw)
-    result = recover(bundle, s3, 'b', load_training_statcast(bundle, s3, 'b'),
-                     reconcile_official=True,
-                     fetch=lambda value: pytest.fail('retained source is sufficient'),
-                     fetch_official=lambda url: (source['data'], source['receipt']))
-    assert result['recovered_dates'] == [raw['date']]
+    # Build retained source fixtures without importing the training runtime;
+    # Phase 1 intentionally does not install LightGBM.
+    store = Store('b', s3)
+    raw_pointer = store.put(PREFIX + raw['date'] + '/raw/' + digest(raw) + '.json', raw)
+    source['retained_receipt'] = store.put(source['retained_receipt']['name'],
+                                          {key: source[key] for key in ('data', 'receipt')})
+    payload = reconcile(raw, lambda pk, rows: source, raw_pointer, schedule_times(bundle['schedule']))
+    pointer = store.put(PREFIX + raw['date'] + '/objects/' + digest(payload) + '.json', payload)
+    s3.seed(recovery_pointer_key(raw['date']), {'verified_artifact': pointer})
     prior = {'games': bundle['full'], 'schedule': bundle['schedule'], 'priorYear': 2025,
              'priorYearCoverageComplete': True, 'currentYearCoverageComplete': True}
     history = {'games': bundle['full'], 'schedule': bundle['schedule'],

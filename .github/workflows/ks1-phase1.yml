@@ -40,10 +40,19 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
       - name: Diagnose retained physical attribution without source writes
-        if: github.head_ref == 'codex/ks1-physical-count-diagnostics-20260915'
-        run: python -m ks1.statcast_diagnostics --date 2026-05-04 --date 2026-06-04 --output /tmp/ks1-physical-diagnostics
+        if: >-
+          github.head_ref == 'codex/ks1-physical-count-diagnostics-20260915' ||
+          github.head_ref == 'codex/ks1-live-retained-statcast-20260915'
+        run: |
+          if [[ "$GITHUB_HEAD_REF" == 'codex/ks1-live-retained-statcast-20260915' ]]; then
+            python -m ks1.statcast_diagnostics --date 2026-07-28 --date 2026-09-01 --output /tmp/ks1-physical-diagnostics
+          else
+            python -m ks1.statcast_diagnostics --date 2026-05-04 --date 2026-06-04 --output /tmp/ks1-physical-diagnostics
+          fi
       - name: Publish bounded diagnostic replay before the full build
-        if: github.head_ref == 'codex/ks1-physical-count-diagnostics-20260915'
+        if: >-
+          github.head_ref == 'codex/ks1-physical-count-diagnostics-20260915' ||
+          github.head_ref == 'codex/ks1-live-retained-statcast-20260915'
         uses: actions/upload-artifact@v4
         with:
           name: ks1-physical-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
