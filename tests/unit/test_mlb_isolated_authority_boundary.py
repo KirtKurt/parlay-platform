@@ -78,6 +78,34 @@ def test_deterministic_repair_rejects_partial_hardened_verifier(tmp_path) -> Non
             raise AssertionError(f"partial contract was accepted: {expression}")
 
 
+def test_deterministic_repair_rejects_each_missing_root_binding(tmp_path) -> None:
+    source = repair_boundary.VERIFIER.read_text(encoding="utf-8")
+    assignment = "ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT = ("
+    start = source.index(assignment)
+    end = source.index("\n)\n", start) + 3
+    block = source[start:end]
+
+    for index, key in enumerate(
+        repair_boundary._HARDENED_STRING_CONSTANTS[
+            "ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT"
+        ]
+    ):
+        verifier = tmp_path / f"missing_root_binding_{index}.py"
+        partial_block = block.replace(f'    "{key}",\n', "", 1)
+        verifier.write_text(
+            source[:start] + partial_block + source[end:],
+            encoding="utf-8",
+        )
+
+        try:
+            repair_boundary.repair(verifier)
+        except RuntimeError as error:
+            assert "hardened isolated authority contract is incomplete" in str(error)
+            assert "ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT" in str(error)
+        else:
+            raise AssertionError(f"missing root binding was accepted: {key}")
+
+
 def test_isolated_lookalike_with_any_root_authority_binding_is_rejected() -> None:
     for key in (
         "SNAPSHOTS_TABLE",

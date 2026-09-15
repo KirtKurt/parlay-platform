@@ -9,10 +9,93 @@ tables or artifacts are attached.
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 
 VERIFIER = Path("scripts/verify_mlb_deploy_identity.py")
+
+_HARDENED_STRING_CONSTANTS = {
+    "ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN": (
+        "PARLAYPLATFORMMLBAUTOLLMMLBAUTOLLMFUNCTION"
+    ),
+    "ISOLATED_THREE_SOURCE_HANDLER": "orchestrator.lambda_handler",
+    "ISOLATED_THREE_SOURCE_HANDLERS": (
+        "orchestrator.lambda_handler",
+        "orchestrator_v2.lambda_handler",
+        "orchestrator_v3.lambda_handler",
+    ),
+    "ISOLATED_THREE_SOURCE_REQUIRED_ENVIRONMENT": (
+        "MLB_AUTO_TABLE",
+        "ODDS_API_KEY",
+        "BBS_API_SECRET_ARN",
+        "MLB_AUTO_FIRST_GAME_SAFETY_MINUTES",
+        "MLB_AUTO_BEDROCK_MODELS",
+    ),
+    "ISOLATED_THREE_SOURCE_BOUNDARY_ENVIRONMENT": (
+        "MLB_AUTO_TABLE",
+        "BBS_API_SECRET_ARN",
+    ),
+    "ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT": (
+        "SNAPSHOTS_TABLE",
+        "SIGNALS_TABLE",
+        "SIGNAL_LEDGER_TABLE",
+        "PREDICTIONS_TABLE",
+        "OUTCOMES_TABLE",
+        "MLB_ML_ARTIFACTS_BUCKET",
+    ),
+}
+_HARDENED_REGEX_CONSTANTS = {
+    "ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN": (
+        r"^parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-[A-Za-z0-9]+$"
+    ),
+    "ISOLATED_THREE_SOURCE_TABLE_NAME_PATTERN": (
+        r"^parlay-platform-mlb-auto-llm-MLBAutoLLMTable-[A-Za-z0-9]+$"
+    ),
+    "ISOLATED_THREE_SOURCE_SECRET_ARN_PATTERN": (
+        r"^arn:(?:aws|aws-us-gov|aws-cn):secretsmanager:[a-z0-9-]+:"
+        r"[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$"
+    ),
+}
+
+
+def _static_string_value(node: ast.AST, known: dict[str, object] | None = None):
+    known = known or {}
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.Name):
+        return known.get(node.id)
+    if isinstance(node, ast.Tuple):
+        values = tuple(_static_string_value(item, known) for item in node.elts)
+        return values if all(value is not None for value in values) else None
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _static_string_value(node.left, known)
+        right = _static_string_value(node.right, known)
+        if isinstance(left, str) and isinstance(right, str):
+            return left + right
+    return None
+
+
+def _hardened_constant_values(source: str) -> dict[str, object]:
+    values: dict[str, object] = {}
+    try:
+        module = ast.parse(source)
+    except SyntaxError as error:
+        raise RuntimeError(
+            "hardened isolated authority contract is incomplete: invalid source"
+        ) from error
+    for node in module.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name):
+            continue
+        if target.id in _HARDENED_STRING_CONSTANTS:
+            values[target.id] = _static_string_value(node.value, values)
+        elif target.id in _HARDENED_REGEX_CONSTANTS:
+            if isinstance(node.value, ast.Call) and node.value.args:
+                values[target.id] = _static_string_value(node.value.args[0], values)
+    return values
 
 
 def _replace_once(text: str, old: str, new: str, label: str) -> str:
@@ -33,15 +116,27 @@ def repair(path: Path = VERIFIER) -> bool:
         "and forbidden_absent",
         "and unexpected_provider_authority_absent",
         "ISOLATED_THREE_SOURCE_SECRET_ARN_PATTERN.fullmatch(secret_arn)",
-        '"PREDICTIONS_TABLE"',
-        '"SIGNAL_LEDGER_TABLE"',
         "isolated_writer_functions_by_arn",
         '"authorizedIsolatedWriterFunctions"',
         "if target_is_unqualified\n                    else None",
         "ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN\n"
         "                            in _authority_text(",
     )
-    if all(expression in source for expression in hardened_contract_expressions):
+    constant_values = _hardened_constant_values(source)
+    constants_match = all(
+        constant_values.get(name) == expected
+        for name, expected in {
+            **_HARDENED_STRING_CONSTANTS,
+            **_HARDENED_REGEX_CONSTANTS,
+        }.items()
+    )
+    if (
+        constants_match
+        and all(
+            expression in source
+            for expression in hardened_contract_expressions
+        )
+    ):
         return False
     if (
         "ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN" in source
@@ -52,6 +147,14 @@ def repair(path: Path = VERIFIER) -> bool:
             for expression in hardened_contract_expressions
             if expression not in source
         ]
+        missing.extend(
+            f"{name}={constant_values.get(name)!r}"
+            for name, expected in {
+                **_HARDENED_STRING_CONSTANTS,
+                **_HARDENED_REGEX_CONSTANTS,
+            }.items()
+            if constant_values.get(name) != expected
+        )
         raise RuntimeError(
             "hardened isolated authority contract is incomplete: "
             + ",".join(missing)
