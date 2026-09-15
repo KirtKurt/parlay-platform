@@ -145,6 +145,51 @@ def test_direct_request_preserves_auth_and_query_contract(transport):
     assert responses[0].closed
 
 
+@pytest.mark.parametrize("code", [401, 403, 404, 429, 500, 503])
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+def test_http_errors_close_without_reading_body(transport, monkeypatch, code, operation):
+    install, calls, responses = transport
+    install(code, body=b'offline-test-token: private upstream diagnostic')
+
+    def unexpected_read(*args, **kwargs):
+        pytest.fail("HTTP error bodies must not be consumed")
+
+    monkeypatch.setattr(bbd_provider.HTTPError, "read", unexpected_read, raising=False)
+    result = getattr(bbd_provider, operation)()
+
+    expected_reason = f"BBD_HTTP_{code}"
+    if code in {401, 403, 404}:
+        if operation == "health":
+            expected_reason = "BBD_AUTH_OR_DISCOVERY_FAILED"
+            assert result["auth_status"] == result["sports_status"] == code
+        elif operation == "events":
+            expected_reason = "BBD_MATCH_ENDPOINT_UNAVAILABLE_OR_UNENTITLED"
+            assert result["status"] == code
+    assert result["ok"] is False
+    assert result["reason"] == expected_reason
+    assert len(calls) == (2 if operation == "health" and code in {401, 403, 404} else 1)
+    assert all(response.closed for response in responses)
+    assert "offline-test-token" not in str(result)
+    assert "private upstream diagnostic" not in str(result)
+    if operation == "health":
+        assert result["sports_count"] is None
+    else:
+        assert result[operation] == []
+
+
+@pytest.mark.parametrize("code", [401, 403, 404, 429, 500, 503])
+def test_direct_http_error_contains_only_status(transport, code):
+    install, _, responses = transport
+    install(code, body=b'offline-test-token: private upstream diagnostic')
+
+    with pytest.raises(bbd_provider.BBDError) as caught:
+        bbd_provider._request("/v1/sports")
+
+    assert str(caught.value) == f"BBD_HTTP_{code}"
+    assert caught.value.__suppress_context__ is True
+    assert responses[0].closed
+
+
 @pytest.mark.parametrize("base_url", [
     "http://bbd.invalid", "ftp://bbd.invalid", "//bbd.invalid", "https:///missing-host",
     "https://user:password@bbd.invalid", "https://user@bbd.invalid",
