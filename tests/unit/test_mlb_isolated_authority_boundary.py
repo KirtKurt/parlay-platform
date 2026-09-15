@@ -70,17 +70,22 @@ def test_deterministic_repair_rejects_newline_normalized_hardened_verifier(
         raise AssertionError("newline-mutated verifier bytes were accepted")
 
 
-def test_deterministic_repair_rejects_every_legacy_partial_marker(tmp_path) -> None:
-    for index, marker in enumerate(repair_boundary.ISOLATED_AUTHORITY_PARTIAL_MARKERS):
+def test_deterministic_repair_rejects_legacy_and_partial_inputs(tmp_path) -> None:
+    legacy_fragments = (
+        "# pristine legacy verifier\n",
+        "ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN = 'legacy'\n",
+        "for function in _root_authority_lambda_functions(lambdas):\n",
+    )
+    for index, source in enumerate(legacy_fragments):
         verifier = tmp_path / f"legacy_partial_{index}.py"
-        verifier.write_text(f"# partial repair\n{marker}\n", encoding="utf-8")
+        verifier.write_text(source, encoding="utf-8")
 
         try:
             repair_boundary.repair(verifier)
         except RuntimeError as error:
             assert "hardened isolated authority contract is incomplete" in str(error)
         else:
-            raise AssertionError(f"legacy partial marker was accepted: {marker}")
+            raise AssertionError(f"legacy or partial source was accepted: {index}")
 
 
 def test_deterministic_repair_rejects_partial_hardened_verifier(tmp_path) -> None:
