@@ -1,0 +1,77 @@
+name: Soccer KSS1 reuse archive and freeze
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soccer-kss1-reuse-freeze
+  cancel-in-progress: false
+
+jobs:
+  reuse-train-freeze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Reuse installed archive or fail closed
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          goals_function=$(aws cloudformation describe-stack-resource --stack-name parlay-platform-soccer-auto --logical-resource-id SoccerGoalsTrainerFunction --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          python - <<'PY'
+          import json, os, subprocess, boto3
+          function = subprocess.check_output([
+              'aws', 'cloudformation', 'describe-stack-resource',
+              '--stack-name', 'parlay-platform-soccer-auto',
+              '--logical-resource-id', 'SoccerGoalsTrainerFunction',
+              '--query', 'StackResourceDetail.PhysicalResourceId', '--output', 'text',
+          ], text=True).strip()
+          config = boto3.client('lambda').get_function_configuration(FunctionName=function)
+          os.environ.update(config['Environment']['Variables'])
+          raise SystemExit(subprocess.call(['python', 'scripts/kss1_admit_or_reuse.py']))
+          PY
+      - name: Train, freeze, read back 12 picks
+        run: |
+          set -euo pipefail
+          goals_function=$(aws cloudformation describe-stack-resource --stack-name parlay-platform-soccer-auto --logical-resource-id SoccerGoalsTrainerFunction --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          aws lambda invoke --function-name "$goals_function" --cli-read-timeout 920 --cli-binary-format raw-in-base64-out --payload '{"action":"train_kss1_goals_shadow"}' /tmp/kss1-training.json > /tmp/kss1-training-meta.json
+          freeze_function=$(aws cloudformation describe-stack-resource --stack-name parlay-platform-soccer-auto --logical-resource-id SoccerFreezeFunction --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          aws lambda invoke --function-name "$freeze_function" --cli-read-timeout 920 --cli-binary-format raw-in-base64-out --payload '{}' /tmp/kss1-freeze.json > /tmp/kss1-freeze-meta.json
+          api_function=$(aws cloudformation describe-stack-resource --stack-name parlay-platform-soccer-auto --logical-resource-id SoccerApiFunction --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          aws lambda invoke --function-name "$api_function" --cli-read-timeout 120 --cli-binary-format raw-in-base64-out --payload '{"path":"/v1/soccer-auto/kss1"}' /tmp/kss1-status.json > /tmp/kss1-status-meta.json
+          aws lambda invoke --function-name "$api_function" --cli-read-timeout 120 --cli-binary-format raw-in-base64-out --payload '{"path":"/v1/soccer-auto/kss1/picks","queryStringParameters":{"selection":"12"}}' /tmp/kss1-picks.json > /tmp/kss1-picks-meta.json
+          python - <<'PY'
+          import json
+          for name in ('training', 'freeze', 'status', 'picks'):
+              meta = json.load(open('/tmp/kss1-' + name + '-meta.json'))
+              assert not meta.get('FunctionError'), (name, meta)
+          training = json.load(open('/tmp/kss1-training.json'))
+          freeze = json.load(open('/tmp/kss1-freeze.json'))
+          status = json.loads(json.load(open('/tmp/kss1-status.json'))['body'])
+          picks = json.loads(json.load(open('/tmp/kss1-picks.json'))['body'])
+          print(json.dumps({
+              'training_ok': training.get('ok'),
+              'trained': (training.get('goals_training') or {}).get('trained'),
+              'model_digest': (training.get('goals_training') or {}).get('model_digest'),
+              'kss1_events_considered': freeze.get('kss1_events_considered'),
+              'kss1_shadow_written': freeze.get('kss1_shadow_written'),
+              'kss1_shadow_skipped': freeze.get('kss1_shadow_skipped'),
+              'picks_count': picks.get('count'),
+              'missing': len(picks.get('missing') or []),
+          }, sort_keys=True))
+          assert training.get('ok') is True, training
+          assert freeze.get('ok') is True, freeze
+          assert status.get('automatic_prediction_allowed') is False
+          assert picks.get('trained_only') is True
+          PY
