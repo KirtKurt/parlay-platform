@@ -58,7 +58,7 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
     from mlb_research_store_v1 import Store
     from mlb_research_sources_v1 import statcast, fetch as source_fetch
     from ks1.official_outcomes import (METHOD, digest, endpoint, reconcile,
-                                       outcome_diagnostics, official_index, verify_official_time, schedule_times, read_retained_evidence, unfinished_at_bats)
+                                       outcome_diagnostics, official_index, verify_official_time, schedule_times, read_retained_evidence, unfinished_at_bats, needs_pitch_evidence, source_name)
     store = Store(bucket, s3)
     fetch = fetch or statcast
     fetch_official = fetch_official or source_fetch
@@ -83,21 +83,25 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
               'statcast_provider_requests': 0, 'official_provider_requests': 0,
               'recovery_method': method}
 
-    def official_source(pk, rows):
+    def official_source(pk, rows, *, force_pitch_evidence=False):
         if time.monotonic() >= deadline:
             raise RecoveryBudgetExhausted()
         # The cache is bound to this exact raw game, not merely its game ID.
-        name = 'sources/official-pa-accounting-v1/' + pk + '/' + digest(rows) + '.json'
+        pitch_evidence = force_pitch_evidence or needs_pitch_evidence(rows)
+        name = source_name(pk, rows, pitch_evidence=pitch_evidence)
         evidence = store.get(name)
         if evidence is None:
             report['provider_requests'] += 1
             report['official_provider_requests'] += 1
-            data, receipt = fetch_official(endpoint(pk))
+            data, receipt = fetch_official(endpoint(pk, pitch_evidence=pitch_evidence))
             evidence = {'data': data, 'receipt': receipt}
             official_index(evidence, pk, value, rows, require_retained=False,
-                           scheduled_times=scheduled_by_game[pk])
+                           scheduled_times=scheduled_by_game[pk], pitch_evidence=pitch_evidence)
             verify_official_time(evidence, completed_by_game[pk])
             evidence = store.once(name, evidence)
+        from ks1.official_pitch_attribution import needs_walkoff_evidence
+        if not pitch_evidence and needs_walkoff_evidence(evidence, rows):
+            return official_source(pk, rows, force_pitch_evidence=True)
         source_reader = Reader(s3, bucket)
         retained = source_reader.read(RESEARCH + name, sha=digest(evidence))
         receipt = source_reader.receipts[-1]
@@ -148,20 +152,21 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                        if str(row.get('game_pk')) in {str(pk) for pk in games}]}
             reason = physical_validation_reason(
                 payload, value, games, physical_expected, physical_batters,
-                physical_invalid)
+                physical_invalid, scheduled_by_game=scheduled_by_game)
             if reason is None:
                 reason = validation_reason(payload, value, games, expected, invalid,
                                            completed_by_game, scheduled_by_game)
             diagnostics = outcome_diagnostics(payload)
-            if reconcile_official and (
-                    reason == 'incomplete_pa_outcome_fields'
-                    or (reason == 'physical_pitch_or_batter_attribution_mismatch'
-                        and unfinished_at_bats(payload)
-                        and physical_pitch_inventory_complete(
-                            payload['rows'], games, physical_expected, physical_batters, physical_invalid)
-                        and validation_reason(payload, value, games, expected, invalid,
-                                              completed_by_game, scheduled_by_game)
-                        in (None, 'incomplete_pa_outcome_fields'))):
+            can_reconcile_credit = (
+                reason == 'physical_pitch_or_batter_attribution_mismatch'
+                and (needs_pitch_evidence(payload['rows'])
+                     or (unfinished_at_bats(payload)
+                         and physical_pitch_inventory_complete(
+                             payload['rows'], games, physical_expected, physical_batters, physical_invalid)
+                         and validation_reason(payload, value, games, expected, invalid,
+                                               completed_by_game, scheduled_by_game)
+                         in (None, 'incomplete_pa_outcome_fields'))))
+            if reconcile_official and (reason == 'incomplete_pa_outcome_fields' or can_reconcile_credit):
                 # Retain the selected raw records separately. This object is
                 # evidence, never a qualified replacement by itself.
                 raw_name = PREFIX + value + '/raw/' + digest(payload) + '.json'
@@ -174,7 +179,7 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                 payload = reconcile(raw, official_source, raw_pointer, scheduled_by_game)
                 reason = physical_validation_reason(
                     payload, value, games, physical_expected, physical_batters,
-                    physical_invalid)
+                    physical_invalid, scheduled_by_game=scheduled_by_game)
                 if reason is None:
                     reason = validation_reason(payload, value, games, expected, invalid,
                                                completed_by_game, scheduled_by_game)
@@ -232,7 +237,7 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
             if (receipt.get('versionId') in (None, '', 'null')
                     or physical_validation_reason(
                         retained, value, games, physical_expected, physical_batters,
-                        physical_invalid) is not None
+                        physical_invalid, scheduled_by_game=scheduled_by_game) is not None
                     or validation_reason(retained, value, games, expected, invalid,
                                          completed_by_game, scheduled_by_game) is not None):
                 raise ValueError('recovered source readback failed')

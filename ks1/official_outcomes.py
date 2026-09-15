@@ -15,7 +15,8 @@ from ks1.statcast_events import (PLATE_APPEARANCE_EVENTS, WOBA_EXCLUDED_EVENTS,
 
 LEGACY_METHOD = 'official_pa_woba_accounting_v1'
 DENOMINATOR_METHOD = 'official_pa_woba_denominator_v2'
-METHOD = 'official_pa_credit_and_denominator_v3'
+CREDIT_METHOD = 'official_pa_credit_and_denominator_v3'
+METHOD = 'official_pitch_attribution_and_pa_credit_v4'
 FIELDS = ('gameData,game,pk,datetime,dateTime,status,abstractGameState,liveData,'
           'plays,allPlays,result,eventType,about,atBatIndex,isComplete,endTime,'
           'matchup,batter,pitcher,id')
@@ -27,8 +28,24 @@ def digest(value):
     return hashlib.sha256(encode(value)).hexdigest()
 
 
-def endpoint(game_id):
-    return f'https://statsapi.mlb.com/api/v1.1/game/{game_id}/feed/live?' + urlencode({'fields': FIELDS})
+def endpoint(game_id, *, pitch_evidence=False):
+    fields = FIELDS
+    if pitch_evidence:
+        fields += (',playEvents,index,type,isPitch,pitchNumber,details,code,call,pitchData,'
+                   'startSpeed,count,balls,strikes,player,replacedPlayer,isSubstitution,'
+                   'position,abbreviation,startTime,runners,movement,end,isOut,runner,'
+                   'isScoringEvent,homeScore,awayScore,inning,isTopInning,isScoringPlay')
+    return f'https://statsapi.mlb.com/api/v1.1/game/{game_id}/feed/live?' + urlencode({'fields': fields})
+
+
+def needs_pitch_evidence(rows):
+    from ks1.official_pitch_attribution import candidate_groups
+    return bool(candidate_groups(rows))
+
+
+def source_name(game_id, rows, *, pitch_evidence=False):
+    prefix = 'official-pitch-attribution-v1' if pitch_evidence else 'official-pa-accounting-v1'
+    return f'sources/{prefix}/{game_id}/{digest(rows)}.json'
 
 
 def event_name(value):
@@ -71,10 +88,13 @@ def unfinished_at_bats(raw):
 
 
 def needed_games(raw, method=METHOD):
-    credit_games = {pk for pk, ab in unfinished_at_bats(raw)} if method == METHOD else set()
+    credit_games = {pk for pk, ab in unfinished_at_bats(raw)} if method in (METHOD, CREDIT_METHOD) else set()
+    if method == METHOD:
+        from ks1.official_pitch_attribution import candidate_groups
+        credit_games.update(pk for pk, ab in candidate_groups(raw['rows']))
     return sorted(credit_games | {positive_id(row['game_pk']) for row in raw['rows']
                    if is_plate_appearance(row) and not complete_pa_outcome(row)
-                   and ((method in (METHOD, DENOMINATOR_METHOD) and denominator_change(row) is not None)
+                   and ((method in (METHOD, CREDIT_METHOD, DENOMINATOR_METHOD) and denominator_change(row) is not None)
                         or (method == LEGACY_METHOD and
                             (missing(row.get('woba_denom'))
                              or (event_name(row.get('events')) in ZERO_EVENTS
@@ -89,15 +109,15 @@ def schedule_times(schedule):
 
 
 def official_index(evidence, game_id, value, raw_rows, *, require_retained=True,
-                   scheduled_times=None):
+                   scheduled_times=None, pitch_evidence=False):
     body, receipt = evidence['data'], evidence['receipt']
-    if (receipt['endpoint'] != endpoint(game_id)
+    if (receipt['endpoint'] != endpoint(game_id, pitch_evidence=pitch_evidence)
             or receipt['sha256'] != digest(body)):
         raise ValueError('official PA source receipt mismatch')
     if require_retained:
         pointer = evidence['retained_receipt']
         if (set(pointer) != {'name', 'versionId', 'sha256'}
-                or pointer['name'] != f'sources/official-pa-accounting-v1/{game_id}/{digest(raw_rows)}.json'
+                or pointer['name'] != source_name(game_id, raw_rows, pitch_evidence=pitch_evidence)
                 or pointer['sha256'] != digest({'data': body, 'receipt': receipt})
                 or pointer['versionId'] in (None, '', 'null')):
             raise ValueError('retained official PA receipt mismatch')
@@ -143,14 +163,16 @@ def official_index(evidence, game_id, value, raw_rows, *, require_retained=True,
 
 
 def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
-    if method not in (METHOD, DENOMINATOR_METHOD, LEGACY_METHOD):
+    if method not in (METHOD, CREDIT_METHOD, DENOMINATOR_METHOD, LEGACY_METHOD):
         raise ValueError('unsupported outcome reconciliation method')
     if set(evidence) != set(needed_games(raw, method)):
         raise ValueError('official PA evidence set mismatch')
     for pk, source in evidence.items():
         official_index(source, pk, raw['date'],
                        [row for row in raw['rows'] if str(row['game_pk']) == pk],
-                       scheduled_times=scheduled_by_game[pk] if scheduled_by_game is not None else None)
+                       scheduled_times=scheduled_by_game[pk] if scheduled_by_game is not None else None,
+                       pitch_evidence=method == METHOD and source['receipt']['endpoint'] ==
+                       endpoint(pk, pitch_evidence=True))
     rows, changes = deepcopy(raw['rows']), []
     for index, row in enumerate(rows):
         pk = str(row['game_pk'])
@@ -178,10 +200,10 @@ def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
             change = {'row_index': index, 'game_pk': pk,
                       'at_bat_number': str(row['at_bat_number']),
                       'fields': fields, 'official_source_sha256': evidence[pk]['receipt']['sha256']}
-            if method in (METHOD, DENOMINATOR_METHOD):
+            if method in (METHOD, CREDIT_METHOD, DENOMINATOR_METHOD):
                 change.update(original_fields=prior, derivation_kind='official_pa_denominator')
             changes.append(change)
-    if method == METHOD:
+    if method in (METHOD, CREDIT_METHOD):
         for (pk, ab), indices in unfinished_at_bats(raw).items():
             source = evidence[pk]
             plays = [p for p in source['data']['liveData']['plays']['allPlays']
@@ -193,7 +215,11 @@ def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
             event = event_name(play['result'].get('eventType'))
             start = (scheduled_by_game[pk][0] if scheduled_by_game is not None
                      else source['data']['gameData']['datetime']['dateTime'])
-            if (event not in NON_PA_AT_BAT_END_EVENTS
+            from ks1.official_pitch_attribution import verified_walkoff_ending
+            walkoff = (method == METHOD and event not in NON_PA_AT_BAT_END_EVENTS
+                       and source['receipt']['endpoint'] == endpoint(pk, pitch_evidence=True)
+                       and verified_walkoff_ending(play, source))
+            if (event not in NON_PA_AT_BAT_END_EVENTS and not walkoff
                     or isinstance(about['atBatIndex'], bool)
                     or not isinstance(about['atBatIndex'], int)
                     or about['atBatIndex'] < 0
@@ -217,17 +243,21 @@ def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
                 denom = current.get('woba_denom')
                 if isinstance(denom, bool) or denom not in (None, '', 0, '0', '0.0', 1, '1', '1.0'):
                     raise ValueError('unfinished at-bat has an invalid wOBA denominator')
-                fields = {'events': event} if i == index else {}
+                fields = {'events': event} if i == index and not walkoff else {}
                 if denom in (None, '', 1, '1', '1.0'):
                     fields['woba_denom'] = 0
-                if not fields:
+                if not fields and not (walkoff and i == index):
                     continue
                 changes.append({'row_index': i, 'game_pk': pk, 'at_bat_number': ab,
                                 'fields': fields,
                                 'original_fields': {key: current.get(key) for key in fields},
-                                'derivation_kind': 'official_non_pa_ending',
+                                'derivation_kind': 'official_non_pa_walkoff' if walkoff else 'official_non_pa_ending',
+                                **({'credited_batter': None} if walkoff and i == index else {}),
                                 'official_source_sha256': source['receipt']['sha256']})
                 current.update(fields)
+    if method == METHOD:
+        from ks1.official_pitch_attribution import derive
+        changes.extend(derive(rows, evidence, scheduled_by_game))
     return rows, changes
 
 
@@ -253,7 +283,7 @@ def verify_official_time(evidence, completed_at):
 def verify_reconciliation(payload, completed_by_game, scheduled_by_game=None):
     proof = payload['outcome_reconciliation']
     raw = payload['raw_statcast']
-    if (proof['method'] not in (METHOD, DENOMINATOR_METHOD, LEGACY_METHOD) or raw['date'] != payload['date']
+    if (proof['method'] not in (METHOD, CREDIT_METHOD, DENOMINATOR_METHOD, LEGACY_METHOD) or raw['date'] != payload['date']
             or 'outcome_reconciliation' in raw or 'raw_statcast' in raw):
         raise ValueError('invalid outcome reconciliation envelope')
     pointer = proof['raw_receipt']
@@ -282,7 +312,8 @@ def read_retained_evidence(payload, reader):
         if (set(pointer) != {'name', 'versionId', 'sha256'}
                 or pointer['versionId'] in (None, '', 'null')
                 or not pointer['name'].startswith(('sources/statcast-recovery-v1/',
-                                                   'sources/official-pa-accounting-v1/'))):
+                                                   'sources/official-pa-accounting-v1/',
+                                                   'sources/official-pitch-attribution-v1/'))):
             raise ValueError('invalid retained outcome source pointer')
         if (reader.pointer(pointer) != expected
                 or reader.receipts[-1]['versionId'] != pointer['versionId']):
@@ -299,3 +330,18 @@ def outcome_diagnostics(payload):
                 'game_pk', 'at_bat_number', 'pitch_number', 'batter', 'pitcher',
                 'events', 'type', 'woba_value', 'woba_denom',
                 'estimated_woba_using_speedangle')} for row in invalid[:8]]}
+
+
+def verified_batter_credits(payload, scheduled_by_game=None):
+    proof = payload.get('outcome_reconciliation', {})
+    if proof.get('method') != METHOD or not any(
+            item.get('derivation_kind') in ('official_mid_at_bat_credit', 'official_non_pa_walkoff')
+            for item in proof.get('derivations', [])):
+        return {}
+    raw = payload['raw_statcast']
+    rows, changes = reconciled_rows(raw, proof['official_sources'], scheduled_by_game, method=METHOD)
+    if rows != payload['rows'] or changes != proof['derivations']:
+        raise ValueError('official batter credits cannot be reproduced')
+    return {(item['game_pk'], item['at_bat_number']): item['credited_batter']
+            for item in changes if item['derivation_kind'] in
+            ('official_mid_at_bat_credit', 'official_non_pa_walkoff') and 'credited_batter' in item}
