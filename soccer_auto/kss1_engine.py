@@ -130,7 +130,19 @@ def predict_match(payload: dict[str, Any], *, goals_model=None, goals_features=N
     # A fitted model must use exactly the inference evaluated on its holdout.
     if goals_model is None:
         grid = blend_with_market(grid, payload.get("market_1x2"))
-    markets = apply_abstain(markets_from_grid(grid), min_1x2=0.40, min_other=0.51)
+    books = {
+        "1x2": payload.get("market_1x2"),
+        "dc": payload.get("market_dc"),
+        "ou25": payload.get("market_ou25"),
+        "btts": payload.get("market_btts"),
+    }
+    markets = apply_abstain(
+        markets_from_grid(grid),
+        min_1x2=0.40,
+        min_other=0.51,
+        books=books,
+        require_positive_edge=goals_model is not None,
+    )
     if mapping.get("publish_ou_btts") is not True:
         markets["ou25_published"] = "ABSTAIN"
         markets["btts_published"] = "ABSTAIN"
