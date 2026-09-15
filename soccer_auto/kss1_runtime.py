@@ -16,6 +16,10 @@ from soccer_auto.kss1_engine import ENGINE_ID, predict_match
 from soccer_auto.kss1_markets import settle_regulation
 from soccer_auto.storage import SoccerStore, now_utc
 
+# T-60 means "no later than 60 minutes before kickoff", not "only inside the
+# last 90 minutes". Deploy-time and morning freezes must see today's slate.
+KSS1_SHADOW_LOOKAHEAD = timedelta(hours=36)
+
 
 def market_prior_from_lock(lock: Mapping[str, Any]) -> dict[str, float] | None:
     features = lock.get("frozen_features") or {}
@@ -30,8 +34,6 @@ def market_prior_from_lock(lock: Mapping[str, Any]) -> dict[str, float] | None:
 
 
 def kss1_prediction_sk(lock: Mapping[str, Any], model_digest: str = ENGINE_ID, *, goals_context_as_of=None) -> str:
-    # Deterministic refits can keep the same model but publish a new context.
-    # Preserve both immutable observations and idempotency within one context.
     context_suffix = f"#CONTEXT#{digest(goals_context_as_of)}" if goals_context_as_of is not None else ""
     return (
         f"PRED#KSS1#REV#{int(lock.get('schedule_revision') or 0)}"
@@ -121,8 +123,6 @@ def write_kss1_shadow(store: SoccerStore, lock: Mapping[str, Any], observed_at: 
     if goals_context is not None and parse_utc(observed_at) > parse_utc(lock["commence_time"]) - timedelta(minutes=60):
         return {"written": False, "reason": "MISSED_T60_GOALS_SHADOW"}
     item = build_kss1_shadow_item(lock, observed_at, goals_context=goals_context, history_index=history_index)
-    # Retain the complete digest-bound evidence in S3 when a large competition
-    # history would otherwise exceed DynamoDB's item limit.
     if len(json.dumps(item, ensure_ascii=False).encode("utf-8")) > 300_000:
         features = item.pop("goals_features")
         item["goals_features_uri"] = store.write_artifact("kss1/prediction_features", features, digest(features))
@@ -173,8 +173,9 @@ def freeze_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, A
     try:
         events = store.active_events_between(
             iso_utc(observed),
-            iso_utc(observed + timedelta(minutes=90)),
+            iso_utc(observed + KSS1_SHADOW_LOOKAHEAD),
         )
+        result["kss1_events_considered"] = len(events)
         for row in events:
             revision = int(row.get("schedule_revision") or 0)
             lock = None
