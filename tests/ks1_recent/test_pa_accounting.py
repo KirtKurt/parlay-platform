@@ -58,9 +58,9 @@ def test_force_out_taxonomy_requires_retained_runner_and_pitch_proof(monkeypatch
     assert payload['rows'][1] == before['rows'][1]
     assert payload['rows'][3]['woba_denom'] == 1
     assert load_training_statcast(bundle, s3, 'b')['errors'] == []
-    assert any('official-pa-taxonomy-v1/' in r['key'] for r in receipts)
+    assert any('official-game-advisory-taxonomy-v1/' in r['key'] for r in receipts)
     for key, version in list(s3.versions):
-        if 'official-pa-taxonomy-v1/' in key:
+        if 'official-game-advisory-taxonomy-v1/' in key:
             del s3.versions[key, version]
     # The original physically complete rows can remain physical-only; the
     # missing outcome denominator cannot regain outcome coverage without proof.

@@ -3,7 +3,8 @@ from copy import deepcopy
 import pytest
 
 from ks1.official_outcomes import (ACCOUNTING_METHOD, MOUND_VISIT_METHOD, PITCH_METHOD,
-                                  TWO_STRIKE_METHOD, reconcile, reconciled_rows)
+                                  TWO_STRIKE_METHOD, digest, endpoint, reconcile,
+                                  reconciled_rows, source_name)
 from ks1.statcast_history import load_training_statcast
 from ks1.statcast_recovery import recover
 from tests.ks1_recent.test_official_outcomes import evidence, raw_receipt
@@ -138,6 +139,29 @@ def test_contiguous_pregame_advisories_may_precede_first_count_event():
     assert payload['rows'][1]['release_speed'] == ''
     with pytest.raises(ValueError, match='chronology'):
         reconciled_rows(raw, {'1': source}, method=MOUND_VISIT_METHOD)
+
+
+def test_retained_v9_endpoint_and_namespace_remain_reproducible():
+    _, raw, _, source = mound_visit_fixture()
+    source['receipt'].update(endpoint=endpoint('1', pitch_evidence=True,
+                                               game_advisories=False),
+                             sha256=digest(source['data']))
+    source['retained_receipt'] = {
+        'name': source_name('1', raw['rows'], pitch_evidence=True,
+                            game_advisories=False),
+        'versionId': 'official-v1',
+        'sha256': digest({key: source[key] for key in ('data', 'receipt')})}
+    rows, changes = reconciled_rows(raw, {'1': source}, method=MOUND_VISIT_METHOD)
+    assert rows[1]['release_speed'] == ''
+    assert len(changes) == 1
+
+
+def test_v10_requests_and_retains_advisory_description_evidence():
+    assert 'description' in endpoint('1', pitch_evidence=True)
+    assert 'description' not in endpoint('1', pitch_evidence=True,
+                                         game_advisories=False)
+    assert source_name('1', [], pitch_evidence=True) != source_name(
+        '1', [], pitch_evidence=True, game_advisories=False)
 
 
 @pytest.mark.parametrize('defect', ['not_first_pa', 'count', 'pitch', 'substitution',
