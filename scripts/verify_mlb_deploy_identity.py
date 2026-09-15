@@ -1627,10 +1627,16 @@ def verify(
                     or isolated_function
                     or (
                         observed_function
-                        and observed_function.get(
-                            "isolatedNameContractMatches"
+                        and (
+                            observed_function.get(
+                                "isolatedNameContractMatches"
+                            )
+                            is True
+                            or ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN
+                            in _authority_text(
+                                observed_function.get("functionName")
+                            )
                         )
-                        is True
                     )
                     or _is_mlb_pull_or_training_writer(target_arn)
                 )

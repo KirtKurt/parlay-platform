@@ -369,6 +369,14 @@ def test_provider_neutral_migration_is_idempotent_on_hardened_verifier() -> None
     assert migration.patch_verifier(source) == source
 
 
+def test_provider_neutral_migration_rejects_partially_migrated_stale_constants() -> None:
+    source = Path(deploy_identity.__file__).read_text(encoding="utf-8")
+    stale_source = source + "\nBBS_EXPECTED_INGEST_ENVIRONMENT = {}\n"
+
+    with pytest.raises(RuntimeError, match="BBS_EXPECTED_INGEST_ENVIRONMENT"):
+        migration.patch_verifier(stale_source)
+
+
 def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> None:
     assert deploy_identity.EXPECTED_SCHEDULES["trainer"] == [
         "cron(11 1/6 * * ? *)",
@@ -1622,6 +1630,46 @@ def test_rejects_mlb_auto_writer_when_isolation_contract_is_incomplete(aws) -> N
         "forbiddenRootEnvironmentPresent": ["SNAPSHOTS_TABLE"],
         "authorizedIsolatedWriter": False,
     }
+
+
+def test_rejects_isolated_name_lookalike_on_generic_enabled_rule(aws) -> None:
+    function_name = (
+        "prefix-parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-AbCd1234"
+    )
+    function_arn = _arn(function_name)
+    aws["lambda"].configurations["isolated-name-lookalike"] = {
+        "FunctionName": function_name,
+        "FunctionArn": function_arn,
+        "Handler": "orchestrator_v3.lambda_handler",
+        "Runtime": "python3.11",
+        "Environment": {"Variables": {
+            "MLB_AUTO_TABLE": (
+                "parlay-platform-mlb-auto-llm-MLBAutoLLMTable-AbCd1234"
+            ),
+            "BBS_API_SECRET_ARN": (
+                "arn:aws:secretsmanager:us-east-1:123456789012:secret:isolated"
+            ),
+            "PREDICTIONS_TABLE": "root-predictions",
+        }},
+    }
+    aws["events"].rules["hourly-automation"] = {
+        "State": "ENABLED",
+        "ScheduleExpression": "rate(1 hour)",
+        "Arn": function_arn,
+    }
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert "ENABLED_ALTERNATE_MLB_PULL_OR_TRAINING_WRITERS" in result["blockers"]
+    target = result["alternateWriterAuthority"]["enabledAlternateRules"][0][
+        "targets"
+    ][0]
+    assert target["authorizedIsolatedWriter"] is False
+    assert target["observedTargetFunction"]["isolatedNameContractMatches"] is False
+    assert target["observedTargetFunction"][
+        "forbiddenRootEnvironmentPresent"
+    ] == ["PREDICTIONS_TABLE"]
 
 
 def test_reports_sanitized_identity_for_unclassified_scheduled_target(aws) -> None:

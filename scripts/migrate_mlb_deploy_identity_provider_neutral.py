@@ -19,6 +19,32 @@ TEST = ROOT / "tests" / "unit" / "test_mlb_deploy_identity.py"
 NO_BBD = ROOT / "scripts" / "verify_mlb_no_bbd_runtime.py"
 
 
+_STALE_PROVIDER_PROOF_TOKENS = (
+    "Big Balls Sports Data",
+    "exactGithubSecretName",
+    "runtimeSecretArnEnvironment",
+    "consumerRole",
+    "secretArnPresentOnIngest",
+    "shadowEnvironmentMatches",
+    "otherCanonicalFunctionsWithoutBbsAuthority",
+)
+
+
+def _stale_provider_requirements(text: str) -> list[str]:
+    """Find legacy provider authority even in partially migrated verifier text."""
+
+    stale = {
+        token for token in _STALE_PROVIDER_PROOF_TOKENS if token in text
+    }
+    stale.update(
+        re.findall(r"(?<![A-Za-z0-9_])BBS_[A-Z0-9_]+", text)
+    )
+    stale.update(
+        re.findall(r"(?<![A-Za-z0-9_])BbsApi[A-Za-z0-9_]*", text)
+    )
+    return sorted(stale)
+
+
 def _replace_once(text: str, old: str, new: str, label: str) -> str:
     if old in text:
         return text.replace(old, new, 1)
@@ -43,16 +69,7 @@ def patch_verifier(text: str) -> str:
         "RETIRED_PROVIDER_ENVIRONMENT_PRESENT_ON_DISCOVERED_LAMBDA",
     )
     if all(marker in text for marker in provider_neutral_markers):
-        stale = (
-            "BBS_SECRET_ARN_MISSING_ON_INGEST",
-            "BBS_SHADOW_ENVIRONMENT_MISMATCH_ON_INGEST",
-            "secretArnPresentOnIngest",
-            "shadowEnvironmentMatches",
-            "otherCanonicalFunctionsWithoutBbsAuthority",
-            "BBS_AUTHORITY_LEAKED_TO_",
-            "BBS_AUTHORITY_PRESENT_ON_NON_INGEST_LAMBDA",
-        )
-        remaining = [token for token in stale if token in text]
+        remaining = _stale_provider_requirements(text)
         if remaining:
             raise RuntimeError(
                 "stale provider identity requirements remain: "
@@ -176,16 +193,7 @@ RETIRED_PROVIDER_ENVIRONMENT = (
         "discovered function provider boundary",
     )
 
-    stale = (
-        "BBS_SECRET_ARN_MISSING_ON_INGEST",
-        "BBS_SHADOW_ENVIRONMENT_MISMATCH_ON_INGEST",
-        "secretArnPresentOnIngest",
-        "shadowEnvironmentMatches",
-        "otherCanonicalFunctionsWithoutBbsAuthority",
-        "BBS_AUTHORITY_LEAKED_TO_",
-        "BBS_AUTHORITY_PRESENT_ON_NON_INGEST_LAMBDA",
-    )
-    remaining = [token for token in stale if token in text]
+    remaining = _stale_provider_requirements(text)
     if remaining:
         raise RuntimeError("stale provider identity requirements remain: " + ",".join(remaining))
     return text
