@@ -122,6 +122,9 @@ def normalize_games(games: Sequence[Mapping[str, Any]], *, sport_key: str, provi
                         float(price)
                     except (TypeError, ValueError):
                         continue
+                    name = str(outcome.get("name") or "").strip()
+                    desc = str(outcome.get("description") or "").strip()
+                    point = _canon_number(outcome.get("point"))
                     sub_id, outcome_id = _bucket_identity(market_key, outcome)
                     market_id = f"{event_id}|{sub_id}"
                     bucket = buckets.setdefault(market_id, {
@@ -138,6 +141,9 @@ def normalize_games(games: Sequence[Mapping[str, Any]], *, sport_key: str, provi
                     })
                     bucket["quotes"].append({
                         "outcome": outcome_id,
+                        "name": name,
+                        "description": desc,
+                        "point": point,
                         "book": book,
                         "american": price,
                         "provider": provider,

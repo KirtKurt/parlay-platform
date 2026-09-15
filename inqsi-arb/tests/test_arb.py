@@ -21,7 +21,9 @@ def test_two_way_verified_arb_and_cent_reconciliation():
         ],
     )
     assert row and row["arb"] is True
-    assert sum(x["stake"] for x in row["legs"]) == 1000
+    assert row["executable"] is True
+    assert sum(x["stake"] for x in row["legs"]) == row["allocated_stake"]
+    assert row["allocated_stake"] <= 1000
     assert row["minimum_profit"] > 0
 
 
@@ -36,7 +38,23 @@ def test_three_way_verified_arb():
         ],
     )
     assert row and row["arb"]
+    assert row["executable"] is True
     assert len(row["legs"]) == 3
+
+
+def test_infeasible_rounding_keeps_math_but_not_verified():
+    row = scan_market(
+        market_id="thin", event="A v B", market="h2h", bankroll=100,
+        expected_outcomes=["A", "B"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "one", "decimal": 2.2, "min_stake": 60},
+            {"outcome": "B", "book": "two", "decimal": 2.2, "min_stake": 60},
+        ],
+    )
+    assert row and row["math_arb"] is True
+    assert row["executable"] is False
+    assert row["arb"] is False
+    assert row["validation"]["qualification_reason"] == "NO_COMBINATION_WITHIN_BANKROLL"
 
 
 def test_incomplete_outcome_universe_rejected():
