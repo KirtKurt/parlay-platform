@@ -34,7 +34,7 @@ def score_matrix(lambda_home: float, lambda_away: float, rho: float = RHO_DEFAUL
     total = sum(sum(row) for row in grid)
     if total <= 0:
         raise ValueError("empty score matrix")
-    return [[cell / total for cell in row] for cell in row]
+    return [[cell / total for cell in row] for row in grid]
 
 
 def _sum_where(grid: list[list[float]], pred) -> float:
@@ -114,23 +114,23 @@ def net_edges(markets: dict[str, Any], books: dict[str, dict[str, float]] | None
     dc_pick = markets["double_chance_pick"]
     ou_pick = markets["ou25_pick"]
     btts_pick = markets["btts_pick"]
-    p_1x2 = {"home": markets["p_home"], "draw": markets["p_draw"], "away": markets["p_away"]}
-    p_dc = {"1X": markets["p_1x"], "12": markets["p_12"], "X2": markets["p_x2"]}
     p_ou = {"over": markets["p_over_25"], "under": markets["p_under_25"]}
     p_btts = {"yes": markets["p_btts_yes"], "no": markets["p_btts_no"]}
-    def edge(model_p, market):
-        if not market or model_p[0] not in market:
+
+    def edge(side: str, model_p: float, market: dict[str, float] | None):
+        if not market or side not in market:
             return None
-        return float(model_p[1] - market[model_p[0]])
+        return float(model_p - market[side])
+
     return {
         "market_1x2_implied": one,
         "market_dc_implied": dc_book,
         "market_ou25_implied": ou,
         "market_btts_implied": btts,
-        "edge_1x2": edge((pick_1x2, markets["1x2_probability"]), one),
-        "edge_double_chance": edge((dc_pick, markets["double_chance_probability"]), dc_book),
-        "edge_ou25": edge((ou_pick, p_ou[ou_pick]), ou),
-        "edge_btts": edge((btts_pick, p_btts[btts_pick]), btts),
+        "edge_1x2": edge(pick_1x2, markets["1x2_probability"], one),
+        "edge_double_chance": edge(dc_pick, markets["double_chance_probability"], dc_book),
+        "edge_ou25": edge(ou_pick, p_ou[ou_pick], ou),
+        "edge_btts": edge(btts_pick, p_btts[btts_pick], btts),
         "min_net_edge": MIN_NET_EDGE,
     }
 
@@ -175,8 +175,8 @@ def apply_abstain(
             ("ou25_published", out.get("edge_ou25")),
             ("btts_published", out.get("edge_btts")),
         )
-        for key, edge in checks:
-            if edge is not None and edge < min_edge:
+        for key, measured in checks:
+            if measured is not None and measured < min_edge:
                 out[key] = ABSTAIN
     return out
 
