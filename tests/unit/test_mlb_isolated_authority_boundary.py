@@ -23,7 +23,9 @@ def _isolated_function() -> dict:
         "Handler": "orchestrator.lambda_handler",
         "Environment": {
             "Variables": {
-                "MLB_AUTO_TABLE": "isolated-table",
+                "MLB_AUTO_TABLE": (
+                    "parlay-platform-mlb-auto-llm-MLBAutoLLMTable-AbCd1234"
+                ),
                 "ODDS_API_KEY": "configured",
                 "BBS_API_SECRET_ARN": (
                     "arn:aws:secretsmanager:us-east-1:123456789012:"
@@ -43,12 +45,25 @@ def test_authorized_isolated_three_source_auto_is_outside_root_scan() -> None:
     assert deploy_identity._root_authority_lambda_functions(_LambdaClient([function])) == []
 
 
-def test_isolated_lookalike_with_root_authority_table_is_rejected() -> None:
-    function = _isolated_function()
-    function["Environment"]["Variables"]["SNAPSHOTS_TABLE"] = "root-snapshots"
+def test_isolated_lookalike_with_any_root_authority_binding_is_rejected() -> None:
+    for key in (
+        "SNAPSHOTS_TABLE",
+        "SIGNALS_TABLE",
+        "SIGNAL_LEDGER_TABLE",
+        "PREDICTIONS_TABLE",
+        "OUTCOMES_TABLE",
+        "MLB_ML_ARTIFACTS_BUCKET",
+    ):
+        function = _isolated_function()
+        function["Environment"]["Variables"][key] = "root-authority"
 
-    assert deploy_identity._is_authorized_isolated_three_source_auto(function) is False
-    assert deploy_identity._root_authority_lambda_functions(_LambdaClient([function])) == [function]
+        assert (
+            deploy_identity._is_authorized_isolated_three_source_auto(function)
+            is False
+        )
+        assert deploy_identity._root_authority_lambda_functions(
+            _LambdaClient([function])
+        ) == [function]
 
 
 def test_isolated_lookalike_without_secret_manager_arn_is_rejected() -> None:

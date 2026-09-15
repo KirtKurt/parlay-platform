@@ -13,7 +13,9 @@ class _LambdaClient:
 
 def _function(*, handler: str = "orchestrator_v3.lambda_handler", root_table: bool = False) -> dict:
     environment = {
-        "MLB_AUTO_TABLE": "isolated-table",
+        "MLB_AUTO_TABLE": (
+            "parlay-platform-mlb-auto-llm-MLBAutoLLMTable-AbCd1234"
+        ),
         "ODDS_API_KEY": "configured",
         "BBS_API_SECRET_ARN": (
             "arn:aws:secretsmanager:us-east-1:123456789012:secret:isolated-mlb-auto"
@@ -44,3 +46,26 @@ def test_orchestrator_v3_with_root_table_is_not_exempted() -> None:
     function = _function(root_table=True)
     assert verifier._is_authorized_isolated_three_source_auto(function) is False
     assert verifier._root_authority_lambda_functions(_LambdaClient([function])) == [function]
+
+
+def test_isolated_name_must_match_cloudformation_pattern_exactly() -> None:
+    function = _function()
+    function["FunctionName"] = "prefix-" + function["FunctionName"]
+
+    assert verifier._is_authorized_isolated_three_source_auto(function) is False
+
+
+def test_isolated_table_must_match_its_stack_resource_pattern() -> None:
+    function = _function()
+    function["Environment"]["Variables"]["MLB_AUTO_TABLE"] = "snapshots"
+
+    assert verifier._is_authorized_isolated_three_source_auto(function) is False
+
+
+def test_secret_arn_requires_secrets_manager_service_component() -> None:
+    function = _function()
+    function["Environment"]["Variables"]["BBS_API_SECRET_ARN"] = (
+        "arn:aws:ssm:us-east-1:123456789012:parameter/:secretsmanager:fake"
+    )
+
+    assert verifier._is_authorized_isolated_three_source_auto(function) is False
