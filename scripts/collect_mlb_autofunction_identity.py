@@ -28,13 +28,15 @@ except ModuleNotFoundError:
 
 STACK = "parlay-platform-mlb-auto-prod"
 HANDLER = "mlb_auto.autonomous_handler.handler"
+EXPECTED_ACCOUNT = "735707987003"
+EXPECTED_READER_ARN = f"arn:aws:sts::{EXPECTED_ACCOUNT}:assumed-role/ks1-autofunction-identity-reader/ks1-autofunction-readonly"
 READ_OPERATIONS = {
     "sts": {"get_caller_identity"},
     "cloudformation": {"describe_stacks", "list_stack_resources"},
     "lambda": {"get_function", "get_function_configuration"},
     "iam": {"get_role", "list_role_policies", "get_role_policy",
             "list_attached_role_policies", "get_policy", "get_policy_version"},
-    "events": {"list_rule_names_by_target", "describe_rule", "list_targets_by_rule"},
+    "events": {"list_rules", "list_targets_by_rule"},
 }
 
 
@@ -68,11 +70,17 @@ def pages(clients, service, operation, field, request_token="NextToken",
         kwargs[request_token] = token
 
 
-def resource_environment(environment):
-    """Expose exact stack resource bindings only, never arbitrary env values."""
-    return {key: value for key, value in environment.items()
-            if re.fullmatch(r"[A-Z0-9_]*(?:TABLE|TABLE_NAME|BUCKET|BUCKET_NAME|PREFIX)", key)
-            and not any(word in key for word in ("SECRET", "TOKEN", "PASSWORD", "KEY"))}
+def resource_environment(environment, resources):
+    """Only expose exact matches to independently collected stack resources."""
+    known = {r.get("PhysicalResourceId") for r in resources
+             if r.get("ResourceType") in {"AWS::DynamoDB::Table", "AWS::S3::Bucket"}}
+    result = {}
+    for key, value in environment.items():
+        if (re.fullmatch(r"[A-Z0-9_]*(?:TABLE|TABLE_NAME|BUCKET|BUCKET_NAME|PREFIX)", key)
+                and not any(word in key for word in ("SECRET", "TOKEN", "PASSWORD", "KEY"))):
+            result[key] = ({"stackResourceId": value} if value in known
+                           else {"redacted": True, "sha256": hashlib.sha256(str(value).encode()).hexdigest()})
+    return result
 
 
 def source_summary(artifact):
@@ -117,6 +125,8 @@ def download(location):
 
 def collect(clients, download_artifact=download):
     caller = call(clients, "sts", "get_caller_identity")
+    if caller.get("Account") != EXPECTED_ACCOUNT or caller.get("Arn") != EXPECTED_READER_ARN:
+        raise ValueError("Unexpected production account or read-only session identity")
     stack = call(clients, "cloudformation", "describe_stacks", StackName=STACK)["Stacks"][0]
     resources = pages(clients, "cloudformation", "list_stack_resources", "StackResourceSummaries", StackName=STACK)
     auto = [r for r in resources if r.get("LogicalResourceId") == "AutoFunction"
@@ -143,10 +153,12 @@ def collect(clients, download_artifact=download):
         version = call(clients, "iam", "get_policy_version", PolicyArn=policy["PolicyArn"], VersionId=metadata["DefaultVersionId"])["PolicyVersion"]
         policies.append({"kind": "attached", "arn": policy["PolicyArn"], "version": metadata["DefaultVersionId"], "document": version["Document"]})
     rules = []
-    names = pages(clients, "events", "list_rule_names_by_target", "RuleNames", TargetArn=arn)
-    for name in sorted(names):
-        rule = call(clients, "events", "describe_rule", Name=name)
+    inventory = pages(clients, "events", "list_rules", "Rules")
+    for rule in sorted(inventory, key=lambda r: r["Name"]):
+        name = rule["Name"]
         targets = pages(clients, "events", "list_targets_by_rule", "Targets", Rule=name)
+        if not any(t.get("Arn") == arn or str(t.get("Arn", "")).startswith(arn + ":") for t in targets):
+            continue
         # Inputs may contain secrets; retain binding and a digest, not raw input.
         rules.append({"name": name, "arn": rule["Arn"], "state": rule["State"],
                       "schedule": rule.get("ScheduleExpression"),
@@ -155,11 +167,11 @@ def collect(clients, download_artifact=download):
                                   for t in targets]})
     after = call(clients, "lambda", "get_function_configuration", FunctionName=arn)
     environment = (config.get("Environment") or {}).get("Variables") or {}
-    bindings = resource_environment(environment)
+    bindings = resource_environment(environment, resources)
     stack_account = stack["StackId"].split(":")[4]
     checks = {
         "stackName": stack.get("StackName") == STACK,
-        "accountBinding": stack_account == caller["Account"] == arn.split(":")[4] == role_arn.split(":")[4],
+        "accountBinding": stack_account == caller["Account"] == arn.split(":")[4] == role_arn.split(":")[4] == EXPECTED_ACCOUNT,
         "functionNameBinding": config.get("FunctionName") == auto[0]["PhysicalResourceId"]
             and arn.rsplit(":", 1)[-1] == config.get("FunctionName"),
         "expectedHandler": config.get("Handler") == HANDLER,
@@ -174,6 +186,8 @@ def collect(clients, download_artifact=download):
         "observedAt": datetime.now(timezone.utc).isoformat(),
         "identityVerified": all(checks.values()), "checks": checks,
         "isolationAuthorized": False, "isolationDecision": "requires_review_of_permissions_and_storage_scope",
+        "readerPrincipalArn": caller["Arn"],
+        "ruleInventoryComplete": True, "ruleInventoryScope": "default_event_bus_in_requested_region",
         "stack": {k: stack.get(k) for k in ("StackName", "StackId", "StackStatus")},
         "resources": [{k: r.get(k) for k in ("LogicalResourceId", "PhysicalResourceId", "ResourceType", "ResourceStatus")} for r in resources],
         "function": {k: config.get(k) for k in ("FunctionName", "FunctionArn", "Handler", "Runtime", "Role", "CodeSha256", "RevisionId", "LastModified", "State", "LastUpdateStatus")},
@@ -193,8 +207,8 @@ def main():
     parser.add_argument("--region", default="us-east-1")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    clients = {service: boto3.client(service, region_name=args.region) for service in READ_OPERATIONS}
     try:
+        clients = {service: boto3.client(service, region_name=args.region) for service in READ_OPERATIONS}
         report = collect(clients)
     except Exception as exc:
         # AWS exception strings and URLs can expose environment or signed data.
