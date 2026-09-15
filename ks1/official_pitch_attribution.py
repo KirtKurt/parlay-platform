@@ -24,7 +24,8 @@ def candidate_groups(rows):
                    for i in indices)}
 
 
-def derive(rows, evidence, scheduled_by_game, *, extended_substitutions=False):
+def derive(rows, evidence, scheduled_by_game, *, extended_substitutions=False,
+           two_strike_strikeouts=False, raw_rows=None):
     from ks1.official_outcomes import positive_id, event_name
     from ks1.statcast_events import is_plate_appearance
     from ks1.features import utc
@@ -53,12 +54,14 @@ def derive(rows, evidence, scheduled_by_game, *, extended_substitutions=False):
         substitutions = [e for e in events if e.get('isSubstitution') is True]
         mixed = len({str(rows[i]['batter']) for i in indices}) > 1
         terminal_batter = positive_id(play['matchup']['batter']['id'])
+        credited_batter = terminal_batter
         pitcher = positive_id(play['matchup']['pitcher']['id'])
         if mixed:
             # Rule 9.15(b) charges a two-strike substitute's strikeout to the
             # predecessor. Other completed outcomes belong to the substitute,
             # but only accept them with the inherited count independently shown.
             two_strike_credit = False
+            predecessor_strikeout = False
             if extended_substitutions and len(substitutions) == 1:
                 sub = substitutions[0]
                 prior = [e for e in events[:events.index(sub)] if e.get('isPitch') is True]
@@ -68,14 +71,21 @@ def derive(rows, evidence, scheduled_by_game, *, extended_substitutions=False):
                     and bool(prior) and prior[-1].get('count', {}).get('strikes') == 2
                     and prior[-1].get('count', {}).get('balls') == count['balls']
                     and not event_name(play['result']['eventType']).startswith('strikeout'))
+                if two_strike_strikeouts:
+                    from ks1.two_strike_credit import proven_strikeout
+                    predecessor_strikeout = (raw_rows is not None and
+                        proven_strikeout(play, sub, prior, raw_rows[ordered[-1]]))
             if (len(substitutions) != 1
                     or substitutions[0]['details'].get('eventType') != 'offensive_substitution'
                     or substitutions[0].get('position', {}).get('abbreviation') != 'PH'
                     or type(substitutions[0]['count'].get('strikes')) is not int
-                    or not (0 <= substitutions[0]['count']['strikes'] < 2 or two_strike_credit)
+                    or not (0 <= substitutions[0]['count']['strikes'] < 2
+                            or two_strike_credit or predecessor_strikeout)
                     or positive_id(substitutions[0]['player']['id']) != terminal_batter):
                 raise ValueError('unsupported official mid-at-bat substitution')
             current_batter = positive_id(substitutions[0]['replacedPlayer']['id'])
+            if predecessor_strikeout:
+                credited_batter = current_batter
         else:
             # A zero-count pitching change before every count event leaves all
             # rows attributed to the incoming pitcher. Mid-count changes and
@@ -159,7 +169,7 @@ def derive(rows, evidence, scheduled_by_game, *, extended_substitutions=False):
                     or positive_id(terminal['batter']) != terminal_batter):
                 raise ValueError('substitution lacks a matching terminal plate appearance')
             changes.append({'row_index': ordered[-1], 'game_pk': pk, 'at_bat_number': ab,
-                            'fields': {}, 'original_fields': {}, 'credited_batter': terminal_batter,
+                            'fields': {}, 'original_fields': {}, 'credited_batter': credited_batter,
                             'derivation_kind': 'official_mid_at_bat_credit',
                             'official_source_sha256': source['receipt']['sha256']})
     return changes
