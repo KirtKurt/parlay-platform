@@ -57,7 +57,7 @@ def credited_at_bat_ids(rows):
         state = grouped.setdefault(identity, {'pa': False, 'non_pa': False})
         event = str(row.get('events') or '').lower()
         state['pa'] = state['pa'] or is_plate_appearance(row)
-        state['non_pa'] = state['non_pa'] or event in NON_PA_AT_BAT_END_EVENTS
+        state['non_pa'] = state['non_pa'] or event in NON_PA_AT_BAT_END_EVENTS or event == 'official_non_pa_walkoff'
     return {identity for identity, state in grouped.items()
             if state['pa'] or not state['non_pa']}
 

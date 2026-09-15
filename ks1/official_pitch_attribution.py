@@ -7,8 +7,9 @@ from collections import defaultdict
 import math
 
 
-AUTOMATIC_CODES = {'automatic_ball': {'AB', 'VP'},
-                   'automatic_strike': {'AS', 'VB', 'VC'}}
+# MLB's /api/v1/pitchCodes classification: each code has pitchStatus:false.
+AUTOMATIC_CODES = {'automatic_ball': {'V', 'VB', 'VC', 'VP', 'VS'},
+                   'automatic_strike': {'A', 'AB', 'AC'}}
 
 
 def candidate_groups(rows):
@@ -134,3 +135,52 @@ def derive(rows, evidence, scheduled_by_game):
                             'derivation_kind': 'official_mid_at_bat_credit',
                             'official_source_sha256': source['receipt']['sha256']})
     return changes
+
+
+WALKOFF_RUNNER_EVENTS = frozenset(('stolen_base_2b', 'stolen_base_3b', 'stolen_base_home',
+                                    'wild_pitch', 'passed_ball', 'balk', 'error'))
+
+
+def needs_walkoff_evidence(source, raw_rows):
+    from ks1.official_outcomes import unfinished_at_bats
+    groups = unfinished_at_bats({'rows': raw_rows})
+    return any((str(raw_rows[0]['game_pk']), str(p['about']['atBatIndex'] + 1)) in groups
+               and p['result'].get('eventType') in WALKOFF_RUNNER_EVENTS
+               for p in source['data']['liveData']['plays']['allPlays'])
+
+
+def verified_walkoff_ending(play, source):
+    """A successful baserunning event ends a PA only when it ends the game."""
+    from ks1.official_outcomes import positive_id
+    from ks1.features import utc
+    plays = source['data']['liveData']['plays']['allPlays']
+    about, result = play['about'], play['result']
+    if (result.get('eventType') not in WALKOFF_RUNNER_EVENTS or len(plays) < 2
+            or play != plays[-1] or about.get('isScoringPlay') is not True
+            or about.get('isTopInning') is not False
+            or type(about.get('inning')) is not int or about['inning'] < 9):
+        return False
+    prior = plays[-2]
+    scores = [prior['result'].get('homeScore'), prior['result'].get('awayScore'),
+              result.get('homeScore'), result.get('awayScore')]
+    if (any(type(score) is not int or score < 0 for score in scores)
+            or scores[0] > scores[1] or scores[2] <= scores[3]
+            or scores[2] <= scores[0] or scores[1] != scores[3]
+            or utc(prior['about']['endTime']) >= utc(about['endTime'])):
+        return False
+    events = play.get('playEvents', [])
+    if not events:
+        return False
+    count = events[-1].get('count', {})
+    if (type(count.get('balls')) is not int or not 0 <= count['balls'] < 4
+            or type(count.get('strikes')) is not int or not 0 <= count['strikes'] < 3
+            or utc(events[-1]['endTime']) != utc(about['endTime'])):
+        return False
+    batter = positive_id(play['matchup']['batter']['id'])
+    scorers = [r for r in play.get('runners', [])
+               if r.get('movement', {}).get('end') == 'score'
+               and r['movement'].get('isOut') is False
+               and r.get('details', {}).get('isScoringEvent') is True]
+    return (len(scorers) == scores[2] - scores[0]
+            and len({positive_id(r['details']['runner']['id']) for r in scorers}) == len(scorers)
+            and all(positive_id(r['details']['runner']['id']) != batter for r in scorers))

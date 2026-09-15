@@ -83,11 +83,11 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
               'statcast_provider_requests': 0, 'official_provider_requests': 0,
               'recovery_method': method}
 
-    def official_source(pk, rows):
+    def official_source(pk, rows, *, force_pitch_evidence=False):
         if time.monotonic() >= deadline:
             raise RecoveryBudgetExhausted()
         # The cache is bound to this exact raw game, not merely its game ID.
-        pitch_evidence = needs_pitch_evidence(rows)
+        pitch_evidence = force_pitch_evidence or needs_pitch_evidence(rows)
         name = source_name(pk, rows, pitch_evidence=pitch_evidence)
         evidence = store.get(name)
         if evidence is None:
@@ -99,6 +99,9 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                            scheduled_times=scheduled_by_game[pk], pitch_evidence=pitch_evidence)
             verify_official_time(evidence, completed_by_game[pk])
             evidence = store.once(name, evidence)
+        from ks1.official_pitch_attribution import needs_walkoff_evidence
+        if not pitch_evidence and needs_walkoff_evidence(evidence, rows):
+            return official_source(pk, rows, force_pitch_evidence=True)
         source_reader = Reader(s3, bucket)
         retained = source_reader.read(RESEARCH + name, sha=digest(evidence))
         receipt = source_reader.receipts[-1]

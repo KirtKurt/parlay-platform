@@ -33,7 +33,8 @@ def endpoint(game_id, *, pitch_evidence=False):
     if pitch_evidence:
         fields += (',playEvents,index,type,isPitch,pitchNumber,details,code,call,pitchData,'
                    'startSpeed,count,balls,strikes,player,replacedPlayer,isSubstitution,'
-                   'position,abbreviation,startTime')
+                   'position,abbreviation,startTime,runners,movement,end,isOut,runner,'
+                   'isScoringEvent,homeScore,awayScore,inning,isTopInning,isScoringPlay')
     return f'https://statsapi.mlb.com/api/v1.1/game/{game_id}/feed/live?' + urlencode({'fields': fields})
 
 
@@ -170,8 +171,8 @@ def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
         official_index(source, pk, raw['date'],
                        [row for row in raw['rows'] if str(row['game_pk']) == pk],
                        scheduled_times=scheduled_by_game[pk] if scheduled_by_game is not None else None,
-                       pitch_evidence=method == METHOD and needs_pitch_evidence(
-                           [row for row in raw['rows'] if str(row['game_pk']) == pk]))
+                       pitch_evidence=method == METHOD and source['receipt']['endpoint'] ==
+                       endpoint(pk, pitch_evidence=True))
     rows, changes = deepcopy(raw['rows']), []
     for index, row in enumerate(rows):
         pk = str(row['game_pk'])
@@ -214,7 +215,11 @@ def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
             event = event_name(play['result'].get('eventType'))
             start = (scheduled_by_game[pk][0] if scheduled_by_game is not None
                      else source['data']['gameData']['datetime']['dateTime'])
-            if (event not in NON_PA_AT_BAT_END_EVENTS
+            from ks1.official_pitch_attribution import verified_walkoff_ending
+            walkoff = (method == METHOD and event not in NON_PA_AT_BAT_END_EVENTS
+                       and source['receipt']['endpoint'] == endpoint(pk, pitch_evidence=True)
+                       and verified_walkoff_ending(play, source))
+            if (event not in NON_PA_AT_BAT_END_EVENTS and not walkoff
                     or isinstance(about['atBatIndex'], bool)
                     or not isinstance(about['atBatIndex'], int)
                     or about['atBatIndex'] < 0
@@ -238,7 +243,7 @@ def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
                 denom = current.get('woba_denom')
                 if isinstance(denom, bool) or denom not in (None, '', 0, '0', '0.0', 1, '1', '1.0'):
                     raise ValueError('unfinished at-bat has an invalid wOBA denominator')
-                fields = {'events': event} if i == index else {}
+                fields = {'events': 'official_non_pa_walkoff' if walkoff else event} if i == index else {}
                 if denom in (None, '', 1, '1', '1.0'):
                     fields['woba_denom'] = 0
                 if not fields:
@@ -246,7 +251,7 @@ def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
                 changes.append({'row_index': i, 'game_pk': pk, 'at_bat_number': ab,
                                 'fields': fields,
                                 'original_fields': {key: current.get(key) for key in fields},
-                                'derivation_kind': 'official_non_pa_ending',
+                                'derivation_kind': 'official_non_pa_walkoff' if walkoff else 'official_non_pa_ending',
                                 'official_source_sha256': source['receipt']['sha256']})
                 current.update(fields)
     if method == METHOD:
