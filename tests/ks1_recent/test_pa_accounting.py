@@ -102,6 +102,26 @@ def test_v4_keeps_its_original_strict_event_comparison():
         reconciled_rows(raw, {'1': source}, method=PITCH_METHOD)
 
 
+def test_retry_reuses_retained_taxonomy_source_with_provider_offline(monkeypatch):
+    from ks1.inventory import RESEARCH
+    authorize(monkeypatch)
+    bundle, raw, key, source = fixture()
+    s3 = MemoryS3(); s3.seed(key, raw)
+    # State after rich-source retention but before a verified daily artifact.
+    name = source_name('1', raw['rows'], accounting_evidence=True)
+    s3.seed(RESEARCH + name, {k: source[k] for k in ('data', 'receipt')})
+    def offline(*args):
+        pytest.fail('retained taxonomy evidence must not require the provider')
+    report = recover(bundle, s3, 'b', load_training_statcast(bundle, s3, 'b'),
+                     reconcile_official=True, fetch_official=offline, fetch=offline)
+    assert report['recovered_dates'] == [raw['date']]
+    assert report['provider_requests'] == 0
+    payload, receipts = read_recovery(s3, 'b', raw['date'])
+    assert payload['rows'][1] == raw['rows'][1]
+    assert any(r['key'] == RESEARCH + name and r['versionId'] for r in receipts)
+    assert load_training_statcast(bundle, s3, 'b')['errors'] == []
+
+
 @pytest.mark.parametrize('kind', ['automatic', 'substitution', 'walkoff'])
 def test_retained_v4_attribution_objects_remain_reproducible(kind):
     from tests.ks1_recent.test_pitch_attribution import pitch_fixture, walkoff_fixture

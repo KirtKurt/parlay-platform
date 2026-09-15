@@ -88,8 +88,16 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
             raise RecoveryBudgetExhausted()
         # The cache is bound to this exact raw game, not merely its game ID.
         pitch_evidence = force_pitch_evidence or needs_pitch_evidence(rows)
+        # A previous attempt may have retained the escalated source before a
+        # later game or artifact failed. Reach it without another provider call.
+        evidence = None
+        if not accounting_evidence and any(row.get('events') == 'fielders_choice_out' for row in rows):
+            evidence = store.get(source_name(pk, rows, accounting_evidence=True))
+            if evidence is not None:
+                accounting_evidence = True
         name = source_name(pk, rows, pitch_evidence=pitch_evidence, accounting_evidence=accounting_evidence)
-        evidence = store.get(name)
+        if evidence is None:
+            evidence = store.get(name)
         if evidence is None:
             report['provider_requests'] += 1
             report['official_provider_requests'] += 1
