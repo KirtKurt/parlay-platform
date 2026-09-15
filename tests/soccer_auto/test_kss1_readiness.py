@@ -64,7 +64,8 @@ def test_rollout_proof_rejects_unready_or_mismatched_evidence(defect, reason):
     elif defect == "wrong_context": training["artifact_uri"] = "old"
     elif defect == "late": picks["picks"][0]["created_at"] = "2026-09-14T12:00:01Z"
     elif defect == "insufficient_history": picks["picks"][0]["input_coverage"]["team_strength_complete"] = False
-    elif defect == "no_published_book":\n        picks["picks"][0]["markets"]["double_chance_published"] = "ABSTAIN"
+    elif defect == "no_published_book":
+        picks["picks"][0]["markets"]["double_chance_published"] = "ABSTAIN"
     elif defect == "wrong_cohort": context["candidate_baseline"]["event_manifest"] = "different"
     elif defect == "worse_loss": context["candidate_holdout"]["log_loss"] = 1.1
     elif defect == "nan": context["candidate_holdout"]["brier"] = float("nan")
