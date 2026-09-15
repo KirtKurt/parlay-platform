@@ -20,6 +20,15 @@ def isolate_bbd_credentials(monkeypatch):
     None, "invalid", {}, {"error": "access denied"}, {"data": None},
     {"data": {"items": "invalid"}}, [None],
     {"data": [{"id": "valid"}, "invalid"]},
+    {"data": [], "events": [{"id": "hidden"}]},
+    {"data": [{"id": "visible"}], "events": []},
+    {"data": None, "results": []},
+    {"sports": [], "matches": [None]},
+    {"data": [], "results": []},
+    {"data": {"sports": [], "items": [{"id": "hidden"}]}},
+    {"data": {"sports": None, "items": []}},
+    {"data": {"events": [], "results": [None]}},
+    {"data": {"events": [], "items": []}},
 ])
 def test_malformed_collections_fail_closed(monkeypatch, operation, payload):
     monkeypatch.setenv("ARB_BBD_ENABLED", "true")
@@ -37,7 +46,12 @@ def test_malformed_collections_fail_closed(monkeypatch, operation, payload):
 
 
 @pytest.mark.parametrize("operation", ["health", "sports", "events"])
-@pytest.mark.parametrize("payload", [[], {"data": []}, {"data": {"items": []}}])
+@pytest.mark.parametrize("payload", [
+    [], {"data": []}, {"data": {"items": []}},
+    *[{key: [], "meta": {"count": 0}} for key in ("sports", "matches", "events", "results")],
+    *[{"data": {key: [], "meta": {"count": 0}}}
+      for key in ("sports", "matches", "events", "results", "items")],
+])
 def test_recognized_empty_collections_remain_valid(monkeypatch, operation, payload):
     monkeypatch.setenv("ARB_BBD_ENABLED", "true")
     monkeypatch.setenv("BBD_API_KEY", "test")
