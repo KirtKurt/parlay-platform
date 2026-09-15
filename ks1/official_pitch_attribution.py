@@ -71,6 +71,9 @@ def derive(rows, evidence, scheduled_by_game, *, extended_substitutions=False,
             # contiguous, zero-count sequence that brackets the scheduled start
             # and ends exactly when the first count event begins.
             advisory_prelude = (about['atBatIndex'] == 0 and len(prelude) == 3
+                and [event.get('details', {}).get('description') for event in prelude] == [
+                    'Status Change - Pre-Game', 'Status Change - Warmup',
+                    'Status Change - In Progress']
                 and all(
                     event.get('isPitch') is False
                     and event.get('isSubstitution') is not True

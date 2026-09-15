@@ -61,9 +61,11 @@ def game_advisory_fixture():
     ]
     events[:0] = [{'index': index, 'isPitch': False, 'type': 'action',
         'startTime': start, 'endTime': end,
-        'details': {'eventType': 'game_advisory'},
+        'details': {'eventType': 'game_advisory', 'description': description},
         'count': {'balls': 0, 'strikes': 0, 'outs': 0}}
-        for index, (start, end) in enumerate(advisories)]
+        for index, ((start, end), description) in enumerate(zip(advisories, (
+            'Status Change - Pre-Game', 'Status Change - Warmup',
+            'Status Change - In Progress')))]
     play['about']['atBatIndex'] = play['atBatIndex'] = 0
     for index, event in enumerate(events):
         event['index'] = index
@@ -140,7 +142,8 @@ def test_contiguous_pregame_advisories_may_precede_first_count_event():
 
 @pytest.mark.parametrize('defect', ['not_first_pa', 'count', 'pitch', 'substitution',
                                   'pitch_data', 'pitch_number', 'event_type',
-                                  'wrong_length', 'gap', 'late_end', 'does_not_bracket_start'])
+                                  'description', 'wrong_length', 'gap', 'late_end',
+                                  'does_not_bracket_start'])
 def test_pregame_advisory_prelude_is_narrow_and_fail_closed(defect):
     _, raw, _, source = game_advisory_fixture()
     play = source['data']['liveData']['plays']['allPlays'][0]
@@ -152,6 +155,7 @@ def test_pregame_advisory_prelude_is_narrow_and_fail_closed(defect):
     elif defect == 'pitch_data': advisory['pitchData'] = {'startSpeed': 94.3}
     elif defect == 'pitch_number': advisory['pitchNumber'] = 1
     elif defect == 'event_type': advisory['details']['eventType'] = 'mound_visit'
+    elif defect == 'description': advisory['details']['description'] = 'Status Change - Delayed'
     elif defect == 'wrong_length': events.pop(0)
     elif defect == 'gap': events[1]['startTime'] = '2026-09-01T17:31:00Z'
     elif defect == 'late_end': events[2]['endTime'] = '2026-09-01T18:10:01Z'
