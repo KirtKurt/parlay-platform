@@ -136,9 +136,16 @@ def test_restored_evidence_is_not_backdated_to_old_compact_observation(monkeypat
         utc(r['stored_at']) for r in history['source_receipts'])
 
 
-def test_missing_retained_timestamp_cannot_claim_pregame_availability(monkeypatch):
+@pytest.mark.parametrize('timestamp', [None, 'invalid'])
+def test_missing_retained_timestamp_cannot_claim_pregame_availability(monkeypatch, timestamp):
     history, prior, receipt, s3, raw = retained_fixture(monkeypatch)
-    original = s3.get_object
-    s3.get_object = lambda **kw: {**original(**kw), 'LastModified': None}
-    restore_recent_history(history, prior, receipt, s3, 'b', '2026-09-02')
-    assert history['statcast_observed_at'] is None
+    def load_with_timestamp(*args, **kwargs):
+        report = load_training_statcast(*args, **kwargs)
+        args[0]['source_receipts'][-1]['stored_at'] = timestamp
+        return report
+    monkeypatch.setattr('ks1.recent_statcast.load_training_statcast', load_with_timestamp)
+    before = deepcopy(history); receipts = history['source_receipts']
+    report = restore_recent_history(history, prior, receipt, s3, 'b', '2026-09-02')
+    assert report['status'] == 'restored_observation_time_unavailable'
+    assert history == before
+    assert history['source_receipts'] is receipts

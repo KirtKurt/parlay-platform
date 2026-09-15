@@ -36,13 +36,13 @@ def restore_recent_history(history, prior, prior_receipt, s3, bucket, target_dat
     requested = [(target - timedelta(days=age)).isoformat() for age in range(1, 31)]
     bundle = {**history, 'full': prior['games'], 'schedule': prior['schedule'],
               'official_history_source': {**prior_receipt, 'complete_years': years}}
-    # source_receipts is intentionally the capture Reader's existing list:
-    # both the compressed history and the capture manifest retain the chain.
+    # Stage receipts and coverage together; unprovable observation times must
+    # leave the existing capture intact, including its shared receipt list.
     receipt_count = len(history['source_receipts'])
+    bundle['source_receipts'] = list(history['source_receipts'])
     report = load_training_statcast(bundle, s3, bucket, requested_dates=requested)
-    for key in HISTORY_KEYS:
-        history[key] = bundle[key]
-    added = history['source_receipts'][receipt_count:]
+    added = bundle['source_receipts'][receipt_count:]
+    observed_at = history.get('statcast_observed_at')
     if added:
         # Never backdate newly restored evidence to the compact artifact's old
         # observation time. The existing T-10 profile validator consumes this.
@@ -51,8 +51,13 @@ def restore_recent_history(history, prior, prior_receipt, s3, bucket, target_dat
         try:
             if any(value is None for value in times):
                 raise ValueError('source observation time unavailable')
-            history['statcast_observed_at'] = max(utc(value) for value in times).isoformat()
+            observed_at = max(utc(value) for value in times).isoformat()
         except (TypeError, ValueError):
-            history['statcast_observed_at'] = None
+            return {**report, 'source_writes': 0, 'requested_dates': sorted(requested),
+                    'status': 'restored_observation_time_unavailable'}
+    for key in HISTORY_KEYS:
+        history[key] = bundle[key]
+    history['source_receipts'].extend(added)
+    history['statcast_observed_at'] = observed_at
     return {**report, 'source_writes': 0, 'requested_dates': sorted(requested),
             'status': 'verified_retained_windows_loaded'}

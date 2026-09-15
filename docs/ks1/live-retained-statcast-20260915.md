@@ -30,3 +30,5 @@ No serving-model reference, selection parameter, final qualification cohort,
 Brier/log-loss rule, actual feature-usage gate, T-10 rule, or prediction ledger
 behavior changes. Live capture's historical-source report explicitly retains the
 non-prospective qualification label used by the historical loader.
+
+Review follow-up: restored rows, coverage, and receipts are staged together. Missing or invalid observation times reject the entire restoration and preserve the pre-existing capture; a null timestamp is not accepted as T-10 evidence.
