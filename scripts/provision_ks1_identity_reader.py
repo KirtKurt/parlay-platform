@@ -37,6 +37,11 @@ def provision(sts, cf, iam):
     if existing:
         if existing.get("StackStatus") not in {"CREATE_COMPLETE", "UPDATE_COMPLETE", "UPDATE_ROLLBACK_COMPLETE"}:
             raise ValueError("Reader infrastructure stack requires recovery before update")
+        deployed_template = cf.get_template(StackName=STACK, TemplateStage="Original")["TemplateBody"]
+        if isinstance(deployed_template, str):
+            deployed_template = json.loads(deployed_template)
+        if deployed_template != json.loads(TEMPLATE.read_text()):
+            raise ValueError("Existing reader stack template requires separately reviewed migration")
         # Preserve provider ownership on reruns; discovery alone would switch an
         # owned provider to external and change the CloudFormation resource set.
         parameters = {p["ParameterKey"]: p.get("ParameterValue", "") for p in existing.get("Parameters", [])}

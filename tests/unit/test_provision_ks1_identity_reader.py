@@ -22,6 +22,7 @@ def clients(existing=None):
         {"OutputKey": "ReaderRoleArn", "OutputValue": f"arn:aws:iam::{subject.ACCOUNT}:role/ks1-autofunction-identity-reader"}]}
     first = {"Stacks": [existing]} if existing else AwsError("ValidationError", "Stack does not exist")
     cf.describe_stacks.side_effect = [first, {"Stacks": [final]}]
+    cf.get_template.return_value = {"TemplateBody": json.loads(subject.TEMPLATE.read_text())}
     iam.list_open_id_connect_providers.return_value = {"OpenIDConnectProviderList": []}
     iam.get_open_id_connect_provider.return_value = {"Url": "token.actions.githubusercontent.com", "ClientIDList": ["sts.amazonaws.com"]}
     return sts, cf, iam
@@ -53,6 +54,14 @@ def test_owned_provider_parameter_survives_reruns():
     assert subject.provision(sts, cf, iam)['operation'] == 'unchanged'
     iam.list_open_id_connect_providers.assert_not_called()
     assert cf.update_stack.call_args.kwargs['Parameters'][0]['ParameterValue'] == ''
+
+
+def test_same_named_stack_cannot_hide_unrelated_resources():
+    sts, cf, iam = clients({'StackStatus': 'CREATE_COMPLETE', 'Parameters': [{'ParameterKey': subject.PARAMETER, 'ParameterValue': ''}]})
+    cf.get_template.return_value['TemplateBody']['Resources']['UnrelatedAlgorithm'] = {'Type': 'AWS::Lambda::Function'}
+    with pytest.raises(ValueError, match='separately reviewed migration'):
+        subject.provision(sts, cf, iam)
+    cf.update_stack.assert_not_called()
 
 
 @pytest.mark.parametrize('status', ['ROLLBACK_COMPLETE', 'CREATE_IN_PROGRESS'])
