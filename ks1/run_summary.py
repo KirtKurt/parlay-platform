@@ -34,6 +34,19 @@ def artifact_summary(output):
             'selected': development.get('selected'),
             'metrics': development.get('metrics'),
             'final_holdout_used_for_selection': development.get('final_holdout_used_for_selection'),
+            # Legacy artifacts must remain unknown, not appear fully covered.
+            'matchup_value_admission': development.get('matchup_value_admission'),
+            'explicit_pitch_type_values_admitted': {
+                name: ([feature for feature in data['features']
+                       if '_lineup_pitch_type_matchup_' in feature
+                       and not feature.endswith('_missing')]
+                       if 'features' in data else None)
+                for name, data in development.get('trials', {}).items()},
+            'explicit_pitch_type_values_used': {
+                name: [feature for feature in data['trials'][data['selected_trial']]['features_used_in_splits']
+                       if '_lineup_pitch_type_matchup_' in feature
+                       and not feature.endswith('_missing')]
+                for name, data in development.get('trials', {}).items()},
             'matchup_values_used': {
                 name: [feature for feature in data['trials'][data['selected_trial']]['features_used_in_splits']
                        if not feature.endswith('_missing') and

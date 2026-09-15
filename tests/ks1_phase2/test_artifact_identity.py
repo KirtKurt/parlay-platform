@@ -58,4 +58,23 @@ def test_deferred_run_reports_recovery_and_never_claims_a_model(tmp_path, monkey
     assert printed['run_summary']['decision']['qualification_run'] is False
     assert printed['run_summary']['recovery']['attempts'][0]['verified_artifact'] == source
     assert printed['run_summary']['development']['matchup_values_used']['full'] == ['away_lineup_platoon_xwoba_7d']
+    assert printed['run_summary']['development']['matchup_value_admission'] is None
+    assert printed['run_summary']['development']['explicit_pitch_type_values_admitted']['full'] is None
+    assert printed['run_summary']['development']['explicit_pitch_type_values_used']['full'] == []
     assert not any(key.endswith('/model.txt') for key in store.objects)
+
+
+def test_summary_separates_admitted_unused_pitch_values_from_platoon_and_missingness(tmp_path):
+    from ks1.run_summary import artifact_summary
+    pitch = 'home_lineup_pitch_type_matchup_whiff_pct_30d'
+    platoon = 'home_lineup_platoon_xwoba_30d'
+    report = {'matchup_value_admission': {pitch: {'admitted': True, 'nonmissing_games': 310}},
+              'trials': {'full': {'features': [pitch, pitch+'_missing', platoon],
+                                  'selected_trial': 'baseline', 'trials': {'baseline': {
+                                      'features_used_in_splits': [pitch+'_missing', platoon]}}}}}
+    (tmp_path/'development_selection.json').write_text(json.dumps(report))
+    result = artifact_summary(tmp_path)['development']
+    assert result['matchup_value_admission'] == report['matchup_value_admission']
+    assert result['explicit_pitch_type_values_admitted'] == {'full': [pitch]}
+    assert result['explicit_pitch_type_values_used'] == {'full': []}
+    assert result['matchup_values_used'] == {'full': [platoon]}
