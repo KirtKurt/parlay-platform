@@ -94,4 +94,111 @@ def blend_with_market(grid: list[list[float]], market_1x2: dict[str, float] | No
     total = sum(sum(row) for row in out)
     if total <= 0:
         return grid
-    return [[cell / total for cell in row] for cell in row]
+    return [[cell / total for cell in row] for row in out]
+
+
+def predict_match(payload: dict[str, Any], *, goals_model=None, goals_features=None) -> dict[str, Any]:
+    mapping = map_event(
+        odds_event_id=str(payload.get("odds_event_id") or payload.get("event_id") or ""),
+        sport_key=str(payload.get("sport_key") or ""),
+        home_team=str(payload.get("home_team") or ""),
+        away_team=str(payload.get("away_team") or ""),
+        commence_time=str(payload.get("commence_time") or ""),
+        bbd_matches=payload.get("bbd_matches") or [],
+    )
+    observation = classify_observation(
+        str(payload.get("commence_time") or ""),
+        str(payload.get("observed_at") or payload.get("commence_time") or ""),
+    )
+    defaulted = [key for key in GOAL_INPUT_DEFAULTS if payload.get(key) is None]
+    goal_inputs = {
+        key: default if payload.get(key) is None else _goal_input(payload[key])
+        for key, default in GOAL_INPUT_DEFAULTS.items()
+    }
+    lam, mu, has_xg = expected_goals(
+        **goal_inputs,
+        xg_home=payload.get("xg_home"),
+        xg_away=payload.get("xg_away"),
+    )
+    if goals_model is not None:
+        from .kss1_goals_model import rates
+        if goals_features is None:
+            raise ValueError("trained goals model requires frozen features")
+        lam, mu = rates(goals_model, goals_features)
+        has_xg = bool(goals_model["use_xg"] and goals_features["xg_complete"])
+    grid = score_matrix(lam, mu)
+    if goals_model is None:
+        grid = blend_with_market(grid, payload.get("market_1x2"))
+    books = {
+        "1x2": payload.get("market_1x2"),
+        "dc": payload.get("market_dc"),
+        "ou25": payload.get("market_ou25"),
+        "btts": payload.get("market_btts"),
+    }
+    markets = apply_abstain(
+        markets_from_grid(grid),
+        min_1x2=0.40,
+        min_other=0.51,
+        books=books,
+        require_positive_edge=goals_model is not None,
+    )
+    if mapping.get("publish_ou_btts") is not True:
+        markets["ou25_published"] = "ABSTAIN"
+        markets["btts_published"] = "ABSTAIN"
+    if mapping.get("tier") == "Q" or mapping.get("goals_model_eligible") is False:
+        for key in ("1x2_published", "double_chance_published", "ou25_published", "btts_published"):
+            markets[key] = "ABSTAIN"
+    if observation.get("action") == "reject":
+        for key in ("1x2_published", "double_chance_published", "ou25_published", "btts_published"):
+            markets[key] = "ABSTAIN"
+    return {
+        "engine_id": ENGINE_ID,
+        "engine_lock_version": ENGINE_LOCK_VERSION,
+        "goals_model_digest": goals_model["model_digest"] if goals_model else None,
+        "authority": AUTHORITY,
+        "public_horizon": PUBLIC_HORIZON,
+        "lambda_home": lam,
+        "lambda_away": mu,
+        "has_xg": has_xg,
+        "input_coverage": {
+            "defaulted_fields": defaulted,
+            "team_strength_complete": goals_features["team_strength_complete"] if goals_features else not any(
+                key in defaulted for key in ("home_attack", "away_attack", "home_defence", "away_defence")
+            ),
+            "xg_complete": has_xg,
+        },
+        "mapping": mapping,
+        "observation": observation,
+        "markets": markets,
+        "automatic_prediction_allowed": False,
+    }
+
+
+def grade_lock(prediction: dict[str, Any], home_goals: int, away_goals: int) -> dict[str, Any]:
+    actual = settle_regulation(home_goals, away_goals)
+    published = prediction["markets"]
+    graded = {}
+    dc_hits = {
+        "1X": actual["1X"] == "hit",
+        "12": actual["12"] == "hit",
+        "X2": actual["X2"] == "hit",
+    }
+    for market, (pick, truth) in {
+        "1x2": (published.get("1x2_published"), actual["1x2"]),
+        "ou25": (published.get("ou25_published"), actual["over_25"]),
+        "btts": (published.get("btts_published"), actual["btts"]),
+    }.items():
+        if pick in (None, "ABSTAIN"):
+            graded[market] = "abstain"
+        else:
+            graded[market] = "hit" if pick == truth else "miss"
+    dc_pick = published.get("double_chance_published")
+    if dc_pick in (None, "ABSTAIN"):
+        graded["double_chance"] = "abstain"
+    else:
+        graded["double_chance"] = "hit" if dc_hits.get(dc_pick) else "miss"
+    return {"actual": actual, "graded": graded}
+
+
+def consider_public_bind(existing: dict[str, Any] | None, candidate: dict[str, Any]) -> dict[str, Any]:
+    return first_bind_wins(existing, candidate)
