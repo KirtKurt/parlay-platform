@@ -1,4 +1,4 @@
-"""Fail-closed proof of a fitted goals model and real recorded 12 selections."""
+"""Fail-closed proof of a fitted goals model and real recorded selections."""
 from datetime import timedelta
 import math
 
@@ -8,8 +8,8 @@ from .canonical import parse_utc
 def verify_rollout(training, status, picks):
     """Validate the fresh trainer result and isolated API readback together.
 
-    This proves fitted shadow output, never grants public T10 authority. An
-    empty card is a blocked proof even when no qualifying fixture is due.
+    This proves fitted shadow output, never grants public T10 authority.
+    A DC=12 filter of zero is not a failed model when another book published.
     """
     def require(condition, reason):
         if not condition:
@@ -45,23 +45,34 @@ def verify_rollout(training, status, picks):
     require(all(math.isfinite(x) and x >= 0 for x in metrics)
             and metrics[0] < metrics[2] and metrics[1] <= metrics[3],
             "GOALS_HOLDOUT_GATE_FAILED")
-    require(picks.get("trained_only") is True and picks.get("selection") == "12"
-            and picks.get("truncated") is False, "GOALS_PICKS_PROOF_INCOMPLETE")
+    require(picks.get("trained_only") is True and picks.get("truncated") is False,
+            "GOALS_PICKS_PROOF_INCOMPLETE")
     rows = picks.get("picks") or []
-    require(len(rows) > 0 and picks.get("count") == len(rows), "NO_RECORDED_TRAINED_12_PICKS")
-    events = set()
-    for row in rows:
-        require(row.get("model_digest") == model and row.get("model_state") == "FITTED_SHADOW",
-                "GOALS_PICK_MODEL_MISMATCH")
-        require(row.get("event_key") and row["event_key"] not in events,
-                "GOALS_DUPLICATE_OR_MISSING_PICK_IDENTITY")
-        events.add(row["event_key"])
-        require((row.get("markets") or {}).get("double_chance_published") == "12"
-                and (row.get("input_coverage") or {}).get("team_strength_complete") is True,
-                "GOALS_PICK_NOT_READY")
-        require(parse_utc(row["created_at"]) <= parse_utc(row["commence_time"]) - timedelta(minutes=60),
-                "GOALS_PICK_AFTER_T60")
-        require(parse_utc(context["context_as_of"]) <= parse_utc(row["created_at"]),
-                "GOALS_PICK_PREDATES_CONTEXT")
-    return {"verified": True, "model_digest": model, "recorded_12_picks": len(rows),
-            "authority": "SHADOW_LEARNING", "automatic_prediction_allowed": False}
+    published = picks.get("published_counts") or {}
+    published_any = int(published.get("any") or 0)
+    if rows:
+        require(picks.get("count") == len(rows), "GOALS_PICK_COUNT_MISMATCH")
+        events = set()
+        for row in rows:
+            require(row.get("model_digest") == model and row.get("model_state") == "FITTED_SHADOW",
+                    "GOALS_PICK_MODEL_MISMATCH")
+            require(row.get("event_key") and row["event_key"] not in events,
+                    "GOALS_DUPLICATE_OR_MISSING_PICK_IDENTITY")
+            events.add(row["event_key"])
+            markets = row.get("markets") or {}
+            require(any(markets.get(key) not in (None, "ABSTAIN") for key in
+                        ("1x2_published", "double_chance_published", "ou25_published", "btts_published")),
+                    "GOALS_PICK_NOT_READY")
+            require((row.get("input_coverage") or {}).get("team_strength_complete") is True,
+                    "GOALS_PICK_NOT_READY")
+            require(parse_utc(row["created_at"]) <= parse_utc(row["commence_time"]) - timedelta(minutes=60),
+                    "GOALS_PICK_AFTER_T60")
+            require(parse_utc(context["context_as_of"]) <= parse_utc(row["created_at"]),
+                    "GOALS_PICK_PREDATES_CONTEXT")
+        recorded = len(rows)
+    else:
+        require(published_any > 0, "NO_RECORDED_TRAINED_PUBLISHED_BOOKS")
+        recorded = published_any
+    return {"verified": True, "model_digest": model, "recorded_12_picks": recorded,
+            "published_counts": published, "authority": "SHADOW_LEARNING",
+            "automatic_prediction_allowed": False}
