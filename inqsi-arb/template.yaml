@@ -116,6 +116,12 @@ Resources:
         Rules:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/rules, Method: GET}
+        Books:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/books, Method: GET}
+        CollectorStatus:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/collector, Method: GET}
         Packs:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/packs, Method: GET}
@@ -241,3 +247,7 @@ Outputs:
     Value: !Sub 'https://${ArbApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/v1/arb/ui'
   ArbWebSocketUrl:
     Value: !Sub 'wss://${ArbWebSocketApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod'
+  ArbCollectorFunctionName:
+    Value: !Ref ArbCollectorFunction
+  ArbBooksUrl:
+    Value: !Sub 'https://${ArbApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/v1/arb/books'

@@ -11,6 +11,7 @@ from math import isfinite
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from stake_rounding import StakeRoundingError, optimize_rounding_neighborhood
+from settlement_matrix import SettlementProofError, prove_quoted_market
 
 
 class ArbValidationError(ValueError):
@@ -98,7 +99,8 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
                      "american": raw.get("american") if raw.get("american") is not None else round(decimal_to_american(d), 2),
                      "decimal": d, "net_decimal": net_d, "commission_rate": float(raw.get("commission_rate") or 0.0),
                      "provider": raw.get("provider"), "last_update": raw.get("last_update"), "link": raw.get("link"),
-                     "limit": raw.get("limit"), "min_stake": raw.get("min_stake"), "stake_increment": raw.get("stake_increment")}
+                     "limit": raw.get("limit"), "min_stake": raw.get("min_stake"), "stake_increment": raw.get("stake_increment"),
+                     "point": raw.get("point")}
         if best.get(outcome) is None or net_d > best[outcome]["net_decimal"]: best[outcome] = candidate
     if expected_set:
         missing = sorted(expected_set - set(best)); extra = sorted(set(best) - expected_set); complete = not missing and not extra
@@ -150,7 +152,7 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
                                    "decimal": round(q["decimal"], 6), "net_decimal": round(q["net_decimal"], 6),
                                    "stake": stake, "payout_if_wins": round(payout, 2), "profit_if_wins": round(profit, 2),
                                    "last_update": q.get("last_update"), "provider": q.get("provider"), "link": q.get("link"),
-                                   "limit": q.get("limit")})
+                                   "limit": q.get("limit"), "point": q.get("point")})
             if math_arb and not executable:
                 rounding_reason = "NOT_EXECUTABLE_AFTER_ROUNDING"
         else:
@@ -165,7 +167,19 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
                                    "stake": stake, "payout_if_wins": round(payout, 2),
                                    "profit_if_wins": round(payout - allocated_stake, 2),
                                    "last_update": q.get("last_update"), "provider": q.get("provider"),
-                                   "link": q.get("link"), "limit": q.get("limit")})
+                                   "link": q.get("link"), "limit": q.get("limit"), "point": q.get("point")})
+    settlement_states = None
+    settlement_state_reason = None
+    if stake_rows and complete:
+        try:
+            settlement_states = prove_quoted_market(market=market, legs=stake_rows)
+        except SettlementProofError as exc:
+            settlement_state_reason = "SETTLEMENT_STATE_PROOF_FAILED"
+            settlement_states = {"ok": False, "strict_arbitrage": False, "reason": str(exc)[:200]}
+        if settlement_states and not settlement_states.get("strict_arbitrage"):
+            if math_arb:
+                settlement_state_reason = settlement_state_reason or "SETTLEMENT_STATE_NOT_STRICT"
+            executable = False
     is_arb = bool(math_arb and rules_compatible and executable)
     min_profit = min((r["profit_if_wins"] for r in stake_rows), default=None)
     min_payout = min((r["payout_if_wins"] for r in stake_rows), default=None)
@@ -177,6 +191,16 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
         "extra_outcomes": extra,
         "executable": executable,
     }
+    if settlement_states is not None:
+        validation["settlement_states"] = {
+            "strict_arbitrage": bool(settlement_states.get("strict_arbitrage")),
+            "includes_push": bool(settlement_states.get("includes_push")),
+            "minimum_net_pnl": settlement_states.get("minimum_net_pnl"),
+            "state_count": settlement_states.get("state_count"),
+            "states": settlement_states.get("states"),
+        }
+        if settlement_states.get("reason"):
+            validation["settlement_state_reason"] = str(settlement_states["reason"])
     settlement_validation = (context or {}).get("settlement_validation")
     if isinstance(settlement_validation, Mapping):
         if settlement_validation.get("reason"):
@@ -187,6 +211,8 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
             })
     if math_arb and not rules_compatible:
         validation["qualification_reason"] = "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
+    elif math_arb and settlement_state_reason:
+        validation["qualification_reason"] = settlement_state_reason
     elif math_arb and not executable:
         validation["qualification_reason"] = rounding_reason or "NOT_EXECUTABLE_AFTER_ROUNDING"
     return {"market_id": market_id, "event": event, "market": market, "commence_time": commence_time,

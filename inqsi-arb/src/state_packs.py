@@ -57,13 +57,17 @@ BOOK_STATES: Dict[str, Set[str]] = {
         "mi", "mo", "nc", "nj", "ny", "oh", "pa", "tn", "va", "vt", "wv", "wy",
     },
     "espnbet": {
-        "az", "co", "ia", "il", "in", "ks", "ky", "la", "ma", "md", "mi", "mo",
-        "nc", "nj", "oh", "pa", "tn", "va", "wv",
+        "az", "co", "dc", "ia", "il", "in", "ks", "ky", "la", "ma", "md", "mi", "mo",
+        "nc", "nj", "ny", "oh", "pa", "tn", "va", "vt", "wv",
     },
-    "hardrockbet": {"az", "co", "fl", "il", "in", "mi", "oh", "tn", "va"},
-    "betrivers": {"de", "il", "in", "md", "mi", "nj", "ny", "pa", "va", "wv"},
+    "hardrockbet": {"az", "co", "fl", "il", "in", "mi", "nj", "oh", "tn", "va"},
+    "hardrockbet_az": {"az"},
+    "hardrockbet_fl": {"fl"},
+    "hardrockbet_oh": {"oh"},
+    "betrivers": {"az", "co", "de", "ia", "il", "in", "la", "md", "mi", "nj", "ny", "oh", "pa", "va", "wv"},
     "pointsbetus": {"co", "ia", "il", "in", "ks", "la", "nj", "va"},
-    "ballybet": {"az", "co", "ia", "in", "ma", "ny", "oh", "va"},
+    "ballybet": {"az", "co", "ia", "in", "ma", "md", "nj", "ny", "oh", "tn", "va"},
+    "betparx": {"co", "md", "nj", "oh", "pa", "wv"},
 }
 
 NOTES = {
@@ -103,7 +107,10 @@ def _reviewed_books(state: str) -> List[str]:
 
 def _missing_high_volume(state: str, licensed: Iterable[str], reviewed: Iterable[str]) -> List[str]:
     reviewed_set = set(reviewed)
-    priority = ("draftkings", "fanduel", "betmgm", "williamhill_us", "fanatics")
+    priority = (
+        "draftkings", "fanduel", "betmgm", "williamhill_us", "fanatics",
+        "espnbet", "betrivers", "hardrockbet", "pointsbetus", "ballybet", "betparx",
+    )
     return [book for book in priority if book in set(licensed) and book not in reviewed_set]
 
 
