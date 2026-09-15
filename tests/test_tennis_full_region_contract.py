@@ -7,6 +7,9 @@ TEMPLATE = (ROOT / "tennis-template.yaml").read_text(encoding="utf-8")
 CARD = (ROOT / ".github/workflows/publish-tennis-daily-card.yml").read_text(
     encoding="utf-8"
 )
+TIMING = (ROOT / "tennis_learning" / "daily_card_timing.py").read_text(
+    encoding="utf-8"
+)
 DEPLOY = (ROOT / ".github/workflows/deploy-tennis-learning.yml").read_text(
     encoding="utf-8"
 )
@@ -68,6 +71,19 @@ def test_daily_card_preserves_threshold_and_t10_instead_of_forcing_picks():
     assert "timing_violation_records_ignored" in CARD
     assert "TENNIS_PREDICTION_CUTOFF_MINUTES: '10'" in CARD
     assert "unpredicted_match_count" in CARD
+
+
+def test_daily_card_exposes_the_schedule_authority_used_for_t10():
+    assert "timing_receipt(" in CARD
+    assert '"t10_schedule_source"' in TIMING
+    assert '"t10_commence_time_utc"' in TIMING
+    assert '"display_commence_time_utc"' in TIMING
+    assert '"schedule_start_consistent"' in TIMING
+    assert '"t10_cutoff_utc"' in TIMING
+    assert "'t10_compliant': compliant" in CARD
+    assert "**timing" in CARD
+    assert "for row in picks + unpredicted_matches" in CARD
+    assert "'schedule_start_conflict_count'" in CARD
 
 
 def test_daily_card_enforces_all_h2h_regions_and_zero_coverage_failures():
