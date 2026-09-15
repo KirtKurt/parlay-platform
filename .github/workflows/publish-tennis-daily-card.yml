@@ -58,6 +58,11 @@ jobs:
           import boto3
           from boto3.dynamodb.conditions import Attr
 
+          from tennis_learning.daily_card_timing import (
+              prediction_is_compliant,
+              timing_receipt,
+          )
+
           table = boto3.resource(
               'dynamodb',
               region_name=os.environ['AWS_REGION_VALUE'],
@@ -160,6 +165,7 @@ jobs:
 
           live = {}
           deadlines = {}
+          deadline_receipts = {}
           for item in scan_prefix('LIVE#'):
               event_id = str(
                   item.get('event_id')
@@ -168,16 +174,21 @@ jobs:
               if event_id not in coverage:
                   continue
               try:
+                  receipt = timing_receipt(
+                      displayed_commence_time=(
+                          coverage[event_id]['commence_time_utc']
+                      ),
+                      live_commence_time=item.get('commence_time'),
+                      cutoff_minutes=cutoff_minutes,
+                  )
                   commence_utc = parse_utc(
-                      item.get('commence_time')
-                      or coverage[event_id]['commence_time_utc']
+                      receipt['t10_commence_time_utc']
                   )
               except Exception:
                   continue
               live[event_id] = item
-              deadlines[event_id] = commence_utc - timedelta(
-                  minutes=cutoff_minutes
-              )
+              deadlines[event_id] = parse_utc(receipt['t10_cutoff_utc'])
+              deadline_receipts[event_id] = receipt
 
           latest = {}
           timing_violation_records_ignored = 0
@@ -195,10 +206,16 @@ jobs:
               deadline = deadlines.get(event_id)
               if deadline is None:
                   try:
-                      deadline = (
-                          parse_utc(coverage[event_id]['commence_time_utc'])
-                          - timedelta(minutes=cutoff_minutes)
+                      receipt = timing_receipt(
+                          displayed_commence_time=(
+                              coverage[event_id]['commence_time_utc']
+                          ),
+                          live_commence_time=None,
+                          cutoff_minutes=cutoff_minutes,
                       )
+                      deadline = parse_utc(receipt['t10_cutoff_utc'])
+                      deadlines[event_id] = deadline
+                      deadline_receipts[event_id] = receipt
                   except Exception:
                       malformed_prediction_timestamps += 1
                       continue
@@ -246,16 +263,22 @@ jobs:
                   if confidence >= 0.60
                   else ('WATCH' if confidence >= 0.55 else 'PASS')
               )
+              timing = deadline_receipts[event_id]
+              compliant = prediction_is_compliant(
+                  pred.get('SK'),
+                  timing,
+              )
               picks.append(
                   {
                       **event,
+                      **timing,
                       'pick': pick,
                       'probability': round(confidence, 6),
                       'probability_pct': round(confidence * 100, 2),
                       'band': band,
                       'model_version': int(pred.get('model_version') or 0),
                       'prediction_timestamp': str(pred.get('SK') or ''),
-                      't10_compliant': True,
+                      't10_compliant': compliant,
                   }
               )
 
@@ -313,6 +336,9 @@ jobs:
               ),
               'malformed_prediction_timestamps': (
                   malformed_prediction_timestamps
+              ),
+              'schedule_start_conflict_count': sum(
+                  not p['schedule_start_consistent'] for p in picks
               ),
               'malformed_coverage_rows': malformed_coverage_rows,
               'coverage_failure_count': len(coverage_failures),
