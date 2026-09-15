@@ -37,6 +37,29 @@ def _replace_regex(text: str, pattern: str, replacement: str, label: str) -> str
 
 
 def patch_verifier(text: str) -> str:
+    provider_neutral_markers = (
+        '"provider": "PROVIDER_NEUTRAL_OFFICIAL_INTERNAL"',
+        "_RETIRED_BBS_ENVIRONMENT = (",
+        "RETIRED_PROVIDER_ENVIRONMENT_PRESENT_ON_DISCOVERED_LAMBDA",
+    )
+    if all(marker in text for marker in provider_neutral_markers):
+        stale = (
+            "BBS_SECRET_ARN_MISSING_ON_INGEST",
+            "BBS_SHADOW_ENVIRONMENT_MISMATCH_ON_INGEST",
+            "secretArnPresentOnIngest",
+            "shadowEnvironmentMatches",
+            "otherCanonicalFunctionsWithoutBbsAuthority",
+            "BBS_AUTHORITY_LEAKED_TO_",
+            "BBS_AUTHORITY_PRESENT_ON_NON_INGEST_LAMBDA",
+        )
+        remaining = [token for token in stale if token in text]
+        if remaining:
+            raise RuntimeError(
+                "stale provider identity requirements remain: "
+                + ",".join(remaining)
+            )
+        return text
+
     old_constants = '''BBS_EXPECTED_INGEST_ENVIRONMENT = {
     "BBS_SHADOW_CAPTURE_ENABLED": "true",
     "BBS_SHADOW_SCHEMA_VERSION": (

@@ -12,6 +12,7 @@ from urllib.error import HTTPError, URLError
 import pytest
 
 from scripts import verify_mlb_deploy_identity as deploy_identity
+from scripts import migrate_mlb_deploy_identity_provider_neutral as migration
 from scripts.mlb_lambda_artifact_identity import (
     MANIFEST_SCHEMA_VERSION,
     lambda_code_sha256,
@@ -360,6 +361,12 @@ def _verify(
             else expected_code_manifest
         ),
     )
+
+
+def test_provider_neutral_migration_is_idempotent_on_hardened_verifier() -> None:
+    source = Path(deploy_identity.__file__).read_text(encoding="utf-8")
+
+    assert migration.patch_verifier(source) == source
 
 
 def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> None:
