@@ -39,14 +39,14 @@ def test_verified_score_only_readback_can_pass_without_xg():
 
 
 @pytest.mark.parametrize("defect,reason", [
-    ("empty", "NO_RECORDED_TRAINED_12_PICKS"),
+    ("empty", "NO_RECORDED_TRAINED_PUBLISHED_BOOKS"),
     ("untrained", "GOALS_MODEL_NOT_TRAINED"),
     ("rejected", "GOALS_CANDIDATE_NOT_QUALIFIED"),
     ("wrong_model", "GOALS_PICK_MODEL_MISMATCH"),
     ("wrong_context", "GOALS_CONTEXT_READBACK_MISMATCH"),
     ("late", "GOALS_PICK_AFTER_T60"),
     ("insufficient_history", "GOALS_PICK_NOT_READY"),
-    ("wrong_selection", "GOALS_PICK_NOT_READY"),
+    ("no_published_book", "GOALS_PICK_NOT_READY"),
     ("wrong_cohort", "GOALS_HOLDOUT_COHORT_MISMATCH"),
     ("worse_loss", "GOALS_HOLDOUT_GATE_FAILED"),
     ("nan", "GOALS_HOLDOUT_GATE_FAILED"),
@@ -64,7 +64,8 @@ def test_rollout_proof_rejects_unready_or_mismatched_evidence(defect, reason):
     elif defect == "wrong_context": training["artifact_uri"] = "old"
     elif defect == "late": picks["picks"][0]["created_at"] = "2026-09-14T12:00:01Z"
     elif defect == "insufficient_history": picks["picks"][0]["input_coverage"]["team_strength_complete"] = False
-    elif defect == "wrong_selection": picks["picks"][0]["markets"]["double_chance_published"] = "1X"
+    elif defect == "no_published_book":
+        picks["picks"][0]["markets"]["double_chance_published"] = "ABSTAIN"
     elif defect == "wrong_cohort": context["candidate_baseline"]["event_manifest"] = "different"
     elif defect == "worse_loss": context["candidate_holdout"]["log_loss"] = 1.1
     elif defect == "nan": context["candidate_holdout"]["brier"] = float("nan")
