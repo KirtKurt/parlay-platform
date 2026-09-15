@@ -187,7 +187,7 @@ def validation_reason(payload, value, games, expected, invalid,
     return None
 
 
-def load_training_statcast(bundle, s3, bucket):
+def load_training_statcast(bundle, s3, bucket, *, requested_dates=None):
     """Restore prior pitch windows from retained objects; never call a provider.
 
     Read at most the two complete official-history seasons already loaded by
@@ -207,6 +207,12 @@ def load_training_statcast(bundle, s3, bucket):
         while current.year == year and current <= last_day:
             expected_dates[current.isoformat()] = set()
             current += timedelta(days=1)
+    if requested_dates is not None:
+        requested = {date.fromisoformat(value).isoformat() for value in requested_dates}
+        if len(requested) > 30:
+            raise ValueError('bounded retained restore permits at most 30 dates')
+        expected_dates = {value: games for value, games in expected_dates.items()
+                          if value in requested}
     unfinished = set()
     for game in schedule:
         value = day(game['gameDate']).isoformat()
