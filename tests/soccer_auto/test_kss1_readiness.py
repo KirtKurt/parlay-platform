@@ -94,10 +94,11 @@ def test_readiness_counts_only_rows_with_prior_team_history():
 
 def test_source_audit_separates_invalid_regulation_and_competition_exclusions():
     def score(event_id, sport, ambiguous=False):
+        home = "Another Home" if ambiguous else "Home"
         return build_settlement({"id": event_id, "sport_key": sport, "schedule_revision": 1,
-                                 "home_team": "Home", "away_team": "Away",
+                                 "home_team": home, "away_team": "Away",
                                  "commence_time": "2026-09-01T12:00:00Z", "completed": True,
-                                 "scores": [{"name": "Home", "score": "2"}, {"name": "Away", "score": "1"}]},
+                                 "scores": [{"name": home, "score": "2"}, {"name": "Away", "score": "1"}]},
                                 observed_at="2026-09-01T14:00:00Z", regulation_ambiguous=ambiguous)
     good = score("good", "soccer_epl")
     bad = score("bad", "soccer_epl")

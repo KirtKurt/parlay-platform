@@ -16,6 +16,8 @@ from .kss1_bbd import BbdClient, BbdError, extract_match_xg
 from .kss1_features import MIN_TEAM_GAMES, HistoryIndex, build_training_table, normalize_history
 from .kss1_goals_model import train_and_validate
 from .kss1_identity import classify_competition, map_event
+from .kss1_identity import normalize_name
+from .kss1_score_archive import load_archive, merge_history
 from .settlement import settlement_training_admissible, settlement_training_evidence_valid, settlement_training_views
 from .storage import SoccerStore, ddb_safe, now_utc, plain
 
@@ -32,15 +34,20 @@ def source_history(store, *, audit=None) -> list[dict[str, Any]]:
               "conflicted_scores": 0, "regulation_ineligible": 0,
               "competition_ineligible": 0, "accepted_scores": 0}
     competitions = {}
+    quarantined_identities = set()
     for row in signed:
         if not settlement_training_evidence_valid(row):
             counts["invalid_score_evidence"] += 1
             continue
         if row["event_key"] in conflicts:
             counts["conflicted_scores"] += 1
+            quarantined_identities.add((row["sport_key"], normalize_name(row["home_team"]),
+                                        normalize_name(row["away_team"]), row["commence_time"][:10]))
             continue
         if not settlement_training_admissible(row):
             counts["regulation_ineligible"] += 1
+            quarantined_identities.add((row["sport_key"], normalize_name(row["home_team"]),
+                                        normalize_name(row["away_team"]), row["commence_time"][:10]))
             continue
         if not classify_competition(row["sport_key"])["goals_model_eligible"]:
             counts["competition_ineligible"] += 1
@@ -54,11 +61,15 @@ def source_history(store, *, audit=None) -> list[dict[str, Any]]:
         })
         counts["accepted_scores"] += 1
         competitions[row["sport_key"]] = competitions.get(row["sport_key"], 0) + 1
-    result = normalize_history(rows)
+    archive, archive_audit = load_archive(store)
+    quarantined_identities.update(tuple(i) for i in archive_audit.get("conflicted_identities", []))
+    result, reconciliation = merge_history(normalize_history(rows), archive, quarantined_identities,
+                                           quarantined_seasons=archive_audit.get("quarantined_season_identities", []))
     if audit is not None:
         audit.update(counts, accepted_by_competition=competitions,
                      unique_history_rows=len(result),
-                     source="the_odds_api_signed_settlement",
+                     source="signed_settlement_and_verified_archive" if archive else "the_odds_api_signed_settlement",
+                     score_archive=archive_audit, reconciliation=reconciliation,
                      availability_policy="verified score and certificate receipts; never kickoff-derived",
                      oldest_kickoff=result[0]["commence_time"] if result else None,
                      newest_kickoff=result[-1]["commence_time"] if result else None)

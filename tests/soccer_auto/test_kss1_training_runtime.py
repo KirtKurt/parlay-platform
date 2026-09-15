@@ -19,6 +19,9 @@ class Table:
         self.item = None
         self.writes = []
     def get_item(self, **kwargs):
+        from soccer_auto.kss1_score_archive import ARCHIVE_KEY
+        if kwargs["Key"] == ARCHIVE_KEY:
+            return {}
         assert kwargs["Key"] == CONTEXT_KEY
         return {"Item": deepcopy(self.item)} if self.item else {}
     def put_item(self, **kwargs):

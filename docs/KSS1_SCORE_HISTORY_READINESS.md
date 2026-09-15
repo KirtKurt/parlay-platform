@@ -43,7 +43,9 @@ scheduled collector, or supply an independently verifiable historical score
 archive with regulation semantics, exact team/event identity, and historical
 availability evidence. An archive supplied today without that evidence is
 research-only; Git author/committer dates alone do not prove public availability.
-No new production archive provider is implemented by this repair.
+A follow-on verified archive path is documented in [KSS1_SCORE_ARCHIVE.md](KSS1_SCORE_ARCHIVE.md).
+It admits independently witnessed OpenFootball versions through a separate
+score-archive pointer; current downloads without that evidence stay excluded.
 
 Before admitting a new archive, inspect coverage for the enabled competitions,
 preserve the raw evidence and immutable provenance, reconcile duplicates and
