@@ -1392,6 +1392,129 @@ def test_ignores_enabled_unrelated_sport_training_writer(aws) -> None:
     assert result["alternateWriterAuthority"]["enabledAlternateRules"] == []
 
 
+def test_allows_enabled_positively_identified_isolated_mlb_auto_writer(aws) -> None:
+    isolated_arn = _arn(
+        "parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-AbCd1234"
+    )
+    aws["lambda"].configurations["isolated-mlb-auto"] = {
+        "FunctionName": (
+            "parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-AbCd1234"
+        ),
+        "FunctionArn": isolated_arn,
+        "Handler": "orchestrator_v3.lambda_handler",
+        "Runtime": "python3.11",
+        "Environment": {"Variables": {
+            "MLB_AUTO_TABLE": "isolated-table",
+            "BBS_API_SECRET_ARN": (
+                "arn:aws:secretsmanager:us-east-1:123456789012:secret:isolated"
+            ),
+        }},
+    }
+    aws["events"].rules["parlay-platform-mlb-auto-prod-train-1h"] = {
+        "State": "ENABLED",
+        "ScheduleExpression": "rate(1 hour)",
+        "Arn": isolated_arn,
+    }
+
+    result = _verify()
+
+    assert result["ok"] is True
+    authority = result["alternateWriterAuthority"]
+    assert authority["enabledAlternateRules"] == []
+    assert authority["authorizedIsolatedWriterFunctions"] == [{
+        "functionName": (
+            "parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-AbCd1234"
+        ),
+        "functionArn": isolated_arn,
+        "handler": "orchestrator_v3.lambda_handler",
+        "authorityScope": "isolated_three_source_mlb_auto",
+    }]
+
+
+def test_rejects_mlb_auto_writer_when_isolation_contract_is_incomplete(aws) -> None:
+    isolated_arn = _arn(
+        "parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-AbCd1234"
+    )
+    aws["lambda"].configurations["isolated-mlb-auto"] = {
+        "FunctionName": (
+            "parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-AbCd1234"
+        ),
+        "FunctionArn": isolated_arn,
+        "Handler": "orchestrator_v3.lambda_handler",
+        "Runtime": "python3.11",
+        "Environment": {"Variables": {
+            "MLB_AUTO_TABLE": "isolated-table",
+            "BBS_API_SECRET_ARN": (
+                "arn:aws:secretsmanager:us-east-1:123456789012:secret:isolated"
+            ),
+            "SNAPSHOTS_TABLE": "root-authority-table",
+        }},
+    }
+    aws["events"].rules["parlay-platform-mlb-auto-prod-train-1h"] = {
+        "State": "ENABLED",
+        "ScheduleExpression": "rate(1 hour)",
+        "Arn": isolated_arn,
+    }
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert "ENABLED_ALTERNATE_MLB_PULL_OR_TRAINING_WRITERS" in result["blockers"]
+    assert result["alternateWriterAuthority"][
+        "authorizedIsolatedWriterFunctions"
+    ] == []
+    target = result["alternateWriterAuthority"]["enabledAlternateRules"][0][
+        "targets"
+    ][0]
+    assert target["observedTargetFunction"] == {
+        "functionName": (
+            "parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-AbCd1234"
+        ),
+        "functionArn": isolated_arn,
+        "handler": "orchestrator_v3.lambda_handler",
+        "isolatedNameContractMatches": True,
+        "isolatedBoundaryEnvironmentPresent": [
+            "BBS_API_SECRET_ARN",
+            "MLB_AUTO_TABLE",
+        ],
+        "forbiddenRootEnvironmentPresent": ["SNAPSHOTS_TABLE"],
+        "authorizedIsolatedWriter": False,
+    }
+
+
+def test_reports_sanitized_identity_for_unclassified_scheduled_target(aws) -> None:
+    target_arn = _arn("parlay-platform-mlb-auto-prod-AutoFunction-AbCd1234")
+    aws["lambda"].configurations["unclassified-mlb-auto"] = {
+        "FunctionName": "parlay-platform-mlb-auto-prod-AutoFunction-AbCd1234",
+        "FunctionArn": target_arn,
+        "Handler": "legacy_orchestrator.lambda_handler",
+        "Runtime": "python3.11",
+        "Environment": {"Variables": {"MLB_AUTO_TABLE": "isolated-table"}},
+    }
+    aws["events"].rules["parlay-platform-mlb-auto-prod-train-1h"] = {
+        "State": "ENABLED",
+        "ScheduleExpression": "rate(1 hour)",
+        "Arn": target_arn,
+    }
+
+    result = _verify()
+
+    assert result["ok"] is False
+    target = result["alternateWriterAuthority"]["enabledAlternateRules"][0][
+        "targets"
+    ][0]
+    assert target["knownWriterFunction"] is None
+    assert target["observedTargetFunction"] == {
+        "functionName": "parlay-platform-mlb-auto-prod-AutoFunction-AbCd1234",
+        "functionArn": target_arn,
+        "handler": "legacy_orchestrator.lambda_handler",
+        "isolatedNameContractMatches": False,
+        "isolatedBoundaryEnvironmentPresent": ["MLB_AUTO_TABLE"],
+        "forbiddenRootEnvironmentPresent": [],
+        "authorizedIsolatedWriter": False,
+    }
+
+
 def test_fails_closed_when_regional_writer_discovery_fails(aws) -> None:
     def unavailable(**kwargs: Any) -> dict[str, Any]:
         raise RuntimeError("lambda inventory denied")
