@@ -22,6 +22,10 @@ Globals:
         ARB_MAX_EVENT_MARKET_EVENTS: '40'
         ARB_MAX_MARKETS_PER_EVENT: '120'
         ARB_MAX_SPORTS_PER_ALL_SCAN: '100'
+        ARB_COLLECT_MARKETS: 'h2h,spreads,totals'
+        ARB_COLLECT_REGIONS: us,us2
+        ARB_COLLECT_MAX_SPORTS: '6'
+        ARB_QUOTE_FRESH_SECONDS: '120'
         ARB_AUDIT_TABLE: !Ref ArbAuditTable
         ARB_STATE_TABLE: !Ref ArbStateTable
         ARB_CONNECTIONS_TABLE: !Ref ArbConnectionsTable
@@ -112,6 +116,12 @@ Resources:
         Rules:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/rules, Method: GET}
+        Packs:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/packs, Method: GET}
+        PackState:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: '/v1/arb/packs/{state}', Method: GET}
         History:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/history, Method: GET}
@@ -136,6 +146,23 @@ Resources:
         LegacyScan:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/scan, Method: POST}
+
+  ArbCollectorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: collector.handler
+      Timeout: 120
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ArbStateTable
+      Events:
+        Tick:
+          Type: Schedule
+          Properties:
+            Schedule: rate(2 minutes)
+            Enabled: true
+            Description: Rotate featured-market quote snapshots for the ARB desk
 
   ArbCalculatorFunction:
     Type: AWS::Serverless::Function
