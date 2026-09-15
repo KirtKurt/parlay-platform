@@ -40,6 +40,14 @@ def count_diagnostics(payload, value, games, expected, batters, invalid):
                              if len(ids) == 1 and (pk, ab) in credited)
     return {
         'reason': physical_validation_reason(payload, value, games, expected, batters, invalid),
+        'invalid_player_rows': [
+            {'row_index': i, **{key: row.get(key) for key in
+                ('game_pk', 'at_bat_number', 'pitch_number', 'pitcher', 'batter', 'events', 'description')}}
+            for i, row in enumerate(rows)
+            if (str(row.get('game_pk')), str(row.get('pitcher')))
+               not in expected.get(str(row.get('game_pk')), {})
+            or (str(row.get('game_pk')), str(row.get('batter')))
+               not in batters.get(str(row.get('game_pk')), {})],
         'rows': len(rows), 'invalid_official_games': sorted(set(map(str, games)) & invalid),
         'pitcher_count_differences': differences(wanted, actual),
         'batter_pa_differences': differences(wanted_batters, actual_batters),
@@ -83,7 +91,10 @@ def diagnose_date(bundle, s3, bucket, value):
             sources.append({'payload': payload, 'retained_receipt': receipt,
                             'counts': count_diagnostics(payload, value, games, expected, batters, invalid)})
         except Exception as exc:
-            errors.append({'key': key, 'error': type(exc).__name__})
+            errors.append({'key': key, 'error': type(exc).__name__,
+                           'reason': str(exc)[:240] if isinstance(exc, ValueError) else
+                           str(getattr(exc, 'response', {}).get('Error', {}).get('Code',
+                               type(exc).__name__))[:80]})
     return {'method': 'retained_physical_count_diagnostic_v1', 'date': value,
             'schedule': schedule, 'official_games': official, 'sources': sources,
             'errors': errors, 'source_writes': 0, 'provider_requests': 0,
@@ -98,9 +109,11 @@ def main():
     dates = sorted({date.fromisoformat(value).isoformat() for value in args.date})
     if len(dates) > 2:
         raise ValueError('diagnostic is bounded to two dates')
-    from ks1.sources import aws_clients, load_existing
+    from ks1.sources import aws_clients
     cf, s3, bucket = aws_clients('us-east-1', 'parlay-platform-dev')
-    bundle = load_existing(cf, s3, bucket)
+    reader = Reader(s3, bucket)
+    prior = reader.pointer(reader.read(RESEARCH + 'prior-games.json')['artifact'])
+    bundle = {'full': prior['games'], 'schedule': prior['schedule']}
     args.output.mkdir(parents=True, exist_ok=True)
     for value in dates:
         report = diagnose_date(bundle, s3, bucket, value)

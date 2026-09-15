@@ -58,7 +58,7 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
     from mlb_research_store_v1 import Store
     from mlb_research_sources_v1 import statcast, fetch as source_fetch
     from ks1.official_outcomes import (METHOD, digest, endpoint, reconcile,
-                                       outcome_diagnostics, official_index, verify_official_time, schedule_times, read_retained_evidence)
+                                       outcome_diagnostics, official_index, verify_official_time, schedule_times, read_retained_evidence, unfinished_at_bats)
     store = Store(bucket, s3)
     fetch = fetch or statcast
     fetch_official = fetch_official or source_fetch
@@ -147,9 +147,10 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                         raw_reader = Reader(s3, bucket)
                         retained = raw_reader.read(RESEARCH + raw_name)
                         if (raw_reader.receipts[-1].get('versionId') not in (None, '', 'null')
-                                and physical_validation_reason(
+                                and (physical_validation_reason(
                                     retained, value, games, physical_expected,
                                     physical_batters, physical_invalid) is None
+                                     or unfinished_at_bats(retained))
                                 and validation_reason(retained, value, games, expected, invalid,
                                                       completed_by_game, scheduled_by_game)
                                 in (None, 'incomplete_pa_outcome_fields')):
@@ -172,7 +173,13 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                 reason = validation_reason(payload, value, games, expected, invalid,
                                            completed_by_game, scheduled_by_game)
             diagnostics = outcome_diagnostics(payload)
-            if reason == 'incomplete_pa_outcome_fields' and reconcile_official:
+            if reconcile_official and (
+                    reason == 'incomplete_pa_outcome_fields'
+                    or (reason == 'physical_pitch_or_batter_attribution_mismatch'
+                        and unfinished_at_bats(payload)
+                        and validation_reason(payload, value, games, expected, invalid,
+                                              completed_by_game, scheduled_by_game)
+                        in (None, 'incomplete_pa_outcome_fields'))):
                 # Retain the selected raw records separately. This object is
                 # evidence, never a qualified replacement by itself.
                 raw_name = PREFIX + value + '/raw/' + digest(payload) + '.json'

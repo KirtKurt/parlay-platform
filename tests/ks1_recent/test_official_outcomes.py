@@ -327,3 +327,70 @@ def test_previously_retained_v1_derivations_remain_reproducible():
                                          'derivations': changes}}
     assert rows[1]['woba_value'] == 0
     verify_reconciliation(payload, {'1': bundle['full'][0]['completedAtUtc']})
+
+
+def unfinished_fixture(marker='truncated_pa'):
+    bundle, raw, key = raw_fixture()
+    # A pitched at-bat ends on a baserunning out; official pitcher pitches
+    # increase, but neither batters faced nor the batter's credited PAs do.
+    row = {**raw['rows'][0], 'at_bat_number': '999', 'pitch_number': '1',
+           'events': marker, 'woba_value': '', 'woba_denom': ''}
+    raw['rows'].append(row)
+    bundle['full'][0]['teams']['home']['players']['151']['stats']['pitching']['numberOfPitches'] += 1
+    source = evidence(raw)
+    source['data']['liveData']['plays']['allPlays'] = [
+        p for p in source['data']['liveData']['plays']['allPlays'] if p['atBatIndex'] != 998]
+    source['data']['liveData']['plays']['allPlays'].append({
+        'atBatIndex': 998, 'result': {'eventType': 'caught_stealing_2b'},
+        'about': {'atBatIndex': 998, 'isComplete': True, 'endTime': '2026-09-01T20:00:00Z'},
+        'matchup': {'batter': {'id': int(row['batter'])}, 'pitcher': {'id': 151}}})
+    seal(source, raw)
+    return bundle, raw, key, source
+
+
+@pytest.mark.parametrize('marker', ['', 'truncated_pa'])
+def test_official_non_pa_credit_restores_exact_counts_with_retained_raw(monkeypatch, marker):
+    authorize(monkeypatch)
+    bundle, raw, key, source = unfinished_fixture(marker)
+    original = deepcopy(raw)
+    s3 = MemoryS3(); s3.seed(key, raw)
+    initial = load_training_statcast(bundle, s3, 'b')
+    assert initial['errors']
+    result = recover(bundle, s3, 'b', initial, reconcile_official=True,
+                     fetch=lambda value: pytest.fail('retained pitches are sufficient'),
+                     fetch_official=lambda url: (source['data'], source['receipt']))
+    assert result['recovered_dates'] == [raw['date']]
+    payload, receipts = read_recovery(s3, 'b', raw['date'])
+    assert payload['raw_statcast'] == original
+    assert payload['rows'][-1] == {**original['rows'][-1], 'events': 'caught_stealing_2b'}
+    assert all(r['versionId'] for r in receipts)
+    assert load_training_statcast(bundle, s3, 'b')['errors'] == []
+
+
+@pytest.mark.parametrize('defect', ['missing', 'duplicate', 'batter', 'pitcher', 'incomplete',
+                                   'unrecognized', 'credited_pa', 'early', 'duplicate_pitch'])
+def test_unfinished_credit_fails_closed_on_ambiguous_or_contradictory_evidence(defect):
+    _, raw, _, source = unfinished_fixture('')
+    plays = source['data']['liveData']['plays']['allPlays']; play = plays[-1]
+    if defect == 'missing': plays.pop()
+    elif defect == 'duplicate': plays.append(deepcopy(play))
+    elif defect == 'batter': play['matchup']['batter']['id'] = 999
+    elif defect == 'pitcher': play['matchup']['pitcher']['id'] = 251
+    elif defect == 'incomplete': play['about']['isComplete'] = False
+    elif defect == 'unrecognized': play['result']['eventType'] = 'mystery_event'
+    elif defect == 'credited_pa': play['result']['eventType'] = 'single'
+    elif defect == 'early': play['about']['endTime'] = '2026-09-01T17:00:00Z'
+    elif defect == 'duplicate_pitch': raw['rows'].append(deepcopy(raw['rows'][-1]))
+    seal(source, raw)
+    with pytest.raises(ValueError):
+        reconcile(raw, lambda pk, rows: source, raw_receipt(raw))
+
+
+def test_denominator_v2_remains_reproducible_without_new_credit_derivations():
+    from ks1.official_outcomes import DENOMINATOR_METHOD, reconciled_rows
+    bundle, raw, _ = raw_fixture(); sources = {'1': evidence(raw)}
+    rows, changes = reconciled_rows(raw, sources, method=DENOMINATOR_METHOD)
+    payload = {'date': raw['date'], 'rows': rows, 'raw_statcast': raw,
+               'outcome_reconciliation': {'method': DENOMINATOR_METHOD,
+                   'official_sources': sources, 'raw_receipt': raw_receipt(raw), 'derivations': changes}}
+    verify_reconciliation(payload, {'1': bundle['full'][0]['completedAtUtc']})

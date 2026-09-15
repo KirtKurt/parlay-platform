@@ -11,10 +11,11 @@ from urllib.parse import urlencode
 from ks1.features import day, utc
 from ks1.inventory import encode
 from ks1.statcast_events import (PLATE_APPEARANCE_EVENTS, WOBA_EXCLUDED_EVENTS,
-                                complete_pa_outcome, is_plate_appearance)
+                                complete_pa_outcome, is_plate_appearance, NON_PA_AT_BAT_END_EVENTS)
 
 LEGACY_METHOD = 'official_pa_woba_accounting_v1'
-METHOD = 'official_pa_woba_denominator_v2'
+DENOMINATOR_METHOD = 'official_pa_woba_denominator_v2'
+METHOD = 'official_pa_credit_and_denominator_v3'
 FIELDS = ('gameData,game,pk,datetime,dateTime,status,abstractGameState,liveData,'
           'plays,allPlays,result,eventType,about,atBatIndex,isComplete,endTime,'
           'matchup,batter,pitcher,id')
@@ -58,10 +59,22 @@ def denominator_change(row):
     return None
 
 
+def unfinished_at_bats(raw):
+    """Only blank/truncated groups are candidates, never presumed non-PAs."""
+    groups = {}
+    for index, row in enumerate(raw['rows']):
+        key = (positive_id(row['game_pk']), positive_id(row['at_bat_number']))
+        groups.setdefault(key, []).append(index)
+    return {key: indices for key, indices in groups.items()
+            if all(event_name(raw['rows'][i].get('events')) in ('', 'truncated_pa')
+                   for i in indices)}
+
+
 def needed_games(raw, method=METHOD):
-    return sorted({positive_id(row['game_pk']) for row in raw['rows']
+    credit_games = {pk for pk, ab in unfinished_at_bats(raw)} if method == METHOD else set()
+    return sorted(credit_games | {positive_id(row['game_pk']) for row in raw['rows']
                    if is_plate_appearance(row) and not complete_pa_outcome(row)
-                   and ((method == METHOD and denominator_change(row) is not None)
+                   and ((method in (METHOD, DENOMINATOR_METHOD) and denominator_change(row) is not None)
                         or (method == LEGACY_METHOD and
                             (missing(row.get('woba_denom'))
                              or (event_name(row.get('events')) in ZERO_EVENTS
@@ -130,7 +143,7 @@ def official_index(evidence, game_id, value, raw_rows, *, require_retained=True,
 
 
 def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
-    if method not in (METHOD, LEGACY_METHOD):
+    if method not in (METHOD, DENOMINATOR_METHOD, LEGACY_METHOD):
         raise ValueError('unsupported outcome reconciliation method')
     if set(evidence) != set(needed_games(raw, method)):
         raise ValueError('official PA evidence set mismatch')
@@ -165,9 +178,42 @@ def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
             change = {'row_index': index, 'game_pk': pk,
                       'at_bat_number': str(row['at_bat_number']),
                       'fields': fields, 'official_source_sha256': evidence[pk]['receipt']['sha256']}
-            if method == METHOD:
+            if method in (METHOD, DENOMINATOR_METHOD):
                 change.update(original_fields=prior, derivation_kind='official_pa_denominator')
             changes.append(change)
+    if method == METHOD:
+        for (pk, ab), indices in unfinished_at_bats(raw).items():
+            source = evidence[pk]
+            plays = [p for p in source['data']['liveData']['plays']['allPlays']
+                     if str(p['about']['atBatIndex'] + 1) == ab]
+            if len(plays) != 1:
+                raise ValueError('unfinished at-bat official identity is missing or ambiguous')
+            play = plays[0]
+            about = play['about']
+            event = event_name(play['result'].get('eventType'))
+            start = (scheduled_by_game[pk][0] if scheduled_by_game is not None
+                     else source['data']['gameData']['datetime']['dateTime'])
+            if (event not in NON_PA_AT_BAT_END_EVENTS
+                    or isinstance(about['atBatIndex'], bool)
+                    or not isinstance(about['atBatIndex'], int)
+                    or about['atBatIndex'] < 0
+                    or play['atBatIndex'] != about['atBatIndex']
+                    or about['isComplete'] is not True or utc(about['endTime']) < utc(start)):
+                raise ValueError('unfinished at-bat lacks a completed official non-PA ending')
+            ordered = sorted(indices, key=lambda i: int(positive_id(rows[i]['pitch_number'])))
+            if len({positive_id(rows[i]['pitch_number']) for i in indices}) != len(indices):
+                raise ValueError('unfinished at-bat has duplicate pitch identities')
+            index = ordered[-1]
+            row = rows[index]
+            if (any(positive_id(rows[i]['batter']) != positive_id(play['matchup']['batter']['id'])
+                    for i in indices)
+                    or positive_id(row['pitcher']) != positive_id(play['matchup']['pitcher']['id'])):
+                raise ValueError('unfinished at-bat official player attribution differs')
+            changes.append({'row_index': index, 'game_pk': pk, 'at_bat_number': ab,
+                            'fields': {'events': event}, 'original_fields': {'events': row.get('events')},
+                            'derivation_kind': 'official_non_pa_ending',
+                            'official_source_sha256': source['receipt']['sha256']})
+            row['events'] = event
     return rows, changes
 
 
@@ -193,7 +239,7 @@ def verify_official_time(evidence, completed_at):
 def verify_reconciliation(payload, completed_by_game, scheduled_by_game=None):
     proof = payload['outcome_reconciliation']
     raw = payload['raw_statcast']
-    if (proof['method'] not in (METHOD, LEGACY_METHOD) or raw['date'] != payload['date']
+    if (proof['method'] not in (METHOD, DENOMINATOR_METHOD, LEGACY_METHOD) or raw['date'] != payload['date']
             or 'outcome_reconciliation' in raw or 'raw_statcast' in raw):
         raise ValueError('invalid outcome reconciliation envelope')
     pointer = proof['raw_receipt']
