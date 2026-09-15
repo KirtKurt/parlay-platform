@@ -86,9 +86,14 @@ def test_deterministic_repair_rejects_each_missing_root_binding(tmp_path) -> Non
     block = source[start:end]
 
     for index, key in enumerate(
-        repair_boundary._HARDENED_STRING_CONSTANTS[
-            "ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT"
-        ]
+        (
+            "SNAPSHOTS_TABLE",
+            "SIGNALS_TABLE",
+            "SIGNAL_LEDGER_TABLE",
+            "PREDICTIONS_TABLE",
+            "OUTCOMES_TABLE",
+            "MLB_ML_ARTIFACTS_BUCKET",
+        )
     ):
         verifier = tmp_path / f"missing_root_binding_{index}.py"
         partial_block = block.replace(f'    "{key}",\n', "", 1)
@@ -101,9 +106,41 @@ def test_deterministic_repair_rejects_each_missing_root_binding(tmp_path) -> Non
             repair_boundary.repair(verifier)
         except RuntimeError as error:
             assert "hardened isolated authority contract is incomplete" in str(error)
-            assert "ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT" in str(error)
         else:
             raise AssertionError(f"missing root binding was accepted: {key}")
+
+
+def test_deterministic_repair_rejects_other_authority_weakening_edits(
+    tmp_path,
+) -> None:
+    source = repair_boundary.VERIFIER.read_text(encoding="utf-8")
+    mutations = (
+        source.replace(
+            "ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN = re.compile(\n",
+            "ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN = re.compile(\n"
+            "    r\"(?i)\",\n",
+            1,
+        ),
+        source.replace("        and forbidden_absent\n", "        and forbidden_absent or True\n", 1),
+        source.replace(
+            "            if not _is_authorized_isolated_three_source_auto(function):\n"
+            "                continue\n",
+            "",
+            1,
+        ),
+        source
+        + "\nISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT *= 0\n",
+    )
+    for index, mutated in enumerate(mutations):
+        verifier = tmp_path / f"authority_weakening_{index}.py"
+        verifier.write_text(mutated, encoding="utf-8")
+
+        try:
+            repair_boundary.repair(verifier)
+        except RuntimeError as error:
+            assert "hardened isolated authority contract is incomplete" in str(error)
+        else:
+            raise AssertionError(f"authority weakening was accepted: {index}")
 
 
 def test_isolated_lookalike_with_any_root_authority_binding_is_rejected() -> None:
