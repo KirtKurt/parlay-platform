@@ -135,10 +135,12 @@ def build(bundle, selected_date=None):
                         'source': value['source'],
                         'side': side,
                     })
+    # Official player histories do not depend on the latest Savant fetch.
+    # Pitch/contact features separately require their exact retained windows;
+    # a delayed day outside a historical window cannot invalidate its boxes.
     team_context_history_complete = all(bundle.get(key) is True for key in (
         "current30_history_complete", "current_year_history_complete",
-        "prior_year_history_complete", "statcast_coverage_complete",
-        "current_year_statcast_complete", "prior_year_statcast_complete"))
+        "prior_year_history_complete"))
     complete_official_years = set(bundle.get("official_history_source", {}).get("complete_years", []))
     history = Features(list(games.values()), bundle.get("statcast", []),
                        statcast_retained_dates=bundle.get("statcast_retained_dates", []),

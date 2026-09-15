@@ -341,17 +341,17 @@ class Features:
 
     def team_statcast_window_complete(self, target, window):
         """Require exact loaded-date proof for physical pitch measurements."""
-        return self.statcast_complete and (
-            self.statcast_physical_dates is None or all(
-                (target-timedelta(days=age)).isoformat() in self.statcast_physical_dates
-                for age in range(1, window+1)))
+        if self.statcast_physical_dates is None:
+            return self.statcast_complete  # Legacy callers without date proof.
+        return all((target-timedelta(days=age)).isoformat() in self.statcast_physical_dates
+                   for age in range(1, window+1))
 
     def team_statcast_outcome_window_complete(self, target, window):
         """Require the stricter complete-PA proof for xwOBA-style outcomes."""
-        return self.statcast_complete and (
-            self.statcast_retained_dates is None or all(
-                (target-timedelta(days=age)).isoformat() in self.statcast_retained_dates
-                for age in range(1, window+1)))
+        if self.statcast_retained_dates is None:
+            return self.statcast_complete
+        return all((target-timedelta(days=age)).isoformat() in self.statcast_retained_dates
+                   for age in range(1, window+1))
 
     @staticmethod
     def _finite(value):

@@ -112,6 +112,42 @@ def test_valid_game_set_revision_and_global_gate_are_preserved():
     assert bundle['statcast_coverage_complete'] is False
 
 
+def test_verified_historical_windows_survive_an_unrelated_current_fetch_gap():
+    bundle, payload, key = fixture()
+    bundle['statcast_coverage_complete'] = False
+    load_training_statcast(bundle, RetainedS3({key: (payload, 'v1', None)}), 'bucket')
+    kwargs = dict(statcast_complete=False,
+                  statcast_physical_dates=bundle['statcast_physical_dates'],
+                  statcast_retained_dates=bundle['statcast_retained_dates'])
+    engine = Features(bundle['full'], bundle['statcast'], **kwargs)
+    _, values = engine.lineup_batters_at('2026-09-02T17:50:00Z', range(101, 110), '251', 'R')
+    assert values['lineup_pitch_type_matchup_xwoba_7d'] == .5
+    assert values['lineup_pitch_type_matchup_xwoba_30d'] == .5
+    # A missing starter-arsenal day outside 7d still blocks the 30d matchup.
+    kwargs['statcast_physical_dates'] = [d for d in kwargs['statcast_physical_dates']
+                                         if d != '2026-08-10']
+    kwargs['statcast_retained_dates'] = [d for d in kwargs['statcast_retained_dates']
+                                        if d != '2026-08-10']
+    _, partial = Features(bundle['full'], bundle['statcast'], **kwargs).lineup_batters_at(
+        '2026-09-02T17:50:00Z', range(101, 110), '251', 'R')
+    assert partial['lineup_xwoba_7d'] == .5
+    assert partial['lineup_pitch_type_matchup_xwoba_7d'] is None
+    assert partial['lineup_pitch_type_matchup_xwoba_30d'] is None
+    kwargs['statcast_retained_dates'] = []
+    _, missing = Features(bundle['full'], bundle['statcast'], **kwargs).lineup_batters_at(
+        '2026-09-02T17:50:00Z', range(101, 110), '251', 'R')
+    assert missing['lineup_xwoba_7d'] is None
+
+
+@pytest.mark.parametrize('dates', [None, []])
+def test_incomplete_global_archive_without_exact_window_proof_stays_missing(dates):
+    from datetime import date
+    engine = Features([], statcast_complete=False, statcast_retained_dates=dates,
+                      statcast_physical_dates=dates)
+    assert not engine.team_statcast_window_complete(date(2026, 9, 2), 7)
+    assert not engine.team_statcast_outcome_window_complete(date(2026, 9, 2), 7)
+
+
 def test_existing_verified_compact_dates_survive_partial_historical_load():
     bundle, payload, key = fixture()
     bundle['statcast_retained_dates'] = ['2025-08-31']
