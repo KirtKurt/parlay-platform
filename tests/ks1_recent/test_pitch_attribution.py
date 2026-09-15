@@ -189,3 +189,37 @@ def test_stolen_base_without_proven_walkoff_cannot_remove_a_pa(defect):
         source['receipt']['endpoint'] = endpoint('1'); seal(source, raw)
     with pytest.raises(ValueError):
         reconcile(raw, lambda *a: source, raw_receipt(raw))
+
+
+def test_substitution_credit_retains_independent_original_and_resume_times(monkeypatch):
+    authorize(monkeypatch)
+    bundle, raw, key, source = pitch_fixture('substitution')
+    bundle['schedule'][0]['resumeDate'] = '2026-09-02T18:00:00Z'
+    bundle['full'][0]['completedAtUtc'] = '2026-09-02T21:00:00Z'
+    source['data']['gameData']['datetime']['dateTime'] = bundle['schedule'][0]['resumeDate']
+    source['data']['liveData']['plays']['allPlays'][-1]['about']['endTime'] = '2026-09-02T20:00:00Z'
+    reseal(source, raw)
+    s3 = MemoryS3(); s3.seed(key, raw)
+    report = recover(bundle, s3, 'b', load_training_statcast(bundle, s3, 'b'),
+                     reconcile_official=True, fetch_official=lambda _: (source['data'], source['receipt']),
+                     fetch=lambda _: pytest.fail('reuse retained original-day pitches'))
+    assert report['recovered_dates'] == [raw['date']]
+    assert load_training_statcast(bundle, s3, 'b')['errors'] == []
+
+
+@pytest.mark.parametrize('code,description', [('VP', 'automatic_ball'), ('AC', 'automatic_strike')])
+def test_documented_top_level_details_code_is_sufficient(code, description):
+    _, raw, _, source = pitch_fixture('automatic')
+    source['data']['liveData']['plays']['allPlays'][0]['playEvents'][1]['details'] = {'code': code}
+    raw['rows'][1]['description'] = description
+    reseal(source, raw)
+    payload = reconcile(raw, lambda *a: source, raw_receipt(raw))
+    assert payload['rows'][1]['release_speed'] == ''
+
+
+def test_conflicting_official_code_fields_cannot_derive_an_automatic_event():
+    _, raw, _, source = pitch_fixture('automatic')
+    source['data']['liveData']['plays']['allPlays'][0]['playEvents'][1]['details']['code'] = 'AC'
+    reseal(source, raw)
+    with pytest.raises(ValueError, match='code fields contradict'):
+        reconcile(raw, lambda *a: source, raw_receipt(raw))

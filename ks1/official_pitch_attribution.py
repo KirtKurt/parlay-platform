@@ -80,7 +80,11 @@ def derive(rows, evidence, scheduled_by_game):
                 raise ValueError('official pitch exceeds completed at-bat')
             if event in substitutions:
                 current_batter = terminal_batter
-            code = event.get('details', {}).get('call', {}).get('code')
+            details = event.get('details', {})
+            code, call_code = details.get('code'), details.get('call', {}).get('code')
+            if code is not None and call_code is not None and code != call_code:
+                raise ValueError('official event code fields contradict each other')
+            code = code if code is not None else call_code
             automatic = next((name for name, codes in AUTOMATIC_CODES.items() if code in codes), None)
             if automatic:
                 if (event.get('isPitch') is not False or event.get('type') != 'no_pitch'

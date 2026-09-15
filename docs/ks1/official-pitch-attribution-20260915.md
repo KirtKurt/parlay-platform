@@ -26,3 +26,7 @@ Both additional complete daily inputs pass local physical and outcome replay:
 - 2026-08-06: raw SHA-256 `e08c8e81851505dfc6e5863c5dc27df3efe2a204ade2f1e92530b2d4d665382b`; physical and outcome gates pass.
 
 - 2026-08-26: raw SHA-256 `1feec209b7722671dfd43e8ff3d03a701787622bbca79f36f330f9dd848fa7a6`; physical and outcome gates pass.
+
+Training artifact names now include the workflow attempt as well as run ID. Additional authorized bounded main recovery attempts can retain separate audit artifacts instead of colliding with the first attempt. Existing source-write authorization, per-attempt budgets, same-day retry guard, and qualification gates are unchanged.
+
+Review follow-up: automatic codes are read from `details.code` with compatible `details.call.code` fallback; contradictory simultaneous codes are rejected. The independently retained original/resume schedule is also passed through physical batter-credit verification. Regression tests cover both official code layouts, their disagreement, and a mixed-batter at-bat in a suspended game.

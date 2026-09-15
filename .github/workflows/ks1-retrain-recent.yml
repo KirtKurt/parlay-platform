@@ -60,7 +60,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ks1-recent-${{ github.run_id }}
+          name: ks1-recent-${{ github.run_id }}-${{ github.run_attempt }}
           path: /tmp/ks1-recent/
           if-no-files-found: error
           retention-days: 90

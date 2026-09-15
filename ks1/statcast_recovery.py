@@ -152,7 +152,7 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                        if str(row.get('game_pk')) in {str(pk) for pk in games}]}
             reason = physical_validation_reason(
                 payload, value, games, physical_expected, physical_batters,
-                physical_invalid)
+                physical_invalid, scheduled_by_game=scheduled_by_game)
             if reason is None:
                 reason = validation_reason(payload, value, games, expected, invalid,
                                            completed_by_game, scheduled_by_game)
@@ -179,7 +179,7 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                 payload = reconcile(raw, official_source, raw_pointer, scheduled_by_game)
                 reason = physical_validation_reason(
                     payload, value, games, physical_expected, physical_batters,
-                    physical_invalid)
+                    physical_invalid, scheduled_by_game=scheduled_by_game)
                 if reason is None:
                     reason = validation_reason(payload, value, games, expected, invalid,
                                                completed_by_game, scheduled_by_game)
@@ -237,7 +237,7 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
             if (receipt.get('versionId') in (None, '', 'null')
                     or physical_validation_reason(
                         retained, value, games, physical_expected, physical_batters,
-                        physical_invalid) is not None
+                        physical_invalid, scheduled_by_game=scheduled_by_game) is not None
                     or validation_reason(retained, value, games, expected, invalid,
                                          completed_by_game, scheduled_by_game) is not None):
                 raise ValueError('recovered source readback failed')

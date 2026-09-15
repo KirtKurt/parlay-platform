@@ -155,7 +155,7 @@ def physical_pitch_complete_dates(sources, statcast_by_date, expected_by_date):
                       rows, expected_by_date[value], expected, batters, invalid))
 
 
-def physical_validation_reason(payload, value, games, expected, batters, invalid):
+def physical_validation_reason(payload, value, games, expected, batters, invalid, *, scheduled_by_game=None):
     rows = payload.get('rows', [])
     if payload.get('date') != value or any(row.get('game_date') != value for row in rows):
         return 'date_mismatch'
@@ -163,7 +163,7 @@ def physical_validation_reason(payload, value, games, expected, batters, invalid
         return 'game_set_mismatch'
     from ks1.official_outcomes import verified_batter_credits
     try:
-        credits = verified_batter_credits(payload)
+        credits = verified_batter_credits(payload, scheduled_by_game)
     except (KeyError, TypeError, ValueError, OverflowError):
         return 'official_batter_credit_unverified'
     if not physical_pitches_complete(rows, games, expected, batters, invalid, batter_credits=credits):
@@ -259,7 +259,7 @@ def load_training_statcast(bundle, s3, bucket, *, requested_dates=None):
                 receipt = reader.receipts[-1]
                 physical_reason = physical_validation_reason(
                     payload, value, games, physical_expected, physical_batters,
-                    physical_invalid)
+                    physical_invalid, scheduled_by_game=scheduled_by_game)
                 reason = validation_reason(payload, value, games, expected, invalid,
                                            completed_by_game, scheduled_by_game)
                 if receipt.get('versionId') in (None, '', 'null'):
@@ -286,7 +286,7 @@ def load_training_statcast(bundle, s3, bucket, *, requested_dates=None):
             if payload is not None:
                 reason = physical_validation_reason(
                     payload, value, games, physical_expected, physical_batters,
-                    physical_invalid)
+                    physical_invalid, scheduled_by_game=scheduled_by_game)
                 if reason is None:
                     reason = validation_reason(payload, value, games, expected, invalid,
                                                completed_by_game, scheduled_by_game)

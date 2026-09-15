@@ -331,14 +331,14 @@ def outcome_diagnostics(payload):
                 'estimated_woba_using_speedangle')} for row in invalid[:8]]}
 
 
-def verified_batter_credits(payload):
+def verified_batter_credits(payload, scheduled_by_game=None):
     proof = payload.get('outcome_reconciliation', {})
     if proof.get('method') != METHOD or not any(
             item.get('derivation_kind') == 'official_mid_at_bat_credit'
             for item in proof.get('derivations', [])):
         return {}
     raw = payload['raw_statcast']
-    rows, changes = reconciled_rows(raw, proof['official_sources'], method=METHOD)
+    rows, changes = reconciled_rows(raw, proof['official_sources'], scheduled_by_game, method=METHOD)
     if rows != payload['rows'] or changes != proof['derivations']:
         raise ValueError('official batter credits cannot be reproduced')
     return {(item['game_pk'], item['at_bat_number']): item['credited_batter']
