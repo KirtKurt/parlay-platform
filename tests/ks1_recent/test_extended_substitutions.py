@@ -2,8 +2,8 @@ from copy import deepcopy
 
 import pytest
 
-from ks1.official_outcomes import (ACCOUNTING_METHOD, PITCH_METHOD, reconcile,
-                                  reconciled_rows)
+from ks1.official_outcomes import (ACCOUNTING_METHOD, PITCH_METHOD, TWO_STRIKE_METHOD,
+                                  reconcile, reconciled_rows)
 from ks1.statcast_history import load_training_statcast
 from ks1.statcast_recovery import recover
 from tests.ks1_recent.test_official_outcomes import raw_receipt
@@ -26,6 +26,18 @@ def extended_fixture(kind):
             'position': {'abbreviation': 'P'}, 'player': {'id': int(raw['rows'][0]['pitcher'])},
             'count': {'balls': 0, 'strikes': 0}})
         for i, event in enumerate(events): event['index'] = i
+    reseal(source, raw)
+    return bundle, raw, key, source
+
+
+def mound_visit_fixture():
+    bundle, raw, key, source = extended_fixture('prefix_pitcher')
+    events = source['data']['liveData']['plays']['allPlays'][0]['playEvents']
+    events.insert(0, {'index': 0, 'isPitch': False, 'type': 'action',
+        'startTime': '2026-09-01T18:09:40Z', 'endTime': '2026-09-01T18:09:49Z',
+        'details': {'eventType': 'mound_visit'},
+        'count': {'balls': 0, 'strikes': 0}})
+    for i, event in enumerate(events): event['index'] = i
     reseal(source, raw)
     return bundle, raw, key, source
 
@@ -79,6 +91,34 @@ def test_prefix_pitching_change_cannot_hide_other_substitutions(defect):
     elif defect == 'chronology': sub['endTime'] = '2026-09-01T18:10:01Z'
     reseal(source, raw)
     with pytest.raises(ValueError): reconcile(raw, lambda *a: source, raw_receipt(raw))
+
+
+def test_zero_count_mound_visit_may_precede_prefix_pitching_change():
+    _, raw, _, source = mound_visit_fixture()
+    payload = reconcile(raw, lambda *a: source, raw_receipt(raw))
+    assert payload['rows'][1]['release_speed'] == ''
+    with pytest.raises(ValueError, match='unexpected substitution'):
+        reconciled_rows(raw, {'1': source}, method=TWO_STRIKE_METHOD)
+
+
+@pytest.mark.parametrize('defect', ['event_type', 'count', 'pitch', 'substitution',
+                                  'pitch_data', 'pitch_number', 'start_after_change',
+                                  'backward_time', 'ends_after_first_count'])
+def test_mound_visit_prelude_is_narrow_and_fail_closed(defect):
+    _, raw, _, source = mound_visit_fixture()
+    visit = source['data']['liveData']['plays']['allPlays'][0]['playEvents'][0]
+    if defect == 'event_type': visit['details']['eventType'] = 'game_advisory'
+    elif defect == 'count': visit['count']['balls'] = 1
+    elif defect == 'pitch': visit['isPitch'] = True
+    elif defect == 'substitution': visit['isSubstitution'] = True
+    elif defect == 'pitch_data': visit['pitchData'] = {'startSpeed': 94.3}
+    elif defect == 'pitch_number': visit['pitchNumber'] = 1
+    elif defect == 'start_after_change': visit['startTime'] = '2026-09-01T18:09:51Z'
+    elif defect == 'backward_time': visit['endTime'] = '2026-09-01T18:09:39Z'
+    elif defect == 'ends_after_first_count': visit['endTime'] = '2026-09-01T18:10:06Z'
+    reseal(source, raw)
+    with pytest.raises(ValueError, match='unexpected substitution'):
+        reconcile(raw, lambda *a: source, raw_receipt(raw))
 
 
 @pytest.mark.parametrize('kind', ['accounting', 'automatic', 'substitution'])
