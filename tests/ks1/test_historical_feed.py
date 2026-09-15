@@ -259,10 +259,10 @@ def test_historical_team_context_fails_closed_on_incomplete_history(
               'official_history_source':SOURCE,
               'current30_history_complete':True,
               'current_year_history_complete':True,
-              'prior_year_history_complete':True,
+              'prior_year_history_complete':gap_date is not None,
               'statcast_coverage_complete':True,
               'current_year_statcast_complete':True,
-              'prior_year_statcast_complete':gap_date is not None}
+              'prior_year_statcast_complete':True}
     if gap_date:
         bundle['finals'] = [{'officialGamePk': 12345, 'officialDate': gap_date,
                              'completed': True, 'homeTeam': gap_team,
@@ -275,3 +275,48 @@ def test_historical_team_context_fails_closed_on_incomplete_history(
     assert row['historical_lineup_bullpen_context_status'] == 'HISTORY_INCOMPLETE_FAIL_CLOSED'
     assert row['home_lineup_ops_30d'] is None
     assert row['home_lineup_ops_30d_missing'] == 1
+
+
+@pytest.mark.parametrize('statcast_flag', ['statcast_coverage_complete',
+    'current_year_statcast_complete', 'prior_year_statcast_complete', 'all'])
+def test_savant_delay_does_not_discard_verified_official_player_history(statcast_flag):
+    games = history()+[full_game(99, '2026-08-11', 999, STATS)]
+    for game in games[:-1]:
+        for side, base in (('home', 100), ('away', 200)):
+            players = game['teams'][side]['players']
+            for pid in range(base+1, base+10):
+                player = players.setdefault('ID'+str(pid), {'person': {'id': pid}, 'stats': {}})
+                player['stats']['batting'] = dict(atBats=4, hits=1, baseOnBalls=1,
+                    hitByPitch=0, sacFlies=0, doubles=0, triples=0, homeRuns=0, strikeOuts=1)
+            for pid in (base+11, base+12):
+                players['ID'+str(pid)] = {'person': {'id': pid},
+                    'stats': {'pitching': {**STATS, 'gamesStarted': 0}}}
+    stored = team_entry()
+    bundle = {'full': games, 'historical_team_context': [stored],
+              'official_history_source': SOURCE, 'source_receipts': [stored['receipt']],
+              'schedule': [{'gamePk': 99, 'gameDate': '2026-08-11T20:00:00Z',
+                  'gameType': 'R', 'teams': {s: {'team': games[-1]['teams'][s]['team']}
+                                           for s in ('home', 'away')},
+                  'status': {'abstractGameState': 'Preview'}}]}
+    flags = ('current30_history_complete', 'current_year_history_complete',
+             'prior_year_history_complete', 'statcast_coverage_complete',
+             'current_year_statcast_complete', 'prior_year_statcast_complete')
+    bundle.update({key: True for key in flags})
+    expected = build(bundle)[0].to_pylist()[0]
+    for key in flags[3:]:
+        if statcast_flag in (key, 'all'):
+            bundle[key] = False
+    row = build(bundle)[0].to_pylist()[0]
+    assert row == expected  # No raw pitches: delayed fetch changes no supported input.
+    assert row['historical_lineup_bullpen_context_status'] == 'SUPPORTED_V1_COMPLETE'
+    for side in ('home', 'away'):
+        for name in ('lineup_ops_30d', 'bullpen_context_era_30d'):
+            assert row[side+'_'+name] is not None
+            assert row[side+'_'+name+'_missing'] == 0
+        for name in ('lineup_pitch_type_matchup_xwoba_30d', 'bullpen_context_velocity_30d'):
+            assert row[side+'_'+name] is None
+            assert row[side+'_'+name+'_missing'] == 1
+    for flag in flags[:3]:
+        incomplete = {**bundle, flag: False}
+        rejected = build(incomplete)[0].to_pylist()[0]
+        assert rejected['historical_lineup_bullpen_context_status'] == 'HISTORY_INCOMPLETE_FAIL_CLOSED'

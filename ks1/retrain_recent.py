@@ -776,6 +776,9 @@ def main():
              'provider_calls': (feed_report['provider_requests']+
                                 team_report['provider_requests']+recovery_report['provider_requests'])}
     proof['official_history_source'] = bundle.get('official_history_source')
+    # Preserve diagnostic bindings even when admission rejects before fitting.
+    # This local evidence is not a registration, promotion or AWS publication.
+    (args.output/'input_proof.json').write_bytes(encode(proof))
     reconstruction = PriorPitcherContext(normalize(bundle.get('full', [])),
                                          bundle.get('official_history_source', {}),
                                          pregame_identity_index(bundle))
