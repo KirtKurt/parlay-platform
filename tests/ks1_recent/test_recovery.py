@@ -149,3 +149,28 @@ def test_failed_retry_keeps_existing_pointer_for_unchanged_game_set(monkeypatch)
     bundle['schedule'].append({**bundle['schedule'][0], 'gamePk': 2})
     recover(bundle, s3, 'b', initial, fetch=forbidden)
     assert json.loads(s3.objects[key][0])['verified_artifact'] is None
+
+
+def test_new_reconciliation_method_prioritizes_recent_windows(monkeypatch):
+    authorize(monkeypatch)
+    bundle, _, _ = fixture()
+    old = deepcopy(bundle['full'][0])
+    old.update(officialGamePk=2, startAtUtc='2026-08-31T18:00:00Z',
+               completedAtUtc='2026-08-31T21:00:00Z')
+    bundle['full'].append(old)
+    bundle['schedule'].append({**bundle['schedule'][0], 'gamePk': 2,
+                               'gameDate': old['startAtUtc']})
+    s3 = MemoryS3()
+    s3.seed(recovery_pointer_key('2026-09-01'), {
+        'attempt_date': datetime.now(timezone.utc).date().isoformat(),
+        'game_set_sha256': hashlib.sha256(encode([1])).hexdigest(),
+        'recovery_method': 'official_pa_woba_denominator_v2'})
+    attempted = []
+    def fail(value):
+        attempted.append(value)
+        raise ValueError('unavailable test response')
+    result = recover(bundle, s3, 'b', {'errors': [
+        {'date': '2026-08-31', 'reason': 'gap'}, {'date': '2026-09-01', 'reason': 'gap'}]},
+        fetch=fail, reconcile_official=True, max_dates=1)
+    assert attempted == ['2026-09-01']
+    assert result['attempts'][0]['date'] == '2026-09-01'

@@ -39,6 +39,17 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
+      - name: Diagnose retained physical attribution without source writes
+        if: github.head_ref == 'codex/ks1-physical-count-diagnostics-20260915'
+        run: python -m ks1.statcast_diagnostics --date 2026-05-04 --date 2026-06-04 --output /tmp/ks1-physical-diagnostics
+      - name: Publish bounded diagnostic replay before the full build
+        if: github.head_ref == 'codex/ks1-physical-count-diagnostics-20260915'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ks1-physical-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/ks1-physical-diagnostics/
+          if-no-files-found: error
+          retention-days: 30
       - name: Build from retained data; publish only from main
         env:
           KS1_DATE: ${{ inputs.date }}

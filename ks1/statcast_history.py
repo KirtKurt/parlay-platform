@@ -60,12 +60,11 @@ def official_physical_pitch_counts(sources):
     return expected, batters, invalid
 
 
-def physical_pitches_complete(rows, games, expected, batters, invalid):
-    """Prove identities and exact official physical pitch counts only.
+def physical_pitch_inventory_complete(rows, games, expected, batters, invalid):
+    """Exact thrown-pitch inventory and row identities, before PA credit.
 
-    Plate-appearance outcomes are deliberately independent. Batter identities
-    and unique at-bat counts still reconcile to official individual PA totals,
-    so physical matchup values cannot omit or transfer an unattributed row.
+    This is only a recovery precondition. It cannot admit a date without the
+    separate individual batter PA counts in physical_pitches_complete.
     """
     games = {str(pk) for pk in games}
     if games & invalid or not games.issubset(expected):
@@ -86,6 +85,20 @@ def physical_pitches_complete(rows, games, expected, batters, invalid):
         at_bat_batters.setdefault(
             (str(row.get('game_pk')), str(row.get('at_bat_number'))),
             set()).add(str(row.get('batter')))
+    return (len(identities) == len(rows) and dict(actual) == wanted
+            and all(len(values) == 1 for values in at_bat_batters.values()))
+
+
+def physical_pitches_complete(rows, games, expected, batters, invalid):
+    """Require the exact pitch inventory and each official batter PA total."""
+    games = {str(pk) for pk in games}
+    if not physical_pitch_inventory_complete(rows, games, expected, batters, invalid):
+        return False
+    at_bat_batters = {}
+    for row in rows:
+        at_bat_batters.setdefault(
+            (str(row.get('game_pk')), str(row.get('at_bat_number'))),
+            set()).add(str(row.get('batter')))
     credited = credited_at_bat_ids(rows)
     actual_batters = Counter(
         (game_id, next(iter(values)))
@@ -93,9 +106,7 @@ def physical_pitches_complete(rows, games, expected, batters, invalid):
         if len(values) == 1 and (game_id, at_bat) in credited)
     wanted_batters = {key: count for pk in games
                       for key, count in batters[pk].items() if count}
-    return (len(identities) == len(rows) and dict(actual) == wanted
-            and all(len(values) == 1 for values in at_bat_batters.values())
-            and dict(actual_batters) == wanted_batters)
+    return dict(actual_batters) == wanted_batters
 
 
 def pitches_complete(rows, games, expected, invalid):

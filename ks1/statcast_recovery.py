@@ -12,7 +12,7 @@ import time
 
 from ks1.inventory import RESEARCH, Reader, encode
 from ks1.statcast_history import (official_physical_pitch_counts,
-                                  official_pitch_counts,
+                                  official_pitch_counts, physical_pitch_inventory_complete,
                                   physical_validation_reason,
                                   validation_reason)
 
@@ -58,7 +58,7 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
     from mlb_research_store_v1 import Store
     from mlb_research_sources_v1 import statcast, fetch as source_fetch
     from ks1.official_outcomes import (METHOD, digest, endpoint, reconcile,
-                                       outcome_diagnostics, official_index, verify_official_time, schedule_times, read_retained_evidence)
+                                       outcome_diagnostics, official_index, verify_official_time, schedule_times, read_retained_evidence, unfinished_at_bats)
     store = Store(bucket, s3)
     fetch = fetch or statcast
     fetch_official = fetch_official or source_fetch
@@ -121,7 +121,11 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
             report['deferred_dates'].append({'date': value, 'reason': 'already_attempted_today'})
             continue
         previous = state.get('verified_artifact') if state.get('game_set_sha256') == game_set_hash else None
-        candidates.append((state.get('attempt_date', ''), -date.fromisoformat(value).toordinal(),
+        # A new reconciliation method has not tried these dates yet. Do not
+        # let failures under an older policy push recent windows behind older gaps.
+        attempted = (state.get('attempt_date', '')
+                     if state.get('recovery_method', 'raw_statcast_recovery_v1') == method else '')
+        candidates.append((attempted, -date.fromisoformat(value).toordinal(),
                            value, games, name, game_set_hash, previous))
     # Never-attempted dates first, recent first within that group. This advances
     # through older gaps across days as well as multiple runs on the same day.
@@ -135,32 +139,9 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
         pointer = previous
         stop_provider = False
         diagnostics = None
-        try:
-            payload = None
-            if reconcile_official:
-                # Use retained raw observations before repeating a download that
-                # already failed for missing deterministic accounting fields.
-                raw_names = [f'sources/statcast-v2/{value}.json',
-                             f'sources/statcast-v2-revisions/{value}/{game_set_hash}.json']
-                for raw_name in raw_names:
-                    try:
-                        raw_reader = Reader(s3, bucket)
-                        retained = raw_reader.read(RESEARCH + raw_name)
-                        if (raw_reader.receipts[-1].get('versionId') not in (None, '', 'null')
-                                and physical_validation_reason(
-                                    retained, value, games, physical_expected,
-                                    physical_batters, physical_invalid) is None
-                                and validation_reason(retained, value, games, expected, invalid,
-                                                      completed_by_game, scheduled_by_game)
-                                in (None, 'incomplete_pa_outcome_fields')):
-                            payload = retained
-                            break
-                    except Exception:
-                        continue  # Try every retained candidate before a fresh response.
-            if payload is None:
-                report['provider_requests'] += 1
-                report['statcast_provider_requests'] += 1
-                payload = fetch(value)
+        candidate_rejections = []
+
+        def prepare_candidate(payload):
             # The provider also returns spring/exhibition games. Select only the
             # independent official game set, exactly as the existing collector.
             payload = {**payload, 'rows': [row for row in payload['rows']
@@ -172,7 +153,15 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                 reason = validation_reason(payload, value, games, expected, invalid,
                                            completed_by_game, scheduled_by_game)
             diagnostics = outcome_diagnostics(payload)
-            if reason == 'incomplete_pa_outcome_fields' and reconcile_official:
+            if reconcile_official and (
+                    reason == 'incomplete_pa_outcome_fields'
+                    or (reason == 'physical_pitch_or_batter_attribution_mismatch'
+                        and unfinished_at_bats(payload)
+                        and physical_pitch_inventory_complete(
+                            payload['rows'], games, physical_expected, physical_batters, physical_invalid)
+                        and validation_reason(payload, value, games, expected, invalid,
+                                              completed_by_game, scheduled_by_game)
+                        in (None, 'incomplete_pa_outcome_fields'))):
                 # Retain the selected raw records separately. This object is
                 # evidence, never a qualified replacement by itself.
                 raw_name = PREFIX + value + '/raw/' + digest(payload) + '.json'
@@ -192,6 +181,34 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                 diagnostics['derived_fields'] = sum(len(item['fields']) for item in
                     payload.get('outcome_reconciliation', {}).get('derivations', []))
                 diagnostics['remaining'] = outcome_diagnostics(payload)
+            return payload, reason, diagnostics
+
+        try:
+            payload = None
+            if reconcile_official:
+                raw_names = [f'sources/statcast-v2/{value}.json',
+                             f'sources/statcast-v2-revisions/{value}/{game_set_hash}.json']
+                for raw_name in raw_names:
+                    try:
+                        raw_reader = Reader(s3, bucket)
+                        retained = raw_reader.read(RESEARCH + raw_name)
+                    except Exception:
+                        continue  # Try every retained candidate before a fresh response.
+                    if raw_reader.receipts[-1].get('versionId') in (None, '', 'null'):
+                        continue
+                    try:
+                        ready, candidate_reason, candidate_diagnostics = prepare_candidate(retained)
+                    except (ValueError, KeyError, TypeError, AttributeError, OverflowError) as exc:
+                        candidate_rejections.append({'name': raw_name, 'reason': str(exc)[:180]})
+                        continue
+                    if candidate_reason is None:
+                        payload, reason, diagnostics = ready, None, candidate_diagnostics
+                        break
+                    candidate_rejections.append({'name': raw_name, 'reason': candidate_reason})
+            if payload is None:
+                report['provider_requests'] += 1
+                report['statcast_provider_requests'] += 1
+                payload, reason, diagnostics = prepare_candidate(fetch(value))
         except RecoveryBudgetExhausted:
             report['deferred_dates'].append({'date': value, 'reason': 'recovery_budget'})
             break  # Cached official responses make this date resumable next run.
@@ -224,7 +241,8 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
         store.latest(name, {'attempt_date': today, 'game_set_sha256': game_set_hash,
                             'recovery_method': method, 'reason': reason, 'verified_artifact': pointer})
         report['attempts'].append({'date': value, 'reason': reason, 'verified_artifact': pointer,
-                                  'outcome_diagnostics': diagnostics})
+                                  'outcome_diagnostics': diagnostics,
+                                  'retained_candidate_rejections': candidate_rejections})
         if stop_provider:
             report['stopped_reason'] = reason
             break

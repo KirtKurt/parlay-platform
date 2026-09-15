@@ -226,7 +226,7 @@ def test_suspended_game_requires_exact_retained_resume_time(monkeypatch, feed_ti
     s3 = MemoryS3()
     s3.seed(key, raw)
     initial = load_training_statcast(bundle, s3, 'b')
-    result = recover(bundle, s3, 'b', initial, reconcile_official=True,
+    result = recover(bundle, s3, 'b', initial, reconcile_official=True, fetch=lambda value: raw,
                      fetch_official=lambda url: (source['data'], source['receipt']))
     if feed_time != bundle['schedule'][0]['resumeDate']:
         assert result['recovered_dates'] == []
@@ -327,3 +327,127 @@ def test_previously_retained_v1_derivations_remain_reproducible():
                                          'derivations': changes}}
     assert rows[1]['woba_value'] == 0
     verify_reconciliation(payload, {'1': bundle['full'][0]['completedAtUtc']})
+
+
+def unfinished_fixture(marker='truncated_pa'):
+    bundle, raw, key = raw_fixture()
+    # A pitched at-bat ends on a baserunning out; official pitcher pitches
+    # increase, but neither batters faced nor the batter's credited PAs do.
+    row = {**raw['rows'][0], 'at_bat_number': '999', 'pitch_number': '1',
+           'events': marker, 'woba_value': '', 'woba_denom': ''}
+    raw['rows'].append(row)
+    bundle['full'][0]['teams']['home']['players']['151']['stats']['pitching']['numberOfPitches'] += 1
+    source = evidence(raw)
+    source['data']['liveData']['plays']['allPlays'] = [
+        p for p in source['data']['liveData']['plays']['allPlays'] if p['atBatIndex'] != 998]
+    source['data']['liveData']['plays']['allPlays'].append({
+        'atBatIndex': 998, 'result': {'eventType': 'caught_stealing_2b'},
+        'about': {'atBatIndex': 998, 'isComplete': True, 'endTime': '2026-09-01T20:00:00Z'},
+        'matchup': {'batter': {'id': int(row['batter'])}, 'pitcher': {'id': 151}}})
+    seal(source, raw)
+    return bundle, raw, key, source
+
+
+@pytest.mark.parametrize('marker', ['', 'truncated_pa'])
+def test_official_non_pa_credit_restores_exact_counts_with_retained_raw(monkeypatch, marker):
+    authorize(monkeypatch)
+    bundle, raw, key, source = unfinished_fixture(marker)
+    original = deepcopy(raw)
+    s3 = MemoryS3(); s3.seed(key, raw)
+    initial = load_training_statcast(bundle, s3, 'b')
+    assert initial['errors']
+    result = recover(bundle, s3, 'b', initial, reconcile_official=True,
+                     fetch=lambda value: pytest.fail('retained pitches are sufficient'),
+                     fetch_official=lambda url: (source['data'], source['receipt']))
+    assert result['recovered_dates'] == [raw['date']]
+    payload, receipts = read_recovery(s3, 'b', raw['date'])
+    assert payload['raw_statcast'] == original
+    assert payload['rows'][-1] == {**original['rows'][-1], 'events': 'caught_stealing_2b', 'woba_denom': 0}
+    assert all(r['versionId'] for r in receipts)
+    assert load_training_statcast(bundle, s3, 'b')['errors'] == []
+
+
+@pytest.mark.parametrize('defect', ['missing', 'duplicate', 'batter', 'pitcher', 'incomplete',
+                                   'unrecognized', 'credited_pa', 'early', 'duplicate_pitch'])
+def test_unfinished_credit_fails_closed_on_ambiguous_or_contradictory_evidence(defect):
+    _, raw, _, source = unfinished_fixture('')
+    plays = source['data']['liveData']['plays']['allPlays']; play = plays[-1]
+    if defect == 'missing': plays.pop()
+    elif defect == 'duplicate': plays.append(deepcopy(play))
+    elif defect == 'batter': play['matchup']['batter']['id'] = 999
+    elif defect == 'pitcher': play['matchup']['pitcher']['id'] = 251
+    elif defect == 'incomplete': play['about']['isComplete'] = False
+    elif defect == 'unrecognized': play['result']['eventType'] = 'mystery_event'
+    elif defect == 'credited_pa': play['result']['eventType'] = 'single'
+    elif defect == 'early': play['about']['endTime'] = '2026-09-01T17:00:00Z'
+    elif defect == 'duplicate_pitch': raw['rows'].append(deepcopy(raw['rows'][-1]))
+    seal(source, raw)
+    with pytest.raises(ValueError):
+        reconcile(raw, lambda pk, rows: source, raw_receipt(raw))
+
+
+def test_denominator_v2_remains_reproducible_without_new_credit_derivations():
+    from ks1.official_outcomes import DENOMINATOR_METHOD, reconciled_rows
+    bundle, raw, _ = raw_fixture(); sources = {'1': evidence(raw)}
+    rows, changes = reconciled_rows(raw, sources, method=DENOMINATOR_METHOD)
+    payload = {'date': raw['date'], 'rows': rows, 'raw_statcast': raw,
+               'outcome_reconciliation': {'method': DENOMINATOR_METHOD,
+                   'official_sources': sources, 'raw_receipt': raw_receipt(raw), 'derivations': changes}}
+    verify_reconciliation(payload, {'1': bundle['full'][0]['completedAtUtc']})
+
+
+@pytest.mark.parametrize('defect', ['missing_pitch', 'duplicate', 'unknown_batter', 'unknown_pitcher', 'known_wrong_batter'])
+def test_bad_unfinished_base_does_not_hide_repairable_revision(monkeypatch, defect):
+    from ks1.inventory import RESEARCH
+    authorize(monkeypatch)
+    bundle, raw, key, source = unfinished_fixture('')
+    bad = deepcopy(raw)
+    if defect == 'missing_pitch': bad['rows'].pop(0)
+    elif defect == 'duplicate': bad['rows'].append(deepcopy(bad['rows'][0]))
+    elif defect == 'unknown_batter': bad['rows'][0]['batter'] = '999'
+    elif defect == 'unknown_pitcher': bad['rows'][0]['pitcher'] = '999'
+    elif defect == 'known_wrong_batter': bad['rows'][-1]['batter'] = '202'
+    s3 = MemoryS3(); s3.seed(key, bad)
+    s3.seed(RESEARCH + f"sources/statcast-v2-revisions/{raw['date']}/{digest([1])}.json", raw)
+    initial = load_training_statcast(bundle, s3, 'b')
+    result = recover(bundle, s3, 'b', initial, reconcile_official=True,
+                     fetch=lambda value: pytest.fail('valid retained revision is available'),
+                     fetch_official=lambda url: (source['data'], source['receipt']))
+    assert result['recovered_dates'] == [raw['date']]
+    assert result['statcast_provider_requests'] == 0
+    assert load_training_statcast(bundle, s3, 'b')['errors'] == []
+
+
+@pytest.mark.parametrize('denom', [1, '1', '1.0'])
+def test_derived_non_pa_cannot_enter_denominator_based_profiles(denom):
+    from ks1.features import Features
+    _, raw, _, source = unfinished_fixture('')
+    # Include a contradictory denominator on both terminal and earlier pitches.
+    raw['rows'][-1].update(woba_denom=denom, woba_value='9', estimated_woba_using_speedangle='9')
+    early = {**raw['rows'][-1], 'pitch_number': '2'}
+    raw['rows'].append(early)
+    seal(source, raw)
+    payload = reconcile(raw, lambda pk, rows: source, raw_receipt(raw))
+    assert all(r['woba_denom'] == 0 for r in payload['rows'][-2:])
+    assert all(r['woba_value'] == '9' for r in payload['raw_statcast']['rows'][-2:])
+    actual = Features([], payload['rows']).statcast('151', {'1'}, 20)
+    baseline = Features([], payload['rows'][:-2]).statcast('151', {'1'}, 18)
+    assert actual['xwoba_pa'] == baseline['xwoba_pa'] == 9
+    assert actual['xwoba'] == baseline['xwoba']
+
+
+@pytest.mark.parametrize('bad', [{}, {'rows': None}, {'rows': [None]}, {'rows': [3]}, []])
+def test_structurally_invalid_base_cannot_hide_valid_revision(monkeypatch, bad):
+    from ks1.inventory import RESEARCH
+    authorize(monkeypatch)
+    bundle, raw, key, source = unfinished_fixture('')
+    s3 = MemoryS3(); s3.seed(key, bad)
+    s3.seed(RESEARCH + f"sources/statcast-v2-revisions/{raw['date']}/{digest([1])}.json", raw)
+    initial = load_training_statcast(bundle, s3, 'b')
+    result = recover(bundle, s3, 'b', initial, reconcile_official=True,
+                     fetch=lambda value: pytest.fail('valid retained revision is available'),
+                     fetch_official=lambda url: (source['data'], source['receipt']))
+    assert result['recovered_dates'] == [raw['date']]
+    assert result['attempts'][0]['retained_candidate_rejections']
+    assert result['statcast_provider_requests'] == 0
+    assert load_training_statcast(bundle, s3, 'b')['errors'] == []
