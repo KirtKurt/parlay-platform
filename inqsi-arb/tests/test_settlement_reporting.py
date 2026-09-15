@@ -206,7 +206,7 @@ def test_worldwide_default_uses_all_configured_provider_regions(monkeypatch):
     monkeypatch.delenv("ARB_REGIONS", raising=False)
     assert _default_jurisdiction() == "*"
     assert _regions("*") == "us,us2,us_dfs,us_ex,uk,eu,fr,se,au"
-    assert _regions("ny") == "us,us2"
+    assert _regions("ny") == "us,us2,us_dfs,us_ex,uk,eu,fr,se,au"
     assert _regions("ny", "us") == "us"
 
 
@@ -234,10 +234,15 @@ def test_get_scan_applies_worldwide_default_without_bookmaker_filter(monkeypatch
 
 
 def test_embedded_ui_reports_held_and_exchange_candidates():
-    assert '<option value="*" selected>Worldwide</option>' in HTML
+    assert "Settlement scope" not in HTML
+    assert "State books only" not in HTML
+    assert 'id="bookList"' in HTML
+    assert 'name="book"' in HTML
     assert "Held-back mathematical opportunities" in HTML
     assert "exchange lay market(s) routed away" in HTML
     assert "Inspect held-back opportunities" in HTML
     assert "(j.rejected||[]).filter(x=>x.math_arb)" in HTML
     assert "el('held').innerHTML=''" in HTML
     assert "j.n_held_unverified??held.length" in HTML
+    assert "jurisdiction:el('jurisdiction')" not in HTML
+    assert "licensed:el('licensed')" not in HTML

@@ -17,19 +17,12 @@ from provider import MARKET_FAMILIES, list_sports, scan_sport_payload
 from quote_store import get_checkpoint, get_snapshot
 from provider_books import catalog_summary
 from rules import registry_rows, registry_size
-from state_packs import licensed_books, list_packs, pack_summary
+from state_packs import list_packs, pack_summary
 from ui_page import HTML
 from validation import validate_events
 
 VERSION = "INQSI-ARB-v3"
 DEFAULT_MARKETS = "h2h,spreads,totals"
-US_JURISDICTIONS = {
-    "al", "ak", "az", "ar", "ca", "co", "ct", "de", "dc", "fl", "ga",
-    "hi", "id", "il", "in", "ia", "ks", "ky", "la", "me", "md", "ma",
-    "mi", "mn", "ms", "mo", "mt", "ne", "nv", "nh", "nj", "nm", "ny",
-    "nc", "nd", "oh", "ok", "or", "pa", "ri", "sc", "sd", "tn", "tx",
-    "ut", "vt", "va", "wa", "wv", "wi", "wy",
-}
 
 
 def response(status: int, body: Any, *, content_type: str = "application/json") -> Dict[str, Any]:
@@ -86,11 +79,9 @@ def _default_jurisdiction() -> str:
     return (os.environ.get("ARB_DEFAULT_JURISDICTION") or "*").strip().lower() or "*"
 
 
-def _regions(jurisdiction: str, explicit: str = "") -> str:
+def _regions(_jurisdiction: str = "*", explicit: str = "") -> str:
     if explicit.strip():
         return explicit.strip()
-    if jurisdiction.strip().lower() in US_JURISDICTIONS:
-        return os.environ.get("ARB_US_REGIONS", "us,us2")
     return os.environ.get("ARB_REGIONS", "us,us2,us_dfs,us_ex,uk,eu,fr,se,au")
 
 
@@ -191,13 +182,9 @@ def _fresh_seconds() -> int:
         return 120
 
 
-def _licensed_book_filter(jurisdiction: str, books: str | None, licensed: bool) -> str | None:
-    if books:
-        return books
-    if not licensed:
-        return None
-    licensed_keys = licensed_books(jurisdiction)
-    return ",".join(licensed_keys) if licensed_keys else None
+def _book_filter(query: Dict[str, str]) -> str | None:
+    """Product filter is the user's sportsbook list. State/license flags are ignored."""
+    return (query.get("books") or query.get("bookmakers") or "").strip() or None
 
 
 def _stored_events(sport: str) -> tuple[list | None, dict]:
@@ -241,6 +228,8 @@ def lambda_handler(event, context):
             "middle_detection": True,
             "executable_rounding": True,
             "user_book_filter": True,
+            "book_first_desk": True,
+            "product_filter": "books",
             "state_packs": True,
             "quote_collector": True,
             "provider_book_catalog": True,
@@ -308,7 +297,7 @@ def lambda_handler(event, context):
             "count": len(packs),
             "packs": packs,
             "places_bets": False,
-            "policy": "State packs describe licensed-book availability and reviewed settlement coverage. They do not place bets.",
+            "policy": "Internal house-rule/license footprint. The product filter is sportsbooks, not states.",
         })
 
     if method == "GET" and path.startswith("/v1/arb/packs/"):
@@ -358,20 +347,15 @@ def lambda_handler(event, context):
         jurisdiction = (query.get("jurisdiction") or _default_jurisdiction()).strip().lower()
         regions = _regions(jurisdiction, query.get("regions", ""))
         source = (query.get("source") or "auto").strip().lower()
-        licensed = (query.get("licensed") or "false").strip().lower() in {"1", "true", "yes"}
-        books = _licensed_book_filter(
-            jurisdiction,
-            (query.get("books") or query.get("bookmakers") or "").strip() or None,
-            licensed,
-        )
-        pack = pack_summary(jurisdiction)
+        books = _book_filter(query)
 
         def _scan_rows(rows, status):
             rows = validate_events(rows, jurisdiction=jurisdiction)
             result = scan_all({"bankroll": bankroll, "events": rows, "books": books})
             result["status"] = status
-            result["pack"] = pack
             result["source"] = status.get("source") or source
+            result["books"] = books
+            result["product_filter"] = "books"
             return response(200 if status.get("ok") else 503, _finalize_scan(result, sport=sport, jurisdiction=jurisdiction))
 
         if source in {"store", "auto"} and market_arg.lower() != "all":
@@ -453,6 +437,8 @@ def lambda_handler(event, context):
         except (ValueError, ArbValidationError) as exc:
             return response(400, {"ok": False, "error": "INVALID_SCAN_PAYLOAD", "detail": str(exc)[:200]})
         result["status"] = {"source": "posted", "places_bets": False}
+        result["product_filter"] = "books"
+        result["books"] = payload.get("books") if payload.get("books") is not None else payload.get("bookmakers")
         return response(200, _finalize_scan(
             result, sport=str(payload.get("sport") or "posted"), jurisdiction=jurisdiction
         ))

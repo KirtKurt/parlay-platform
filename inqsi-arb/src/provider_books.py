@@ -1,15 +1,16 @@
 """Odds API sportsbook inventory for the national ARB information desk.
 
-This is the product catalog: every provider book the desk can see. It is not a
-settlement proof and not a license. Math scans still use every book the Odds API
-returns in the requested regions. Verified remains a per-book house-rule overlay.
+This is the product catalog: every provider book the desk can see. Users pick
+sportsbooks. It is not a settlement proof and not a state license map. Math
+scans still use every book the Odds API returns in the requested regions unless
+the user filters with `books=`. Verified remains a per-book house-rule overlay.
 """
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Set
 
 from rules import lookup
-from state_packs import BOOK_STATES, SPORTS, FAMILIES
+from state_packs import FAMILIES, SPORTS
 
 AS_OF = "2026-09-15"
 
@@ -91,16 +92,14 @@ def _reviewed_families(book: str, jurisdiction: str = "*") -> List[str]:
 
 def book_row(key: str) -> Dict[str, Any]:
     meta = CATALOG.get(key) or {"title": key, "regions": (), "kind": "unknown"}
-    licensed = sorted(BOOK_STATES.get(key, set()))
+    reviewed = _reviewed_families(key)
     return {
         "key": key,
         "title": meta.get("title") or key,
         "kind": meta.get("kind") or "unknown",
         "regions": list(meta.get("regions") or []),
-        "licensed_states": licensed,
-        "n_licensed_states": len(licensed),
-        "reviewed_families": _reviewed_families(key),
-        "settlement_reviewed": bool(_reviewed_families(key)),
+        "reviewed_families": reviewed,
+        "settlement_reviewed": bool(reviewed),
         "on_math_board": True,
     }
 
@@ -131,9 +130,11 @@ def catalog_summary() -> Dict[str, Any]:
         "by_kind": by_kind,
         "books": rows,
         "places_bets": False,
+        "product_filter": "books",
         "policy": (
-            "Every provider-returned sportsbook is on the mathematical board. "
-            "State packs are license footprints. Verified is a house-rule overlay "
-            "and is never inferred across unread books or states."
+            "Users choose sportsbooks. Every provider-returned book stays on the "
+            "mathematical board unless the user filters with books=. Verified is a "
+            "house-rule overlay and is never inferred across unread books or unread "
+            "house-rule pages."
         ),
     }
