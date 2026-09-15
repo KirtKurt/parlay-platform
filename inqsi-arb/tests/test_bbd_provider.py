@@ -126,3 +126,69 @@ def test_events_preserve_bbd_identity_and_no_prices(monkeypatch):
     assert row["source"] == "big_balls_data"
     assert "price" not in row
     assert result["request_id"] == "req-1"
+
+
+@pytest.mark.parametrize("row", [
+    {}, {"id": None}, {"id": True}, {"id": False}, {"id": 1.5},
+    {"id": []}, {"id": {}}, {"id": ""}, {"id": " \t"},
+    {"id": " event-1"}, {"id": "event-1 "},
+    {"id": "one", "match_id": "two"},
+    {"id": "one", "event_id": None},
+])
+def test_events_reject_invalid_identity_without_partial_context(monkeypatch, row):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (
+        200, {}, {"data": [{"id": "valid"}, row]},
+    ))
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_EVENT_ID_INVALID"
+    assert result["events"] == []
+
+
+@pytest.mark.parametrize("field", ["id", "match_id", "event_id"])
+@pytest.mark.parametrize("identity", [0, 123, "event-1", "00123"])
+def test_events_preserve_valid_opaque_identity(monkeypatch, field, identity):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    row = {field: identity, "status": "scheduled"}
+    monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (200, {}, [row]))
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is True
+    assert result["events"][0]["bbd_event_id"] == str(identity)
+    assert result["events"][0]["raw"] == row
+
+
+@pytest.mark.parametrize("rows", [
+    [{"id": "same"}, {"id": "same"}],
+    [{"id": 123}, {"event_id": "123"}],
+    [{"match_id": "same", "status": "scheduled"},
+     {"event_id": "same", "status": "finished"}],
+])
+def test_events_reject_duplicate_identity_without_partial_context(monkeypatch, rows):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (200, {}, rows))
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_EVENT_ID_DUPLICATE"
+    assert result["events"] == []
+
+
+def test_events_accept_consistent_aliases_and_distinct_opaque_ids(monkeypatch):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    rows = [{"id": 123, "match_id": "123", "event_id": "123"}, {"id": "00123"}]
+    monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (200, {}, rows))
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is True
+    assert [row["bbd_event_id"] for row in result["events"]] == ["123", "00123"]

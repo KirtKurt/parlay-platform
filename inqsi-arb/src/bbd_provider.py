@@ -188,6 +188,24 @@ def _items(payload: Any) -> List[Dict[str, Any]]:
     raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
 
 
+def _event_id(row: Dict[str, Any]) -> str:
+    """Require unambiguous opaque identity; never stringify arbitrary JSON values."""
+    identities = []
+    for field in ("id", "match_id", "event_id"):
+        if field not in row:
+            continue
+        value = row[field]
+        if isinstance(value, bool) or not isinstance(value, (str, int)):
+            raise BBDError("BBD_EVENT_ID_INVALID")
+        identity = str(value)
+        if not identity.strip() or identity != identity.strip():
+            raise BBDError("BBD_EVENT_ID_INVALID")
+        identities.append(identity)
+    if not identities or len(set(identities)) != 1:
+        raise BBDError("BBD_EVENT_ID_INVALID")
+    return identities[0]
+
+
 def health() -> Dict[str, Any]:
     if not enabled():
         return BBDStatus(
@@ -289,11 +307,16 @@ def events(*, sport: Optional[str] = None, league: Optional[str] = None,
             }
         rows = _items(payload)
         normalized: List[Dict[str, Any]] = []
+        seen_ids = set()
         for row in rows:
+            event_id = _event_id(row)
+            if event_id in seen_ids:
+                raise BBDError("BBD_EVENT_ID_DUPLICATE")
+            seen_ids.add(event_id)
             home = row.get("home") or row.get("home_team")
             away = row.get("away") or row.get("away_team")
             normalized.append({
-                "bbd_event_id": str(row.get("id") or row.get("match_id") or row.get("event_id") or "") or None,
+                "bbd_event_id": event_id,
                 "sport": row.get("sport") or sport,
                 "league": row.get("league") or row.get("competition") or league,
                 "status": row.get("status"),
