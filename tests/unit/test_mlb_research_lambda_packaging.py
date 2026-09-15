@@ -29,6 +29,9 @@ def test_research_lambda_packages_every_runtime_import_dependency() -> None:
     vendored_events = ROOT / "mlb_research" / "ks1" / "statcast_events.py"
     assert vendored.exists(), "mlb_research Lambda is missing vendored ks1.features"
     assert vendored_events.exists(), "vendored ks1.features dependency statcast_events is missing"
+    assert not (vendored.parent / "__init__.py").exists(), (
+        "vendored KS1 must stay a namespace package so repository tests keep using authoritative root ks1"
+    )
     assert vendored.read_bytes() == (ROOT / "ks1" / "features.py").read_bytes(), (
         "vendored ks1.features must remain byte-identical to the authoritative KS1 implementation"
     )
