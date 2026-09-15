@@ -98,15 +98,25 @@ def derive(rows, evidence, scheduled_by_game, *, extended_substitutions=False,
                 sub = substitutions[0]
                 sub_index = events.index(sub)
                 prelude = events[:sub_index]
-                proven_prelude = (not prelude or prefix_mound_visits and all(
+                following = events[sub_index + 1:]
+                first_count_event = next((event for event in following
+                    if event.get('isPitch') is True or any(
+                        (event.get('details', {}).get('code')
+                         or event.get('details', {}).get('call', {}).get('code')) in codes
+                        for codes in AUTOMATIC_CODES.values())), None)
+                proven_prelude = (not prelude or prefix_mound_visits
+                    and first_count_event is not None and all(
                     event.get('isPitch') is False
                     and event.get('isSubstitution') is not True
                     and event.get('type') == 'action'
                     and event.get('details', {}).get('eventType') == 'mound_visit'
+                    and not event.get('pitchData')
+                    and event.get('pitchNumber') in (None, '')
                     and all(type(event.get('count', {}).get(k)) is int
                             and event['count'][k] == 0 for k in ('balls', 'strikes'))
                     and utc(start) <= utc(event['startTime']) <= utc(sub['startTime'])
-                    and utc(event['startTime']) <= utc(event['endTime']) <= utc(about['endTime'])
+                    and utc(event['startTime']) <= utc(event['endTime'])
+                    <= utc(first_count_event['endTime']) <= utc(about['endTime'])
                     for event in prelude))
                 prefix_pitching_change = (proven_prelude and sub.get('isPitch') is False
                     and sub.get('type') == 'action'

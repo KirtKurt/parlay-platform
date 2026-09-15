@@ -16,8 +16,9 @@ completed field out. No batter substitution or mid-count pitching change is
 present.
 
 V9 permits the pitching change proof when every preceding event is specifically
-a non-pitch, non-substitution `mound_visit` action at a 0-0 count, starting no
-later than the pitching change and bounded by the completed at-bat. Those
+a non-pitch, non-substitution `mound_visit` action at a 0-0 count, carrying no
+pitch data or pitch number, starting no later than the pitching change, and
+ending by the end of the first subsequent count event. Those
 administrative events do not advance count-event chronology because MLB's
 mound-visit end timestamp overlaps the separately timestamped pitching change.
 The pitching substitution itself and every subsequent automatic or physical
