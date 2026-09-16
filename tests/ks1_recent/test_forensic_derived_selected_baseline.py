@@ -125,7 +125,7 @@ def test_combined_screened_representation_preserves_one_coordinate_per_replaced_
         ['forensic_market', 'forensic_regime', 'forensic_lineup'])
 
     assert columns == [
-        'base', 'recent', 'forensic_market', 'forensic_regime', 'forensic_lineup']
+        'base', 'forensic_market', 'recent', 'forensic_regime', 'forensic_lineup']
     assert evidence['forensic_market']['anchor_parent'] is None
     assert evidence['forensic_regime']['anchor_parent'] == 'recent'
     assert evidence['forensic_lineup']['mode'] == 'additive'
