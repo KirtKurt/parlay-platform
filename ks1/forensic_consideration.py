@@ -1,7 +1,7 @@
 """Pregame KS1 counter-signal diagnostics from already frozen point-in-time evidence.
 
-This module is deliberately diagnostic-only.  It never changes p_home, the selected
-side, calibration, model identity, serving authority, or T-10 preservation.  Its
+This module is deliberately diagnostic-only. It never changes p_home, the selected
+side, calibration, model identity, serving authority, or T-10 preservation. Its
 purpose is to surface the exact classes of counter-signals identified in the
 2026-09-15 loss-forensics review so they are visible on the next card and can be
 promoted only through the normal chronological qualification path.
@@ -12,9 +12,11 @@ import argparse
 import csv
 import json
 import math
+import sys
 from pathlib import Path
 
 CONTRACT = "KS1-forensic-consideration-v1"
+csv.field_size_limit(min(sys.maxsize, 10_000_000))
 
 
 def _num(value):
