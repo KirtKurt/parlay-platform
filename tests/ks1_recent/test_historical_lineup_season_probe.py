@@ -165,4 +165,4 @@ def test_enrichment_updates_only_exact_source_eligible_rows_and_missingness():
     assert enriched.loc[0, 'home_lineup_top4_ops'] is not None
     assert enriched.loc[0, 'away_lineup_top4_ops_missing'] == 0.0
     assert pd.isna(enriched.loc[1, 'home_lineup_top4_ops'])
-    assert frame.loc[0, 'home_lineup_top4_ops'] is None
+    assert pd.isna(frame.loc[0, 'home_lineup_top4_ops'])
