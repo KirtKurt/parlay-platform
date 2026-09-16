@@ -11,6 +11,8 @@ or scores the frozen 300-game qualification holdout.
 """
 from __future__ import annotations
 
+from math import isfinite
+
 from ks1.development import TRIALS, select
 from ks1.forensic_derived import _augment, _trial
 from ks1.forensic_features import (
@@ -22,8 +24,7 @@ from ks1.forensic_features import (
 from ks1.retrain_recent import EVALUATION_GAMES, choose_features, split_development
 from ks1.train import PARAMS
 
-CONTRACT = "KS1-unified-forensic-derived-selected-baseline-v2"
-SCREEN_TRIAL = "shallow"
+CONTRACT = "KS1-unified-forensic-derived-selected-baseline-v3"
 
 
 def selected_baseline_features(report, recipe):
@@ -44,16 +45,19 @@ def screen_derived_features(fit, baseline_raw, derived, groups):
     untouched while representatives are chosen, and the frozen qualification holdout is
     not available to this function at all.
     """
-    if SCREEN_TRIAL not in TRIALS:
-        raise ValueError("nested screen trial unavailable")
+    if not TRIALS:
+        raise ValueError("nested screen trials unavailable")
     inner_fit, inner_validation = split_development(fit)
     fit_aug = _augment(inner_fit, derived)
     validation_aug = _augment(inner_validation, derived)
-    params = {**PARAMS, **TRIALS[SCREEN_TRIAL]}
+    # A single shallow fit can ignore every feature in an otherwise usable
+    # family. Screen the same frozen regularization trials used by the outer
+    # selector; do not force splits or add a new parameter search space.
+    parameters = {name: {**PARAMS, **updates} for name, updates in TRIALS.items()}
     selected = []
     evidence = {
         "method": "nested_purged_one_representative_per_forensic_family",
-        "trial": SCREEN_TRIAL,
+        "trials": parameters,
         "inner_fit_games": len(inner_fit),
         "inner_validation_games": len(inner_validation),
         "outer_development_used_for_screening": False,
@@ -64,15 +68,30 @@ def screen_derived_features(fit, baseline_raw, derived, groups):
         candidates = {}
         usable = []
         for feature in group_columns:
-            result = _trial(fit_aug, validation_aug, baseline_raw + [feature], params)
-            used = feature in set(result["features_used_in_splits"])
+            trials = {}
+            eligible = []
+            for trial_name, params in parameters.items():
+                result = _trial(fit_aug, validation_aug, baseline_raw + [feature], params)
+                if not all(isfinite(result[key]) for key in ("brier", "logloss")):
+                    raise ValueError("nested screen metrics must be finite")
+                used = feature in set(result["features_used_in_splits"])
+                trials[trial_name] = {
+                    "brier": result["brier"],
+                    "logloss": result["logloss"],
+                    "feature_used_in_splits": used,
+                }
+                if used:
+                    eligible.append((result["brier"], result["logloss"], trial_name))
+            best = min(eligible) if eligible else None
             candidates[feature] = {
-                "brier": result["brier"],
-                "logloss": result["logloss"],
-                "feature_used_in_splits": used,
+                "brier": best[0] if best else None,
+                "logloss": best[1] if best else None,
+                "feature_used_in_splits": best is not None,
+                "selected_trial": best[2] if best else None,
+                "trials": trials,
             }
-            if used:
-                usable.append((result["brier"], result["logloss"], feature))
+            if best is not None:
+                usable.append((best[0], best[1], feature))
         winner = min(usable)[2] if usable else None
         evidence["groups"][group_name] = {
             "candidates": candidates,
@@ -81,7 +100,7 @@ def screen_derived_features(fit, baseline_raw, derived, groups):
         if winner is not None:
             selected.append(winner)
     evidence["selected_features"] = selected
-    evidence["all_groups_screened"] = len(selected) == len(groups)
+    evidence["all_groups_screened"] = bool(groups) and len(selected) == len(groups)
     return selected, evidence
 
 
