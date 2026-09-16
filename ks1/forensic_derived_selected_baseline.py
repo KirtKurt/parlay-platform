@@ -40,67 +40,70 @@ def selected_baseline_features(report, recipe):
     return features
 
 
+def _replacement_plan(baseline_raw, feature):
+    """Return a fail-closed, information-preserving coordinate replacement plan."""
+    spec = SPECS.get(feature)
+    parents = list(spec.get("parents", ())) if spec else []
+    operation = spec.get("operation") if spec else None
+    replaceable = bool(
+        (len(parents) == 1 and operation in ("offset", "offset_minus"))
+        or (len(parents) == 2 and operation == "difference")
+    )
+    replace = bool(parents and replaceable and set(parents).issubset(baseline_raw))
+    return {
+        "mode": "replace_redundant_parents" if replace else "additive",
+        "parents": parents,
+        "anchor_parent": parents[0] if replace and len(parents) > 1 else None,
+        "operation": operation,
+        "information_preserving": True if not replace else replaceable,
+    }
+
+
 def representation_columns(baseline_raw, feature):
     """Build a feature-equivalent coordinate system for one derived candidate.
 
     If every raw parent is already present, simply appending a deterministic transform
     makes split-use proof depend on LightGBM choosing one of several aliases. Replace the
-    redundant parent coordinate(s) instead. One-parent affine transforms are invertible.
-    For a two-parent difference, retaining the first parent plus the difference preserves
-    both original degrees of freedom. Features whose parents are not all in the selected
-    baseline remain additive.
+    redundant parent coordinate(s) only for the current invertible feature operations.
+    One-parent affine transforms are invertible. For a two-parent difference, retaining
+    the first parent plus the difference preserves both original degrees of freedom.
+    Features whose parents are not all in the selected baseline remain additive.
     """
     columns = list(baseline_raw)
-    spec = SPECS.get(feature)
-    parents = list(spec.get("parents", ())) if spec else []
-    anchor = None
-    mode = "additive"
-    if parents and set(parents).issubset(columns):
-        mode = "replace_redundant_parents"
-        columns = [column for column in columns if column not in parents]
-        if len(parents) > 1:
-            anchor = parents[0]
-            columns.append(anchor)
+    plan = _replacement_plan(set(columns), feature)
+    if plan["mode"] == "replace_redundant_parents":
+        columns = [column for column in columns if column not in plan["parents"]]
+        if plan["anchor_parent"] is not None:
+            columns.append(plan["anchor_parent"])
         columns.append(feature)
     elif feature not in columns:
         columns.append(feature)
     if not columns or len(columns) != len(set(columns)):
         raise ValueError("invalid forensic representation columns")
-    return columns, {
-        "mode": mode,
-        "parents": parents,
-        "anchor_parent": anchor,
-        "information_preserving": bool(mode == "additive" or spec is not None),
-    }
+    return columns, plan
 
 
 def screened_representation_columns(baseline_raw, selected):
-    """Apply the per-family representation choices without consulting outer labels."""
+    """Apply per-family coordinate replacements without consulting outer labels."""
     columns = list(baseline_raw)
     original = set(baseline_raw)
+    replaced_parents = set()
     evidence = {}
     for feature in selected:
-        spec = SPECS.get(feature)
-        parents = list(spec.get("parents", ())) if spec else []
-        anchor = None
-        mode = "additive"
-        if parents and set(parents).issubset(original):
-            mode = "replace_redundant_parents"
-            columns = [column for column in columns if column not in parents]
-            if len(parents) > 1:
-                anchor = parents[0]
-                if anchor not in columns:
-                    columns.append(anchor)
+        plan = _replacement_plan(original, feature)
+        if plan["mode"] == "replace_redundant_parents":
+            overlap = replaced_parents.intersection(plan["parents"])
+            if overlap:
+                raise ValueError("overlapping forensic representation parents: "+",".join(sorted(overlap)))
+            columns = [column for column in columns if column not in plan["parents"]]
+            if plan["anchor_parent"] is not None and plan["anchor_parent"] not in columns:
+                columns.append(plan["anchor_parent"])
             if feature not in columns:
                 columns.append(feature)
+            replaced_parents.update(plan["parents"])
         elif feature not in columns:
             columns.append(feature)
-        evidence[feature] = {
-            "mode": mode,
-            "parents": parents,
-            "anchor_parent": anchor,
-            "information_preserving": bool(mode == "additive" or spec is not None),
-        }
+        evidence[feature] = plan
     if not columns or len(columns) != len(set(columns)):
         raise ValueError("invalid combined forensic representation columns")
     return columns, evidence
