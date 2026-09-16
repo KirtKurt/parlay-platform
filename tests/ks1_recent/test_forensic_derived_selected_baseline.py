@@ -16,25 +16,45 @@ def test_selected_baseline_features_uses_exact_selected_recipe():
         subject.selected_baseline_features(report, 'missing')
 
 
-def test_nested_screen_selects_one_used_feature_per_group_without_outer_or_holdout_access(monkeypatch):
+def test_nested_screen_selects_incremental_used_feature_across_prespecified_trials(monkeypatch):
     fit = pd.DataFrame({'home_win': [0, 1, 0, 1]})
     validation = pd.DataFrame({'home_win': [0, 1]})
     monkeypatch.setattr(subject, 'split_development', lambda frame: (fit, validation))
     monkeypatch.setattr(subject, '_augment', lambda frame, derived: frame.assign(
         base=.1, market_a=.2, market_b=.3, lineup_a=.4, lineup_b=.5))
-    monkeypatch.setattr(subject, 'TRIALS', {'shallow': {}})
+    monkeypatch.setattr(subject, 'TRIALS', {
+        'shallow': {'trial': 'shallow'},
+        'baseline': {'trial': 'baseline'},
+    })
     monkeypatch.setattr(subject, 'PARAMS', {})
 
+    baselines = {
+        'shallow': (.25, .70),
+        'baseline': (.20, .65),
+    }
     scores = {
-        'market_a': (.24, .69, True),
-        'market_b': (.23, .68, True),
-        'lineup_a': (.22, .67, True),
-        'lineup_b': (.21, .66, False),
+        ('market_a', 'shallow'): (.24, .69, True),
+        ('market_a', 'baseline'): (.195, .645, True),
+        ('market_b', 'shallow'): (.23, .68, True),
+        ('market_b', 'baseline'): (.199, .649, True),
+        ('lineup_a', 'shallow'): (.22, .67, True),
+        ('lineup_a', 'baseline'): (.19, .64, True),
+        # An unused feature cannot win even with much better apparent metrics.
+        ('lineup_b', 'shallow'): (.18, .62, False),
+        ('lineup_b', 'baseline'): (.17, .61, False),
     }
 
     def fake_trial(fit_frame, validation_frame, columns, params):
+        trial = params['trial']
+        if columns == ['base']:
+            brier, logloss = baselines[trial]
+            return {
+                'brier': brier,
+                'logloss': logloss,
+                'features_used_in_splits': ['base'],
+            }
         feature = columns[-1]
-        brier, logloss, used = scores[feature]
+        brier, logloss, used = scores[(feature, trial)]
         return {
             'brier': brier,
             'logloss': logloss,
@@ -47,11 +67,29 @@ def test_nested_screen_selects_one_used_feature_per_group_without_outer_or_holdo
         ['market_a', 'market_b', 'lineup_a', 'lineup_b'],
         {'market': ['market_a', 'market_b'], 'lineup': ['lineup_a', 'lineup_b']})
 
+    # Selection is by same-trial incremental value, not absolute cross-trial score.
     assert selected == ['market_b', 'lineup_a']
     assert evidence['all_groups_screened'] is True
     assert evidence['outer_development_used_for_screening'] is False
     assert evidence['final_holdout_used_for_screening'] is False
-    assert evidence['groups']['lineup']['candidates']['lineup_b']['feature_used_in_splits'] is False
+    assert evidence['trials'] == ['shallow', 'baseline']
+    assert evidence['baseline_by_trial']['shallow'] == {'brier': .25, 'logloss': .70}
+    assert evidence['groups']['market']['selected_trial'] == 'shallow'
+    assert evidence['groups']['lineup']['selected_trial'] == 'shallow'
+    assert evidence['groups']['market']['candidates']['market_b']['trials']['shallow'][
+        'brier_delta_vs_same_trial_baseline'] == pytest.approx(-.02)
+    assert all(
+        not trial['feature_used_in_splits']
+        for trial in evidence['groups']['lineup']['candidates']['lineup_b']['trials'].values()
+    )
+
+
+def test_nested_screen_fails_closed_without_prespecified_trials(monkeypatch):
+    monkeypatch.setattr(subject, 'TRIALS', {})
+    with pytest.raises(ValueError, match='nested screen trials unavailable'):
+        subject.screen_derived_features(
+            pd.DataFrame({'home_win': [0, 1]}), ['base'], ['forensic_x'],
+            {'market': ['forensic_x']})
 
 
 def test_development_challenger_augments_selected_recipe_not_all_admitted_raw(monkeypatch):

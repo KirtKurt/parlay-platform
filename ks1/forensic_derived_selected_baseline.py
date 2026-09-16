@@ -22,8 +22,7 @@ from ks1.forensic_features import (
 from ks1.retrain_recent import EVALUATION_GAMES, choose_features, split_development
 from ks1.train import PARAMS
 
-CONTRACT = "KS1-unified-forensic-derived-selected-baseline-v2"
-SCREEN_TRIAL = "shallow"
+CONTRACT = "KS1-unified-forensic-derived-selected-baseline-v3"
 
 
 def selected_baseline_features(report, recipe):
@@ -40,46 +39,73 @@ def selected_baseline_features(report, recipe):
 def screen_derived_features(fit, baseline_raw, derived, groups):
     """Choose one representative per forensic family on an earlier purged split.
 
-    This is development-only feature selection. The outer development tail remains
-    untouched while representatives are chosen, and the frozen qualification holdout is
-    not available to this function at all.
+    Every already-prespecified KS1 development trial is allowed on the inner split. A
+    forensic feature must receive an actual tree split, and its value is ranked by the
+    incremental Brier/log-loss change against the *same trial's* baseline. Comparing
+    same-trial deltas prevents a hyperparameter change from masquerading as feature
+    value. The outer development tail remains untouched, and the frozen qualification
+    holdout is not available to this function at all.
     """
-    if SCREEN_TRIAL not in TRIALS:
-        raise ValueError("nested screen trial unavailable")
+    if not TRIALS:
+        raise ValueError("nested screen trials unavailable")
     inner_fit, inner_validation = split_development(fit)
     fit_aug = _augment(inner_fit, derived)
     validation_aug = _augment(inner_validation, derived)
-    params = {**PARAMS, **TRIALS[SCREEN_TRIAL]}
+    trial_names = tuple(TRIALS)
+    baseline_by_trial = {}
+    for trial_name in trial_names:
+        params = {**PARAMS, **TRIALS[trial_name]}
+        result = _trial(fit_aug, validation_aug, baseline_raw, params)
+        baseline_by_trial[trial_name] = {
+            "brier": result["brier"],
+            "logloss": result["logloss"],
+        }
+
     selected = []
     evidence = {
-        "method": "nested_purged_one_representative_per_forensic_family",
-        "trial": SCREEN_TRIAL,
+        "method": "nested_purged_multitrial_incremental_representative_per_forensic_family",
+        "trials": list(trial_names),
         "inner_fit_games": len(inner_fit),
         "inner_validation_games": len(inner_validation),
         "outer_development_used_for_screening": False,
         "final_holdout_used_for_screening": False,
+        "baseline_by_trial": baseline_by_trial,
         "groups": {},
     }
     for group_name, group_columns in groups.items():
         candidates = {}
         usable = []
         for feature in group_columns:
-            result = _trial(fit_aug, validation_aug, baseline_raw + [feature], params)
-            used = feature in set(result["features_used_in_splits"])
-            candidates[feature] = {
-                "brier": result["brier"],
-                "logloss": result["logloss"],
-                "feature_used_in_splits": used,
-            }
-            if used:
-                usable.append((result["brier"], result["logloss"], feature))
-        winner = min(usable)[2] if usable else None
+            trial_evidence = {}
+            for trial_name in trial_names:
+                params = {**PARAMS, **TRIALS[trial_name]}
+                result = _trial(fit_aug, validation_aug, baseline_raw + [feature], params)
+                used = feature in set(result["features_used_in_splits"])
+                baseline = baseline_by_trial[trial_name]
+                brier_delta = result["brier"] - baseline["brier"]
+                logloss_delta = result["logloss"] - baseline["logloss"]
+                trial_evidence[trial_name] = {
+                    "brier": result["brier"],
+                    "logloss": result["logloss"],
+                    "brier_delta_vs_same_trial_baseline": brier_delta,
+                    "logloss_delta_vs_same_trial_baseline": logloss_delta,
+                    "feature_used_in_splits": used,
+                }
+                if used:
+                    usable.append((brier_delta, logloss_delta, result["brier"],
+                                   result["logloss"], feature, trial_name))
+            candidates[feature] = {"trials": trial_evidence}
+
+        winner = min(usable) if usable else None
+        selected_feature = winner[4] if winner else None
+        selected_trial = winner[5] if winner else None
         evidence["groups"][group_name] = {
             "candidates": candidates,
-            "selected": winner,
+            "selected": selected_feature,
+            "selected_trial": selected_trial,
         }
-        if winner is not None:
-            selected.append(winner)
+        if selected_feature is not None:
+            selected.append(selected_feature)
     evidence["selected_features"] = selected
     evidence["all_groups_screened"] = len(selected) == len(groups)
     return selected, evidence
