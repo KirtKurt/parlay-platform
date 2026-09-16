@@ -8,6 +8,7 @@ from .canonical import parse_utc
 from .storage import now_utc, plain
 
 SELECTIONS = {None, "12", "1X", "X2", "1x2", "ou25", "btts"}
+PUBLISHED_MARKET_FIELDS = ("1x2_published", "double_chance_published", "ou25_published", "btts_published")
 
 
 def _matches_selection(markets, selection):
@@ -86,6 +87,25 @@ def recorded_picks(store, day=None, *, selection=None, trained_only=True):
         row = max(valid, key=lambda r: (parse_utc(r["created_at"]), r["model_digest"]))
         book = row["kss1"]
         markets = book["markets"]
+        # A valid fitted shadow row can exist without a publishable book when
+        # the current fixture is unsupported or lacks the required live
+        # coverage. Account for that state explicitly so the verifier can
+        # distinguish it from a silent readback failure.
+        if all(
+            key in markets and markets[key] in (None, "ABSTAIN")
+            for key in PUBLISHED_MARKET_FIELDS
+        ):
+            missing.append({
+                "event_key": fixture["event_key"],
+                "home_team": fixture.get("home_team"),
+                "away_team": fixture.get("away_team"),
+                "commence_time": fixture["commence_time"],
+                "reason": (
+                    "NO_RECORDED_T60_TRAINED_PUBLISHED_BOOK"
+                    if trained_only else "NO_RECORDED_T60_PUBLISHED_BOOK"
+                ),
+            })
+            continue
         if markets.get("1x2_published") not in (None, "ABSTAIN"):
             published_counts["1x2"] += 1
         if markets.get("double_chance_published") not in (None, "ABSTAIN"):
