@@ -18,8 +18,8 @@ def test_selected_baseline_features_uses_exact_selected_recipe():
 
 def test_representation_columns_replace_redundant_parents_without_losing_information(monkeypatch):
     monkeypatch.setattr(subject, 'SPECS', {
-        'forensic_market': {'parents': ('market_raw',)},
-        'forensic_delta': {'parents': ('left', 'right')},
+        'forensic_market': {'operation': 'offset', 'parents': ('market_raw',)},
+        'forensic_delta': {'operation': 'difference', 'parents': ('left', 'right')},
     })
 
     one_parent, one_evidence = subject.representation_columns(
@@ -29,6 +29,7 @@ def test_representation_columns_replace_redundant_parents_without_losing_informa
         'mode': 'replace_redundant_parents',
         'parents': ['market_raw'],
         'anchor_parent': None,
+        'operation': 'offset',
         'information_preserving': True,
     }
 
@@ -39,8 +40,20 @@ def test_representation_columns_replace_redundant_parents_without_losing_informa
         'mode': 'replace_redundant_parents',
         'parents': ['left', 'right'],
         'anchor_parent': 'left',
+        'operation': 'difference',
         'information_preserving': True,
     }
+
+
+def test_representation_columns_do_not_remove_parents_for_unknown_transform(monkeypatch):
+    monkeypatch.setattr(subject, 'SPECS', {
+        'forensic_unknown': {'operation': 'noninvertible', 'parents': ('raw',)},
+    })
+    columns, evidence = subject.representation_columns(
+        ['base', 'raw'], 'forensic_unknown')
+    assert columns == ['base', 'raw', 'forensic_unknown']
+    assert evidence['mode'] == 'additive'
+    assert evidence['operation'] == 'noninvertible'
 
 
 def test_nested_screen_uses_representation_when_parents_already_in_baseline(monkeypatch):
@@ -52,7 +65,7 @@ def test_nested_screen_uses_representation_when_parents_already_in_baseline(monk
     monkeypatch.setattr(subject, 'TRIALS', {'shallow': {}})
     monkeypatch.setattr(subject, 'PARAMS', {})
     monkeypatch.setattr(subject, 'SPECS', {
-        'forensic_market': {'parents': ('market_raw',)},
+        'forensic_market': {'operation': 'offset', 'parents': ('market_raw',)},
     })
     seen = []
 
@@ -116,9 +129,9 @@ def test_nested_screen_selects_one_used_feature_per_group_without_outer_or_holdo
 
 def test_combined_screened_representation_preserves_one_coordinate_per_replaced_pair(monkeypatch):
     monkeypatch.setattr(subject, 'SPECS', {
-        'forensic_market': {'parents': ('market_raw',)},
-        'forensic_regime': {'parents': ('recent', 'long')},
-        'forensic_lineup': {'parents': ('lineup_home', 'lineup_away')},
+        'forensic_market': {'operation': 'offset', 'parents': ('market_raw',)},
+        'forensic_regime': {'operation': 'difference', 'parents': ('recent', 'long')},
+        'forensic_lineup': {'operation': 'difference', 'parents': ('lineup_home', 'lineup_away')},
     })
     columns, evidence = subject.screened_representation_columns(
         ['base', 'market_raw', 'recent', 'long'],
@@ -131,6 +144,16 @@ def test_combined_screened_representation_preserves_one_coordinate_per_replaced_
     assert evidence['forensic_lineup']['mode'] == 'additive'
 
 
+def test_combined_screened_representation_rejects_overlapping_parent_replacements(monkeypatch):
+    monkeypatch.setattr(subject, 'SPECS', {
+        'forensic_a': {'operation': 'difference', 'parents': ('left', 'shared')},
+        'forensic_b': {'operation': 'difference', 'parents': ('shared', 'right')},
+    })
+    with pytest.raises(ValueError, match='overlapping forensic representation parents'):
+        subject.screened_representation_columns(
+            ['left', 'shared', 'right'], ['forensic_a', 'forensic_b'])
+
+
 def test_development_challenger_augments_selected_recipe_not_all_admitted_raw(monkeypatch):
     fit = pd.DataFrame({'home_win': [0, 1]})
     validation = pd.DataFrame({'home_win': [0, 1]})
@@ -140,7 +163,9 @@ def test_development_challenger_augments_selected_recipe_not_all_admitted_raw(mo
     monkeypatch.setattr(subject, 'admit_derived',
                         lambda frame, raw, floor: (['forensic_x'], {}, None))
     monkeypatch.setattr(subject, 'derived_groups', lambda derived: {'market': ['forensic_x']})
-    monkeypatch.setattr(subject, 'SPECS', {'forensic_x': {'parents': ('parent_x',)}})
+    monkeypatch.setattr(subject, 'SPECS', {
+        'forensic_x': {'operation': 'offset', 'parents': ('parent_x',)},
+    })
     monkeypatch.setattr(subject, 'select', lambda train: (None, {
         'selected': 'starter',
         'metrics': {'starter': {'brier': .25, 'logloss': .70}},
