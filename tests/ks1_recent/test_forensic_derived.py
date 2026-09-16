@@ -78,7 +78,15 @@ def test_admission_requires_raw_parent_admission_and_nonmissing_floor():
 
 
 def test_groups_and_parent_receipts_cover_all_five_signal_families():
-    frame = pd.DataFrame([raw_row(), {**raw_row(), 'market_home_prob': .64}])
+    second = raw_row()
+    second.update({
+        'market_home_prob': .64,
+        'home_starter_era_7d': 5.7,
+        'home_pitcher_context_expected_innings': 3.2,
+        'home_lineup_ops_7d': .725,
+        'home_bullpen_context_fip_7d': 5.3,
+    })
+    frame = pd.DataFrame([raw_row(), second])
     admitted, _, _ = admit(frame, list(frame.columns), minimum_nonmissing=2)
     grouped = groups(admitted)
     assert set(grouped) == {'market', 'starter_regime', 'starter_workload', 'lineup', 'bullpen'}
