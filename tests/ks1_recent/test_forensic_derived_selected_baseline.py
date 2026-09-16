@@ -16,6 +16,44 @@ def test_selected_baseline_features_uses_exact_selected_recipe():
         subject.selected_baseline_features(report, 'missing')
 
 
+def test_nested_screen_selects_one_used_feature_per_group_without_outer_or_holdout_access(monkeypatch):
+    fit = pd.DataFrame({'home_win': [0, 1, 0, 1]})
+    validation = pd.DataFrame({'home_win': [0, 1]})
+    monkeypatch.setattr(subject, 'split_development', lambda frame: (fit, validation))
+    monkeypatch.setattr(subject, '_augment', lambda frame, derived: frame.assign(
+        base=.1, market_a=.2, market_b=.3, lineup_a=.4, lineup_b=.5))
+    monkeypatch.setattr(subject, 'TRIALS', {'shallow': {}})
+    monkeypatch.setattr(subject, 'PARAMS', {})
+
+    scores = {
+        'market_a': (.24, .69, True),
+        'market_b': (.23, .68, True),
+        'lineup_a': (.22, .67, True),
+        'lineup_b': (.21, .66, False),
+    }
+
+    def fake_trial(fit_frame, validation_frame, columns, params):
+        feature = columns[-1]
+        brier, logloss, used = scores[feature]
+        return {
+            'brier': brier,
+            'logloss': logloss,
+            'features_used_in_splits': ['base'] + ([feature] if used else []),
+        }
+
+    monkeypatch.setattr(subject, '_trial', fake_trial)
+    selected, evidence = subject.screen_derived_features(
+        pd.DataFrame({'unused': [1]}), ['base'],
+        ['market_a', 'market_b', 'lineup_a', 'lineup_b'],
+        {'market': ['market_a', 'market_b'], 'lineup': ['lineup_a', 'lineup_b']})
+
+    assert selected == ['market_b', 'lineup_a']
+    assert evidence['all_groups_screened'] is True
+    assert evidence['outer_development_used_for_screening'] is False
+    assert evidence['final_holdout_used_for_screening'] is False
+    assert evidence['groups']['lineup']['candidates']['lineup_b']['feature_used_in_splits'] is False
+
+
 def test_development_challenger_augments_selected_recipe_not_all_admitted_raw(monkeypatch):
     fit = pd.DataFrame({'home_win': [0, 1]})
     validation = pd.DataFrame({'home_win': [0, 1]})
@@ -34,6 +72,12 @@ def test_development_challenger_augments_selected_recipe_not_all_admitted_raw(mo
     monkeypatch.setattr(subject, '_augment',
                         lambda frame, derived: frame.assign(base_a=.1, bad_raw_parent=.2,
                                                             parent_x=.3, forensic_x=.4))
+    monkeypatch.setattr(subject, 'screen_derived_features', lambda *args: (
+        ['forensic_x'], {
+            'all_groups_screened': True,
+            'outer_development_used_for_screening': False,
+            'final_holdout_used_for_screening': False,
+        }))
     seen = []
 
     def fake_trial(fit_frame, validation_frame, columns, params):
