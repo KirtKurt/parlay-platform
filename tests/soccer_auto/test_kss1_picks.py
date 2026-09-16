@@ -34,6 +34,20 @@ def test_stale_late_or_mismatched_records_are_not_picks(field, value):
     assert recorded_picks(store, "2026-09-14")["count"] == 0
 
 
+def test_all_abstain_trained_shadow_row_is_accounted_for_as_empty():
+    store = Store()
+    store.row["kss1"]["markets"] = {
+        "1x2_published": "ABSTAIN",
+        "double_chance_published": "ABSTAIN",
+        "ou25_published": "ABSTAIN",
+        "btts_published": "ABSTAIN",
+    }
+    result = recorded_picks(store, "2026-09-14", selection="12")
+    assert result["count"] == 0
+    assert result["published_counts"] == {"1x2": 0, "double_chance": 0, "ou25": 0, "btts": 0, "any": 0}
+    assert result["missing"][0]["reason"] == "NO_RECORDED_T60_TRAINED_PUBLISHED_BOOK"
+
+
 def test_default_feed_excludes_untrained_baselines_and_research():
     store = Store()
     store.row["kss1"]["goals_model_digest"] = None
