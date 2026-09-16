@@ -78,3 +78,27 @@ def test_summary_separates_admitted_unused_pitch_values_from_platoon_and_missing
     assert result['explicit_pitch_type_values_admitted'] == {'full': [pitch]}
     assert result['explicit_pitch_type_values_used'] == {'full': []}
     assert result['matchup_values_used'] == {'full': [platoon]}
+
+
+def test_summary_accepts_flat_unified_forensic_trial_shape(tmp_path):
+    from ks1.run_summary import artifact_summary
+    pitch = 'home_lineup_pitch_type_matchup_whiff_pct_30d'
+    platoon = 'away_lineup_platoon_xwoba_7d'
+    report = {
+        'contract': 'KS1-unified-forensic-training-v1',
+        'admitted_features': [pitch, pitch+'_missing', platoon, 'market_home_prob'],
+        'selected_trial': 'shallow:alpha=0.5',
+        'trials': {
+            'shallow:alpha=0.5': {
+                'features_used_in_splits': [pitch+'_missing', platoon, 'market_home_prob']},
+            'baseline:alpha=0.25': {
+                'features_used_in_splits': [pitch, 'market_home_prob']},
+        },
+        'final_holdout_used_for_selection': False,
+    }
+    (tmp_path/'development_selection.json').write_text(json.dumps(report))
+    result = artifact_summary(tmp_path)['development']
+    assert result['explicit_pitch_type_values_admitted'] == {'unified': [pitch]}
+    assert result['explicit_pitch_type_values_used'] == {'unified': []}
+    assert result['matchup_values_used'] == {'unified': [platoon]}
+    assert result['final_holdout_used_for_selection'] is False
