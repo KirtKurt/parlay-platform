@@ -230,6 +230,7 @@ class Crosswalk:
     def __init__(self, history, schedule):
         self.aliases, self.bbs_ids, self.rows = {}, {}, []
         self.game_time_adjustments = []
+        self.bbs_identity_exclusions = []
         for g in history:
             for t in g['teams'].values():
                 self.add(*team_identity(t))
@@ -254,12 +255,22 @@ class Crosswalk:
                               'method': 'unique_exact_alias_and_game_start', 'confidence': 1.0})
 
 
-def bbs_assignments(payload, schedule, crosswalk, target_date):
+def bbs_assignments(payload, schedule, crosswalk, target_date, *, isolate_unmatched=False):
     data = payload.get('data')
     if not isinstance(data, list):
         raise ValueError('BBS matches require data array; scores are not match identities')
     if len(data) >= 200:
         raise ValueError('BBS result may be truncated; refuse partial catalogue')
+    if isolate_unmatched:
+        # Validate before isolation/lookahead so schema corruption is never skipped.
+        for event in data:
+            if (not isinstance(event, dict)
+                    or not all(isinstance(event.get(k), str) and event[k].strip()
+                               for k in ('id', 'kickoff_utc', 'sport', 'league', 'status'))
+                    or not all(isinstance(event.get(side), dict)
+                               and all(isinstance(event[side].get(k), str) and event[side][k].strip()
+                                       for k in ('id', 'name')) for side in ('home', 'away'))):
+                raise ValueError('BBS match identity schema changed')
     ids, assigned = set(), {}
     for event in data:
         if not all(event.get(k) for k in ('id', 'kickoff_utc', 'home', 'away')):
@@ -293,7 +304,13 @@ def bbs_assignments(payload, schedule, crosswalk, target_date):
                     'difference_seconds': delta,
                     'method': 'unique_exact_teams_single_game_within_5_minutes'})
         if len(matches) != 1:
-            raise ValueError('ambiguous or unmatched BBS game identity: ' + str(event['id']))
+            if not isolate_unmatched:
+                raise ValueError('ambiguous or unmatched BBS game identity: ' + str(event['id']))
+            crosswalk.bbs_identity_exclusions.append({
+                'bbs_game_id': str(event['id']), 'bbs_start': event['kickoff_utc'],
+                'reason': 'ambiguous_bbs_identity' if len(matches) > 1 else 'unmatched_bbs_identity',
+                'official_candidate_game_ids': [str(g['gamePk']) for g in same_teams]})
+            continue
         pk = str(matches[0]['gamePk'])
         if pk in assigned:
             raise ValueError('multiple BBS IDs map to one official game')
@@ -446,7 +463,8 @@ def predict(folder, output):
     schedule = [g for g in schedule if str(day(g['gameDate'])) == target_date and g['gameType'] in ('R', 'F', 'D', 'L', 'W')]
     history = inputs['history']['games']
     crosswalk = Crosswalk(history, schedule)
-    assignments = bbs_assignments(inputs['bbs']['payload'], schedule, crosswalk, target_date)
+    assignments = bbs_assignments(inputs['bbs']['payload'], schedule, crosswalk, target_date,
+                                  isolate_unmatched=True)
     engine = Features(history, inputs['history'].get('statcast', []),
                       statcast_complete=inputs['history'].get('statcast_coverage_complete') is True,
                       prior_statcast_profiles=inputs['history'].get('prior_statcast_profiles'),
@@ -489,7 +507,12 @@ def predict(folder, output):
                                     'reason': game['status']['detailedState']})
             continue
         if pk not in assignments:
-            raise ValueError('scheduled official game missing from BBS: '+pk)
+            old = prior_rows.get(pk)
+            if old:
+                retained.append(old)
+            exclusions.append({'game_id': pk, 'reason': 'missing_bbs_identity',
+                               'retained_previous': old is not None})
+            continue
         bbs = assignments[pk]
         if bbs['status'].lower() != 'scheduled':
             old = prior_rows.get(pk)
@@ -676,7 +699,8 @@ def predict(folder, output):
     (output/'odds_cache.parquet').write_bytes(parquet_bytes(odds_table))
     (output/'lineup_cache.json').write_bytes(encode(inputs['feeds']))
     (output/'crosswalk.json').write_bytes(encode({'teams': crosswalk.rows, 'fuzzy_matches': 0,
-                                               'game_time_adjustments': crosswalk.game_time_adjustments}))
+                                               'game_time_adjustments': crosswalk.game_time_adjustments,
+                                               'bbs_identity_exclusions': crosswalk.bbs_identity_exclusions}))
     report = {'system': 'KS1', 'phase': 5, 'date': target_date, 'as_of': as_of, 'model_version': model_version,
               'learned_feature_names': classifier.feature_name(),
               'individual_starter_features_learned': individual_learned,
@@ -699,6 +723,7 @@ def predict(folder, output):
               'confirmed_lineups': int((frame.lineup_status == 'confirmed').sum()),
               'projected_lineups': int((frame.lineup_status == 'projected').sum()),
               'official_games': len(schedule), 'bbs_matched_games': len(assignments), 'exclusions': exclusions,
+              'bbs_identity_exclusions': crosswalk.bbs_identity_exclusions,
               'schedule_observations': [{'game_id': str(g['gamePk']), 'commence_time': g['gameDate'], 'status': g['status']}
                                         for g in schedule],
               'bbs_time_adjustments': crosswalk.game_time_adjustments,
