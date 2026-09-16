@@ -74,6 +74,9 @@ jobs:
           python -m ks1.live_inputs --output /tmp/ks1-daily-inputs
           python -m ks1.platt --inputs /tmp/ks1-daily-inputs/calibration_inputs.json --output /tmp/ks1-calibration
           python -m ks1.daily --inputs /tmp/ks1-daily-inputs --output /tmp/ks1-daily --publish
+      - name: Surface KS1 loss-forensics counter-signals without changing authority
+        if: ${{ !cancelled() && steps.daily.outcome == 'success' }}
+        run: python -m ks1.forensic_consideration --root /tmp/ks1-daily
       - name: Audit T-10 coverage from immutable stored versions
         if: ${{ !cancelled() && steps.daily.outcome == 'success' }}
         continue-on-error: true
