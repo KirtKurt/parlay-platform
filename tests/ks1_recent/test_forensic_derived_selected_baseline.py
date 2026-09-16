@@ -25,6 +25,7 @@ def test_development_challenger_augments_selected_recipe_not_all_admitted_raw(mo
     monkeypatch.setattr(subject, 'admit_derived',
                         lambda frame, raw, floor: (['forensic_x'], {}, None))
     monkeypatch.setattr(subject, 'derived_groups', lambda derived: {'market': ['forensic_x']})
+    monkeypatch.setattr(subject, 'SPECS', {'forensic_x': {'parents': ('parent_x',)}})
     monkeypatch.setattr(subject, 'select', lambda train: (None, {
         'selected': 'starter',
         'metrics': {'starter': {'brier': .25, 'logloss': .70}},
