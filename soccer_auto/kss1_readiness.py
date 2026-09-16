@@ -71,8 +71,24 @@ def verify_rollout(training, status, picks):
                     "GOALS_PICK_PREDATES_CONTEXT")
         recorded = len(rows)
     else:
-        require(published_any > 0, "NO_RECORDED_TRAINED_PUBLISHED_BOOKS")
-        recorded = published_any
+        # A deployment can run before any fixture reaches the immutable T60
+        # capture window.  That is a safe shadow-only state, but it must be
+        # explicit and complete; an unexplained empty response remains a
+        # readiness failure.
+        safe_empty = (
+            picks.get("reason") == "NO_MATCHING_RECORDED_PICKS"
+            and published_any == 0
+            and isinstance(picks.get("missing"), list)
+            and bool(picks["missing"])
+            and int(picks.get("count") or 0) == 0
+            and all(
+                row.get("reason") == "NO_RECORDED_T60_TRAINED_PICK"
+                for row in picks["missing"]
+            )
+            and len(picks["missing"]) == int(picks.get("fixture_count") or 0)
+        )
+        require(safe_empty, "NO_RECORDED_TRAINED_PUBLISHED_BOOKS")
+        recorded = 0
     return {"verified": True, "model_digest": model, "recorded_12_picks": recorded,
             "published_counts": published, "authority": "SHADOW_LEARNING",
             "automatic_prediction_allowed": False}
