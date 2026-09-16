@@ -14,7 +14,7 @@ from pathlib import Path
 import pandas as pd
 
 from ks1.development import HOLDOUT, frozen_split
-from ks1.forensic_derived import CONTRACT, development_select
+from ks1.forensic_derived_selected_baseline import CONTRACT, development_select
 from ks1.inventory import encode
 from ks1.retrain_recent import qualified_training_population
 from ks1.sources import aws_clients
