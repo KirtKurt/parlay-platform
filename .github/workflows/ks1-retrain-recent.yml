@@ -63,6 +63,12 @@ jobs:
           --input /tmp/ks1-recent/input_table.parquet
           --proof /tmp/ks1-recent/input_proof.json
           --output /tmp/ks1-unified
+      - name: Develop explicit forensic derived features without consuming final holdout
+        run: >-
+          python -m ks1.forensic_derived_development
+          --input /tmp/ks1-recent/input_table.parquet
+          --proof /tmp/ks1-recent/input_proof.json
+          --output /tmp/ks1-forensic-derived
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -70,5 +76,6 @@ jobs:
           path: |
             /tmp/ks1-recent/
             /tmp/ks1-unified/
+            /tmp/ks1-forensic-derived/
           if-no-files-found: error
           retention-days: 90
