@@ -1,13 +1,15 @@
 from copy import deepcopy
 from datetime import timedelta
 import hashlib
+from io import BytesIO
 import json
 
+import pandas as pd
 import pytest
 
 from ks1.features import utc
 from ks1.historical_feed import TEAM_CONTEXT_PREFIX
-from ks1.historical_lineup_season_probe import extract
+from ks1.historical_lineup_season_probe import DIRECT, enrich_frame, extract
 from ks1.inventory import encode
 
 
@@ -120,3 +122,47 @@ def test_probe_rejects_wrong_timecode_even_when_payload_is_pregame():
     receipt['timecode'] = (start - timedelta(minutes=11)).strftime('%Y%m%d_%H%M%S')
     with pytest.raises(ValueError, match='source_identity_mismatch'):
         extract(body, row, receipt)
+
+
+class FakeS3:
+    def __init__(self, body, receipt):
+        self.body = body
+        self.receipt = receipt
+        self.calls = []
+
+    def get_object(self, Bucket, Key, VersionId):
+        self.calls.append((Bucket, Key, VersionId))
+        assert (Bucket, Key, VersionId) == (
+            self.receipt['bucket'], self.receipt['key'], self.receipt['versionId'])
+        return {'Body': BytesIO(self.body)}
+
+
+def test_enrichment_updates_only_exact_source_eligible_rows_and_missingness():
+    body, row, receipt = fixture()
+    eligible = deepcopy(row)
+    eligible.update({
+        'lineup_bullpen_context_evidence': 'historical_timecoded_mlb_feed',
+        'historical_lineup_bullpen_context_status': 'SUPPORTED_V1_COMPLETE',
+        'historical_lineup_bullpen_context_source': json.dumps(receipt),
+    })
+    for side in ('home', 'away'):
+        for feature in DIRECT:
+            eligible[side + '_' + feature] = None
+            eligible[side + '_' + feature + '_missing'] = 1.0
+    ineligible = deepcopy(eligible)
+    ineligible['game_id'] = '100'
+    ineligible['historical_lineup_bullpen_context_status'] = 'UNAVAILABLE_FAIL_CLOSED'
+    frame = pd.DataFrame([eligible, ineligible])
+    s3 = FakeS3(body, receipt)
+
+    enriched, report = enrich_frame(frame, s3, minimum_nonmissing=1)
+
+    assert len(s3.calls) == 1
+    assert report['eligible_timecoded_rows'] == 1
+    assert report['exact_source_rows_verified'] == 1
+    assert report['top4_minimum_reached'] is True
+    assert report['label_dependent_selection'] is False
+    assert enriched.loc[0, 'home_lineup_top4_ops'] is not None
+    assert enriched.loc[0, 'away_lineup_top4_ops_missing'] == 0.0
+    assert pd.isna(enriched.loc[1, 'home_lineup_top4_ops'])
+    assert pd.isna(frame.loc[0, 'home_lineup_top4_ops'])
