@@ -69,6 +69,12 @@ jobs:
           --input /tmp/ks1-recent/input_table.parquet
           --proof /tmp/ks1-recent/input_proof.json
           --output /tmp/ks1-forensic-derived
+      - name: Prove retained pre-T10 lineup season-batting coverage on development fit only
+        run: >-
+          python -m ks1.historical_lineup_season_probe
+          --input /tmp/ks1-recent/input_table.parquet
+          --proof /tmp/ks1-recent/input_proof.json
+          --output /tmp/ks1-historical-lineup-season
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -77,5 +83,6 @@ jobs:
             /tmp/ks1-recent/
             /tmp/ks1-unified/
             /tmp/ks1-forensic-derived/
+            /tmp/ks1-historical-lineup-season/
           if-no-files-found: error
           retention-days: 90
