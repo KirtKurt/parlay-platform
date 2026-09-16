@@ -42,7 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -98,7 +98,7 @@ jobs:
           PY
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - name: Collect stack, Lambda, IAM and rule evidence without invocation
         run: python scripts/collect_mlb_autofunction_identity.py --output /tmp/mlb-autofunction-identity.json
       - uses: actions/upload-artifact@v4
