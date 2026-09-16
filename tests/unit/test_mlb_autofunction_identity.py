@@ -142,7 +142,7 @@ def test_workflow_has_main_only_evidence_and_no_schedule():
     assert 'schedule:' not in text
     assert 'contents: read' in text
     assert 'test_mlb_autofunction_identity.py' in text
-    assert 'ref: ${{ github.sha }}' in text
+    assert 'ref: ${{ github.event_name == \'workflow_run\' && github.event.workflow_run.head_sha || github.sha }}' in text
     assert 'if: always()' in text
 
 
