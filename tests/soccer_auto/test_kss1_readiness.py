@@ -37,6 +37,22 @@ def proof_fixture():
 def test_verified_score_only_readback_can_pass_without_xg():
     assert verify_rollout(*proof_fixture())["recorded_12_picks"] == 1
 
+def test_explicit_no_due_t60_rows_is_safe_shadow_readback():
+    training, status, picks = proof_fixture()
+    picks.update(
+        count=0,
+        picks=[],
+        reason="NO_MATCHING_RECORDED_PICKS",
+        published_counts={"1x2": 0, "double_chance": 0, "ou25": 0, "btts": 0, "any": 0},
+        fixture_count=1,
+        missing=[{"event_key": "fixture", "reason": "NO_RECORDED_T60_TRAINED_PICK"}],
+    )
+    proof = verify_rollout(training, status, picks)
+    assert proof["verified"] is True
+    assert proof["recorded_12_picks"] == 0
+    assert proof["automatic_prediction_allowed"] is False
+
+
 
 @pytest.mark.parametrize("defect,reason", [
     ("empty", "NO_RECORDED_TRAINED_PUBLISHED_BOOKS"),
