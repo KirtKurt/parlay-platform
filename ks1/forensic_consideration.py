@@ -121,7 +121,9 @@ def evaluate(row):
 
     weights = {"high": 2, "medium": 1, "low": 0}
     points = sum(weights.get(flag["strength"], 0) for flag in flags)
-    severity = "high" if points >= 4 else "medium" if points >= 2 else "watch" if points else "none"
+    # A high counter-signal plus any corroborating medium signal is high visibility.
+    # Three independent medium signals are likewise enough to demand review.
+    severity = "high" if points >= 3 else "medium" if points >= 2 else "watch" if points else "none"
     return {
         "contract": CONTRACT,
         "date": row.get("date"),
