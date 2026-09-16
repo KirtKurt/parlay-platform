@@ -57,10 +57,18 @@ jobs:
           aws-region: us-east-1
       - name: Backfill timestamped pregame starters and compare on rolling holdout
         run: python -m ks1.retrain_recent --output /tmp/ks1-recent
+      - name: Train forensic signals and existing KS1 features as one challenger
+        run: >-
+          python -m ks1.forensic_unified
+          --input /tmp/ks1-recent/input_table.parquet
+          --proof /tmp/ks1-recent/input_proof.json
+          --output /tmp/ks1-unified
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ks1-recent-${{ github.run_id }}-${{ github.run_attempt }}
-          path: /tmp/ks1-recent/
+          path: |
+            /tmp/ks1-recent/
+            /tmp/ks1-unified/
           if-no-files-found: error
           retention-days: 90
