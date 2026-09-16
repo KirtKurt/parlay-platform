@@ -2,11 +2,12 @@
 
 The first explicit-derived experiment accidentally trained the challenger on every raw
 feature admitted by the data contract, while comparing it with the development-selected
-KS1 recipe.  When lineup/bullpen raw features already lose to the selected starter recipe,
-that comparison confounds the value of the new forensic transforms.  This selector keeps
-feature admission unchanged but adds the derived features to the exact raw recipe selected
-on the same purged development process.  It never sees or scores the frozen 300-game
-qualification holdout.
+KS1 recipe. When lineup/bullpen raw features already lose to the selected starter recipe,
+that comparison confounds the value of the new forensic transforms. This selector keeps
+feature admission unchanged, adds the derived features to the exact raw recipe selected
+on the same purged development process, and can also screen one representative feature
+per forensic family on a second, strictly earlier purged development split. It never sees
+or scores the frozen 300-game qualification holdout.
 """
 from __future__ import annotations
 
@@ -21,7 +22,8 @@ from ks1.forensic_features import (
 from ks1.retrain_recent import EVALUATION_GAMES, choose_features, split_development
 from ks1.train import PARAMS
 
-CONTRACT = "KS1-unified-forensic-derived-selected-baseline-v1"
+CONTRACT = "KS1-unified-forensic-derived-selected-baseline-v2"
+SCREEN_TRIAL = "shallow"
 
 
 def selected_baseline_features(report, recipe):
@@ -33,6 +35,54 @@ def selected_baseline_features(report, recipe):
     if not features or len(features) != len(set(features)):
         raise ValueError("selected baseline recipe features invalid")
     return features
+
+
+def screen_derived_features(fit, baseline_raw, derived, groups):
+    """Choose one representative per forensic family on an earlier purged split.
+
+    This is development-only feature selection. The outer development tail remains
+    untouched while representatives are chosen, and the frozen qualification holdout is
+    not available to this function at all.
+    """
+    if SCREEN_TRIAL not in TRIALS:
+        raise ValueError("nested screen trial unavailable")
+    inner_fit, inner_validation = split_development(fit)
+    fit_aug = _augment(inner_fit, derived)
+    validation_aug = _augment(inner_validation, derived)
+    params = {**PARAMS, **TRIALS[SCREEN_TRIAL]}
+    selected = []
+    evidence = {
+        "method": "nested_purged_one_representative_per_forensic_family",
+        "trial": SCREEN_TRIAL,
+        "inner_fit_games": len(inner_fit),
+        "inner_validation_games": len(inner_validation),
+        "outer_development_used_for_screening": False,
+        "final_holdout_used_for_screening": False,
+        "groups": {},
+    }
+    for group_name, group_columns in groups.items():
+        candidates = {}
+        usable = []
+        for feature in group_columns:
+            result = _trial(fit_aug, validation_aug, baseline_raw + [feature], params)
+            used = feature in set(result["features_used_in_splits"])
+            candidates[feature] = {
+                "brier": result["brier"],
+                "logloss": result["logloss"],
+                "feature_used_in_splits": used,
+            }
+            if used:
+                usable.append((result["brier"], result["logloss"], feature))
+        winner = min(usable)[2] if usable else None
+        evidence["groups"][group_name] = {
+            "candidates": candidates,
+            "selected": winner,
+        }
+        if winner is not None:
+            selected.append(winner)
+    evidence["selected_features"] = selected
+    evidence["all_groups_screened"] = len(selected) == len(groups)
+    return selected, evidence
 
 
 def development_select(train):
@@ -78,30 +128,42 @@ def development_select(train):
 
     fit_aug = _augment(fit, derived)
     validation_aug = _augment(validation, derived)
-    columns = baseline_raw + derived
+    all_columns = baseline_raw + derived
     best = None
-    for trial_name, updates in TRIALS.items():
-        params = {**PARAMS, **updates}
-        result = _trial(fit_aug, validation_aug, columns, params)
-        used = set(result["features_used_in_splits"])
-        result["derived_group_usage"] = {
-            name: sorted(used.intersection(group_columns))
-            for name, group_columns in groups.items()
-        }
-        result["all_derived_groups_used"] = all(result["derived_group_usage"].values())
-        result["beats_selected_baseline"] = bool(
-            result["brier"] < baseline_metrics["brier"]
-            and result["logloss"] <= baseline_metrics["logloss"])
-        report["trials"][trial_name] = result
-        if result["all_derived_groups_used"] and result["beats_selected_baseline"]:
-            if best is None or (result["brier"], result["logloss"], trial_name) < (
-                    best[1]["brier"], best[1]["logloss"], best[0]):
-                best = (trial_name, result)
+
+    def evaluate(prefix, columns):
+        nonlocal best
+        for trial_name, updates in TRIALS.items():
+            params = {**PARAMS, **updates}
+            result = _trial(fit_aug, validation_aug, columns, params)
+            used = set(result["features_used_in_splits"])
+            result["derived_group_usage"] = {
+                name: sorted(used.intersection(group_columns))
+                for name, group_columns in groups.items()
+            }
+            result["all_derived_groups_used"] = all(result["derived_group_usage"].values())
+            result["beats_selected_baseline"] = bool(
+                result["brier"] < baseline_metrics["brier"]
+                and result["logloss"] <= baseline_metrics["logloss"])
+            result["feature_set"] = prefix or "all_admitted_derived"
+            key = f"{prefix}_{trial_name}" if prefix else trial_name
+            report["trials"][key] = result
+            if result["all_derived_groups_used"] and result["beats_selected_baseline"]:
+                candidate = (result["brier"], result["logloss"], key, result, list(columns))
+                if best is None or candidate[:3] < best[:3]:
+                    best = candidate
+
+    evaluate("", all_columns)
+
+    screened, screen_evidence = screen_derived_features(fit, baseline_raw, derived, groups)
+    report["nested_group_screen"] = screen_evidence
+    if screen_evidence["all_groups_screened"] and set(screened) != set(derived):
+        evaluate("screened", baseline_raw + screened)
 
     if best is None:
         report["reason"] = "derived_forensic_selected_baseline_candidate_not_superior_on_development"
         return None, report
     report["accepted_for_final_holdout"] = True
-    report["selected_trial"] = best[0]
-    report["features"] = columns
-    return best[1], report
+    report["selected_trial"] = best[2]
+    report["features"] = best[4]
+    return best[3], report
