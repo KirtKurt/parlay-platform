@@ -306,7 +306,7 @@ def test_readonly_recovery_runs_after_completed_main_deployment():
     assert 'workflow_run.conclusion' not in evidence['if']
     # The failed post-deploy verifier must not prevent a read-only identity audit.
     checkouts = [s for s in evidence['steps'] if s.get('uses', '').startswith('actions/checkout@')]
-    checkout_ref = '${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}'
+    checkout_ref = "${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}"
     assert all(s['with']['ref'] == checkout_ref for s in checkouts)
     upload = next(s for s in evidence['steps'] if s.get('uses', '').startswith('actions/upload-artifact@'))
     assert '${{ github.run_attempt }}' in upload['with']['name']
