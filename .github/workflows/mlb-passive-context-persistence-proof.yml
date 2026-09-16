@@ -117,7 +117,14 @@ jobs:
           print(json.dumps(report))
           PY
       - uses: actions/upload-artifact@v4
-        if: always() && steps.clean.outcome == 'success' && (steps.proof.outcome != 'skipped' || steps.window.outputs.eligible == 'false')
+        if: always() && steps.clean.outcome == 'success' && steps.proof.outcome != 'skipped'
+        with:
+          name: mlb-passive-context-persistence-${{ github.run_id }}
+          path: runtime_reports/mlb_team_context_live_proof_latest.json
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.clean.outcome == 'success' && steps.window.outputs.eligible == 'false' && steps.no_window.outcome == 'success'
         with:
           name: mlb-passive-context-persistence-${{ github.run_id }}
           path: runtime_reports/mlb_team_context_live_proof_latest.json
