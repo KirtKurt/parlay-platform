@@ -1,10 +1,10 @@
-"""Prove direct lineup season-batting coverage from retained pre-T10 feeds.
+"""Prove and recover direct lineup season batting from retained pre-T10 feeds.
 
-This is a development-only source audit.  It never changes the game table, never
-scores the frozen qualification holdout, and never writes predictions or model refs.
-For development-fit rows only it reads the exact versioned MLB Stats API timecoded
-feed already bound to the row, revalidates its historical pregame state, and measures
-whether the same per-batter season OPS/OBP/SLG inputs used by live KS1 were present.
+The source reader is deliberately label-free. It validates the exact versioned MLB
+Stats API timecoded feed already bound to a historical row before recovering the same
+per-batter season OPS/OBP/SLG inputs used by live KS1. The standalone probe remains
+fit-only. ``enrich_frame`` is reusable by development training only after the frozen
+qualification holdout has already been removed.
 """
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ from ks1.retrain_recent import qualified_training_population, split_development
 from ks1.sources import aws_clients
 
 CONTRACT = "KS1-historical-lineup-season-proof-v1"
+ENRICHMENT_CONTRACT = "KS1-historical-lineup-season-development-enrichment-v1"
 DIRECT = (
     "lineup_quality_ops", "lineup_quality_obp", "lineup_quality_slg",
     "lineup_top4_ops", "lineup_2_5_ops", "lineup_observed_batters", "lineup_total_pa",
@@ -189,6 +190,82 @@ def extract(body: bytes, row: dict, receipt: dict):
     return result
 
 
+def _eligible(row):
+    return (row.get("lineup_bullpen_context_evidence") == "historical_timecoded_mlb_feed"
+            and row.get("historical_lineup_bullpen_context_status") in SUPPORTED)
+
+
+def enrich_frame(frame: pd.DataFrame, s3, minimum_nonmissing=300):
+    """Recover exact-source direct lineup values for an already holdout-free frame.
+
+    Callers own the chronology boundary: this helper must receive only rows already
+    separated from the frozen qualification holdout. It never reads labels when
+    deciding whether a source row is eligible and does not alter source timestamps,
+    game identities, outcomes, or any non-lineup feature.
+    """
+    enriched = frame.copy(deep=True)
+    candidates = [(index, row.to_dict()) for index, row in enriched.iterrows()
+                  if _eligible(row.to_dict())]
+    failures = Counter()
+    bindings = []
+    recovered = []
+
+    def one(item):
+        index, row = item
+        try:
+            receipt = _source(row)
+            response = s3.get_object(Bucket=receipt["bucket"], Key=receipt["key"],
+                                     VersionId=receipt["versionId"])
+            values = extract(response["Body"].read(), row, receipt)
+            binding = {
+                "game_id": str(row["game_id"]),
+                "bucket": receipt["bucket"],
+                "key": receipt["key"],
+                "versionId": receipt["versionId"],
+                "sha256": receipt["sha256"],
+                "payload_sha256": receipt.get("payload_sha256"),
+            }
+            return index, values, binding, None
+        except Exception as exc:  # unproven rows stay missing and are counted
+            return index, None, None, str(exc) or type(exc).__name__
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        for index, values, binding, error in pool.map(one, candidates):
+            if values is None:
+                failures[error] += 1
+                continue
+            recovered.append(values)
+            bindings.append(binding)
+            for column, value in values.items():
+                enriched.at[index, column] = value
+                missing = column + "_missing"
+                if missing in enriched.columns:
+                    enriched.at[index, missing] = 0.0 if value is not None else 1.0
+
+    columns = [side + "_" + feature for side in ("home", "away") for feature in DIRECT]
+    coverage = {column: sum(values.get(column) is not None for values in recovered)
+                for column in columns}
+    top4_floor = all(coverage[side + "_lineup_top4_ops"] >= minimum_nonmissing
+                     for side in ("home", "away"))
+    binding_bytes = encode(sorted(bindings, key=lambda item: item["game_id"]))
+    report = {
+        "contract": ENRICHMENT_CONTRACT,
+        "input_rows": len(frame),
+        "eligible_timecoded_rows": len(candidates),
+        "exact_source_rows_verified": len(recovered),
+        "source_failures": dict(sorted(failures.items())),
+        "nonmissing_coverage": coverage,
+        "minimum_nonmissing": minimum_nonmissing,
+        "top4_minimum_reached": top4_floor,
+        "source_binding_count": len(bindings),
+        "source_bindings_sha256": hashlib.sha256(binding_bytes).hexdigest(),
+        "label_dependent_selection": False,
+        "prediction_writes": 0,
+        "official_ledger_writes": 0,
+    }
+    return enriched, report
+
+
 def run(input_path: Path, proof_path: Path, output: Path):
     output.mkdir(parents=True, exist_ok=True)
     proof = json.loads(proof_path.read_bytes())
@@ -199,44 +276,20 @@ def run(input_path: Path, proof_path: Path, output: Path):
     train, holdout = frozen_split(frame, json.loads(HOLDOUT.read_bytes()))
     train, population = qualified_training_population(train, proof.get("source_receipts", []))
     fit, development = split_development(train)
-    rows = [row for row in fit.to_dict("records")
-            if row.get("lineup_bullpen_context_evidence") == "historical_timecoded_mlb_feed"
-            and row.get("historical_lineup_bullpen_context_status") in SUPPORTED]
     _, s3, _ = aws_clients("us-east-1", "parlay-platform-dev")
-
-    def one(row):
-        try:
-            receipt = _source(row)
-            response = s3.get_object(Bucket=receipt["bucket"], Key=receipt["key"],
-                                     VersionId=receipt["versionId"])
-            return extract(response["Body"].read(), row, receipt), None
-        except Exception as exc:  # every unproven row remains missing, with a counted reason
-            return None, str(exc) or type(exc).__name__
-
-    recovered, failures = [], Counter()
-    with ThreadPoolExecutor(max_workers=16) as pool:
-        for values, error in pool.map(one, rows):
-            if values is not None:
-                recovered.append(values)
-            else:
-                failures[error] += 1
-    columns = [side + "_" + feature for side in ("home", "away") for feature in DIRECT]
-    coverage = {
-        column: sum(values.get(column) is not None for values in recovered)
-        for column in columns
-    }
+    _, recovery = enrich_frame(fit, s3)
     report = {
         "contract": CONTRACT,
         "input_table_sha256": proof["input_table_sha256"],
         "fit_games": len(fit),
         "development_games_not_inspected": len(development),
         "reserved_holdout_games_not_inspected": len(holdout),
-        "eligible_timecoded_fit_rows": len(rows),
-        "exact_source_rows_verified": len(recovered),
-        "source_failures": dict(sorted(failures.items())),
-        "nonmissing_fit_coverage": coverage,
-        "top4_300_game_floor_reached": all(
-            coverage[side + "_lineup_top4_ops"] >= 300 for side in ("home", "away")),
+        "eligible_timecoded_fit_rows": recovery["eligible_timecoded_rows"],
+        "exact_source_rows_verified": recovery["exact_source_rows_verified"],
+        "source_failures": recovery["source_failures"],
+        "nonmissing_fit_coverage": recovery["nonmissing_coverage"],
+        "top4_300_game_floor_reached": recovery["top4_minimum_reached"],
+        "source_bindings_sha256": recovery["source_bindings_sha256"],
         "training_population": population,
         "prediction_writes": 0,
         "official_ledger_writes": 0,
