@@ -9,8 +9,10 @@ serving mutation occurs here.
 
 Reliever slots are deterministic *usage ranks*, not leverage-role claims: among relievers
 on the observed pre-T10 roster with at least one prior 30-day appearance, rank by prior
-30-day appearances descending and player id as a stable tie-break.  The performance
-values themselves are strictly prior 30-day official-box summaries.
+30-day appearances descending and player id as a stable tie-break.  The slot identity is
+therefore fixed independently of the metric window.  Performance values expose the
+strictly prior 7-, 15-, and 30-day official-box summaries already reconstructed by the
+shared point-in-time feature engine.
 """
 from __future__ import annotations
 
@@ -26,12 +28,13 @@ from ks1.features import Features
 from ks1.historical_feed import feed_team_context
 from ks1.inventory import encode
 
-CONTRACT = "KS1-historical-individual-bullpen-development-enrichment-v1"
+CONTRACT = "KS1-historical-individual-bullpen-development-enrichment-v2"
 RANKS = (1, 2, 3)
+WINDOWS = (7, 15, 30)
 METRICS = ("fip", "era", "k_bb_pct")
 FEATURES = tuple(
-    f"individual_bullpen_rank{rank}_{metric}_30d"
-    for rank in RANKS for metric in METRICS
+    f"individual_bullpen_rank{rank}_{metric}_{days}d"
+    for rank in RANKS for metric in METRICS for days in WINDOWS
 )
 SUPPORTED = {"SUPPORTED_V1_COMPLETE", "SUPPORTED_V1_EXPLICIT_MISSING"}
 
@@ -108,18 +111,21 @@ def _history(s3, proof, frame):
 def _ranked_values(profiles):
     eligible = []
     for profile in profiles or []:
-        window = (profile.get("windows") or {}).get("30d") or {}
-        appearances = _finite(window.get("appearances"))
+        window_30 = (profile.get("windows") or {}).get("30d") or {}
+        appearances = _finite(window_30.get("appearances"))
         player_id = str(profile.get("player_id") or "")
         if appearances is None or appearances <= 0 or not player_id:
             continue
-        eligible.append((-appearances, player_id, window))
+        eligible.append((-appearances, player_id, profile))
     eligible.sort(key=lambda item: (item[0], item[1]))
     result = {name: None for name in FEATURES}
-    for rank, (_, _, window) in zip(RANKS, eligible[:len(RANKS)]):
-        for metric in METRICS:
-            result[f"individual_bullpen_rank{rank}_{metric}_30d"] = _finite(
-                window.get(metric))
+    for rank, (_, _, profile) in zip(RANKS, eligible[:len(RANKS)]):
+        windows = profile.get("windows") or {}
+        for days in WINDOWS:
+            window = windows.get(f"{days}d") or {}
+            for metric in METRICS:
+                result[f"individual_bullpen_rank{rank}_{metric}_{days}d"] = _finite(
+                    window.get(metric))
     return result
 
 
@@ -222,6 +228,8 @@ def enrich_frame(frame: pd.DataFrame, s3, proof, minimum_nonmissing=300):
         "team_context_binding_count": len(bindings),
         "team_context_bindings_sha256": hashlib.sha256(binding_bytes).hexdigest(),
         "ranking_method": "prior_30d_appearances_desc_player_id_tiebreak",
+        "ranking_window_days": 30,
+        "performance_windows_days": list(WINDOWS),
         "role_claimed": False,
         "label_dependent_selection": False,
         "provider_requests": 0,
