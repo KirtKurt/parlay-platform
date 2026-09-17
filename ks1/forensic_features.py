@@ -1,9 +1,16 @@
 """Deterministic point-in-time forensic feature engineering shared by training and serving.
 
-Every derived value is a pure function of already-supported KS1 pregame inputs.  No
-labels, incumbent predictions, final scores, or post-cutoff observations are used.
-Missing parents remain missing so LightGBM can preserve the existing fail-closed
-semantics instead of silently interpreting absence as zero.
+Every derived value is a pure function of pregame inputs. No labels, incumbent
+predictions, final scores, or post-cutoff observations are used. Missing parents remain
+missing so LightGBM preserves fail-closed semantics instead of interpreting absence as
+zero.
+
+Most parents must pass the ordinary KS1 raw-feature admission contract. The one narrow
+exception is the ``individual_bullpen`` family: its parents are reconstructed only inside
+the holdout-free historical-development path from exact versioned pre-T10 bullpen rosters
+and exact official prior game history. Those parents are explicitly marked development-
+only here. They cannot become serving inputs or qualify a model until a later reviewed
+live-equivalent adapter is added and the exact selected recipe is frozen.
 """
 from __future__ import annotations
 
@@ -13,10 +20,16 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 
-CONTRACT = "KS1-forensic-derived-features-v1"
-GROUPS = ("market", "starter_regime", "starter_workload", "lineup", "bullpen")
+CONTRACT = "KS1-forensic-derived-features-v2"
+GROUPS = (
+    "market", "starter_regime", "starter_workload", "lineup", "bullpen",
+    "individual_bullpen",
+)
+INDIVIDUAL_BULLPEN_PARENT_PREFIXES = (
+    "home_individual_bullpen_rank", "away_individual_bullpen_rank",
+)
 
-# operation is either lhs-rhs or offset-parent.  Positive pairwise advantages are
+# operation is either lhs-rhs or offset-parent. Positive pairwise advantages are
 # oriented toward the home team where a direction is naturally meaningful.
 SPECS = {
     "forensic_market_home_strength": {
@@ -87,8 +100,8 @@ SPECS = {
         "group": "lineup", "operation": "difference",
         "parents": ("away_lineup_xwoba_7d", "away_lineup_xwoba_30d"),
     },
-    # FIP/ERA are lower-is-better, so away-home is positive when the home bullpen
-    # is better.  Available-count is higher-is-better, so home-away is positive.
+    # Aggregate bullpen context. FIP/ERA are lower-is-better, so away-home is
+    # positive when the home bullpen is better. Available-count is higher-is-better.
     "forensic_bullpen_fip_7d_advantage": {
         "group": "bullpen", "operation": "difference",
         "parents": ("away_bullpen_context_fip_7d", "home_bullpen_context_fip_7d"),
@@ -117,6 +130,25 @@ SPECS = {
         "group": "bullpen", "operation": "difference",
         "parents": ("away_bullpen_context_era_7d", "away_bullpen_context_era_30d"),
     },
+    # Individual reliever usage ranks are reconstructed only after the final
+    # qualification holdout is removed. They deliberately make no leverage-role
+    # claim. Lower FIP/ERA and higher K-BB% are oriented as home advantages.
+    **{
+        f"forensic_individual_bullpen_rank{rank}_{metric}_advantage": {
+            "group": "individual_bullpen",
+            "operation": "difference",
+            "parents": (
+                (f"away_individual_bullpen_rank{rank}_{metric}_30d",
+                 f"home_individual_bullpen_rank{rank}_{metric}_30d")
+                if metric in ("fip", "era") else
+                (f"home_individual_bullpen_rank{rank}_{metric}_30d",
+                 f"away_individual_bullpen_rank{rank}_{metric}_30d")
+            ),
+            "development_only_parent": True,
+        }
+        for rank in (1, 2, 3)
+        for metric in ("fip", "era", "k_bb_pct")
+    },
 }
 
 
@@ -129,7 +161,7 @@ def _number(value):
 
 
 def derive_mapping(values: Mapping[str, object]):
-    """Derive one serving row while preserving missing parents as None."""
+    """Derive one row while preserving missing parents as None."""
     result = {}
     for name, spec in SPECS.items():
         parents = [_number(values.get(parent)) for parent in spec["parents"]]
@@ -166,8 +198,17 @@ def derive_frame(frame: pd.DataFrame):
     return pd.DataFrame(data, index=frame.index)
 
 
+def _development_parent_allowed(parent):
+    return parent.startswith(INDIVIDUAL_BULLPEN_PARENT_PREFIXES)
+
+
 def admit(frame: pd.DataFrame, admitted_raw, minimum_nonmissing):
-    """Admit derived fields only when every parent passed raw admission and coverage is adequate."""
+    """Admit derived fields only with proven parents and adequate coverage.
+
+    Ordinary parents must be in ``admitted_raw``. A statically declared development-only
+    parent is allowed only for the individual-bullpen namespace and only when the column
+    is physically present in the holdout-free frame supplied by the development runner.
+    """
     raw = set(admitted_raw)
     derived = derive_frame(frame)
     admitted, rejected = [], {}
@@ -175,7 +216,13 @@ def admit(frame: pd.DataFrame, admitted_raw, minimum_nonmissing):
         reasons = []
         missing_parents = sorted(set(spec["parents"]) - raw)
         if missing_parents:
-            reasons.append("parent_not_admitted:" + ",".join(missing_parents))
+            if spec.get("development_only_parent") is True:
+                invalid = [parent for parent in missing_parents
+                           if parent not in frame.columns or not _development_parent_allowed(parent)]
+                if invalid:
+                    reasons.append("development_parent_unavailable:" + ",".join(invalid))
+            else:
+                reasons.append("parent_not_admitted:" + ",".join(missing_parents))
         values = derived[name]
         nonmissing = int(values.notna().sum())
         distinct = int(values.nunique(dropna=True))
@@ -186,6 +233,7 @@ def admit(frame: pd.DataFrame, admitted_raw, minimum_nonmissing):
         if reasons:
             rejected[name] = {
                 "group": spec["group"], "parents": list(spec["parents"]),
+                "development_only_parent": spec.get("development_only_parent") is True,
                 "nonmissing": nonmissing, "distinct": distinct, "reasons": reasons,
             }
         else:
