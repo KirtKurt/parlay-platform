@@ -84,12 +84,173 @@ def test_nested_screen_selects_incremental_used_feature_across_prespecified_tria
     )
 
 
+def test_nested_screen_uses_existing_parent_only_for_single_affine_whole_group(monkeypatch):
+    fit = pd.DataFrame({'home_win': [0, 1, 0, 1]})
+    validation = pd.DataFrame({'home_win': [0, 1]})
+    monkeypatch.setattr(subject, 'split_development', lambda frame: (fit, validation))
+    monkeypatch.setattr(subject, '_augment', lambda frame, derived: frame.assign(
+        base=.1, market_raw=.6, forensic_market=.1))
+    monkeypatch.setattr(subject, 'TRIALS', {
+        'shallow': {'trial': 'shallow'},
+        'baseline': {'trial': 'baseline'},
+    })
+    monkeypatch.setattr(subject, 'PARAMS', {})
+    monkeypatch.setattr(subject, 'SPECS', {
+        'forensic_market': {
+            'group': 'market', 'operation': 'offset', 'offset': -.5,
+            'parents': ('market_raw',),
+        },
+    })
+
+    def fake_trial(fit_frame, validation_frame, columns, params):
+        # The derived alias never receives a split. The existing raw market
+        # coordinate does, proving the family is present without pretending the
+        # recentered alias adds information.
+        used = ['base', 'market_raw']
+        return {'brier': .24, 'logloss': .69, 'features_used_in_splits': used}
+
+    monkeypatch.setattr(subject, '_trial', fake_trial)
+    selected, evidence = subject.screen_derived_features(
+        pd.DataFrame({'unused': [1]}), ['base', 'market_raw'],
+        ['forensic_market'], {'market': ['forensic_market']})
+
+    assert selected == []
+    assert evidence['all_groups_screened'] is True
+    assert evidence['equivalent_existing_signal_groups'] == {'market': 'market_raw'}
+    market = evidence['groups']['market']
+    assert market['selected'] is None
+    assert market['existing_equivalent_parent'] == 'market_raw'
+    assert market['existing_equivalent_parent_is_new_feature'] is False
+    assert all(
+        not trial['feature_used_in_splits']
+        for trial in market['candidates']['forensic_market']['trials'].values()
+    )
+
+
+def test_nested_screen_does_not_count_unused_or_multifeature_raw_parents(monkeypatch):
+    fit = pd.DataFrame({'home_win': [0, 1, 0, 1]})
+    validation = pd.DataFrame({'home_win': [0, 1]})
+    monkeypatch.setattr(subject, 'split_development', lambda frame: (fit, validation))
+    monkeypatch.setattr(subject, '_augment', lambda frame, derived: frame.assign(
+        base=.1, market_raw=.6, forensic_market=.1, workload_a=.2, workload_b=.3))
+    monkeypatch.setattr(subject, 'TRIALS', {'only': {}})
+    monkeypatch.setattr(subject, 'PARAMS', {})
+    monkeypatch.setattr(subject, 'SPECS', {
+        'forensic_market': {
+            'group': 'market', 'operation': 'offset', 'offset': -.5,
+            'parents': ('market_raw',),
+        },
+        'workload_a': {
+            'group': 'starter_workload', 'operation': 'offset_minus', 'offset': 4.5,
+            'parents': ('innings_raw',),
+        },
+        'workload_b': {
+            'group': 'starter_workload', 'operation': 'difference',
+            'parents': ('innings_raw', 'other_raw'),
+        },
+    })
+
+    def fake_trial(fit_frame, validation_frame, columns, params):
+        # No candidate and no raw equivalent is actually used.
+        return {'brier': .24, 'logloss': .69, 'features_used_in_splits': ['base']}
+
+    monkeypatch.setattr(subject, '_trial', fake_trial)
+    selected, evidence = subject.screen_derived_features(
+        pd.DataFrame({'unused': [1]}),
+        ['base', 'market_raw', 'innings_raw', 'other_raw'],
+        ['forensic_market', 'workload_a', 'workload_b'],
+        {'market': ['forensic_market'],
+         'starter_workload': ['workload_a', 'workload_b']})
+
+    assert selected == []
+    assert evidence['all_groups_screened'] is False
+    assert evidence['equivalent_existing_signal_groups'] == {}
+    assert evidence['groups']['market']['existing_equivalent_parent'] is None
+    # A multi-feature family can never bypass actual derived-feature use via raw parents.
+    assert evidence['groups']['starter_workload']['existing_equivalent_parent'] is None
+
+
 def test_nested_screen_fails_closed_without_prespecified_trials(monkeypatch):
     monkeypatch.setattr(subject, 'TRIALS', {})
     with pytest.raises(ValueError, match='nested screen trials unavailable'):
         subject.screen_derived_features(
             pd.DataFrame({'home_win': [0, 1]}), ['base'], ['forensic_x'],
             {'market': ['forensic_x']})
+
+
+@pytest.mark.parametrize('market_used, expected_selected', [(True, True), (False, False)])
+def test_screened_outer_gate_requires_split_use_of_equivalent_existing_signal(
+        monkeypatch, market_used, expected_selected):
+    fit = pd.DataFrame({'home_win': [0, 1]})
+    validation = pd.DataFrame({'home_win': [0, 1]})
+    monkeypatch.setattr(subject, 'split_development', lambda train: (fit, validation))
+    monkeypatch.setattr(
+        subject, 'choose_features',
+        lambda frame: (['base', 'market_raw', 'lineup_parent'], [], {'home': 2, 'away': 2}))
+    monkeypatch.setattr(
+        subject, 'admit_derived',
+        lambda frame, raw, floor: (['forensic_market', 'forensic_lineup'], {}, None))
+    monkeypatch.setattr(
+        subject, 'derived_groups',
+        lambda derived: {'market': ['forensic_market'], 'lineup': ['forensic_lineup']})
+    monkeypatch.setattr(subject, 'SPECS', {
+        'forensic_market': {
+            'group': 'market', 'operation': 'offset', 'offset': -.5,
+            'parents': ('market_raw',),
+        },
+        'forensic_lineup': {
+            'group': 'lineup', 'operation': 'difference',
+            'parents': ('lineup_parent', 'lineup_other'),
+        },
+    })
+    monkeypatch.setattr(subject, 'select', lambda train: (None, {
+        'selected': 'starter',
+        'metrics': {'starter': {'brier': .25, 'logloss': .70}},
+        'trials': {'starter': {'features': ['base', 'market_raw', 'lineup_parent']}},
+    }))
+    monkeypatch.setattr(
+        subject, '_augment',
+        lambda frame, derived: frame.assign(
+            base=.1, market_raw=.6, lineup_parent=.7,
+            forensic_market=.1, forensic_lineup=.05))
+    monkeypatch.setattr(subject, 'screen_derived_features', lambda *args: (
+        ['forensic_lineup'], {
+            'all_groups_screened': True,
+            'outer_development_used_for_screening': False,
+            'final_holdout_used_for_screening': False,
+            'equivalent_existing_signal_groups': {'market': 'market_raw'},
+        }))
+    monkeypatch.setattr(subject, 'TRIALS', {'only': {}})
+    monkeypatch.setattr(subject, 'PARAMS', {})
+
+    def fake_trial(fit_frame, validation_frame, columns, params):
+        if 'forensic_market' in columns:
+            # Preserve the all-derived path but make it lose development.
+            return {
+                'brier': .26, 'logloss': .71,
+                'features_used_in_splits': [
+                    'base', 'market_raw', 'forensic_market', 'forensic_lineup'],
+            }
+        used = ['base', 'forensic_lineup']
+        if market_used:
+            used.append('market_raw')
+        return {'brier': .24, 'logloss': .69, 'features_used_in_splits': used}
+
+    monkeypatch.setattr(subject, '_trial', fake_trial)
+    selected, report = subject.development_select(pd.DataFrame({'unused': [1]}))
+
+    if expected_selected:
+        assert selected is not None
+        assert report['selected_trial'] == 'screened_only'
+        trial = report['trials']['screened_only']
+        assert trial['all_derived_groups_used'] is False
+        assert trial['all_signal_groups_used'] is True
+        assert trial['existing_equivalent_group_usage'] == {'market': ['market_raw']}
+        assert trial['signal_group_usage']['lineup'] == ['forensic_lineup']
+    else:
+        assert selected is None
+        assert report['accepted_for_final_holdout'] is False
+        assert report['trials']['screened_only']['all_signal_groups_used'] is False
 
 
 def test_development_challenger_augments_selected_recipe_not_all_admitted_raw(monkeypatch):
