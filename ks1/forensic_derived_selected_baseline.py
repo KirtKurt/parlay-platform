@@ -85,7 +85,7 @@ def screen_derived_features(fit, baseline_raw, derived, groups):
     baseline_usage_by_trial = {}
     for trial_name in trial_names:
         params = {**PARAMS, **TRIALS[trial_name]}
-        result = _trial(fit_aug, inner_validation, baseline_raw, params)
+        result = _trial(fit_aug, validation_aug, baseline_raw, params)
         baseline_by_trial[trial_name] = {
             "brier": result["brier"],
             "logloss": result["logloss"],
