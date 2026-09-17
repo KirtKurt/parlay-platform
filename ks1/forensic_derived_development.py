@@ -17,7 +17,7 @@ from pathlib import Path
 import pandas as pd
 
 from ks1.development import HOLDOUT, frozen_split
-from ks1.forensic_derived_outer_selection import CONTRACT, development_select
+from ks1.forensic_derived_affine_semantic_selection import CONTRACT, development_select
 from ks1.historical_individual_bullpen_enrichment import enrich_frame as enrich_individual_bullpen
 from ks1.historical_lineup_season_probe import enrich_frame as enrich_lineup
 from ks1.inventory import encode
