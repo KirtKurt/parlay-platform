@@ -38,6 +38,22 @@ def test_verified_score_only_readback_can_pass_without_xg():
     assert verify_rollout(*proof_fixture())["recorded_12_picks"] == 1
 
 
+def test_empty_12_filter_passes_when_another_fitted_book_published():
+    training, status, picks = proof_fixture()
+    picks.update(
+        count=0,
+        picks=[],
+        reason="NO_MATCHING_RECORDED_PICKS",
+        published_counts={"1x2": 1, "double_chance": 1, "ou25": 1, "btts": 0, "any": 1},
+        fixture_count=1,
+        missing=[{"event_key": "fixture", "reason": "NO_RECORDED_T60_TRAINED_PUBLISHED_BOOK"}],
+    )
+    proof = verify_rollout(training, status, picks)
+    assert proof["verified"] is True
+    assert proof["recorded_12_picks"] == 0
+    assert proof["published_counts"]["any"] == 1
+    assert proof["automatic_prediction_allowed"] is False
+
 
 def test_all_abstain_trained_shadow_readback_is_safe_and_non_authoritative():
     training, status, picks = proof_fixture()
@@ -58,6 +74,7 @@ def test_all_abstain_trained_shadow_readback_is_safe_and_non_authoritative():
     assert proof["authority"] == "SHADOW_LEARNING"
     assert proof["automatic_prediction_allowed"] is False
 
+
 def test_explicit_no_due_t60_rows_is_safe_shadow_readback():
     training, status, picks = proof_fixture()
     picks.update(
@@ -72,7 +89,6 @@ def test_explicit_no_due_t60_rows_is_safe_shadow_readback():
     assert proof["verified"] is True
     assert proof["recorded_12_picks"] == 0
     assert proof["automatic_prediction_allowed"] is False
-
 
 
 @pytest.mark.parametrize("defect,reason", [

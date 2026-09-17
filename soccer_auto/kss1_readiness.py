@@ -70,11 +70,11 @@ def verify_rollout(training, status, picks):
             require(parse_utc(context["context_as_of"]) <= parse_utc(row["created_at"]),
                     "GOALS_PICK_PREDATES_CONTEXT")
         recorded = len(rows)
+    elif published_any > 0:
+        require(picks.get("reason") == "NO_MATCHING_RECORDED_PICKS", "NO_RECORDED_TRAINED_PUBLISHED_BOOKS")
+        require(int(picks.get("count") or 0) == 0, "GOALS_PICK_COUNT_MISMATCH")
+        recorded = 0
     else:
-        # A deployment can have no publishable trained shadow book for the
-        # current slate. That is safe while authority is SHADOW_LEARNING, but
-        # it must be explicit and complete; an unexplained empty response
-        # remains a readiness failure.
         safe_empty = (
             picks.get("reason") == "NO_MATCHING_RECORDED_PICKS"
             and published_any == 0
