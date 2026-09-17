@@ -37,7 +37,9 @@ def screen_derived_features(fit, baseline_raw, derived, groups):
     baseline_metrics = evidence.get("baseline_by_trial") or {}
     trial_names = tuple(evidence.get("trials") or ())
 
-    if not trial_names or set(baseline_usage) != set(trial_names) or set(baseline_metrics) != set(trial_names):
+    if (not trial_names
+            or set(baseline_usage) != set(trial_names)
+            or set(baseline_metrics) != set(trial_names)):
         raise ValueError("affine semantic screen baseline evidence incomplete")
 
     for group_name, group_columns in groups.items():
@@ -50,7 +52,7 @@ def screen_derived_features(fit, baseline_raw, derived, groups):
             raise ValueError("affine semantic screen group evidence missing")
 
         # A one-parent affine alias of an already-selected raw feature is not a new
-        # source of information.  Never let the alias itself satisfy family-use proof.
+        # source of information. Never let the alias itself satisfy family-use proof.
         previous = group_evidence.get("selected")
         if previous in selected:
             selected.remove(previous)
@@ -60,8 +62,8 @@ def screen_derived_features(fit, baseline_raw, derived, groups):
 
         eligible = [
             (
-                float(baseline_metrics[trial_name]["brier"]),
-                float(baseline_metrics[trial_name]["logloss"]),
+                base._joint_rank_metric(baseline_metrics[trial_name]["brier"]),
+                base._joint_rank_metric(baseline_metrics[trial_name]["logloss"]),
                 trial_name,
             )
             for trial_name in trial_names
@@ -78,7 +80,9 @@ def screen_derived_features(fit, baseline_raw, derived, groups):
             group_evidence["existing_equivalent_parent_trial"] = None
             group_evidence["existing_equivalent_parent_is_new_feature"] = False
 
-    evidence["method"] = "nested_purged_multitrial_substantive_signal_family_screen_affine_semantic_v2"
+    evidence["method"] = (
+        "nested_purged_multitrial_substantive_signal_family_screen_affine_semantic_v2"
+    )
     evidence["selected_features"] = selected
     evidence["equivalent_existing_signal_groups"] = equivalent_groups
     evidence["affine_existing_signal_policy"] = (
