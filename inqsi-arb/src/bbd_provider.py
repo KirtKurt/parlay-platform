@@ -184,14 +184,25 @@ def _items(payload: Any) -> List[Dict[str, Any]]:
     # Provider error envelopes must not masquerade as successful empty data.
     if payload.get("error") is not None:
         raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
-    for key in ("data", "sports", "matches", "events", "results"):
+    keys = [key for key in ("data", "sports", "matches", "events", "results") if key in payload]
+    # Count present fields, including null or malformed alternatives: choosing
+    # the first usable collection could conceal conflicting provider context.
+    if len(keys) != 1:
+        raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
+    for key in keys:
         value = payload.get(key)
         if isinstance(value, list):
             return _items(value)
         if isinstance(value, dict):
             if value.get("error") is not None:
                 raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
-            for nested in ("sports", "matches", "events", "results", "items"):
+            nested_keys = [
+                nested for nested in ("sports", "matches", "events", "results", "items")
+                if nested in value
+            ]
+            if len(nested_keys) != 1:
+                raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
+            for nested in nested_keys:
                 rows = value.get(nested)
                 if isinstance(rows, list):
                     return _items(rows)

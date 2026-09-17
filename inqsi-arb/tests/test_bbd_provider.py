@@ -1,4 +1,5 @@
 import sys
+from itertools import combinations
 from pathlib import Path
 
 import pytest
@@ -47,6 +48,38 @@ def test_recognized_empty_collections_remain_valid(monkeypatch, operation, paylo
 
     assert result["ok"] is True
     assert result["sports_count" if operation == "health" else "count"] == 0
+
+
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("alternative", [[], [{"id": "conflicting"}], None, "invalid"])
+def test_competing_collection_fields_fail_closed(monkeypatch, operation, nested, alternative):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    keys = ("sports", "matches", "events", "results", "items") if nested else (
+        "data", "sports", "matches", "events", "results"
+    )
+    for first, second in combinations(keys, 2):
+        for fields in ({first: [], second: alternative}, {second: alternative, first: []}):
+            payload = {"data": fields} if nested else fields
+            monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (200, {}, payload))
+
+            result = getattr(bbd_provider, operation)()
+
+            assert result["ok"] is False, payload
+            assert result["reason"] == "BBD_COLLECTION_SCHEMA_INVALID"
+            if operation == "health":
+                assert result["sports_count"] is None
+            else:
+                assert result[operation] == []
+
+
+@pytest.mark.parametrize("key", ["data", "sports", "matches", "events", "results"])
+@pytest.mark.parametrize("nested", [None, "sports", "matches", "events", "results", "items"])
+def test_single_collection_preserves_rows_and_metadata(key, nested):
+    rows = [{"id": "one", "status": "scheduled"}]
+    value = {nested: rows, "meta": {"count": 1}} if nested else rows
+    assert bbd_provider._items({key: value, "meta": {"count": 1}}) == rows
 
 
 @pytest.mark.parametrize("status", [401, 403, 404])
