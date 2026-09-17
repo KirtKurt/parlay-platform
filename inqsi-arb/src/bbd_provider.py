@@ -20,6 +20,8 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 DEFAULT_BASE_URL = "https://api.bigballsdata.com"
 USER_AGENT = "inqsi-arb-bbd/1.0"
+# Bound successful context payloads before allocating decoded JSON structures.
+MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
 
 class BBDError(RuntimeError):
@@ -155,7 +157,9 @@ def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int
     })
     try:
         with build_opener(_RejectRedirects()).open(request, timeout=timeout) as response:
-            raw = response.read()
+            raw = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(raw) > MAX_RESPONSE_BYTES:
+                raise BBDError("BBD_RESPONSE_TOO_LARGE")
             payload = json.loads(
                 raw.decode("utf-8"),
                 object_pairs_hook=_unique_json_object,
