@@ -1,0 +1,213 @@
+name: Deploy isolated Tennis MLB-clone V1.3
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/deploy-tennis-mlb-clone-v13.yml"
+      - ".github/tennis-release/tennis-v1.3-mlb-clone-live-fix.patch"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parlay-platform-tennis-mlb-clone-v13-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_DEFAULT_REGION: us-east-1
+  TENNIS_STACK_NAME: parlay-platform-tennis-ml-prod
+  MLB_STACK_NAME: parlay-platform-dev
+  SOURCE_BRANCH: agent/tennis-ml-production-deploy
+  SOURCE_ARCHIVE_SHA256: fb4cb67eef507f21a1d27988be656fd91d29b2cd5cf9b98587a47dc0c0f90ab3
+  MLB_ENGINE_BLOB_SHA: 37667544e1a44c47be11468235d4f6f799de463e
+
+jobs:
+  deploy-tennis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout exact deployment vehicle
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct deployed Tennis source and apply exact MLB-clone repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_ref="refs/remotes/origin/${SOURCE_BRANCH}"
+          git fetch --no-tags origin \
+            "+refs/heads/${SOURCE_BRANCH}:${source_ref}" \
+            "+refs/heads/main:refs/remotes/origin/main"
+
+          current_mlb_blob=$(git rev-parse "refs/remotes/origin/main:hello_world/mlb_game_winner_engine.py")
+          test "$current_mlb_blob" = "$MLB_ENGINE_BLOB_SHA" || {
+            echo "::error::Current MLB winner engine moved: expected $MLB_ENGINE_BLOB_SHA, actual $current_mlb_blob"
+            exit 1
+          }
+
+          mkdir -p tennis_release
+          mapfile -t chunks < <(
+            git ls-tree -r --name-only "$source_ref" tennis_release/chunks \
+              | grep 'tennis_predictive_platform_v1.tar.xz.b64.part-' \
+              | LC_ALL=C sort
+          )
+          test "${#chunks[@]}" -gt 0
+          for chunk in "${chunks[@]}"; do
+            git show "$source_ref:$chunk"
+          done | base64 --decode > tennis_release/tennis_predictive_platform_v1.tar.xz
+
+          actual_archive_sha=$(sha256sum tennis_release/tennis_predictive_platform_v1.tar.xz | awk '{print $1}')
+          test "$actual_archive_sha" = "$SOURCE_ARCHIVE_SHA256" || {
+            echo "::error::Deployed Tennis source archive mismatch: $actual_archive_sha"
+            exit 1
+          }
+          rm -rf tennis_predictive_platform_v1
+          tar -xJf tennis_release/tennis_predictive_platform_v1.tar.xz
+          test -f tennis_predictive_platform_v1/src/tennis_espn_results.py
+          test -f tennis_predictive_platform_v1/src/tennis_game_winner_engine.py
+
+          patch_file="$GITHUB_WORKSPACE/.github/tennis-release/tennis-v1.3-mlb-clone-live-fix.patch"
+          git apply --check --directory=tennis_predictive_platform_v1 "$patch_file"
+          git apply --directory=tennis_predictive_platform_v1 "$patch_file"
+          cd tennis_predictive_platform_v1
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          row = json.loads(Path("MLB_CLONE_PROVENANCE.json").read_text())
+          assert row["source_blob_sha"] == "37667544e1a44c47be11468235d4f6f799de463e"
+          assert row["runtime_imports_shared"] is False
+          assert row["runtime_data_shared"] is False
+          assert row["trained_artifacts_shared"] is False
+          assert row["result_settlement_source"] == "espn_public_tennis_scoreboard_exact_crosswalk"
+          PY
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup AWS SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Install and validate the reconciled Tennis release
+        working-directory: tennis_predictive_platform_v1
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet -r requirements-dev.txt "cfn-lint>=1,<2"
+          ./scripts/run_all_checks.sh
+          sam validate --lint --template-file template.yaml
+          rm -rf .aws-sam
+          sam build --no-cached --parallel --template-file template.yaml
+
+      - name: Configure established AWS deployment credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Deploy and verify isolated Tennis stack
+        working-directory: tennis_predictive_platform_v1
+        env:
+          TENNIS_ODDS_API_KEY_VALUE: ${{ secrets.TENNIS_ODDS_API_KEY || secrets.ODDS_API_KEY }}
+          TENNIS_CREDENTIAL_SOURCE: ${{ secrets.TENNIS_ODDS_API_KEY != '' && 'dedicated_tennis_secret' || 'existing_provider_secret_isolated_runtime_injection' }}
+        run: |
+          set -euo pipefail
+          test -n "${TENNIS_ODDS_API_KEY_VALUE:-}" || {
+            echo "::error::Neither TENNIS_ODDS_API_KEY nor ODDS_API_KEY is configured"
+            exit 1
+          }
+          echo "Tennis provider credential source: $TENNIS_CREDENTIAL_SOURCE"
+          export TENNIS_ODDS_API_KEY_VALUE
+          ./scripts/deploy_aws.sh
+
+      - name: Capture live Tennis picks, locks, and ML state
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name "$TENNIS_STACK_NAME" --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='TennisApiUrl'].OutputValue | [0]" \
+            --output text)
+          test -n "$API_URL" && test "$API_URL" != "None"
+          printf '%s\n' "$API_URL" > /tmp/tennis-api-url
+
+          capture() {
+            local endpoint="$1" output="$2"
+            local status
+            status=$(curl --silent --show-error --output "$output" --write-out '%{http_code}' "$API_URL$endpoint")
+            echo "$endpoint -> HTTP $status"
+            test "$status" = "200"
+            python -m json.tool "$output" >/dev/null
+          }
+          capture /v1/tennis/today /tmp/tennis-today.json
+          capture /v1/tennis/predictions /tmp/tennis-predictions.json
+          capture /v1/tennis/locks/status /tmp/tennis-lock-status.json
+          capture /v1/tennis/model/version /tmp/tennis-model-version-final.json
+          capture /v1/tennis/ml/status /tmp/tennis-ml-status-final.json
+
+          python - <<'PY'
+          import json
+          from datetime import datetime
+          from pathlib import Path
+
+          ingest = json.loads(Path('/tmp/tennis-ingest-smoke.json').read_text())
+          pairs = []
+          def walk(value):
+              if isinstance(value, dict):
+                  if value.get('collection_start_utc') and value.get('collection_start_exact_utc'):
+                      scheduled = datetime.fromisoformat(value['collection_start_utc'])
+                      exact = datetime.fromisoformat(value['collection_start_exact_utc'])
+                      pairs.append((scheduled, exact))
+                  for child in value.values():
+                      walk(child)
+              elif isinstance(value, list):
+                  for child in value:
+                      walk(child)
+          walk(ingest)
+          if pairs and not all(scheduled <= exact for scheduled, exact in pairs):
+              raise SystemExit('Tennis collection schedule starts after exact T-minus-10')
+
+          predictions = json.loads(Path('/tmp/tennis-predictions.json').read_text())
+          summary = {
+              'ok': True,
+              'sport': 'tennis',
+              'capturedAtUtc': datetime.utcnow().isoformat() + 'Z',
+              'noLateTMinus10RowsVerified': len(pairs),
+              'predictionPayload': predictions,
+          }
+          Path('/tmp/tennis-live-pick-summary.json').write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload exact deployment and live-pick evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tennis-mlb-clone-v13-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/tennis-deployment-evidence.json
+            /tmp/tennis-stack-after.json
+            /tmp/tennis-resources-after.json
+            /tmp/tennis-model-version.json
+            /tmp/tennis-ml-status.json
+            /tmp/tennis-ingest-smoke.json
+            /tmp/tennis-outcome-smoke.json
+            /tmp/tennis-training-smoke.json
+            /tmp/tennis-today.json
+            /tmp/tennis-predictions.json
+            /tmp/tennis-lock-status.json
+            /tmp/tennis-model-version-final.json
+            /tmp/tennis-ml-status-final.json
+            /tmp/tennis-live-pick-summary.json
+            /tmp/mlb-stack-before.sha256
+            /tmp/mlb-stack-after.sha256
+            tennis_predictive_platform_v1/MLB_CLONE_PROVENANCE.json
+          if-no-files-found: warn
+          retention-days: 30
