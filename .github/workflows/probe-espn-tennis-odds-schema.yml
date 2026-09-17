@@ -1,0 +1,95 @@
+name: Probe ESPN Tennis per-match odds schema
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/probe-espn-tennis-odds-schema.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Resolve match competitors and odds references
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet requests
+          mkdir -p evidence/raw
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          from pathlib import Path
+          from urllib.parse import urlparse
+          import requests
+
+          session=requests.Session(); session.headers['user-agent']='parlay-platform-espn-tennis-odds-probe/1.0'
+          report={'matches':[]}
+
+          def https(url):
+              return str(url or '').replace('http://','https://',1)
+
+          def fetch_json(url):
+              r=session.get(https(url),timeout=30)
+              try:data=r.json()
+              except Exception:data=None
+              return r,data
+
+          for tour,tournament_ids in {'atp':['304-2026','400-2026'],'wta':['401-2026','525-2026','1002-2026']}.items():
+              for tournament_id in tournament_ids:
+                  url=f'https://sports.core.api.espn.com/v2/sports/tennis/leagues/{tour}/events/{tournament_id}?lang=en&region=us'
+                  r,event=fetch_json(url); r.raise_for_status()
+                  for competition in event.get('competitions') or []:
+                      if not str(competition.get('date') or '').startswith('2026-07-23'):
+                          continue
+                      ctype=(competition.get('type') or {}).get('type')
+                      if ctype!='singles':
+                          continue
+                      competitors=[]
+                      for c in competition.get('competitors') or []:
+                          athlete_ref=((c.get('athlete') or {}).get('$ref'))
+                          athlete={}
+                          if athlete_ref:
+                              ar,ad=fetch_json(athlete_ref)
+                              if isinstance(ad,dict): athlete=ad
+                          competitors.append({
+                              'id':c.get('id'),'order':c.get('order'),'winner':c.get('winner'),
+                              'name':athlete.get('displayName') or athlete.get('fullName') or athlete.get('shortName'),
+                              'firstName':athlete.get('firstName'),'lastName':athlete.get('lastName'),
+                              'athleteStatus':ar.status_code if athlete_ref else None,
+                          })
+                      odds_ref=((competition.get('odds') or {}).get('$ref'))
+                      odds_status=None; odds_payload=None
+                      if odds_ref:
+                          orr,od=fetch_json(odds_ref); odds_status=orr.status_code; odds_payload=od
+                      row={
+                          'tour':tour,'tournamentId':tournament_id,'tournamentName':event.get('name'),
+                          'competitionId':competition.get('id'),'date':competition.get('date'),
+                          'round':competition.get('round'),'status':competition.get('status'),
+                          'competitors':competitors,'oddsRefPresent':bool(odds_ref),'oddsStatus':odds_status,
+                          'oddsType':type(odds_payload).__name__ if odds_payload is not None else None,
+                          'oddsTopLevelKeys':sorted(odds_payload.keys()) if isinstance(odds_payload,dict) else None,
+                          'oddsPayload':odds_payload,
+                      }
+                      report['matches'].append(row)
+                      if odds_payload is not None:
+                          Path(f"evidence/raw/{tour}-{tournament_id}-{competition.get('id')}-odds.json").write_text(json.dumps(odds_payload,indent=2,sort_keys=True))
+          report['matchCount']=len(report['matches'])
+          report['odds200Count']=sum(1 for x in report['matches'] if x['oddsStatus']==200)
+          report['usableOddsCount']=sum(1 for x in report['matches'] if x.get('oddsPayload'))
+          Path('evidence/odds-schema-report.json').write_text(json.dumps(report,indent=2,sort_keys=True))
+          print(json.dumps(report,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: espn-tennis-odds-schema-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: evidence/
