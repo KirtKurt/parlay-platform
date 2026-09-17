@@ -15,6 +15,7 @@ holdout.
 from __future__ import annotations
 
 from itertools import product
+from math import isfinite
 
 from ks1.development import TRIALS, select
 from ks1.forensic_derived import _augment, _trial
@@ -29,6 +30,14 @@ from ks1.train import PARAMS
 
 CONTRACT = "KS1-unified-forensic-derived-selected-baseline-v5"
 JOINT_SHORTLIST_PER_GROUP = 2
+
+
+def _joint_rank_metric(value):
+    """Normalize inner-screen metric deltas for deterministic tie-breaking."""
+    value = float(value)
+    if not isfinite(value):
+        raise ValueError("nested joint screen metric nonfinite")
+    return round(value, 12)
 
 
 def selected_baseline_features(report, recipe):
@@ -172,21 +181,21 @@ def screen_derived_features(fit, baseline_raw, derived, groups):
 
 
 def _ranked_group_shortlist(group_evidence):
-    """Return deterministic split-used candidates ranked only on inner evidence."""
+    """Return deterministic split-used candidates ranked only on same-trial deltas."""
     ranked = []
     for feature, candidate in group_evidence.get("candidates", {}).items():
         usable = []
         for trial_name, trial in candidate.get("trials", {}).items():
             if trial.get("feature_used_in_splits"):
                 usable.append((
-                    trial["brier_delta_vs_same_trial_baseline"],
-                    trial["logloss_delta_vs_same_trial_baseline"],
-                    trial["brier"], trial["logloss"], feature, trial_name,
+                    _joint_rank_metric(trial["brier_delta_vs_same_trial_baseline"]),
+                    _joint_rank_metric(trial["logloss_delta_vs_same_trial_baseline"]),
+                    feature, trial_name,
                 ))
         if usable:
             ranked.append(min(usable))
     ranked.sort()
-    return [item[4] for item in ranked[:JOINT_SHORTLIST_PER_GROUP]]
+    return [item[2] for item in ranked[:JOINT_SHORTLIST_PER_GROUP]]
 
 
 def joint_screen_derived_features(fit, baseline_raw, derived, groups, screen_evidence):
@@ -203,8 +212,32 @@ def joint_screen_derived_features(fit, baseline_raw, derived, groups, screen_evi
     if not TRIALS:
         raise ValueError("nested joint screen trials unavailable")
     trial_names = tuple(TRIALS)
-    if tuple(screen_evidence.get("trials") or ()) != trial_names:
-        raise ValueError("nested joint screen trial evidence mismatch")
+    baseline_by_trial = screen_evidence.get("baseline_by_trial")
+    group_evidence = screen_evidence.get("groups")
+    evidence_valid = (
+        tuple(screen_evidence.get("trials") or ()) == trial_names
+        and isinstance(baseline_by_trial, dict)
+        and set(baseline_by_trial) == set(trial_names)
+        and isinstance(group_evidence, dict)
+    )
+    if not evidence_valid:
+        return [], {
+            "method": "nested_purged_joint_family_interaction_screen_v1",
+            "shortlist_per_group": JOINT_SHORTLIST_PER_GROUP,
+            "trials": list(trial_names),
+            "inner_fit_games": None,
+            "inner_validation_games": None,
+            "outer_development_used_for_screening": False,
+            "final_holdout_used_for_screening": False,
+            "equivalent_existing_signal_groups": dict(
+                screen_evidence.get("equivalent_existing_signal_groups") or {}),
+            "candidate_shortlists": {},
+            "combinations": [],
+            "selected_features": [],
+            "selected_trial": None,
+            "all_groups_screened": False,
+            "reason": "joint_screen_evidence_incomplete",
+        }
 
     inner_fit, inner_validation = split_development(fit)
     fit_aug = _augment(inner_fit, derived)
@@ -212,7 +245,7 @@ def joint_screen_derived_features(fit, baseline_raw, derived, groups, screen_evi
     equivalent_groups = dict(screen_evidence.get("equivalent_existing_signal_groups") or {})
     new_groups = [name for name in groups if name not in equivalent_groups]
     shortlists = {
-        name: _ranked_group_shortlist(screen_evidence["groups"].get(name, {}))
+        name: _ranked_group_shortlist(group_evidence.get(name, {}))
         for name in new_groups
     }
     evidence = {
@@ -254,7 +287,7 @@ def joint_screen_derived_features(fit, baseline_raw, derived, groups, screen_evi
                     feature = selected_by_group[group_name]
                     usage[group_name] = [feature] if feature in used else []
             all_used = all(usage.values())
-            baseline = screen_evidence["baseline_by_trial"][trial_name]
+            baseline = baseline_by_trial[trial_name]
             brier_delta = result["brier"] - baseline["brier"]
             logloss_delta = result["logloss"] - baseline["logloss"]
             evidence["combinations"].append({
@@ -269,10 +302,10 @@ def joint_screen_derived_features(fit, baseline_raw, derived, groups, screen_evi
             })
             if all_used:
                 candidate = (
-                    brier_delta, logloss_delta, result["brier"], result["logloss"],
-                    tuple(choice), trial_name,
+                    _joint_rank_metric(brier_delta), _joint_rank_metric(logloss_delta),
+                    tuple(choice), trial_name, brier_delta, logloss_delta,
                 )
-                if best is None or candidate < best:
+                if best is None or candidate[:4] < best[:4]:
                     best = candidate
 
     evidence["combinations_evaluated"] = len(combinations) * len(trial_names)
@@ -282,11 +315,11 @@ def joint_screen_derived_features(fit, baseline_raw, derived, groups, screen_evi
         evidence["reason"] = "no_joint_model_used_every_signal_family"
         return [], evidence
 
-    selected = list(best[4])
+    selected = list(best[2])
     evidence["selected_features"] = selected
-    evidence["selected_trial"] = best[5]
-    evidence["selected_brier_delta_vs_same_trial_baseline"] = best[0]
-    evidence["selected_logloss_delta_vs_same_trial_baseline"] = best[1]
+    evidence["selected_trial"] = best[3]
+    evidence["selected_brier_delta_vs_same_trial_baseline"] = best[4]
+    evidence["selected_logloss_delta_vs_same_trial_baseline"] = best[5]
     evidence["all_groups_screened"] = True
     return selected, evidence
 
