@@ -2,9 +2,10 @@
 
 The exact 300-game qualification holdout is separated first and never scored here.
 For the remaining qualified development population, exact versioned pre-T10 MLB feeds
-may recover live-equivalent lineup season values only after source identity/hash checks.
-The candidate still stops after purged development selection until the same transform is
-wired into live serving and final qualification.
+may recover live-equivalent lineup season values and deterministic individual-reliever
+performance only after source identity/hash checks. The candidate still stops after
+purged development selection until the exact winning transform is wired into live serving
+and final qualification.
 """
 from __future__ import annotations
 
@@ -17,7 +18,8 @@ import pandas as pd
 
 from ks1.development import HOLDOUT, frozen_split
 from ks1.forensic_derived_outer_selection import CONTRACT, development_select
-from ks1.historical_lineup_season_probe import enrich_frame
+from ks1.historical_individual_bullpen_enrichment import enrich_frame as enrich_individual_bullpen
+from ks1.historical_lineup_season_probe import enrich_frame as enrich_lineup
 from ks1.inventory import encode
 from ks1.retrain_recent import qualified_training_population
 from ks1.sources import aws_clients
@@ -34,12 +36,17 @@ def run(input_path, proof_path, output):
     train, holdout = frozen_split(frame, json.loads(HOLDOUT.read_bytes()))
     train, population = qualified_training_population(train, proof.get("source_receipts", []))
 
-    # Holdout separation is deliberately above this read. Only the qualified
-    # pre-holdout population can cause a retained source object to be fetched.
+    # Holdout separation is deliberately above every retained-source read below.
+    # Only the qualified pre-holdout population can cause a game-specific pre-T10
+    # source object to be fetched. The exact official-history object is proof-bound
+    # and each feature call independently filters it to games completed before that
+    # row's cutoff/date.
     _, s3, _ = aws_clients("us-east-1", "parlay-platform-dev")
-    train, lineup_source_enrichment = enrich_frame(train, s3)
+    train, lineup_source_enrichment = enrich_lineup(train, s3)
+    train, individual_bullpen_enrichment = enrich_individual_bullpen(train, s3, proof)
     selected, development = development_select(train)
     development["direct_lineup_source_enrichment"] = lineup_source_enrichment
+    development["individual_bullpen_source_enrichment"] = individual_bullpen_enrichment
     (output/"development_selection.json").write_bytes(encode(development))
     report = {
         "contract": CONTRACT,
@@ -54,6 +61,7 @@ def run(input_path, proof_path, output):
         "final_holdout_used_for_selection": False,
         "training_population": population,
         "direct_lineup_source_enrichment": lineup_source_enrichment,
+        "individual_bullpen_source_enrichment": individual_bullpen_enrichment,
         "development": development,
         "prediction_writes": 0,
         "official_ledger_writes": 0,
@@ -81,6 +89,8 @@ def main(argv=None):
         "holdout_predictions_generated": report["holdout_predictions_generated"],
         "direct_lineup_top4_floor_reached": report[
             "direct_lineup_source_enrichment"]["top4_minimum_reached"],
+        "individual_bullpen_300_floor_features": report[
+            "individual_bullpen_source_enrichment"]["minimum_reached_features"],
     }, indent=2))
 
 
