@@ -159,3 +159,45 @@ def test_events_preserve_bbd_identity_and_no_prices(monkeypatch):
     assert row["source"] == "big_balls_data"
     assert "price" not in row
     assert result["request_id"] == "req-1"
+
+
+@pytest.mark.parametrize("identity", [
+    {}, {"id": None}, {"id": ""}, {"id": True}, {"id": False},
+    {"id": 1.0}, {"id": -1}, {"id": []}, {"id": {"value": "one"}},
+    {"id": " one"}, {"id": "one "}, {"id": "one\ntwo"}, {"id": "one\x00"},
+    {"id": "one\x7f"}, {"id": "one\u00a0two"},
+    {"id": "one", "match_id": "two"},
+    {"match_id": "one", "event_id": "two"},
+    {"id": "one", "event_id": None},
+    {"id": "01", "event_id": 1},
+])
+def test_invalid_event_identity_discards_entire_collection(monkeypatch, identity):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    payload = {"data": [{"id": "valid"}, identity]}
+    monkeypatch.setattr(bbd_provider, "_request", lambda *a, **kw: (200, {}, payload))
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_EVENT_ID_INVALID"
+    assert result["events"] == []
+
+
+@pytest.mark.parametrize("identity, expected", [
+    ({"id": 0}, "0"), ({"match_id": 123}, "123"),
+    ({"event_id": "event:abc-123"}, "event:abc-123"),
+    ({"id": "001"}, "001"),
+    ({"id": 123, "match_id": "123", "event_id": 123}, "123"),
+    ({"id": "0", "event_id": 0}, "0"),
+])
+def test_event_identity_preserves_valid_aliases(monkeypatch, identity, expected):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    monkeypatch.setattr(bbd_provider, "_request", lambda *a, **kw: (200, {}, [identity]))
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is True
+    assert result["events"][0]["bbd_event_id"] == expected
+    assert result["events"][0]["raw"] == identity
