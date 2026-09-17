@@ -18,13 +18,23 @@ single-feature trial scores are retained.  For a whole family that is exactly on
 recentered coordinate of a raw selected-baseline feature, the alias can never count as a
 new learned feature; the raw parent must actually receive a split.  All other families
 continue through the existing selector unchanged.
+
+The retained post-#974 evidence also showed that the two-candidate family shortlist can
+exclude a third feature that already proved real single-family split use, even while the
+bounded joint search contains models that are only one family short of full substantive
+use.  This adapter therefore widens that development-only shortlist from two to three
+already-proven candidates per genuinely new family.  It adds no feature definition or
+LightGBM trial, does not inspect the outer development tail while screening, and leaves
+both-fold metric/use gates and the untouched outer-development gate unchanged.
 """
 from __future__ import annotations
 
 import ks1.forensic_derived_outer_selection as outer
 import ks1.forensic_derived_selected_baseline as base
+import ks1.forensic_derived_stable_selection as stable
 
-CONTRACT = "KS1-unified-forensic-derived-selected-baseline-v9"
+CONTRACT = "KS1-unified-forensic-derived-selected-baseline-v10"
+JOINT_SHORTLIST_PER_GROUP = 3
 _ORIGINAL_SCREEN = base.screen_derived_features
 
 
@@ -98,14 +108,26 @@ def screen_derived_features(fit, baseline_raw, derived, groups):
 
 def development_select(train):
     """Run the unchanged v8 outer selector with corrected affine-family semantics."""
-    current = base.screen_derived_features
-    if current is not _ORIGINAL_SCREEN:
+    current_screen = base.screen_derived_features
+    current_base_shortlist = base.JOINT_SHORTLIST_PER_GROUP
+    current_stable_shortlist = stable.JOINT_SHORTLIST_PER_GROUP
+    if current_screen is not _ORIGINAL_SCREEN:
         raise RuntimeError("forensic base screen unexpectedly replaced")
+    if current_base_shortlist != current_stable_shortlist:
+        raise RuntimeError("forensic shortlist contract unexpectedly inconsistent")
+
+    # Scope the wider search to this development-only adapter.  The underlying selector
+    # still admits only candidates that already received a real split in the single-family
+    # screen, and still applies the same two purged windows, frozen trials and metric gates.
     base.screen_derived_features = screen_derived_features
+    base.JOINT_SHORTLIST_PER_GROUP = JOINT_SHORTLIST_PER_GROUP
+    stable.JOINT_SHORTLIST_PER_GROUP = JOINT_SHORTLIST_PER_GROUP
     try:
         selected, report = outer.development_select(train)
     finally:
-        base.screen_derived_features = current
+        stable.JOINT_SHORTLIST_PER_GROUP = current_stable_shortlist
+        base.JOINT_SHORTLIST_PER_GROUP = current_base_shortlist
+        base.screen_derived_features = current_screen
 
     report["contract"] = CONTRACT
     report["affine_existing_signal_semantics"] = {
@@ -113,5 +135,13 @@ def development_select(train):
         "final_holdout_used": False,
         "metric_gates_changed": False,
         "trial_set_changed": False,
+    }
+    report["bounded_joint_shortlist"] = {
+        "per_group": JOINT_SHORTLIST_PER_GROUP,
+        "candidate_source": "already_single_family_split_used_only",
+        "new_feature_definitions": False,
+        "new_hyperparameters": False,
+        "outer_development_used_for_shortlisting": False,
+        "final_holdout_used_for_shortlisting": False,
     }
     return selected, report
