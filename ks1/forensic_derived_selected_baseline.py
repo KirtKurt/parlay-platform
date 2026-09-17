@@ -212,10 +212,13 @@ def joint_screen_derived_features(fit, baseline_raw, derived, groups, screen_evi
     if not TRIALS:
         raise ValueError("nested joint screen trials unavailable")
     trial_names = tuple(TRIALS)
+    supplied_trials = screen_evidence.get("trials")
+    if supplied_trials is not None and tuple(supplied_trials) != trial_names:
+        raise ValueError("nested joint screen trial evidence mismatch")
     baseline_by_trial = screen_evidence.get("baseline_by_trial")
     group_evidence = screen_evidence.get("groups")
     evidence_valid = (
-        tuple(screen_evidence.get("trials") or ()) == trial_names
+        supplied_trials is not None
         and isinstance(baseline_by_trial, dict)
         and set(baseline_by_trial) == set(trial_names)
         and isinstance(group_evidence, dict)
