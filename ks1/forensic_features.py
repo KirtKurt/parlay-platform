@@ -20,7 +20,7 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 
-CONTRACT = "KS1-forensic-derived-features-v2"
+CONTRACT = "KS1-forensic-derived-features-v3"
 GROUPS = (
     "market", "starter_regime", "starter_workload", "lineup", "bullpen",
     "individual_bullpen",
@@ -28,6 +28,7 @@ GROUPS = (
 INDIVIDUAL_BULLPEN_PARENT_PREFIXES = (
     "home_individual_bullpen_rank", "away_individual_bullpen_rank",
 )
+INDIVIDUAL_BULLPEN_WINDOWS = (7, 15, 30)
 
 # operation is either lhs-rhs or offset-parent. Positive pairwise advantages are
 # oriented toward the home team where a direction is naturally meaningful.
@@ -133,21 +134,28 @@ SPECS = {
     # Individual reliever usage ranks are reconstructed only after the final
     # qualification holdout is removed. They deliberately make no leverage-role
     # claim. Lower FIP/ERA and higher K-BB% are oriented as home advantages.
+    # The 30-day feature names are retained for backward evidence continuity;
+    # 7- and 15-day features add recency without changing rank identity.
     **{
-        f"forensic_individual_bullpen_rank{rank}_{metric}_advantage": {
+        (
+            f"forensic_individual_bullpen_rank{rank}_{metric}_advantage"
+            if days == 30 else
+            f"forensic_individual_bullpen_rank{rank}_{metric}_{days}d_advantage"
+        ): {
             "group": "individual_bullpen",
             "operation": "difference",
             "parents": (
-                (f"away_individual_bullpen_rank{rank}_{metric}_30d",
-                 f"home_individual_bullpen_rank{rank}_{metric}_30d")
+                (f"away_individual_bullpen_rank{rank}_{metric}_{days}d",
+                 f"home_individual_bullpen_rank{rank}_{metric}_{days}d")
                 if metric in ("fip", "era") else
-                (f"home_individual_bullpen_rank{rank}_{metric}_30d",
-                 f"away_individual_bullpen_rank{rank}_{metric}_30d")
+                (f"home_individual_bullpen_rank{rank}_{metric}_{days}d",
+                 f"away_individual_bullpen_rank{rank}_{metric}_{days}d")
             ),
             "development_only_parent": True,
         }
         for rank in (1, 2, 3)
         for metric in ("fip", "era", "k_bb_pct")
+        for days in INDIVIDUAL_BULLPEN_WINDOWS
     },
 }
 
