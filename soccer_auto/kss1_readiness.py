@@ -77,6 +77,7 @@ def verify_rollout(training, status, picks):
     else:
         safe_empty = (
             picks.get("reason") == "NO_MATCHING_RECORDED_PICKS"
+            and published_any == 0
             and isinstance(picks.get("missing"), list)
             and bool(picks["missing"])
             and int(picks.get("count") or 0) == 0
