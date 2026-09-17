@@ -1,0 +1,405 @@
+{
+  "allFinal": true,
+  "canonicalSettlement": {
+    "authoritativeSettlement": true,
+    "canonicalLockCount": 1,
+    "createdAtUtc": "2026-08-02T03:25:43.086734+00:00",
+    "identityRejectionCount": 0,
+    "identityRejections": [],
+    "immutablePregameReadbackErrors": [],
+    "immutablePregameRowsMutated": false,
+    "immutablePregameVectorPolicy": "Canonical FINAL labels are separate write-once records; LOCKED#GAME rows and frozen vectors are never updated.",
+    "labelConflictCount": 1,
+    "labelCreatedCount": 0,
+    "labelIdempotentCount": 0,
+    "labelWouldCreateCount": 0,
+    "labelWriteCount": 1,
+    "labelWrites": [
+      {
+        "existingSettlementFingerprint": "012e3faa049108ce91613ba9780e4acbf2a806cc336269adcecac247dc9d2d31",
+        "officialGamePk": "824651",
+        "ok": false,
+        "policy": "Write-once canonical labels never overwrite a differing official FINAL; correction conflicts require manual review.",
+        "proposedSettlementFingerprint": "b2540bfa6f821772f2b69ac595e1f5fa8589325c42109b86059611169d77503f",
+        "status": "OFFICIAL_FINAL_CORRECTION_CONFLICT"
+      }
+    ],
+    "legacySettlementAuthority": false,
+    "lockTerminalConflictCount": 0,
+    "lockTerminalConflictOfficialGamePks": [],
+    "missingCanonicalLockCount": 14,
+    "missingCanonicalLocks": [
+      {
+        "officialGamePk": "822782",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "822945",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "823111",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "823272",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "823593",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "823922",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "823999",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "824164",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "824325",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "824407",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "824486",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "824809",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "824892",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "824975",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      }
+    ],
+    "officialFinalCount": 15,
+    "officialGameCount": 15,
+    "officialSchedule": {
+      "officialFinalCount": 15,
+      "officialGameCount": 15,
+      "ok": true,
+      "slateDateEt": "2026-07-31",
+      "source": "MLB Stats API exact-date official FINAL",
+      "sourceUrl": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-07-31&endDate=2026-07-31&hydrate=linescore"
+    },
+    "ok": false,
+    "overall_status": "FAILED_CLOSED",
+    "proofType": "MLB_CANONICAL_IMMUTABLE_LOCK_TO_OFFICIAL_FINAL_LABEL",
+    "rejectedCanonicalLockCount": 0,
+    "rejectedCanonicalLocks": [],
+    "rejectedTerminalOutcomes": [],
+    "settlement_version": "MLB-CANONICAL-FINAL-LABEL-v1-official-game-pk-write-once",
+    "skippedNotFinal": [],
+    "skippedNotFinalCount": 0,
+    "slateDateEt": "2026-07-31",
+    "slate_date_et": "2026-07-31",
+    "sport": "mlb",
+    "status": "FAILED_CLOSED",
+    "terminalNoPredictionCount": 0,
+    "terminalNoPredictionExcludedCount": 0,
+    "terminalNoPredictionExclusions": [],
+    "terminalNoPredictionPolicy": "LOCKED_NO_PREDICTION_DATA is a terminal lifecycle outcome excluded from accuracy and ML training.",
+    "version": "MLB-CANONICAL-SETTLEMENT-PROOF-v1"
+  },
+  "canonicalTrainingReadback": {
+    "finalizedSlateDates": [],
+    "ok": false,
+    "policy": "Only full official-FINAL slates joined by official gamePk to current immutable LOCKED#GAME authority may enter the prospective cohort.",
+    "requestedSlateDates": [
+      "2026-07-31"
+    ],
+    "rowCount": 0,
+    "rows": [],
+    "slates": [
+      {
+        "canonicalLockCount": 1,
+        "coverageComplete": false,
+        "invalidLabelCount": 0,
+        "labelsComplete": true,
+        "officialFinalCount": 15,
+        "officialGameCount": 15,
+        "rejectedCanonicalLockCount": 0,
+        "rejectedTerminalCount": 0,
+        "slateDateEt": "2026-07-31",
+        "slateFinalized": false,
+        "terminalNoPredictionCount": 0,
+        "validLabelCount": 1
+      }
+    ],
+    "version": "MLB-CANONICAL-FINAL-LABEL-v1-official-game-pk-write-once"
+  },
+  "createdAtUtc": "2026-08-02T03:26:39.462499+00:00",
+  "games": [
+    {
+      "awayScore": 2,
+      "awayTeam": "New York Yankees",
+      "completed": true,
+      "gameDate": "2026-07-31T18:20:00Z",
+      "homeScore": 0,
+      "homeTeam": "Chicago Cubs",
+      "officialGamePk": "824651",
+      "officialStatus": {
+        "abstractGameState": "Final",
+        "codedGameState": "F",
+        "detailedState": "Final",
+        "reason": null,
+        "statusCode": "F"
+      }
+    },
+    {
+      "awayScore": 7,
+      "awayTeam": "Pittsburgh Pirates",
+      "completed": true,
+      "gameDate": "2026-07-31T22:10:00Z",
+      "homeScore": 8,
+      "homeTeam": "Cincinnati Reds",
+      "officialGamePk": "824486",
+      "officialStatus": {
+        "abstractGameState": "Final",
+        "codedGameState": "F",
+        "detailedState": "Final",
+        "reason": null,
+        "statusCode": "F"
+      }
+    },
+    {
+      "awayScore": 4,
+      "awayTeam": "Philadelphia Phillies",
+      "completed": true,
+      "gameDate": "2026-07-31T23:05:00Z",
+      "homeScore": 6,
+      "homeTeam": "Baltimore Orioles",
+      "officialGamePk": "824809",
+      "officialStatus": {
+        "abstractGameState": "Final",
+        "codedGameState": "F",
+        "detailedState": "Final",
+        "reason": null,
+        "statusCode": "F"
+      }
+    },
+    {
+      "awayScore": 1,
+      "awayTeam": "St. Louis Cardinals",
+      "completed": true,
+      "gameDate": "2026-07-31T23:07:00Z",
+      "homeScore": 3,
+      "homeTeam": "Toronto Blue Jays",
+      "officialGamePk": "822782",
+      "officialStatus": {
+        "abstractGameState": "Final",
+        "codedGameState": "F",
+        "detailedState": "Final",
+        "reason": null,
+        "statusCode": "F"
+      }
+    },
+    {
+      "awayScore": 4,
+      "awayTeam": "Arizona Diamondbacks",
+      "completed": true,
+      "gameDate": "2026-07-31T23:10:00Z",
+      "homeScore": 1,
+      "homeTeam": "Cleveland Guardians",
+      "officialGamePk": "824407",
+      "officialStatus": {
+        "abstractGameState": "Final",
+        "codedGameState": "F",
+        "detailedState": "Final",
+        "reason": null,
+        "statusCode": "F"
+      }
+    },
+    {
+      "awayScore": 6,
+      "awayTeam": "Chicago White Sox",
+      "completed": true,
+      "gameDate": "2026-07-31T23:10:00Z",
+      "homeScore": 1,
+      "homeTeam": "Tampa Bay Rays",
+      "officialGamePk": "822945",
+      "officialStatus": {
+        "abstractGameState": "Final",
+        "codedGameState": "F",
+        "detailedState": "Final",
+        "reason": null,
+        "statusCode": "F"
+      }
+    },
+    {
+      "awayScore": 5,
+      "awayTeam": "Miami Marlins",
+      "completed": true,
+      "gameDate": "2026-07-31T23:10:00Z",
+      "homeScore": 2,
+      "homeTeam": "New York Mets",
+      "officialGamePk": "823593",
+      "officialStatus": {
+        "abstractGameState": "Final",
+        "codedGameState": "F",
+        "detailedState": "Final",
+        "reason": null,
+        "statusCode": "F"
+      }
+    },
+    {
+      "awayScore": 2,
+      "awayTeam": "Washington Nationals",
+      "completed": true,
+      "gameDate": "2026-07-31T23:15:00Z",
+      "homeScore": 6,
+      "homeTeam": "Atlanta Braves",
+      "officialGamePk": "824892",
+      "officialStatus": {
+        "abstractGameState": "Final",
+        "codedGameState": "F",
+        "detailedState": "Final",
+        "reason": null,
+        "statusCode": "F"
+      }
+    },
+    {
+      "awayScore": 2,
+      "awayTeam": "Texas Rangers",
+      "completed": true,
+      "gameDate": "2026-08-01T00:15:00Z",
+      "homeScore": 11,
+      "homeTeam": "Houston Astros",
+      "officialGamePk": "824164",
+      "officialStatus": {
+        "abstractGameState": "Final",
+        "codedGameState": "F",
+        "detailedState": "Final",
+        "reason": null,
+        "statusCode": "F"
+      }
+    },
+    {
+      "awayScore": 1,
+      "awayTeam": "Kansas City Royals",
+      "completed": true,
+      "gameDate": "2026-08-01T00:40:00Z",
+      "homeScore": 3,
+      "homeTeam": "Colorado Rockies",
+      "officialGamePk": "824325",
+      "officialStatus": {
+        "abstractGameState": "Final",
+        "codedGameState": "F",
+        "detailedState": "Final",
+        "reason": null,
+        "statusCode": "F"
+      }
+    },
+    {
+      "awayScore": 6,
+      "awayTeam": "Milwaukee Brewers",
+      "completed": true,
+      "gameDate": "2026-08-01T01:38:00Z",
+      "homeScore": 2,
+      "homeTeam": "Los Angeles Angels",
+      "officialGamePk": "823999",
+      "officialStatus": {
+        "abstractGameState": "Final",
+        "codedGameState": "F",
+        "detailedState": "Final",
+        "reason": null,
+        "statusCode": "F"
+      }
+    },
+    {
+      "awayScore": 13,
+      "awayTeam": "Detroit Tigers",
+      "completed": true,
+      "gameDate": "2026-08-01T01:40:00Z",
+      "homeScore": 1,
+      "homeTeam": "Athletics",
+      "officialGamePk": "824975",
+      "officialStatus": {
+        "abstractGameState": "Final",
+        "codedGameState": "F",
+        "detailedState": "Final",
+        "reason": null,
+        "statusCode": "F"
+      }
+    },
+    {
+      "awayScore": 0,
+      "awayTeam": "San Francisco Giants",
+      "completed": true,
+      "gameDate": "2026-08-01T01:45:00Z",
+      "homeScore": 7,
+      "homeTeam": "San Diego Padres",
+      "officialGamePk": "823272",
+      "officialStatus": {
+        "abstractGameState": "Final",
+        "codedGameState": "F",
+        "detailedState": "Final",
+        "reason": null,
+        "statusCode": "F"
+      }
+    },
+    {
+      "awayScore": 9,
+      "awayTeam": "Boston Red Sox",
+      "completed": true,
+      "gameDate": "2026-08-01T02:10:00Z",
+      "homeScore": 4,
+      "homeTeam": "Los Angeles Dodgers",
+      "officialGamePk": "823922",
+      "officialStatus": {
+        "abstractGameState": "Final",
+        "codedGameState": "F",
+        "detailedState": "Final",
+        "reason": null,
+        "statusCode": "F"
+      }
+    },
+    {
+      "awayScore": 5,
+      "awayTeam": "Minnesota Twins",
+      "completed": true,
+      "gameDate": "2026-08-01T02:10:00Z",
+      "homeScore": 3,
+      "homeTeam": "Seattle Mariners",
+      "officialGamePk": "823111",
+      "officialStatus": {
+        "abstractGameState": "Final",
+        "codedGameState": "F",
+        "detailedState": "Final",
+        "reason": null,
+        "statusCode": "F"
+      }
+    }
+  ],
+  "moduleInitialization": {
+    "historySnapshotsNamePresent": true,
+    "historyTableHandleReady": true,
+    "initialized": true,
+    "outcomesTableHandleReady": true,
+    "outcomesVariablePresent": true,
+    "snapshotsVariablePresent": true
+  },
+  "officialFinalCount": 15,
+  "officialGameCount": 15,
+  "proofType": "MLB_CANONICAL_SLATE_DATE_DIAGNOSTIC",
+  "secretExposed": false,
+  "slateDateEt": "2026-07-31",
+  "sourceUrl": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-07-31&endDate=2026-07-31&hydrate=linescore",
+  "trainerHandler": "mlb_ml_aws_training_v1_compat.lambda_handler",
+  "trainerLastModified": "2026-08-02T03:20:17.000+0000",
+  "trainerTableWiringObserved": true
+}
