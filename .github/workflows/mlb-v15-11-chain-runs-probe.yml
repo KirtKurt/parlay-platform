@@ -1,0 +1,94 @@
+name: Probe Live MLB Historical Training Chain
+
+"on":
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/mlb-v15-11-chain-runs-probe.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  probe:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/probe-mlb-training-chain-runs'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FAILED_JOB_ID: '89429118420'
+    steps:
+      - name: Inspect exact official-date mismatches
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" \
+          | sed -r 's/\x1B\[[0-9;?]*[ -\/]*[@-~]//g' > /tmp/job.log
+          python - <<'PY'
+          import json
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          decoder = json.JSONDecoder()
+          matches = []
+          for line in Path('/tmp/job.log').read_text(errors='replace').splitlines():
+              if 'PLAN_BLOCKED_INCOMPLETE_LEDGER' not in line:
+                  continue
+              start = line.find('{')
+              if start < 0:
+                  continue
+              try:
+                  value, _ = decoder.raw_decode(line[start:])
+              except json.JSONDecodeError:
+                  continue
+              state = value.get('state') or {}
+              if state.get('phase') == 'PLAN_BLOCKED_INCOMPLETE_LEDGER' and state.get('plan'):
+                  matches.append(value)
+          found = matches[-1]
+          plan = (found.get('state') or {}).get('plan') or {}
+          rejected_dates = [row['slateDateEt'] for row in plan.get('rejectedDates') or []]
+          print('REJECTED_DATE_COUNT=' + str(len(rejected_dates)))
+          for day in rejected_dates:
+              query = urllib.parse.urlencode({
+                  'sportId': '1',
+                  'startDate': day,
+                  'endDate': day,
+                  'hydrate': 'linescore',
+              })
+              url = 'https://statsapi.mlb.com/api/v1/schedule?' + query
+              request = urllib.request.Request(url, headers={'user-agent': 'inqsi-mlb-planner-diagnostic/1.0'})
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  payload = json.loads(response.read().decode('utf-8'))
+              raw_games = [game for date_row in payload.get('dates') or [] for game in date_row.get('games') or []]
+              mismatches = []
+              for game in raw_games:
+                  official = str(game.get('officialDate') or '')
+                  if official == day:
+                      continue
+                  teams = game.get('teams') or {}
+                  mismatches.append({
+                      'gamePk': game.get('gamePk'),
+                      'queriedDate': day,
+                      'officialDate': official,
+                      'gameDate': game.get('gameDate'),
+                      'rescheduleDate': game.get('rescheduleDate'),
+                      'resumeDate': game.get('resumeDate'),
+                      'rescheduledFrom': game.get('rescheduledFrom'),
+                      'resumeGameDate': game.get('resumeGameDate'),
+                      'status': game.get('status'),
+                      'away': ((teams.get('away') or {}).get('team') or {}).get('name'),
+                      'home': ((teams.get('home') or {}).get('team') or {}).get('name'),
+                  })
+              print(json.dumps({
+                  'queriedDate': day,
+                  'apiTotalGames': payload.get('totalGames'),
+                  'returnedGames': len(raw_games),
+                  'mismatches': mismatches,
+              }, sort_keys=True))
+          PY
