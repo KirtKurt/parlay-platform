@@ -38,15 +38,68 @@ def test_verified_score_only_readback_can_pass_without_xg():
     assert verify_rollout(*proof_fixture())["recorded_12_picks"] == 1
 
 
+def test_empty_12_filter_passes_when_another_fitted_book_published():
+    training, status, picks = proof_fixture()
+    picks.update(
+        count=0,
+        picks=[],
+        reason="NO_MATCHING_RECORDED_PICKS",
+        published_counts={"1x2": 1, "double_chance": 1, "ou25": 1, "btts": 0, "any": 1},
+        fixture_count=1,
+        missing=[{"event_key": "fixture", "reason": "NO_RECORDED_T60_TRAINED_PUBLISHED_BOOK"}],
+    )
+    proof = verify_rollout(training, status, picks)
+    assert proof["verified"] is True
+    assert proof["recorded_12_picks"] == 0
+    assert proof["published_counts"]["any"] == 1
+    assert proof["automatic_prediction_allowed"] is False
+
+
+def test_all_abstain_trained_shadow_readback_is_safe_and_non_authoritative():
+    training, status, picks = proof_fixture()
+    picks.update(
+        count=0,
+        picks=[],
+        reason="NO_MATCHING_RECORDED_PICKS",
+        published_counts={"1x2": 0, "double_chance": 0, "ou25": 0, "btts": 0, "any": 0},
+        fixture_count=1,
+        missing=[{
+            "event_key": "fixture",
+            "reason": "NO_RECORDED_T60_TRAINED_PUBLISHED_BOOK",
+        }],
+    )
+    proof = verify_rollout(training, status, picks)
+    assert proof["verified"] is True
+    assert proof["recorded_12_picks"] == 0
+    assert proof["authority"] == "SHADOW_LEARNING"
+    assert proof["automatic_prediction_allowed"] is False
+
+
+def test_explicit_no_due_t60_rows_is_safe_shadow_readback():
+    training, status, picks = proof_fixture()
+    picks.update(
+        count=0,
+        picks=[],
+        reason="NO_MATCHING_RECORDED_PICKS",
+        published_counts={"1x2": 0, "double_chance": 0, "ou25": 0, "btts": 0, "any": 0},
+        fixture_count=1,
+        missing=[{"event_key": "fixture", "reason": "NO_RECORDED_T60_TRAINED_PICK"}],
+    )
+    proof = verify_rollout(training, status, picks)
+    assert proof["verified"] is True
+    assert proof["recorded_12_picks"] == 0
+    assert proof["automatic_prediction_allowed"] is False
+
+
 @pytest.mark.parametrize("defect,reason", [
-    ("empty", "NO_RECORDED_TRAINED_12_PICKS"),
+    ("empty", "NO_RECORDED_TRAINED_PUBLISHED_BOOKS"),
     ("untrained", "GOALS_MODEL_NOT_TRAINED"),
     ("rejected", "GOALS_CANDIDATE_NOT_QUALIFIED"),
     ("wrong_model", "GOALS_PICK_MODEL_MISMATCH"),
     ("wrong_context", "GOALS_CONTEXT_READBACK_MISMATCH"),
     ("late", "GOALS_PICK_AFTER_T60"),
     ("insufficient_history", "GOALS_PICK_NOT_READY"),
-    ("wrong_selection", "GOALS_PICK_NOT_READY"),
+    ("no_published_book", "GOALS_PICK_NOT_READY"),
     ("wrong_cohort", "GOALS_HOLDOUT_COHORT_MISMATCH"),
     ("worse_loss", "GOALS_HOLDOUT_GATE_FAILED"),
     ("nan", "GOALS_HOLDOUT_GATE_FAILED"),
@@ -64,7 +117,8 @@ def test_rollout_proof_rejects_unready_or_mismatched_evidence(defect, reason):
     elif defect == "wrong_context": training["artifact_uri"] = "old"
     elif defect == "late": picks["picks"][0]["created_at"] = "2026-09-14T12:00:01Z"
     elif defect == "insufficient_history": picks["picks"][0]["input_coverage"]["team_strength_complete"] = False
-    elif defect == "wrong_selection": picks["picks"][0]["markets"]["double_chance_published"] = "1X"
+    elif defect == "no_published_book":
+        picks["picks"][0]["markets"]["double_chance_published"] = "ABSTAIN"
     elif defect == "wrong_cohort": context["candidate_baseline"]["event_manifest"] = "different"
     elif defect == "worse_loss": context["candidate_holdout"]["log_loss"] = 1.1
     elif defect == "nan": context["candidate_holdout"]["brier"] = float("nan")
@@ -126,6 +180,12 @@ def test_final_training_proof_runs_after_integrity_and_settlement_reconciliation
     assert names.index("Admit independently witnessed KSS1 score history") < names.index(
         "Train KSS1 goals and verify recorded-picks readback"
     )
+    admit = next(
+        step for step in deploy_steps
+        if step.get("name") == "Admit independently witnessed KSS1 score history"
+    )
+    assert "scripts/kss1_admit_or_reuse.py" in admit["run"]
+    assert "NO_REUSABLE_INSTALLED_ARCHIVE" in admit["run"]
     trainer = next(
         step for step in deploy_steps
         if step.get("name") == "Train KSS1 goals and verify recorded-picks readback"
