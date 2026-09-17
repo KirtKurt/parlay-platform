@@ -1,0 +1,26 @@
+name: Inspect MLB Recovery CI Failure Tail
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/inspect-mlb-recovery-ci-failure-tail.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print final failed-step lines
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: '29984740351'
+          JOB_ID: '89134023390'
+        run: |
+          set -euo pipefail
+          gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --job "$JOB_ID" --log-failed > /tmp/failure.log
+          tail -30 /tmp/failure.log
