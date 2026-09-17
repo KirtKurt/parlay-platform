@@ -6,8 +6,11 @@ KS1 recipe. When lineup/bullpen raw features already lose to the selected starte
 that comparison confounds the value of the new forensic transforms. This selector keeps
 feature admission unchanged, adds the derived features to the exact raw recipe selected
 on the same purged development process, and can also screen one representative feature
-per forensic family on a second, strictly earlier purged development split. It never sees
-or scores the frozen 300-game qualification holdout.
+per forensic family on a second, strictly earlier purged development split. A signal
+family whose sole forensic coordinate is only an affine recentering of an existing KS1
+raw feature may prove family use through that exact raw coordinate instead of pretending
+the alias adds new information. It never sees or scores the frozen 300-game qualification
+holdout.
 """
 from __future__ import annotations
 
@@ -22,7 +25,7 @@ from ks1.forensic_features import (
 from ks1.retrain_recent import EVALUATION_GAMES, choose_features, split_development
 from ks1.train import PARAMS
 
-CONTRACT = "KS1-unified-forensic-derived-selected-baseline-v3"
+CONTRACT = "KS1-unified-forensic-derived-selected-baseline-v4"
 
 
 def selected_baseline_features(report, recipe):
@@ -36,15 +39,41 @@ def selected_baseline_features(report, recipe):
     return features
 
 
+def _single_affine_existing_parent(group_columns, baseline_raw):
+    """Return an existing raw coordinate only when a whole group adds no information.
+
+    This is deliberately narrower than generic algebraic equivalence. It applies only
+    when the forensic family has exactly one candidate and that candidate is a one-parent
+    affine recentering. Multi-feature families such as starter workload must still learn
+    an actual derived feature; they cannot satisfy usage through a raw parent.
+    """
+    if len(group_columns) != 1:
+        return None
+    feature = group_columns[0]
+    spec = SPECS.get(feature) or {}
+    parents = tuple(spec.get("parents") or ())
+    if len(parents) != 1 or spec.get("operation") not in ("offset", "offset_minus"):
+        return None
+    parent = parents[0]
+    return parent if parent in set(baseline_raw) else None
+
+
 def screen_derived_features(fit, baseline_raw, derived, groups):
     """Choose one representative per forensic family on an earlier purged split.
 
     Every already-prespecified KS1 development trial is allowed on the inner split. A
-    forensic feature must receive an actual tree split, and its value is ranked by the
-    incremental Brier/log-loss change against the *same trial's* baseline. Comparing
-    same-trial deltas prevents a hyperparameter change from masquerading as feature
-    value. The outer development tail remains untouched, and the frozen qualification
-    holdout is not available to this function at all.
+    genuinely new forensic feature must receive an actual tree split, and its value is
+    ranked by the incremental Brier/log-loss change against the *same trial's* baseline.
+    Comparing same-trial deltas prevents a hyperparameter change from masquerading as
+    feature value.
+
+    If and only if an entire family consists of one affine recentering of one raw baseline
+    feature, that family may instead be represented by the original coordinate, provided
+    that coordinate actually receives a split in the same-trial baseline. This records
+    existing signal use honestly; it does not relabel the alias as a new learned feature.
+
+    The outer development tail remains untouched, and the frozen qualification holdout is
+    not available to this function at all.
     """
     if not TRIALS:
         raise ValueError("nested screen trials unavailable")
@@ -53,6 +82,7 @@ def screen_derived_features(fit, baseline_raw, derived, groups):
     validation_aug = _augment(inner_validation, derived)
     trial_names = tuple(TRIALS)
     baseline_by_trial = {}
+    baseline_usage_by_trial = {}
     for trial_name in trial_names:
         params = {**PARAMS, **TRIALS[trial_name]}
         result = _trial(fit_aug, validation_aug, baseline_raw, params)
@@ -60,16 +90,19 @@ def screen_derived_features(fit, baseline_raw, derived, groups):
             "brier": result["brier"],
             "logloss": result["logloss"],
         }
+        baseline_usage_by_trial[trial_name] = sorted(set(result["features_used_in_splits"]))
 
     selected = []
+    equivalent_groups = {}
     evidence = {
-        "method": "nested_purged_multitrial_incremental_representative_per_forensic_family",
+        "method": "nested_purged_multitrial_substantive_signal_family_screen",
         "trials": list(trial_names),
         "inner_fit_games": len(inner_fit),
         "inner_validation_games": len(inner_validation),
         "outer_development_used_for_screening": False,
         "final_holdout_used_for_screening": False,
         "baseline_by_trial": baseline_by_trial,
+        "baseline_feature_usage_by_trial": baseline_usage_by_trial,
         "groups": {},
     }
     for group_name, group_columns in groups.items():
@@ -99,15 +132,39 @@ def screen_derived_features(fit, baseline_raw, derived, groups):
         winner = min(usable) if usable else None
         selected_feature = winner[4] if winner else None
         selected_trial = winner[5] if winner else None
+        equivalent_parent = None
+        equivalent_trial = None
+        if selected_feature is None:
+            parent = _single_affine_existing_parent(group_columns, baseline_raw)
+            eligible = [
+                (baseline_by_trial[trial_name]["brier"],
+                 baseline_by_trial[trial_name]["logloss"], trial_name)
+                for trial_name in trial_names
+                if parent is not None and parent in baseline_usage_by_trial[trial_name]
+            ]
+            if eligible:
+                _, _, equivalent_trial = min(eligible)
+                equivalent_parent = parent
+                equivalent_groups[group_name] = parent
+
         evidence["groups"][group_name] = {
             "candidates": candidates,
             "selected": selected_feature,
             "selected_trial": selected_trial,
+            "existing_equivalent_parent": equivalent_parent,
+            "existing_equivalent_parent_trial": equivalent_trial,
+            "existing_equivalent_parent_is_new_feature": False,
         }
         if selected_feature is not None:
             selected.append(selected_feature)
+
     evidence["selected_features"] = selected
-    evidence["all_groups_screened"] = len(selected) == len(groups)
+    evidence["equivalent_existing_signal_groups"] = equivalent_groups
+    evidence["all_groups_screened"] = all(
+        group_evidence["selected"] is not None
+        or group_evidence["existing_equivalent_parent"] is not None
+        for group_evidence in evidence["groups"].values()
+    )
     return selected, evidence
 
 
@@ -157,8 +214,9 @@ def development_select(train):
     all_columns = baseline_raw + derived
     best = None
 
-    def evaluate(prefix, columns):
+    def evaluate(prefix, columns, equivalent_groups=None):
         nonlocal best
+        equivalent_groups = dict(equivalent_groups or {})
         for trial_name, updates in TRIALS.items():
             params = {**PARAMS, **updates}
             result = _trial(fit_aug, validation_aug, columns, params)
@@ -167,24 +225,37 @@ def development_select(train):
                 name: sorted(used.intersection(group_columns))
                 for name, group_columns in groups.items()
             }
+            result["existing_equivalent_group_usage"] = {
+                name: ([parent] if parent in used else [])
+                for name, parent in equivalent_groups.items()
+            }
+            result["signal_group_usage"] = {
+                name: (result["derived_group_usage"][name]
+                       or result["existing_equivalent_group_usage"].get(name, []))
+                for name in groups
+            }
             result["all_derived_groups_used"] = all(result["derived_group_usage"].values())
+            result["all_signal_groups_used"] = all(result["signal_group_usage"].values())
             result["beats_selected_baseline"] = bool(
                 result["brier"] < baseline_metrics["brier"]
                 and result["logloss"] <= baseline_metrics["logloss"])
             result["feature_set"] = prefix or "all_admitted_derived"
             key = f"{prefix}_{trial_name}" if prefix else trial_name
             report["trials"][key] = result
-            if result["all_derived_groups_used"] and result["beats_selected_baseline"]:
+            if result["all_signal_groups_used"] and result["beats_selected_baseline"]:
                 candidate = (result["brier"], result["logloss"], key, result, list(columns))
                 if best is None or candidate[:3] < best[:3]:
                     best = candidate
 
+    # Existing all-derived path is unchanged in substance: with no equivalent-group
+    # exceptions, all_signal_groups_used is identical to all_derived_groups_used.
     evaluate("", all_columns)
 
     screened, screen_evidence = screen_derived_features(fit, baseline_raw, derived, groups)
     report["nested_group_screen"] = screen_evidence
     if screen_evidence["all_groups_screened"] and set(screened) != set(derived):
-        evaluate("screened", baseline_raw + screened)
+        evaluate("screened", baseline_raw + screened,
+                 screen_evidence.get("equivalent_existing_signal_groups", {}))
 
     if best is None:
         report["reason"] = "derived_forensic_selected_baseline_candidate_not_superior_on_development"
