@@ -1,0 +1,263 @@
+name: Deploy isolated Tennis MLB exact-parity V2
+
+on:
+  push:
+    branches: [agent/tennis-mlb-exact-parity-v2]
+    paths:
+      - "tennis_release_v2/**"
+      - ".github/workflows/deploy-tennis.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parlay-platform-tennis-v2-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_DEFAULT_REGION: us-east-1
+  TENNIS_STACK_NAME: parlay-platform-tennis-ml-prod
+  MLB_STACK_NAME: parlay-platform-dev
+  TENNIS_ODDS_API_KEY_VALUE: ${{ secrets.TENNIS_ODDS_API_KEY || secrets.ODDS_API_KEY }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: aws-actions/setup-sam@v2
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Reconstruct checksum-pinned Tennis source
+        run: |
+          set -euo pipefail
+          test -n "${TENNIS_ODDS_API_KEY_VALUE:-}" || {
+            echo "::error::No Tennis/provider odds credential is configured"
+            exit 1
+          }
+          cat tennis_release_v2/tennis_predictive_platform_v2.tar.xz.b64.part[0-9][0-9] \
+            | base64 --decode > tennis_release_v2/tennis_predictive_platform_v2.tar.xz
+          sha256sum -c tennis_release_v2/tennis_predictive_platform_v2.tar.xz.sha256
+          rm -rf tennis_predictive_platform_v2
+          tar -xJf tennis_release_v2/tennis_predictive_platform_v2.tar.xz
+          expected=$(cat tennis_release_v2/source_tree.sha256)
+          actual=$(python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root=Path('tennis_predictive_platform_v2'); h=hashlib.sha256()
+          for p in sorted((x for x in root.rglob('*') if x.is_file()),key=lambda x:x.relative_to(root).as_posix()):
+              r=p.relative_to(root).as_posix().encode(); d=p.read_bytes()
+              h.update(len(r).to_bytes(8,'big')); h.update(r)
+              h.update(len(d).to_bytes(8,'big')); h.update(d)
+          print(h.hexdigest())
+          PY
+          )
+          test "$actual" = "$expected"
+          printf '%s\n' "$actual" > /tmp/tennis-source-sha256
+
+      - name: Validate and build isolated Tennis application
+        working-directory: tennis_predictive_platform_v2
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet -r requirements-dev.txt
+          ./scripts/run_all_checks.sh
+          python -m compileall -q src tests scripts
+          python scripts/validate_template.py
+          sam validate --lint --template-file template.yaml
+          rm -rf .aws-sam
+          sam build --no-cached --template-file template.yaml
+          sha256sum template.yaml | awk '{print $1}' > /tmp/tennis-template-sha256
+
+      - name: Fingerprint protected MLB stack
+        run: |
+          set -euo pipefail
+          status=$(aws cloudformation describe-stacks --stack-name "$MLB_STACK_NAME" \
+            --query 'Stacks[0].StackStatus' --output text)
+          [[ "$status" == CREATE_COMPLETE || "$status" == UPDATE_COMPLETE ]]
+          aws cloudformation get-template --stack-name "$MLB_STACK_NAME" \
+            --template-stage Processed --output json > /tmp/mlb-template-before.json
+          aws cloudformation list-stack-resources --stack-name "$MLB_STACK_NAME" \
+            --output json > /tmp/mlb-resources-before.json
+          PHASE=before python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          p=os.environ['PHASE']
+          t=json.loads(Path(f'/tmp/mlb-template-{p}.json').read_text()).get('TemplateBody')
+          rows=json.loads(Path(f'/tmp/mlb-resources-{p}.json').read_text()).get('StackResourceSummaries',[])
+          resources=[{k:r.get(k) for k in ('LogicalResourceId','PhysicalResourceId','ResourceType')} for r in rows]
+          material={'template':t,'resources':sorted(resources,key=lambda r:str(r.get('LogicalResourceId')))}
+          digest=hashlib.sha256(json.dumps(material,sort_keys=True,default=str).encode()).hexdigest()
+          Path(f'/tmp/mlb-stack-{p}.sha256').write_text(digest+'\n')
+          print(digest)
+          PY
+
+      - name: Deploy Tennis with all schedules disabled
+        working-directory: tennis_predictive_platform_v2
+        run: |
+          set -euo pipefail
+          sam deploy --template-file .aws-sam/build/template.yaml \
+            --stack-name "$TENNIS_STACK_NAME" --region "$AWS_REGION" --resolve-s3 \
+            --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              TennisOddsApiKey="$TENNIS_ODDS_API_KEY_VALUE" \
+              StageName=prod ScheduleState=DISABLED \
+              DeployGitSha="$GITHUB_SHA" \
+              DeployTemplateSha256="$(cat /tmp/tennis-template-sha256)" \
+              DeploySourceSha256="$(cat /tmp/tennis-source-sha256)"
+
+      - name: Prove live all-Tennis ingestion and persisted predictions
+        working-directory: tennis_predictive_platform_v2
+        run: |
+          set -euo pipefail
+          API_URL=$(aws cloudformation describe-stacks --stack-name "$TENNIS_STACK_NAME" \
+            --query "Stacks[0].Outputs[?OutputKey=='TennisApiUrl'].OutputValue | [0]" --output text)
+          test -n "$API_URL" && test "$API_URL" != None
+          printf '%s\n' "$API_URL" > /tmp/tennis-api-url
+          curl -fsS "$API_URL/v1/tennis/model/version" | tee /tmp/tennis-model-version.json
+          curl -fsS "$API_URL/v1/tennis/ml/status" | tee /tmp/tennis-ml-status.json
+
+          TENNIS_INGEST_FUNCTION=$(aws cloudformation describe-stack-resource \
+            --stack-name "$TENNIS_STACK_NAME" --logical-resource-id TennisIngestFunction \
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          test -n "$TENNIS_INGEST_FUNCTION" && test "$TENNIS_INGEST_FUNCTION" != None
+          printf '%s\n' \
+            '{"httpMethod":"POST","path":"/v1/pull/tennis","body":"{\"run\":\"deploy_force_live_pull\",\"force\":true}"}' \
+            > /tmp/tennis-ingest-event.json
+          aws lambda invoke --function-name "$TENNIS_INGEST_FUNCTION" --region "$AWS_REGION" \
+            --cli-connect-timeout 10 --cli-read-timeout 300 \
+            --cli-binary-format raw-in-base64-out \
+            --payload file:///tmp/tennis-ingest-event.json \
+            /tmp/tennis-ingest-envelope.json | tee /tmp/tennis-ingest-metadata.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          version=json.loads(Path('/tmp/tennis-model-version.json').read_text())
+          status=json.loads(Path('/tmp/tennis-ml-status.json').read_text())
+          meta=json.loads(Path('/tmp/tennis-ingest-metadata.json').read_text())
+          envelope=json.loads(Path('/tmp/tennis-ingest-envelope.json').read_text())
+          assert meta.get('StatusCode')==200 and not meta.get('FunctionError'), meta
+          assert int(envelope.get('statusCode') or 0)==200, envelope
+          body=envelope.get('body'); payload=json.loads(body) if isinstance(body,str) else body
+          Path('/tmp/tennis-discovery-smoke.json').write_text(json.dumps(payload,indent=2,sort_keys=True))
+          assert version['ok'] is True and version['sport']=='tennis'
+          assert float(version['collectionLeadHours'])==10.0
+          assert version['data_architecture']['cross_sport_runtime_data'] is False
+          assert version['sourceParity']['referenceCommit']=='57a9bf2da314bce8ab6f000fdab73693a67b2500'
+          assert status['ok'] is True and status['sport']=='tennis'
+          assert status['trainingPolicy']['crossSportInputsAllowed'] is False
+          assert payload['ok'] is True and payload['sport']=='tennis'
+          assert payload.get('live_pull_ok') is True, payload
+          assert payload.get('fallback_used') is False, payload
+          results=payload.get('results') or []
+          assert results and all(r.get('ok') is True for r in results), payload
+          assert all((r.get('sport_key_coverage') or {}).get('complete') is True for r in results), payload
+          assert sum(int(r.get('match_count') or 0) for r in results)>0, payload
+          predicted=[r for r in results if int((r.get('game_winner_predictions') or {}).get('count') or 0)>0]
+          assert predicted, payload
+          selected=min(predicted,key=lambda r:(str(r.get('first_match_start_utc') or ''),str(r.get('slate_date') or '')))
+          Path('/tmp/tennis-prediction-slate-date').write_text(str(selected['slate_date'])+'\n')
+          Path('/tmp/tennis-live-summary.json').write_text(json.dumps({
+              'slate':selected['slate_date'],
+              'matchCount':sum(int(r.get('match_count') or 0) for r in results),
+              'predictionCount':sum(int((r.get('game_winner_predictions') or {}).get('count') or 0) for r in results),
+              'competitionKeys':sorted({str(r.get('sport_key') or r.get('competition_key') or '') for r in results if r.get('sport_key') or r.get('competition_key')}),
+              'mode':version['predictionMode'],
+          },indent=2,sort_keys=True))
+          PY
+
+          PREDICTION_SLATE_DATE=$(cat /tmp/tennis-prediction-slate-date)
+          curl -fsS "$API_URL/v1/tennis/predictions?date=${PREDICTION_SLATE_DATE}" \
+            | tee /tmp/tennis-predictions-smoke.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload=json.loads(Path('/tmp/tennis-predictions-smoke.json').read_text())
+          assert payload['ok'] is True and payload['sport']=='tennis'
+          assert int(payload.get('count') or 0)>0, payload
+          PY
+
+      - name: Enable autonomous Tennis collection, locking, settlement, and training
+        working-directory: tennis_predictive_platform_v2
+        run: |
+          set -euo pipefail
+          sam deploy --template-file .aws-sam/build/template.yaml \
+            --stack-name "$TENNIS_STACK_NAME" --region "$AWS_REGION" --resolve-s3 \
+            --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              TennisOddsApiKey="$TENNIS_ODDS_API_KEY_VALUE" \
+              StageName=prod ScheduleState=ENABLED \
+              DeployGitSha="$GITHUB_SHA" \
+              DeployTemplateSha256="$(cat /tmp/tennis-template-sha256)" \
+              DeploySourceSha256="$(cat /tmp/tennis-source-sha256)"
+
+          mapfile -t rules < <(aws cloudformation list-stack-resources --stack-name "$TENNIS_STACK_NAME" \
+            --query "StackResourceSummaries[?ResourceType=='AWS::Events::Rule'].PhysicalResourceId" \
+            --output text | tr '\t' '\n' | sed '/^[[:space:]]*$/d')
+          test "${#rules[@]}" -eq 4
+          : > /tmp/tennis-rule-states.txt
+          for rule in "${rules[@]}"; do
+            state=$(aws events describe-rule --name "$rule" --query State --output text)
+            echo "$rule=$state" | tee -a /tmp/tennis-rule-states.txt
+            test "$state" = ENABLED
+          done
+          aws cloudformation describe-stacks --stack-name "$TENNIS_STACK_NAME" \
+            --output json > /tmp/tennis-deployed-stack.json
+
+      - name: Prove MLB stack was not changed
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          test -f /tmp/mlb-stack-before.sha256
+          aws cloudformation get-template --stack-name "$MLB_STACK_NAME" \
+            --template-stage Processed --output json > /tmp/mlb-template-after.json
+          aws cloudformation list-stack-resources --stack-name "$MLB_STACK_NAME" \
+            --output json > /tmp/mlb-resources-after.json
+          PHASE=after python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          p=os.environ['PHASE']
+          t=json.loads(Path(f'/tmp/mlb-template-{p}.json').read_text()).get('TemplateBody')
+          rows=json.loads(Path(f'/tmp/mlb-resources-{p}.json').read_text()).get('StackResourceSummaries',[])
+          resources=[{k:r.get(k) for k in ('LogicalResourceId','PhysicalResourceId','ResourceType')} for r in rows]
+          material={'template':t,'resources':sorted(resources,key=lambda r:str(r.get('LogicalResourceId')))}
+          digest=hashlib.sha256(json.dumps(material,sort_keys=True,default=str).encode()).hexdigest()
+          before=Path('/tmp/mlb-stack-before.sha256').read_text().strip()
+          Path('/tmp/mlb-stack-after.sha256').write_text(digest+'\n')
+          if digest != before:
+              raise SystemExit(f'MLB stack changed during Tennis deployment: before={before} after={digest}')
+          print('MLB stack unchanged:',digest)
+          PY
+
+      - name: Upload deployment evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: tennis-v2-exact-parity-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: warn
+          path: |
+            tennis_release_v2/*.sha256
+            tennis_release_v2/SOURCE_TREE_MANIFEST.json
+            /tmp/tennis-*.json
+            /tmp/tennis-*.txt
+            /tmp/tennis-*sha256
+            /tmp/mlb-stack-*.sha256
