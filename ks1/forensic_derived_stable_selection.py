@@ -18,7 +18,7 @@ from ks1.forensic_features import CONTRACT as FEATURE_CONTRACT, SPECS, admit as 
 from ks1.retrain_recent import EVALUATION_GAMES, choose_features, split_development
 from ks1.train import PARAMS
 
-CONTRACT = "KS1-unified-forensic-derived-selected-baseline-v6"
+CONTRACT = "KS1-unified-forensic-derived-selected-baseline-v7"
 JOINT_SHORTLIST_PER_GROUP = base.JOINT_SHORTLIST_PER_GROUP
 
 
@@ -53,9 +53,10 @@ def joint_screen_derived_features(fit, baseline_raw, derived, groups, screen_evi
     family screen actually learned in a split. The bounded combinations and the already-
     frozen LightGBM trials are then replayed on two consecutive 300-game validation tails,
     both strictly inside the outer fit population. A combination is eligible only if every
-    requested signal family is genuinely split-used on both folds. Ranking minimizes the
-    worst same-trial Brier delta first, then worst log-loss delta, then mean deltas. The
-    outer development gate remains the final selector and is unchanged.
+    requested signal family is genuinely split-used on both folds and it has strictly lower
+    Brier with no worse log loss than the same-trial baseline on both folds. Ranking then
+    minimizes the worst same-trial Brier delta first, followed by worst log-loss delta and
+    mean deltas. The outer development gate remains the final selector and is unchanged.
     """
     if not TRIALS:
         raise ValueError("stable joint screen trials unavailable")
@@ -69,7 +70,7 @@ def joint_screen_derived_features(fit, baseline_raw, derived, groups, screen_evi
             or not isinstance(recent_baseline, dict)
             or set(recent_baseline) != set(trial_names)):
         return [], {
-            "method": "nested_purged_two_window_joint_family_screen_v2",
+            "method": "nested_purged_two_window_joint_family_screen_v3",
             "trials": list(trial_names),
             "outer_development_used_for_screening": False,
             "final_holdout_used_for_screening": False,
@@ -95,7 +96,7 @@ def joint_screen_derived_features(fit, baseline_raw, derived, groups, screen_evi
         for name in new_groups
     }
     evidence = {
-        "method": "nested_purged_two_window_joint_family_screen_v2",
+        "method": "nested_purged_two_window_joint_family_screen_v3",
         "shortlist_per_group": JOINT_SHORTLIST_PER_GROUP,
         "trials": list(trial_names),
         "folds": {
@@ -119,6 +120,7 @@ def joint_screen_derived_features(fit, baseline_raw, derived, groups, screen_evi
 
     combinations = list(product(*(shortlists[name] for name in new_groups))) if new_groups else [()]
     best = None
+    split_used = 0
     eligible = 0
     for choice in combinations:
         selected_by_group = dict(zip(new_groups, choice))
@@ -138,6 +140,11 @@ def joint_screen_derived_features(fit, baseline_raw, derived, groups, screen_evi
             recent_logloss_delta = recent_result["logloss"] - recent_baseline[trial_name]["logloss"]
             earlier_brier_delta = earlier_result["brier"] - earlier_baseline[trial_name]["brier"]
             earlier_logloss_delta = earlier_result["logloss"] - earlier_baseline[trial_name]["logloss"]
+            passes_metrics = bool(
+                recent_brier_delta < 0.0
+                and earlier_brier_delta < 0.0
+                and recent_logloss_delta <= 0.0
+                and earlier_logloss_delta <= 0.0)
             item = {
                 "features_by_group": selected_by_group,
                 "trial": trial_name,
@@ -158,9 +165,13 @@ def joint_screen_derived_features(fit, baseline_raw, derived, groups, screen_evi
                     },
                 },
                 "all_signal_groups_used_on_both_folds": all_used,
+                "passes_metric_gates_on_both_folds": passes_metrics,
             }
             evidence["combinations"].append(item)
             if not all_used:
+                continue
+            split_used += 1
+            if not passes_metrics:
                 continue
             eligible += 1
             briers = (recent_brier_delta, earlier_brier_delta)
@@ -177,9 +188,13 @@ def joint_screen_derived_features(fit, baseline_raw, derived, groups, screen_evi
                 best = candidate
 
     evidence["combinations_evaluated"] = len(combinations) * len(trial_names)
+    evidence["split_used_joint_models"] = split_used
     evidence["eligible_joint_models"] = eligible
     if best is None:
-        evidence["reason"] = "no_joint_model_used_every_signal_family_on_both_inner_folds"
+        evidence["reason"] = (
+            "no_joint_model_improved_brier_with_no_worse_logloss_on_both_inner_folds"
+            if split_used else
+            "no_joint_model_used_every_signal_family_on_both_inner_folds")
         return [], evidence
 
     selected = list(best[4])
