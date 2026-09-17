@@ -14,6 +14,8 @@ holdout.
 """
 from __future__ import annotations
 
+from itertools import product
+
 from ks1.development import TRIALS, select
 from ks1.forensic_derived import _augment, _trial
 from ks1.forensic_features import (
@@ -25,7 +27,8 @@ from ks1.forensic_features import (
 from ks1.retrain_recent import EVALUATION_GAMES, choose_features, split_development
 from ks1.train import PARAMS
 
-CONTRACT = "KS1-unified-forensic-derived-selected-baseline-v4"
+CONTRACT = "KS1-unified-forensic-derived-selected-baseline-v5"
+JOINT_SHORTLIST_PER_GROUP = 2
 
 
 def selected_baseline_features(report, recipe):
@@ -168,6 +171,126 @@ def screen_derived_features(fit, baseline_raw, derived, groups):
     return selected, evidence
 
 
+def _ranked_group_shortlist(group_evidence):
+    """Return deterministic split-used candidates ranked only on inner evidence."""
+    ranked = []
+    for feature, candidate in group_evidence.get("candidates", {}).items():
+        usable = []
+        for trial_name, trial in candidate.get("trials", {}).items():
+            if trial.get("feature_used_in_splits"):
+                usable.append((
+                    trial["brier_delta_vs_same_trial_baseline"],
+                    trial["logloss_delta_vs_same_trial_baseline"],
+                    trial["brier"], trial["logloss"], feature, trial_name,
+                ))
+        if usable:
+            ranked.append(min(usable))
+    ranked.sort()
+    return [item[4] for item in ranked[:JOINT_SHORTLIST_PER_GROUP]]
+
+
+def joint_screen_derived_features(fit, baseline_raw, derived, groups, screen_evidence):
+    """Resolve family interactions on the same earlier purged inner split.
+
+    The v4 screen ranked each new family independently. A representative that receives a
+    split alone can become redundant after representatives from the other families are
+    added. This bounded second pass considers only the two best already-proven, split-used
+    candidates per genuinely new family and the already-frozen LightGBM trials. It never
+    looks at the outer development tail or the final holdout. A joint candidate is eligible
+    only when every new family is actually split-used together and every semantic existing
+    signal family (currently the raw market parent) is also split-used in that same model.
+    """
+    if not TRIALS:
+        raise ValueError("nested joint screen trials unavailable")
+    trial_names = tuple(TRIALS)
+    if tuple(screen_evidence.get("trials") or ()) != trial_names:
+        raise ValueError("nested joint screen trial evidence mismatch")
+
+    inner_fit, inner_validation = split_development(fit)
+    fit_aug = _augment(inner_fit, derived)
+    validation_aug = _augment(inner_validation, derived)
+    equivalent_groups = dict(screen_evidence.get("equivalent_existing_signal_groups") or {})
+    new_groups = [name for name in groups if name not in equivalent_groups]
+    shortlists = {
+        name: _ranked_group_shortlist(screen_evidence["groups"].get(name, {}))
+        for name in new_groups
+    }
+    evidence = {
+        "method": "nested_purged_joint_family_interaction_screen_v1",
+        "shortlist_per_group": JOINT_SHORTLIST_PER_GROUP,
+        "trials": list(trial_names),
+        "inner_fit_games": len(inner_fit),
+        "inner_validation_games": len(inner_validation),
+        "outer_development_used_for_screening": False,
+        "final_holdout_used_for_screening": False,
+        "equivalent_existing_signal_groups": equivalent_groups,
+        "candidate_shortlists": shortlists,
+        "combinations": [],
+        "selected_features": [],
+        "selected_trial": None,
+        "all_groups_screened": False,
+    }
+    missing = [name for name in new_groups if not shortlists.get(name)]
+    if missing:
+        evidence["reason"] = "joint_family_shortlist_unavailable"
+        evidence["missing_groups"] = missing
+        return [], evidence
+
+    combinations = list(product(*(shortlists[name] for name in new_groups))) if new_groups else [()]
+    best = None
+    for choice in combinations:
+        selected_by_group = dict(zip(new_groups, choice))
+        columns = baseline_raw + list(choice)
+        for trial_name in trial_names:
+            params = {**PARAMS, **TRIALS[trial_name]}
+            result = _trial(fit_aug, validation_aug, columns, params)
+            used = set(result["features_used_in_splits"])
+            usage = {}
+            for group_name in groups:
+                if group_name in equivalent_groups:
+                    parent = equivalent_groups[group_name]
+                    usage[group_name] = [parent] if parent in used else []
+                else:
+                    feature = selected_by_group[group_name]
+                    usage[group_name] = [feature] if feature in used else []
+            all_used = all(usage.values())
+            baseline = screen_evidence["baseline_by_trial"][trial_name]
+            brier_delta = result["brier"] - baseline["brier"]
+            logloss_delta = result["logloss"] - baseline["logloss"]
+            evidence["combinations"].append({
+                "features_by_group": selected_by_group,
+                "trial": trial_name,
+                "brier": result["brier"],
+                "logloss": result["logloss"],
+                "brier_delta_vs_same_trial_baseline": brier_delta,
+                "logloss_delta_vs_same_trial_baseline": logloss_delta,
+                "signal_group_usage": usage,
+                "all_signal_groups_used": all_used,
+            })
+            if all_used:
+                candidate = (
+                    brier_delta, logloss_delta, result["brier"], result["logloss"],
+                    tuple(choice), trial_name,
+                )
+                if best is None or candidate < best:
+                    best = candidate
+
+    evidence["combinations_evaluated"] = len(combinations) * len(trial_names)
+    evidence["eligible_joint_models"] = sum(
+        item["all_signal_groups_used"] for item in evidence["combinations"])
+    if best is None:
+        evidence["reason"] = "no_joint_model_used_every_signal_family"
+        return [], evidence
+
+    selected = list(best[4])
+    evidence["selected_features"] = selected
+    evidence["selected_trial"] = best[5]
+    evidence["selected_brier_delta_vs_same_trial_baseline"] = best[0]
+    evidence["selected_logloss_delta_vs_same_trial_baseline"] = best[1]
+    evidence["all_groups_screened"] = True
+    return selected, evidence
+
+
 def development_select(train):
     """Select derived features added to the exact development-selected KS1 recipe."""
     fit, validation = split_development(train)
@@ -256,6 +379,15 @@ def development_select(train):
     if screen_evidence["all_groups_screened"] and set(screened) != set(derived):
         evaluate("screened", baseline_raw + screened,
                  screen_evidence.get("equivalent_existing_signal_groups", {}))
+
+    joint_screened, joint_evidence = joint_screen_derived_features(
+        fit, baseline_raw, derived, groups, screen_evidence)
+    report["nested_joint_group_screen"] = joint_evidence
+    if (joint_evidence["all_groups_screened"]
+            and set(joint_screened) != set(derived)
+            and set(joint_screened) != set(screened)):
+        evaluate("joint_screened", baseline_raw + joint_screened,
+                 joint_evidence.get("equivalent_existing_signal_groups", {}))
 
     if best is None:
         report["reason"] = "derived_forensic_selected_baseline_candidate_not_superior_on_development"
