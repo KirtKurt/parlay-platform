@@ -29,7 +29,7 @@ def _row(offset=0.0):
 
 def test_individual_reliever_regime_features_use_same_rank_and_strict_prior_windows():
     derived = derive_mapping(_row())
-    assert CONTRACT == 'KS1-forensic-derived-features-v4'
+    assert CONTRACT == 'KS1-forensic-derived-features-v5'
     assert np.isclose(
         derived['forensic_home_individual_bullpen_rank1_fip_7d_regime_delta'], 1.0
     )
