@@ -1,9 +1,9 @@
 {
   "promoted": false,
   "system": "2stackMLB-v1",
-  "as_of": "2026-09-18T07:54:42.563278+00:00",
-  "source_run": 35321507311,
-  "source_artifact": "ks1-nightly-35321507311",
+  "as_of": "2026-09-18T15:23:00+00:00",
+  "source_run": 35359822981,
+  "source_artifact": "ks1-nightly-35359822981",
   "note": "Shadow attach only. Official KS1 p_home/locks/ledgers untouched. No model train.",
   "official_ks1_baseline": {
     "brier": 0.2409999141815574,
@@ -22,5 +22,12 @@
     "blocked_on": "full graded_ledger row attach with lambda and market on each lock"
   },
   "sits": ["NYY", "NYM", "CWS"],
-  "taxonomy_rule": "Do not refit on a single miss. Promote only after a repeated failure bucket."
+  "taxonomy_rule": "Do not refit on a single miss. Promote only after a repeated failure bucket.",
+  "ingest": {
+    "latest_schedule_id": 35359822981,
+    "conclusion": "success",
+    "duration_s": 527,
+    "ks1_daily": "ks1-daily-35359822981",
+    "ks1_nightly": "ks1-nightly-35359822981"
+  }
 }
