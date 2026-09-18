@@ -167,6 +167,46 @@ def test_direct_request_preserves_auth_and_query_contract(transport):
     assert responses[0].closed
 
 
+@pytest.mark.parametrize("code", [201, 202, 204, 205, 206, 299])
+@pytest.mark.parametrize("body", [b'{"data": [{"id": "partial"}]}', b'{"unexpected": []}'])
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+def test_non_200_success_status_never_returns_context(transport, code, body, operation):
+    install, calls, responses = transport
+    install(code, body=body)
+
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is False
+    if operation == "health":
+        assert result["reason"] == "BBD_AUTH_OR_DISCOVERY_FAILED"
+        assert result["auth_status"] == code
+        assert result["sports_status"] == code
+        assert result["sports_count"] is None
+        assert len(calls) == 2
+    else:
+        endpoint = "SPORTS" if operation == "sports" else "MATCH"
+        assert result["reason"] == f"BBD_{endpoint}_ENDPOINT_UNAVAILABLE_OR_UNENTITLED"
+        assert result["status"] == code
+        assert result[operation] == []
+        assert "count" not in result
+        assert len(calls) == 1
+    assert all(response.closed for response in responses)
+
+
+def test_200_sports_status_preserves_context(transport):
+    install, calls, responses = transport
+    install(200, body=b'{"data": [{"id": "sport-one"}]}')
+
+    result = bbd_provider.sports()
+
+    assert result["ok"] is True
+    assert result["status"] == 200
+    assert result["sports"] == [{"id": "sport-one"}]
+    assert result["count"] == 1
+    assert len(calls) == 1
+    assert responses[0].closed
+
+
 @pytest.mark.parametrize("base_url", [
     "http://bbd.invalid", "ftp://bbd.invalid", "//bbd.invalid", "https:///missing-host",
     "https://user:password@bbd.invalid", "https://user@bbd.invalid",
