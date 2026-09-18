@@ -20,7 +20,7 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 
-CONTRACT = "KS1-forensic-derived-features-v6"
+CONTRACT = "KS1-forensic-derived-features-v7"
 GROUPS = (
     "market", "starter_regime", "starter_workload", "lineup", "bullpen",
     "individual_bullpen",
@@ -60,6 +60,30 @@ SPECS = {
     "forensic_away_starter_xwoba_regime_delta": {
         "group": "starter_regime", "operation": "difference",
         "parents": ("away_starter_xwoba_7d", "away_starter_xwoba_30d"),
+    },
+    # Compare each starter's strict-prior short-vs-long movement directly. FIP, ERA,
+    # and xwOBA are lower-is-better, so positive values mean the home starter's recent
+    # trajectory is better relative to his 30-day baseline than the away starter's.
+    "forensic_starter_fip_regime_advantage": {
+        "group": "starter_regime", "operation": "difference_of_differences",
+        "parents": (
+            "away_starter_fip_7d", "away_starter_fip_30d",
+            "home_starter_fip_7d", "home_starter_fip_30d",
+        ),
+    },
+    "forensic_starter_era_regime_advantage": {
+        "group": "starter_regime", "operation": "difference_of_differences",
+        "parents": (
+            "away_starter_era_7d", "away_starter_era_30d",
+            "home_starter_era_7d", "home_starter_era_30d",
+        ),
+    },
+    "forensic_starter_xwoba_regime_advantage": {
+        "group": "starter_regime", "operation": "difference_of_differences",
+        "parents": (
+            "away_starter_xwoba_7d", "away_starter_xwoba_30d",
+            "home_starter_xwoba_7d", "home_starter_xwoba_30d",
+        ),
     },
     "forensic_home_starter_short_exposure": {
         "group": "starter_workload", "operation": "offset_minus", "offset": 4.5,
