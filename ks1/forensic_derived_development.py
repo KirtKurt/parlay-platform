@@ -2,10 +2,10 @@
 
 The exact 300-game qualification holdout is separated first and never scored here.
 For the remaining qualified development population, exact versioned pre-T10 MLB feeds
-may recover live-equivalent lineup season values and deterministic individual-reliever
-performance only after source identity/hash checks. The candidate still stops after
-purged development selection until the exact winning transform is wired into live serving
-and final qualification.
+may recover live-equivalent lineup season values, strict-prior 15-day starter form, and
+deterministic individual-reliever performance only after source identity/hash checks.
+The candidate still stops after purged development selection until the exact winning
+transform is wired into live serving and final qualification.
 """
 from __future__ import annotations
 
@@ -17,9 +17,10 @@ from pathlib import Path
 import pandas as pd
 
 from ks1.development import HOLDOUT, frozen_split
-from ks1.forensic_derived_affine_semantic_selection import CONTRACT, development_select
+from ks1.forensic_starter_15d_selection import CONTRACT, development_select
 from ks1.historical_individual_bullpen_enrichment import enrich_frame as enrich_individual_bullpen
 from ks1.historical_lineup_season_probe import enrich_frame as enrich_lineup
+from ks1.historical_starter_15d_enrichment import enrich_frame as enrich_starter_15d
 from ks1.inventory import encode
 from ks1.retrain_recent import qualified_training_population
 from ks1.sources import aws_clients
@@ -43,9 +44,11 @@ def run(input_path, proof_path, output):
     # row's cutoff/date.
     _, s3, _ = aws_clients("us-east-1", "parlay-platform-dev")
     train, lineup_source_enrichment = enrich_lineup(train, s3)
+    train, starter_15d_enrichment = enrich_starter_15d(train, s3, proof)
     train, individual_bullpen_enrichment = enrich_individual_bullpen(train, s3, proof)
     selected, development = development_select(train)
     development["direct_lineup_source_enrichment"] = lineup_source_enrichment
+    development["starter_15d_source_enrichment"] = starter_15d_enrichment
     development["individual_bullpen_source_enrichment"] = individual_bullpen_enrichment
     (output/"development_selection.json").write_bytes(encode(development))
     report = {
@@ -61,6 +64,7 @@ def run(input_path, proof_path, output):
         "final_holdout_used_for_selection": False,
         "training_population": population,
         "direct_lineup_source_enrichment": lineup_source_enrichment,
+        "starter_15d_source_enrichment": starter_15d_enrichment,
         "individual_bullpen_source_enrichment": individual_bullpen_enrichment,
         "development": development,
         "prediction_writes": 0,
@@ -89,6 +93,8 @@ def main(argv=None):
         "holdout_predictions_generated": report["holdout_predictions_generated"],
         "direct_lineup_top4_floor_reached": report[
             "direct_lineup_source_enrichment"]["top4_minimum_reached"],
+        "starter_15d_300_floor_features": report[
+            "starter_15d_source_enrichment"]["minimum_reached_features"],
         "individual_bullpen_300_floor_features": report[
             "individual_bullpen_source_enrichment"]["minimum_reached_features"],
     }, indent=2))
