@@ -159,3 +159,46 @@ def test_events_preserve_bbd_identity_and_no_prices(monkeypatch):
     assert row["source"] == "big_balls_data"
     assert "price" not in row
     assert result["request_id"] == "req-1"
+
+
+@pytest.mark.parametrize("identity", [
+    {}, {"id": None}, {"id": ""}, {"id": " "}, {"id": " padded"},
+    {"id": "trailing "}, {"id": "a\nb"}, {"id": "a\x00b"}, {"id": "a\x7fb"},
+    {"id": True}, {"id": False}, {"id": 1.5}, {"id": 1.0}, {"id": -1},
+    {"id": []}, {"id": {}}, {"id": {"value": "one"}},
+    {"id": "one", "match_id": "two"}, {"match_id": "one", "event_id": "two"},
+    {"id": "one", "event_id": "two"}, {"id": "one", "match_id": False},
+    {"id": "", "event_id": "one"}, {"id": 123, "event_id": "0123"},
+])
+@pytest.mark.parametrize("invalid_first", [False, True])
+def test_invalid_event_identity_rejects_entire_collection(monkeypatch, identity, invalid_first):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    rows = [{"id": "valid"}, identity]
+    if invalid_first:
+        rows.reverse()
+    monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (200, {}, {"data": rows}))
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_EVENT_ID_INVALID"
+    assert result["events"] == []
+
+
+@pytest.mark.parametrize("identity, expected", [
+    ({"id": 0}, "0"), ({"match_id": 0}, "0"), ({"event_id": 123}, "123"),
+    ({"id": "opaque-id"}, "opaque-id"), ({"match_id": "00123"}, "00123"),
+    ({"id": None, "event_id": "one"}, "one"),
+    ({"id": 123, "match_id": "123", "event_id": 123}, "123"),
+])
+def test_event_identity_preserves_valid_aliases(monkeypatch, identity, expected):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (200, {}, {"data": [identity]}))
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is True
+    assert result["events"][0]["bbd_event_id"] == expected
+    assert result["events"][0]["raw"] == identity
