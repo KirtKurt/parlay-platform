@@ -20,7 +20,7 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 
-CONTRACT = "KS1-forensic-derived-features-v5"
+CONTRACT = "KS1-forensic-derived-features-v6"
 GROUPS = (
     "market", "starter_regime", "starter_workload", "lineup", "bullpen",
     "individual_bullpen",
@@ -101,8 +101,8 @@ SPECS = {
         "group": "lineup", "operation": "difference",
         "parents": ("away_lineup_xwoba_7d", "away_lineup_xwoba_30d"),
     },
-    # Aggregate bullpen context. FIP/ERA are lower-is-better, so away-home is
-    # positive when the home bullpen is better. Available-count is higher-is-better.
+    # Aggregate bullpen context. FIP/ERA/xwOBA are lower-is-better, K-BB% and
+    # available-count are higher-is-better. Every transform is home-oriented.
     "forensic_bullpen_fip_7d_advantage": {
         "group": "bullpen", "operation": "difference",
         "parents": ("away_bullpen_context_fip_7d", "home_bullpen_context_fip_7d"),
@@ -111,9 +111,17 @@ SPECS = {
         "group": "bullpen", "operation": "difference",
         "parents": ("away_bullpen_context_era_7d", "home_bullpen_context_era_7d"),
     },
+    "forensic_bullpen_k_bb_pct_7d_advantage": {
+        "group": "bullpen", "operation": "difference",
+        "parents": ("home_bullpen_context_k_bb_pct_7d", "away_bullpen_context_k_bb_pct_7d"),
+    },
+    "forensic_bullpen_xwoba_7d_advantage": {
+        "group": "bullpen", "operation": "difference",
+        "parents": ("away_bullpen_context_xwoba_7d", "home_bullpen_context_xwoba_7d"),
+    },
     # Compare each side's short-vs-long pooled bullpen movement directly. Positive
-    # means the away bullpen has deteriorated more (or improved less) than the home
-    # bullpen, preserving the same home-advantage orientation as the level features.
+    # means the home bullpen's relative trajectory is better, preserving the same
+    # home-advantage orientation as the level features.
     "forensic_bullpen_fip_regime_advantage": {
         "group": "bullpen", "operation": "difference_of_differences",
         "parents": (
@@ -126,6 +134,20 @@ SPECS = {
         "parents": (
             "away_bullpen_context_era_7d", "away_bullpen_context_era_30d",
             "home_bullpen_context_era_7d", "home_bullpen_context_era_30d",
+        ),
+    },
+    "forensic_bullpen_k_bb_pct_regime_advantage": {
+        "group": "bullpen", "operation": "difference_of_differences",
+        "parents": (
+            "home_bullpen_context_k_bb_pct_7d", "home_bullpen_context_k_bb_pct_30d",
+            "away_bullpen_context_k_bb_pct_7d", "away_bullpen_context_k_bb_pct_30d",
+        ),
+    },
+    "forensic_bullpen_xwoba_regime_advantage": {
+        "group": "bullpen", "operation": "difference_of_differences",
+        "parents": (
+            "away_bullpen_context_xwoba_7d", "away_bullpen_context_xwoba_30d",
+            "home_bullpen_context_xwoba_7d", "home_bullpen_context_xwoba_30d",
         ),
     },
     "forensic_bullpen_available_count_advantage": {

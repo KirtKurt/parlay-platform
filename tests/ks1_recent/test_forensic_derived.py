@@ -24,6 +24,10 @@ def raw_row():
         'home_bullpen_context_fip_30d': 3.9, 'away_bullpen_context_fip_30d': 3.8,
         'home_bullpen_context_era_7d': 5.7, 'away_bullpen_context_era_7d': 3.0,
         'home_bullpen_context_era_30d': 4.0, 'away_bullpen_context_era_30d': 3.7,
+        'home_bullpen_context_k_bb_pct_7d': 18.0, 'away_bullpen_context_k_bb_pct_7d': 10.0,
+        'home_bullpen_context_k_bb_pct_30d': 14.0, 'away_bullpen_context_k_bb_pct_30d': 12.0,
+        'home_bullpen_context_xwoba_7d': .290, 'away_bullpen_context_xwoba_7d': .340,
+        'home_bullpen_context_xwoba_30d': .310, 'away_bullpen_context_xwoba_30d': .320,
         'home_bullpen_context_available_count': 3.0,
         'away_bullpen_context_available_count': 7.0,
     }
