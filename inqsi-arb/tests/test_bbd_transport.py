@@ -27,7 +27,15 @@ def transport(monkeypatch):
                 headers = Message()
                 if location is not None:
                     headers["Location"] = location
-                response = addinfourl(io.BytesIO(body), headers, request.full_url, code)
+                read_sizes = []
+
+                class RecordedBody(io.BytesIO):
+                    def read(self, size=-1):
+                        read_sizes.append(size)
+                        return super().read(size)
+
+                response = addinfourl(RecordedBody(body), headers, request.full_url, code)
+                response.read_sizes = read_sizes
                 response.msg = "offline fixture"
                 responses.append(response)
                 return response
@@ -165,6 +173,50 @@ def test_direct_request_preserves_auth_and_query_contract(transport):
     assert calls[0].get_header("Authorization") == "Bearer offline-test-token"
     assert calls[0].get_header("Accept") == "application/json"
     assert responses[0].closed
+
+
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+@pytest.mark.parametrize("extra_bytes", [1, 4096])
+def test_oversized_success_response_fails_before_json_decoding(
+    transport, monkeypatch, operation, extra_bytes,
+):
+    install, calls, responses = transport
+    body = b'{"data": []}'
+    body += b" " * (bbd_provider.MAX_RESPONSE_BYTES + extra_bytes - len(body))
+    install(200, body=body)
+
+    def unexpected_decode(*args, **kwargs):
+        pytest.fail("Oversized response must be rejected before JSON decoding")
+
+    monkeypatch.setattr(bbd_provider.json, "loads", unexpected_decode)
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_RESPONSE_TOO_LARGE"
+    assert len(calls) == 1
+    assert responses[0].read_sizes == [bbd_provider.MAX_RESPONSE_BYTES + 1]
+    assert responses[0].closed
+    if operation == "health":
+        assert result["sports_count"] is None
+    else:
+        assert result[operation] == []
+
+
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+def test_success_response_at_byte_limit_is_accepted(transport, operation):
+    install, _, responses = transport
+    body = b'{"data": []}'
+    body += b" " * (bbd_provider.MAX_RESPONSE_BYTES - len(body))
+    install(200, body=body)
+
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is True
+    assert all(response.closed for response in responses)
+    if operation == "health":
+        assert result["sports_count"] == 0
+    else:
+        assert result[operation] == []
 
 
 @pytest.mark.parametrize("base_url", [
