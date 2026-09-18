@@ -1,10 +1,10 @@
 {
   "promoted": false,
   "system": "2stackMLB-v1",
-  "as_of": "2026-09-18T15:23:00+00:00",
+  "as_of": "2026-09-18T16:07:00+00:00",
   "source_run": 35359822981,
   "source_artifact": "ks1-nightly-35359822981",
-  "note": "Shadow attach only. Official KS1 p_home/locks/ledgers untouched. No model train.",
+  "note": "Shadow attach only. Official KS1 p_home/locks/ledgers untouched. No model train. Isolate-skip already on main; PR 713 remains draft/do-not-merge.",
   "official_ks1_baseline": {
     "brier": 0.2409999141815574,
     "logloss": 0.6744801178928589,
@@ -19,15 +19,25 @@
     "name": "2stackMLB",
     "promoted": false,
     "walk_forward_brier": null,
-    "blocked_on": "full graded_ledger row attach with lambda and market on each lock"
+    "blocked_on": "full graded_ledger.json absent from nightly artifact; only official_metrics summary present"
   },
   "sits": ["NYY", "NYM", "CWS"],
+  "slate": {
+    "date": "2026-09-18",
+    "rows": 15,
+    "confirmed": 0,
+    "projected": 13,
+    "projected_missing_starter": 2,
+    "locked_rows_today": 0
+  },
   "taxonomy_rule": "Do not refit on a single miss. Promote only after a repeated failure bucket.",
   "ingest": {
     "latest_schedule_id": 35359822981,
     "conclusion": "success",
     "duration_s": 527,
     "ks1_daily": "ks1-daily-35359822981",
-    "ks1_nightly": "ks1-nightly-35359822981"
+    "ks1_nightly": "ks1-nightly-35359822981",
+    "in_progress_dispatch": 35366007555,
+    "latest_push_id": 35356693129
   }
 }
