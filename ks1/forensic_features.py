@@ -20,7 +20,7 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 
-CONTRACT = "KS1-forensic-derived-features-v4"
+CONTRACT = "KS1-forensic-derived-features-v5"
 GROUPS = (
     "market", "starter_regime", "starter_workload", "lineup", "bullpen",
     "individual_bullpen",
@@ -30,8 +30,8 @@ INDIVIDUAL_BULLPEN_PARENT_PREFIXES = (
 )
 INDIVIDUAL_BULLPEN_WINDOWS = (7, 15, 30)
 
-# operation is either lhs-rhs or offset-parent. Positive pairwise advantages are
-# oriented toward the home team where a direction is naturally meaningful.
+# Operations are simple pregame transforms over declared parents. Positive pairwise
+# advantages are oriented toward the home team where a direction is naturally meaningful.
 SPECS = {
     "forensic_market_home_strength": {
         "group": "market", "operation": "offset", "offset": -0.5,
@@ -110,6 +110,23 @@ SPECS = {
     "forensic_bullpen_era_7d_advantage": {
         "group": "bullpen", "operation": "difference",
         "parents": ("away_bullpen_context_era_7d", "home_bullpen_context_era_7d"),
+    },
+    # Compare each side's short-vs-long pooled bullpen movement directly. Positive
+    # means the away bullpen has deteriorated more (or improved less) than the home
+    # bullpen, preserving the same home-advantage orientation as the level features.
+    "forensic_bullpen_fip_regime_advantage": {
+        "group": "bullpen", "operation": "difference_of_differences",
+        "parents": (
+            "away_bullpen_context_fip_7d", "away_bullpen_context_fip_30d",
+            "home_bullpen_context_fip_7d", "home_bullpen_context_fip_30d",
+        ),
+    },
+    "forensic_bullpen_era_regime_advantage": {
+        "group": "bullpen", "operation": "difference_of_differences",
+        "parents": (
+            "away_bullpen_context_era_7d", "away_bullpen_context_era_30d",
+            "home_bullpen_context_era_7d", "home_bullpen_context_era_30d",
+        ),
     },
     "forensic_bullpen_available_count_advantage": {
         "group": "bullpen", "operation": "difference",
@@ -198,6 +215,8 @@ def derive_mapping(values: Mapping[str, object]):
             continue
         if spec["operation"] == "difference":
             result[name] = parents[0] - parents[1]
+        elif spec["operation"] == "difference_of_differences":
+            result[name] = (parents[0] - parents[1]) - (parents[2] - parents[3])
         elif spec["operation"] == "offset":
             result[name] = parents[0] + float(spec["offset"])
         elif spec["operation"] == "offset_minus":
@@ -216,6 +235,8 @@ def derive_frame(frame: pd.DataFrame):
                    for parent in spec["parents"]]
         if spec["operation"] == "difference":
             values = parents[0] - parents[1]
+        elif spec["operation"] == "difference_of_differences":
+            values = (parents[0] - parents[1]) - (parents[2] - parents[3])
         elif spec["operation"] == "offset":
             values = parents[0] + float(spec["offset"])
         elif spec["operation"] == "offset_minus":
