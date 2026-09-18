@@ -149,6 +149,28 @@ jobs:
               raise SystemExit('Fresh MLB audit proof was not produced: ' + json.dumps(freshness))
           PY
 
+      - name: Build development-only KS1 settlement forensics
+        if: steps.gate.outputs.run == 'true' && steps.audit.outcome == 'success'
+        run: |
+          set -euo pipefail
+          # This join is evidence-only. It cannot write predictions, locks, ledgers,
+          # model refs, qualification state, or serving authority.
+          FORENSIC=$(find runtime_reports -name 'ks1_forensic_consideration_latest.json' -print -quit || true)
+          if [ -z "$FORENSIC" ]; then
+            echo "No retained KS1 forensic diagnostic found; leave learning row unavailable rather than inventing evidence."
+            exit 0
+          fi
+          python -m ks1.nightly_forensic_learning \
+            --audit runtime_reports/mlb_ml_v3_audit_execution_latest.json \
+            --forensic "$FORENSIC" \
+            --output runtime_reports/ks1_nightly_forensic_learning_latest.json
+          python - <<'PY'
+          import json
+          p=json.load(open('runtime_reports/ks1_nightly_forensic_learning_latest.json'))
+          assert p['authority_effect']=='none'
+          assert p['prediction_writes']==p['official_ledger_writes']==p['model_ref_writes']==p['lock_writes']==0
+          PY
+
       - name: Publish compact audit proof to main
         # Preserve fresh failed evidence too; the freshness step remains failed.
         if: always() && steps.gate.outputs.run == 'true' && steps.audit.outcome == 'success'
@@ -164,5 +186,6 @@ jobs:
             runtime_reports/mlb_ml_v3_audit_execution_latest.json
             runtime_reports/mlb_rolling_24h_audit_latest.json
             runtime_reports/mlb_audit_freshness_latest.json
+            runtime_reports/ks1_nightly_forensic_learning_latest.json
           if-no-files-found: warn
           retention-days: 30
