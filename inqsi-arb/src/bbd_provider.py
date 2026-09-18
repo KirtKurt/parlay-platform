@@ -282,6 +282,28 @@ def sports() -> Dict[str, Any]:
         return {"ok": False, "enabled": True, "reason": str(exc).split(":", 1)[0], "sports": []}
 
 
+def _event_id(row: Dict[str, Any]) -> str:
+    """Require an unambiguous opaque identity before returning event context."""
+    identifiers = []
+    for field in ("id", "match_id", "event_id"):
+        if field not in row:
+            continue
+        value = row[field]
+        # Do not stringify containers, booleans or floats into plausible IDs.
+        # Whitespace is rejected rather than silently changing opaque IDs.
+        if type(value) is int and value >= 0:
+            identifiers.append(str(value))
+        elif isinstance(value, str) and value and not any(
+            char.isspace() or ord(char) < 32 or ord(char) == 127 for char in value
+        ):
+            identifiers.append(value)
+        else:
+            raise BBDError("BBD_EVENT_ID_INVALID")
+    if not identifiers or len(set(identifiers)) != 1:
+        raise BBDError("BBD_EVENT_ID_INVALID")
+    return identifiers[0]
+
+
 def events(*, sport: Optional[str] = None, league: Optional[str] = None,
            status: Optional[str] = None) -> Dict[str, Any]:
     """Return BBD event/match context without any sportsbook prices.
@@ -314,7 +336,7 @@ def events(*, sport: Optional[str] = None, league: Optional[str] = None,
             home = row.get("home") or row.get("home_team")
             away = row.get("away") or row.get("away_team")
             normalized.append({
-                "bbd_event_id": str(row.get("id") or row.get("match_id") or row.get("event_id") or "") or None,
+                "bbd_event_id": _event_id(row),
                 "sport": row.get("sport") or sport,
                 "league": row.get("league") or row.get("competition") or league,
                 "status": row.get("status"),
