@@ -7,6 +7,7 @@ import pytest
 import ks1.forensic_features as forensic_features
 import ks1.forensic_starter_15d_selection as overlay
 from ks1.historical_starter_15d_enrichment import _starter_values
+from ks1.table import contract
 
 
 def _stats(*, era_runs, outs, home_runs=1, walks=1, strikeouts=5, bf=20):
@@ -74,6 +75,18 @@ def test_starter_15d_rejects_pregame_identity_disagreement():
         _starter_values(history, context, row, 'home')
 
 
+def test_development_parent_namespace_cannot_enter_raw_recipe():
+    _, dictionary = contract({
+        'dev_starter15_home_fip': 3.4,
+        'dev_starter15_home_era': 3.8,
+    })
+    roles = {entry['column']: entry['role'] for entry in dictionary}
+    assert roles == {
+        'dev_starter15_home_era': 'audit',
+        'dev_starter15_home_fip': 'audit',
+    }
+
+
 def test_overlay_is_scoped_and_preserves_existing_feature_contract(monkeypatch):
     observed = {}
 
@@ -94,11 +107,9 @@ def test_overlay_is_scoped_and_preserves_existing_feature_contract(monkeypatch):
     selected, report = overlay.development_select(pd.DataFrame({'home_win': [0, 1]}))
 
     assert selected == ['candidate']
-    assert observed == {
-        'spec_present': True,
-        'parent_allowed': True,
-        'advantage': pytest.approx(1.1),
-    }
+    assert observed['spec_present'] is True
+    assert observed['parent_allowed'] is True
+    assert observed['advantage'] == pytest.approx(1.1)
     assert report['contract'] == overlay.CONTRACT
     assert report['starter_15d_development_overlay']['final_holdout_used'] is False
     assert 'forensic_starter_fip_15d_regime_advantage' not in forensic_features.SPECS
