@@ -33,7 +33,6 @@ def test_catalog_lists_every_us_odds_api_book():
     rows = {row["key"]: row for row in summary["books"]}
     for key in ("betanysports", "courtside", "rebet"):
         assert rows[key]["kind"] == "provider_only"
-        assert rows[key]["n_licensed_states"] == 0
     assert summary["n_provider_only"] == 3
 
 

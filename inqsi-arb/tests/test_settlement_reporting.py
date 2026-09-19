@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import app
-from app import _audit_scan_payload, _default_jurisdiction, _regions
+from app import _audit_scan_payload, _bool_flag, _default_jurisdiction, _regions
 from arb_engine import scan_all
 from ui_page import HTML
 from validation import validate_event
@@ -128,11 +128,15 @@ def test_audit_payload_retains_held_candidate_legs_and_exact_reason():
         "detected_unverified": [candidate],
         "rejected": [],
         "exchange_pending": [],
+        "product_filter": "books",
+        "books": "draftkings,fanduel",
     }
 
     payload = _audit_scan_payload(result, sport="baseball_mlb", jurisdiction="ny")
     saved = payload["detected_unverified"][0]
     assert payload["jurisdiction"] == "ny"
+    assert payload["product_filter"] == "books"
+    assert payload["books"] == "draftkings,fanduel"
     assert saved["validation"]["settlement_reason"] == "UNREVIEWED_OR_MISSING_RULE"
     assert saved["validation"]["missing_books"] == ["book-a"]
     assert [(leg["book"], leg["american"]) for leg in saved["legs"]] == [
@@ -203,8 +207,9 @@ def test_audit_payload_bounds_top_level_request_strings():
 
 def test_audit_payload_retains_pack_filter_region_and_snapshot_context():
     result = {
-        "source": "store", "regions": "us,us2", "books": ["draftkings"], "licensed": True,
-        "pack": {"state": "az", "as_of": "2026-09-15"},
+        "source": "store", "regions": "us,us2", "books": ["draftkings"],
+        "_audit_licensed_requested": True,
+        "_audit_pack": {"state": "az", "as_of": "2026-09-15"},
         "status": {"source": "store", "head": {"fetched_at_ms": 123, "markets": ["h2h"]}},
         "n_markets": 0, "n_arbs": 0, "n_detected_unverified": 0, "n_rejected": 0,
         "n_held_unverified": 0, "n_exchange_pending": 0, "n_middles": 0,
@@ -214,9 +219,19 @@ def test_audit_payload_retains_pack_filter_region_and_snapshot_context():
     assert payload["source"] == "store"
     assert payload["regions"] == "us,us2"
     assert payload["books"] == ["draftkings"]
-    assert payload["licensed"] is True
+    assert payload["licensed_requested"] is True
     assert payload["pack"]["state"] == "az"
     assert payload["snapshot"]["head"]["fetched_at_ms"] == 123
+
+
+def test_legacy_licensed_flag_parses_false_strings_for_audit():
+    assert _bool_flag(False) is False
+    assert _bool_flag("false") is False
+    assert _bool_flag("0") is False
+    assert _bool_flag(True) is True
+    assert _bool_flag("true") is True
+    payload = _audit_scan_payload({"licensed": "false"}, sport="posted", jurisdiction="*")
+    assert payload["licensed_requested"] is False
 
 
 def test_worldwide_default_uses_all_configured_provider_regions(monkeypatch):
@@ -224,7 +239,7 @@ def test_worldwide_default_uses_all_configured_provider_regions(monkeypatch):
     monkeypatch.delenv("ARB_REGIONS", raising=False)
     assert _default_jurisdiction() == "*"
     assert _regions("*") == "us,us2,us_dfs,us_ex,uk,eu,fr,se,au"
-    assert _regions("ny") == "us,us2"
+    assert _regions("ny") == "us,us2,us_dfs,us_ex,uk,eu,fr,se,au"
     assert _regions("ny", "us") == "us"
 
 
@@ -252,10 +267,15 @@ def test_get_scan_applies_worldwide_default_without_bookmaker_filter(monkeypatch
 
 
 def test_embedded_ui_reports_held_and_exchange_candidates():
-    assert '<option value="*" selected>Worldwide</option>' in HTML
+    assert "Settlement scope" not in HTML
+    assert "State books only" not in HTML
+    assert 'id="bookList"' in HTML
+    assert 'name="book"' in HTML
     assert "Held-back mathematical opportunities" in HTML
     assert "exchange lay market(s) routed away" in HTML
     assert "Inspect held-back opportunities" in HTML
     assert "(j.rejected||[]).filter(x=>x.math_arb)" in HTML
     assert "el('held').innerHTML=''" in HTML
     assert "j.n_held_unverified??held.length" in HTML
+    assert "jurisdiction:el('jurisdiction')" not in HTML
+    assert "licensed:el('licensed')" not in HTML
