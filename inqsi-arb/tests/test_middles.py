@@ -465,3 +465,10 @@ def test_middle_constraint_ratio_overflow_fails_closed():
         ],
     }], bankroll=1e308)
     assert rows == []
+
+
+def test_ui_marks_free_middles_as_settlement_unverified():
+    from ui_page import HTML
+    assert "UNVERIFIED FREE MIDDLE" in HTML
+    assert "MIDDLE_REQUIRES_CROSS_LINE_SETTLEMENT_REVIEW" in HTML
+    assert "Free middles lock a profit" not in HTML

@@ -409,6 +409,31 @@ def test_oversized_neighborhood_preserves_budget_for_later_markets():
     assert budget["remaining"] == 100
 
 
+def test_too_many_neighborhood_legs_do_not_charge_budget():
+    budget = {"remaining": 20000}
+    legs = [
+        {"outcome": f"O{index}", "book": f"book-{index}", "stake": 10.005,
+         "net_decimal": 20.0, "stake_increment": 0.01, "min_stake": 0}
+        for index in range(14)
+    ]
+    result = arb_engine._bounded_rounding_neighborhood(legs, 200, budget)
+    assert result["reason"] == "TOO_MANY_LEGS_FOR_LOCAL_ENUMERATION"
+    assert budget["remaining"] == 20000
+
+
+def test_surebet_constraint_ratio_overflow_fails_closed():
+    row = scan_market(
+        market_id="overflow-profile", event="A v B", market="h2h", bankroll=1e308,
+        expected_outcomes=["A", "B"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "one", "decimal": 2.1,
+             "min_stake": "1e308", "stake_increment": "0.01"},
+            {"outcome": "B", "book": "two", "decimal": 2.1},
+        ],
+    )
+    assert row is None
+
+
 def test_combination_search_reuses_exact_plan_after_budget_exhaustion():
     row = scan_market(
         market_id="reuse-plan", event="A v B", market="h2h", bankroll=200,
