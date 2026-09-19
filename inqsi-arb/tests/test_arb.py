@@ -347,3 +347,51 @@ def test_equivalent_quote_combinations_reuse_exact_search(monkeypatch):
         expected_outcomes=["A", "B"], rules_status="compatible", quotes=quotes,
     )
     assert calls <= 2
+
+
+def test_scan_all_shares_plan_work_budget_across_markets_and_final_plans(monkeypatch):
+    budget_ids = set()
+    original = arb_engine._rounded_quote_plan
+
+    def observed(selected, outcomes, bankroll, exact_budget=None):
+        assert exact_budget is not None
+        budget_ids.add(id(exact_budget))
+        return original(selected, outcomes, bankroll, exact_budget)
+
+    monkeypatch.setattr(arb_engine, "_rounded_quote_plan", observed)
+    events = []
+    for index in range(3):
+        events.append({
+            "id": f"market-{index}", "event": f"A{index} v B{index}", "market": "h2h",
+            "expected_outcomes": ["A", "B"], "rules_status": "compatible",
+            "quotes": [
+                {"outcome": "A", "book": "one", "decimal": 2.00001},
+                {"outcome": "B", "book": "two", "decimal": 2.00001},
+            ],
+        })
+    scan_all({"bankroll": 200, "events": events})
+    assert len(budget_ids) == 1
+
+
+def test_multiway_neighborhood_enumeration_respects_scan_work_budget(monkeypatch):
+    calls = 0
+    original = arb_engine.optimize_rounding_neighborhood
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(arb_engine, "optimize_rounding_neighborhood", counted)
+    outcomes = [f"O{index}" for index in range(10)]
+    quotes = [
+        {"outcome": outcome, "book": f"book-{outcome}-{copy}", "decimal": 20.1}
+        for outcome in outcomes for copy in range(2)
+    ]
+    row = scan_market(
+        market_id="bounded-neighborhood", event="multiway", market="winner", bankroll=100,
+        expected_outcomes=outcomes, rules_status="compatible", quotes=quotes,
+    )
+    assert row and row["math_arb"] is True
+    assert row["arb"] is True
+    assert calls == 0

@@ -9,8 +9,8 @@ this detector does not grant.
 from __future__ import annotations
 
 import re
-from itertools import combinations, islice, product
-from math import floor, isfinite
+from itertools import combinations
+from math import ceil, floor, isfinite
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from arb_engine import _net_decimal, _quote_decimal, _two_way_exact_plan, _two_way_feasible_plan
@@ -19,6 +19,7 @@ from stake_rounding import StakeRoundingError, optimize_rounding_neighborhood
 _POINT_RE = re.compile(r"([+-]?\d+(?:\.\d+)?)\s*$")
 MAX_MIDDLES = 100
 MAX_PAIR_EVALUATIONS = 4096
+MAX_RAW_PAIR_INSPECTIONS = 16384
 
 
 def _norm_books(raw: Any) -> Optional[set[str]]:
@@ -44,7 +45,7 @@ def _event_key(item: Mapping[str, Any]) -> str:
     return str(item.get("id") or "").strip()
 
 
-def _valid_stake_constraints(quote: Mapping[str, Any]) -> bool:
+def _valid_stake_constraints(quote: Mapping[str, Any], bankroll: float) -> bool:
     parsed: Dict[str, Optional[float]] = {}
     for key, default, positive in (
         ("limit", None, False), ("min_stake", 0.0, False), ("stake_increment", 0.01, True),
@@ -64,7 +65,11 @@ def _valid_stake_constraints(quote: Mapping[str, Any]) -> bool:
         increment = float(parsed["stake_increment"])
         if increment < 0.01 or abs(increment * 100 - round(increment * 100)) > 1e-7:
             return False
-    return parsed["limit"] is None or float(parsed["min_stake"] or 0) <= parsed["limit"]
+    maximum = bankroll if parsed["limit"] is None else min(float(parsed["limit"]), bankroll)
+    minimum = float(parsed["min_stake"] or 0)
+    increment = float(parsed["stake_increment"] or 0.01)
+    first_stake = max(increment, ceil(minimum / increment - 1e-10) * increment)
+    return minimum <= maximum and first_stake <= maximum + 1e-9
 
 
 def _family(market: str) -> Optional[str]:
@@ -153,7 +158,9 @@ def _participant_contract(contract: str) -> bool:
     return contract.startswith(("player_", "batter_", "pitcher_", "team_"))
 
 
-def _best_quotes(events: Iterable[Mapping[str, Any]], allowed: Optional[set[str]]) -> Dict[Tuple[str, str, str, str], List[Dict[str, Any]]]:
+def _best_quotes(
+    events: Iterable[Mapping[str, Any]], allowed: Optional[set[str]], bankroll: float,
+) -> Dict[Tuple[str, str, str, str], List[Dict[str, Any]]]:
     grouped: Dict[Tuple[str, str, str, str], Dict[Tuple[Any, ...], Dict[str, Any]]] = {}
     for item in events or []:
         market = str(item.get("market") or "")
@@ -167,7 +174,7 @@ def _best_quotes(events: Iterable[Mapping[str, Any]], allowed: Optional[set[str]
             book = str(raw.get("book") or "").strip().lower()
             if not book or (allowed and book not in allowed):
                 continue
-            if not _valid_stake_constraints(raw):
+            if not _valid_stake_constraints(raw, bankroll):
                 continue
             parsed = _point_and_side(raw, family)
             if parsed is None:
@@ -367,12 +374,13 @@ def detect_middles(
     if not isfinite(bankroll) or bankroll <= 0:
         return []
     allowed = _norm_books(books)
-    grouped = _best_quotes(events, allowed)
+    grouped = _best_quotes(events, allowed, bankroll)
     found: List[Dict[str, Any]] = []
     exact_budget = {"remaining": 20000}
     remaining_pairs = MAX_PAIR_EVALUATIONS
+    remaining_raw_pairs = MAX_RAW_PAIR_INSPECTIONS
     for (event_key, family, contract, selection), quotes in grouped.items():
-        if remaining_pairs <= 0:
+        if remaining_pairs <= 0 or remaining_raw_pairs <= 0:
             break
         if family == "total":
             overs = sorted(
@@ -384,14 +392,25 @@ def detect_middles(
                 key=lambda quote: (-quote["point"], quote["book"]),
             )
             def eligible_total_pairs():
-                for over, under in product(overs, unders):
-                    if over["book"] == under["book"]:
-                        continue
-                    gap = under["point"] - over["point"]
-                    increment = _scoring_increment(contract, over, under)
-                    if gap > 0 and _middle_result_exists(over["point"], under["point"], increment):
-                        yield over, under, gap
-            for over, under, gap in islice(eligible_total_pairs(), remaining_pairs):
+                nonlocal remaining_raw_pairs
+                for over in overs:
+                    for under in unders:
+                        if remaining_raw_pairs <= 0:
+                            return
+                        remaining_raw_pairs -= 1
+                        # Unders are descending, so no later row can recover
+                        # once its line is at or below this over.
+                        if under["point"] <= over["point"]:
+                            break
+                        if over["book"] == under["book"]:
+                            continue
+                        gap = under["point"] - over["point"]
+                        increment = _scoring_increment(contract, over, under)
+                        if _middle_result_exists(over["point"], under["point"], increment):
+                            yield over, under, gap
+            for over, under, gap in eligible_total_pairs():
+                if remaining_pairs <= 0:
+                    break
                 remaining_pairs -= 1
                 plan = _stake_plan(over, under, bankroll, exact_budget)
                 if not plan.get("feasible"):
@@ -407,18 +426,27 @@ def detect_middles(
             for quote in quotes:
                 by_side.setdefault(quote["side"], []).append(quote)
             def eligible_spread_pairs():
+                nonlocal remaining_raw_pairs
                 for first_side, second_side in combinations(sorted(by_side), 2):
                     first_rows = sorted(by_side[first_side], key=lambda quote: (-quote["point"], quote["book"]))
                     second_rows = sorted(by_side[second_side], key=lambda quote: (-quote["point"], quote["book"]))
-                    for first, second in product(first_rows, second_rows):
-                        left, right = sorted((first, second), key=lambda quote: (quote["side"], quote["book"]))
-                        if left["book"] == right["book"]:
-                            continue
-                        gap = left["point"] + right["point"]
-                        increment = _scoring_increment(contract, left, right)
-                        if gap > 0 and _middle_result_exists(-left["point"], right["point"], increment):
-                            yield left, right, gap
-            for left, right, gap in islice(eligible_spread_pairs(), remaining_pairs):
+                    for first in first_rows:
+                        for second in second_rows:
+                            if remaining_raw_pairs <= 0:
+                                return
+                            remaining_raw_pairs -= 1
+                            if first["point"] + second["point"] <= 0:
+                                break
+                            left, right = sorted((first, second), key=lambda quote: (quote["side"], quote["book"]))
+                            if left["book"] == right["book"]:
+                                continue
+                            gap = left["point"] + right["point"]
+                            increment = _scoring_increment(contract, left, right)
+                            if _middle_result_exists(-left["point"], right["point"], increment):
+                                yield left, right, gap
+            for left, right, gap in eligible_spread_pairs():
+                if remaining_pairs <= 0:
+                    break
                 remaining_pairs -= 1
                 plan = _spread_plan(left, right, bankroll, exact_budget)
                 if not plan.get("feasible"):

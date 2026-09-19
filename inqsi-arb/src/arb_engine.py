@@ -13,9 +13,34 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from stake_rounding import StakeRoundingError, optimize_rounding_neighborhood
 
+MAX_SCAN_PLAN_WORK = 20000
+
 
 class ArbValidationError(ValueError):
     pass
+
+
+def _bounded_rounding_neighborhood(
+    legs: List[Dict[str, Any]], bankroll: float, budget: Optional[Dict[str, int]],
+) -> Dict[str, Any]:
+    """Run local enumeration only when it fits the caller's shared work budget."""
+    # The rounding helper considers floor, ceil, and (when distinct) minimum
+    # stakes for every leg. Charge the conservative Cartesian upper bound
+    # before entering it so many markets/quote combinations cannot multiply
+    # exponential work.
+    work = 3 ** len(legs)
+    if budget is not None:
+        remaining = int(budget.get("remaining", 0))
+        if work > remaining:
+            budget["remaining"] = 0
+            return {
+                "ok": True,
+                "feasible": False,
+                "reason": "SCAN_PLAN_WORK_BUDGET_EXHAUSTED",
+                "places_bets": False,
+            }
+        budget["remaining"] = remaining - work
+    return optimize_rounding_neighborhood(legs, bankroll=bankroll)
 
 
 def american_to_decimal(value: float) -> float:
@@ -314,7 +339,7 @@ def _optimized_plan(
     if direct:
         plans.append(direct)
     try:
-        neighborhood = optimize_rounding_neighborhood(legs, bankroll=bankroll)
+        neighborhood = _bounded_rounding_neighborhood(legs, bankroll, exact_budget)
         if neighborhood.get("feasible"):
             plans.append(neighborhood)
     except StakeRoundingError:
@@ -355,7 +380,7 @@ def _optimized_plan(
                     / float(adjusted[other_index]["net_decimal"])
                 )
                 try:
-                    candidate = optimize_rounding_neighborhood(adjusted, bankroll=bankroll)
+                    candidate = _bounded_rounding_neighborhood(adjusted, bankroll, exact_budget)
                 except StakeRoundingError:
                     continue
                 if candidate.get("feasible"):
@@ -408,10 +433,12 @@ def _rounded_quote_plan(
 def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Mapping[str, Any]],
                 bankroll: float = 1000.0, expected_outcomes: Optional[Iterable[str]] = None,
                 rules_status: str = "unknown", context: Optional[Mapping[str, Any]] = None,
-                commence_time: Optional[str] = None, books: Any = None) -> Optional[Dict[str, Any]]:
+                commence_time: Optional[str] = None, books: Any = None,
+                _work_budget: Optional[Dict[str, int]] = None) -> Optional[Dict[str, Any]]:
     bankroll = float(bankroll)
     if not isfinite(bankroll) or bankroll <= 0:
         raise ArbValidationError("bankroll must be positive")
+    work_budget = _work_budget if _work_budget is not None else {"remaining": MAX_SCAN_PLAN_WORK}
     allowed = _parse_books(books)
     expected = [str(x).strip() for x in (expected_outcomes or []) if str(x).strip()]
     expected_set = set(expected)
@@ -456,7 +483,6 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
         ]
         executable_choice = None
         combinations = islice(product(*pools), 4096)
-        exact_budget = {"remaining": 20000}
         plan_cache: Dict[tuple[Any, ...], tuple[float, Optional[Dict[str, Any]]]] = {}
         for combination in combinations:
             selected = dict(zip(ordered_outcomes, combination))
@@ -475,7 +501,7 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
                 combo_plan = None
                 if combo_implied < 1.0:
                     _, _, combo_plan, _ = _rounded_quote_plan(
-                        selected, ordered_outcomes, bankroll, exact_budget,
+                        selected, ordered_outcomes, bankroll, work_budget,
                     )
                 plan_cache[cache_key] = (combo_implied, combo_plan)
             if combo_implied >= 1.0:
@@ -501,7 +527,9 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
     allocated_stake = 0.0
     rounding_reason = None
     if complete and implied_sum > 0:
-        _, unrounded, rounded_plan, rounding_reason = _rounded_quote_plan(best, expected_set, bankroll)
+        _, unrounded, rounded_plan, rounding_reason = _rounded_quote_plan(
+            best, expected_set, bankroll, work_budget,
+        )
         if rounded_plan and rounded_plan.get("feasible"):
             executable = bool(math_arb and rounded_plan.get("strict_arbitrage_after_rounding"))
             allocated_stake = float(rounded_plan.get("allocated_stake") or 0)
@@ -575,6 +603,7 @@ def scan_all(payload: Mapping[str, Any]) -> Dict[str, Any]:
     hits: List[Dict[str, Any]] = []; detected: List[Dict[str, Any]] = []; near: List[Dict[str, Any]] = []; rejected: List[Dict[str, Any]] = []
     exchange_pending: List[Dict[str, Any]] = []
     events = list(payload.get("events") or [])
+    work_budget = {"remaining": MAX_SCAN_PLAN_WORK}
     for item in events:
         market = str(item.get("market") or "unknown")
         if market.endswith("_lay"):
@@ -601,7 +630,8 @@ def scan_all(payload: Mapping[str, Any]) -> Dict[str, Any]:
         row = scan_market(market_id=str(item.get("id") or item.get("market_id") or ""), event=str(item.get("event") or ""),
                           market=market, quotes=item.get("quotes") or [], bankroll=bankroll,
                           expected_outcomes=item.get("expected_outcomes"), rules_status=str(item.get("rules_status") or "unknown"),
-                          context=item.get("context") or {}, commence_time=item.get("commence_time"), books=books)
+                          context=item.get("context") or {}, commence_time=item.get("commence_time"), books=books,
+                          _work_budget=work_budget)
         if row is None: continue
         rules_status = str(row["validation"]["rules_status"]).lower()
         invalid = row["validation"]["outcome_coverage"] != "complete" or rules_status == "incompatible"

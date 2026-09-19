@@ -409,3 +409,47 @@ def test_executable_duplicate_quote_survives_better_unusable_price():
     assert rows
     assert rows[0]["kind"] == "free_middle"
     assert sorted(leg["decimal"] for leg in rows[0]["legs"]) == [2.1, 2.1]
+
+
+def test_infeasible_execution_profiles_do_not_spend_pair_budget():
+    quotes = [
+        {"outcome": "Over", "book": "one", "decimal": 2.2, "point": 8.5,
+         "limit": index / 1000, "stake_increment": 5}
+        for index in range(1, 129)
+    ] + [
+        {"outcome": "Over", "book": "one", "decimal": 2.1, "point": 8.5},
+        {"outcome": "Under", "book": "two", "decimal": 2.1, "point": 9.5},
+    ]
+    rows = detect_middles([{
+        "id": "profile-budget", "event_id": "profile-budget", "event": "A @ B",
+        "market": "totals", "quotes": quotes,
+    }], bankroll=100)
+    assert rows
+    assert rows[0]["kind"] == "free_middle"
+    assert sorted(leg["decimal"] for leg in rows[0]["legs"]) == [2.1, 2.1]
+
+
+def test_raw_middle_pair_inspections_have_a_scan_wide_cap(monkeypatch):
+    calls = 0
+    original = middle_engine._scoring_increment
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(middle_engine, "_scoring_increment", counted)
+    quotes = [
+        {"outcome": "Over", "book": f"over-{index}", "decimal": 1.91,
+         "point": 0, "scoring_increment": 1000}
+        for index in range(200)
+    ] + [
+        {"outcome": "Under", "book": f"under-{index}", "decimal": 1.91,
+         "point": 5, "scoring_increment": 1000}
+        for index in range(200)
+    ]
+    assert detect_middles([{
+        "id": "raw-budget", "event_id": "raw-budget", "event": "A @ B",
+        "market": "totals", "quotes": quotes,
+    }], bankroll=100) == []
+    assert calls == middle_engine.MAX_RAW_PAIR_INSPECTIONS
