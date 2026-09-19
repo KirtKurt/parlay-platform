@@ -72,6 +72,26 @@ def test_two_strike_strikeout_retains_pitch_batters_and_credits_predecessor(monk
     assert raw['date'] not in bundle['statcast_retained_dates']
 
 
+def test_uniform_predecessor_attribution_derives_only_terminal_pitch_batter():
+    _, raw, _, source = fixture()
+    before = deepcopy(raw)
+    # Savant can attribute every pitch, including the terminal strike, to the
+    # predecessor while MLB's live feed records the actual pinch hitter. The
+    # official box still charges the strikeout to the predecessor.
+    raw['rows'][2]['batter'] = '202'
+    reseal(source, raw)
+    payload = reconcile(
+        raw, lambda *args, **kwargs: source, raw_receipt(raw),
+        inspection_games={'1'})
+    assert before['rows'][0]['batter'] == raw['rows'][0]['batter'] == '202'
+    assert payload['raw_statcast'] == raw
+    assert [row['batter'] for row in payload['rows'][:3]] == ['202', '202', '201']
+    assert verified_batter_credits(payload) == {('1', '201'): '202'}
+    changes = payload['outcome_reconciliation']['derivations']
+    assert [change['derivation_kind'] for change in changes] == [
+        'official_substitution_pitch_attribution', 'official_mid_at_bat_credit']
+
+
 @pytest.mark.parametrize('defect', ['inherited', 'prior_missing', 'prior_boolean', 'prior_balls',
     'terminal_count', 'terminal_missing', 'play_count', 'terminal_time', 'non_pitch',
     'missing_weight', 'nonzero_weight', 'missing_denom', 'wrong_batter', 'wrong_pitcher',
