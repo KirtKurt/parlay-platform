@@ -303,22 +303,31 @@ def test_readback_mismatch_cannot_claim_published(monkeypatch):
 
 
 def test_workflow_is_a_separate_same_run_consumer_not_a_serving_dependency():
-    import yaml
+    # Phase 1 intentionally installs only the data-engine dependencies. Keep this
+    # source-contract check stdlib-only instead of adding a YAML runtime dependency.
+    import re
     path = Path(__file__).resolve().parents[2]/'.github/workflows/mlb-research-ingestion.yml'
-    flow = yaml.safe_load(path.read_text())
-    jobs = flow['jobs']; job = jobs['loss-patterns']; ingest = jobs['ingest']
-    assert job['needs'] == 'ingest' and 'continue-on-error' not in job
-    assert "needs.ingest.outputs.nightly_outcome == 'success'" in job['if']
-    assert "github.ref == 'refs/heads/main'" in job['if']
-    assert ingest['outputs']['nightly_outcome'] == '${{ steps.nightly.outcome }}'
-    assert all('loss-patterns' not in str(step) for step in ingest['steps'])
-    assert 'needs' not in ingest
-    download = next(s for s in job['steps'] if s.get('uses') == 'actions/download-artifact@v4')
-    assert download['with'] == {'name': 'ks1-nightly-${{ github.run_id }}', 'path': '/tmp/ks1-nightly'}
-    assert flow['permissions'] == {'contents': 'read', 'actions': 'read'}
-    assert flow['concurrency']['cancel-in-progress'] is False
-    trace = next(s for s in job['steps'] if 'ks1.settled_loss_patterns --root' in s.get('run', ''))
-    assert '--publish' in trace['run'] and 'continue-on-error' not in trace
+    text = path.read_text()
+    header, body = text.split('\njobs:\n', 1)
+    headers = list(re.finditer(r'^  ([a-zA-Z0-9_-]+):\n', body, re.MULTILINE))
+    assert len({m[1] for m in headers}) == len(headers)
+    jobs = {m[1]: body[m.end():headers[i+1].start() if i+1 < len(headers) else len(body)]
+            for i, m in enumerate(headers)}
+    job, ingest = jobs['loss-patterns'], jobs['ingest']
+    assert '    needs: ingest\n' in job and 'continue-on-error:' not in job
+    assert ("    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && "
+            "needs.ingest.outputs.nightly_outcome == 'success' }}\n") in job
+    assert '    outputs:\n      nightly_outcome: ${{ steps.nightly.outcome }}\n' in ingest
+    assert 'loss-patterns' not in ingest and '    needs:' not in ingest
+    assert ('        uses: actions/download-artifact@v4\n'
+            '        with:\n'
+            '          name: ks1-nightly-${{ github.run_id }}\n'
+            '          path: /tmp/ks1-nightly\n') in job
+    assert 'permissions:\n  contents: read\n  actions: read\nconcurrency:' in header
+    assert '  cancel-in-progress: false\n' in header+'\n'
+    assert ('        run: python -m ks1.settled_loss_patterns --root /tmp/ks1-nightly '
+            '--output /tmp/ks1-loss-patterns --publish\n') in job
+    assert '          ref: ${{ github.sha }}\n' in job
     # Existing failed-audit protection and independent pregame refresh remain.
-    daily = next(s for s in ingest['steps'] if s.get('id') == 'daily')
-    assert daily['if'] == "${{ !cancelled() && steps.research.outcome == 'success' }}"
+    daily = ingest.split('        id: daily\n', 1)[1].split('      - name:', 1)[0]
+    assert "        if: ${{ !cancelled() && steps.research.outcome == 'success' }}\n" in daily
