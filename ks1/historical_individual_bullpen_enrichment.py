@@ -33,7 +33,7 @@ from ks1.inventory import RESEARCH, encode
 from ks1.sources import load_existing
 from ks1.statcast_history import load_training_statcast
 
-CONTRACT = "KS1-historical-individual-bullpen-development-enrichment-v4"
+CONTRACT = "KS1-historical-individual-bullpen-development-enrichment-v5"
 RANKS = (1, 2, 3)
 WINDOWS = (7, 15, 30)
 METRICS = ("fip", "era", "k_bb_pct", "xwoba")
@@ -156,10 +156,33 @@ def proof_bound_statcast_context(cf, s3, bucket, proof):
         identity for candidate in proof.get("source_receipts", [])
         if (identity := _source_identity(candidate)) is not None
     }
-    bundle = load_existing(cf, s3, bucket)
     expected_official = _official_receipt(proof)
-    if _source_identity(bundle.get("official_history_source")) != _source_identity(expected_official):
-        raise ValueError("individual_bullpen_statcast_official_history_mismatch")
+    bundle = load_existing(cf, s3, bucket)
+    current_official_matches = (
+        _source_identity(bundle.get("official_history_source"))
+        == _source_identity(expected_official)
+    )
+    if not current_official_matches:
+        # The retained official-history pointer may advance after the input table
+        # and proof were created. Rebuild the replay basis from the exact immutable
+        # version already bound to the proof instead of either consuming the newer
+        # current object or rejecting an otherwise reproducible development run.
+        try:
+            exact_official = json.loads(_read_exact(s3, expected_official))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                "individual_bullpen_statcast_official_history_restore_invalid"
+            ) from exc
+        if (not isinstance(exact_official, dict)
+                or not isinstance(exact_official.get("games"), list)
+                or not exact_official["games"]
+                or not isinstance(exact_official.get("schedule"), list)
+                or not exact_official["schedule"]):
+            raise ValueError(
+                "individual_bullpen_statcast_official_history_restore_invalid")
+        bundle["full"] = exact_official["games"]
+        bundle["schedule"] = exact_official["schedule"]
+        bundle["official_history_source"] = dict(expected_official)
 
     preloaded_identities = _preloaded_statcast_identities(bundle.get("source_receipts", []))
     if any(identity not in proof_receipts for identity in preloaded_identities):
@@ -208,6 +231,8 @@ def proof_bound_statcast_context(cf, s3, bucket, proof):
         "all_preloaded_statcast_receipts_bound_to_input_proof": True,
         "all_replay_receipts_bound_to_input_proof": True,
         "all_statcast_receipts_bound_to_input_proof": True,
+        "current_official_history_matched_input_proof": current_official_matches,
+        "official_history_restored_from_input_proof": not current_official_matches,
     }
     return context, evidence
 
