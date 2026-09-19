@@ -72,6 +72,82 @@ def test_two_strike_strikeout_retains_pitch_batters_and_credits_predecessor(monk
     assert raw['date'] not in bundle['statcast_retained_dates']
 
 
+def test_uniform_predecessor_attribution_derives_only_terminal_pitch_batter():
+    _, raw, _, source = fixture()
+    before = deepcopy(raw)
+    # Savant can attribute every pitch, including the terminal strike, to the
+    # predecessor while MLB's live feed records the actual pinch hitter. The
+    # official box still charges the strikeout to the predecessor.
+    raw['rows'][2]['batter'] = '202'
+    reseal(source, raw)
+    payload = reconcile(
+        raw, lambda *args, **kwargs: source, raw_receipt(raw),
+        inspection_games={'1'})
+    assert before['rows'][0]['batter'] == raw['rows'][0]['batter'] == '202'
+    assert payload['raw_statcast'] == raw
+    assert [row['batter'] for row in payload['rows'][:3]] == ['202', '202', '201']
+    assert verified_batter_credits(payload) == {('1', '201'): '202'}
+    changes = payload['outcome_reconciliation']['derivations']
+    assert [change['derivation_kind'] for change in changes] == [
+        'official_substitution_pitch_attribution', 'official_mid_at_bat_credit']
+
+
+def test_required_game_still_forces_inspection_pitch_evidence():
+    _, raw, _, source = fixture()
+    raw['rows'][2]['batter'] = '202'
+    raw['rows'][4]['woba_denom'] = ''
+    reseal(source, raw)
+    calls = []
+    def get_official(*args, **kwargs):
+        calls.append(kwargs)
+        return source
+    payload = reconcile(
+        raw, get_official, raw_receipt(raw), inspection_games={'1'})
+    assert calls == [{'force_pitch_evidence': True}]
+    assert payload['rows'][2]['batter'] == '201'
+    assert payload['rows'][4]['woba_denom'] == 1
+    assert verified_batter_credits(payload) == {('1', '201'): '202'}
+
+
+def test_uniform_predecessor_attribution_accepts_statcast_strikeout_alias():
+    _, raw, _, source = fixture()
+    raw['rows'][2].update(batter='202', events='strike_out')
+    reseal(source, raw)
+    payload = reconcile(
+        raw, lambda *args, **kwargs: source, raw_receipt(raw),
+        inspection_games={'1'})
+    assert payload['rows'][2]['events'] == 'strike_out'
+    assert payload['rows'][2]['batter'] == '201'
+    assert verified_batter_credits(payload) == {('1', '201'): '202'}
+
+
+def test_required_credit_game_reaches_recovery_inspection_gate(monkeypatch):
+    authorize(monkeypatch)
+    bundle, raw, key, source = fixture()
+    raw['rows'][2]['batter'] = '202'
+    raw['rows'][4]['woba_denom'] = ''
+    reseal(source, raw)
+    s3 = MemoryS3(); s3.seed(key, raw)
+    initial = load_training_statcast(bundle, s3, 'b')
+    assert initial['errors']
+    monkeypatch.setattr(
+        'ks1.statcast_recovery.physical_validation_reason',
+        lambda payload, *args, **kwargs: (
+            None if 'outcome_reconciliation' in payload
+            else 'physical_pitch_or_batter_attribution_mismatch'))
+    monkeypatch.setattr(
+        'ks1.statcast_recovery.physical_batter_mismatch_games',
+        lambda *args, **kwargs: {'1'})
+    report = recover(
+        bundle, s3, 'b', initial, reconcile_official=True,
+        fetch=lambda _: pytest.fail('retained raw is sufficient'),
+        fetch_official=lambda _: (source['data'], source['receipt']))
+    assert report['recovered_dates'] == [raw['date']]
+    payload, _ = read_recovery(s3, 'b', raw['date'])
+    assert payload['rows'][2]['batter'] == '201'
+    assert payload['rows'][4]['woba_denom'] == 1
+
+
 @pytest.mark.parametrize('defect', ['inherited', 'prior_missing', 'prior_boolean', 'prior_balls',
     'terminal_count', 'terminal_missing', 'play_count', 'terminal_time', 'non_pitch',
     'missing_weight', 'nonzero_weight', 'missing_denom', 'wrong_batter', 'wrong_pitcher',

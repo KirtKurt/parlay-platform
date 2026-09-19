@@ -12,16 +12,30 @@ AUTOMATIC_CODES = {'automatic_ball': {'V', 'VB', 'VC', 'VP', 'VS'},
                    'automatic_strike': {'A', 'AB', 'AC'}}
 
 
-def candidate_groups(rows):
+def candidate_groups(rows, evidence=None):
     grouped = defaultdict(list)
     for i, row in enumerate(rows):
         grouped[str(row['game_pk']), str(row['at_bat_number'])].append(i)
-    return {key: indices for key, indices in grouped.items()
+    candidates = {key: indices for key, indices in grouped.items()
             if len({str(rows[i]['batter']) for i in indices}) > 1
             or any(str(rows[i].get('description')) in AUTOMATIC_CODES
                    and (rows[i].get('pitch_type') not in (None, '')
                         or rows[i].get('release_speed') not in (None, ''))
                    for i in indices)}
+    for game_id, source in (evidence or {}).items():
+        for play in source['data']['liveData']['plays']['allPlays']:
+            key = (str(game_id), str(play['about']['atBatIndex'] + 1))
+            indices = grouped.get(key, [])
+            substitutions = [event for event in play.get('playEvents', [])
+                             if event.get('isSubstitution') is True
+                             and event.get('details', {}).get('eventType')
+                                 == 'offensive_substitution']
+            if (indices and substitutions
+                    and len({str(rows[i]['batter']) for i in indices}) == 1
+                    and str(rows[indices[-1]]['batter'])
+                        != str(play['matchup']['batter']['id'])):
+                candidates[key] = indices
+    return candidates
 
 
 def derive(rows, evidence, scheduled_by_game, *, extended_substitutions=False,
@@ -31,7 +45,7 @@ def derive(rows, evidence, scheduled_by_game, *, extended_substitutions=False,
     from ks1.statcast_events import is_plate_appearance
     from ks1.features import utc
     changes = []
-    for (pk, ab), indices in candidate_groups(rows).items():
+    for (pk, ab), indices in candidate_groups(rows, evidence).items():
         source = evidence[pk]
         plays = [p for p in source['data']['liveData']['plays']['allPlays']
                  if str(p['about']['atBatIndex'] + 1) == ab]
@@ -53,7 +67,9 @@ def derive(rows, evidence, scheduled_by_game, *, extended_substitutions=False,
                 or [e['index'] for e in events] != list(range(len(events)))):
             raise ValueError('official play-event indices incomplete')
         substitutions = [e for e in events if e.get('isSubstitution') is True]
-        mixed = len({str(rows[i]['batter']) for i in indices}) > 1
+        mixed = (len({str(rows[i]['batter']) for i in indices}) > 1
+                 or any(event.get('details', {}).get('eventType')
+                        == 'offensive_substitution' for event in substitutions))
         terminal_batter = positive_id(play['matchup']['batter']['id'])
         credited_batter = terminal_batter
         pitcher = positive_id(play['matchup']['pitcher']['id'])
@@ -203,7 +219,7 @@ def derive(rows, evidence, scheduled_by_game, *, extended_substitutions=False,
             raise ValueError('official and Statcast count-event sequences differ')
         for i, (event, batter, automatic) in zip(ordered, sequence):
             row = rows[i]
-            if positive_id(row['batter']) != batter or positive_id(row['pitcher']) != pitcher:
+            if positive_id(row['pitcher']) != pitcher:
                 raise ValueError('official per-pitch player attribution differs')
             fields = {}
             if automatic:
@@ -223,10 +239,17 @@ def derive(rows, evidence, scheduled_by_game, *, extended_substitutions=False,
                         or row.get('pitch_type') != event['details'].get('type', {}).get('code')
                         or abs(speed - official_speed) > .051):
                     raise ValueError('official and Statcast physical pitch tracking differs')
+            if positive_id(row['batter']) != batter:
+                if (not predecessor_strikeout
+                        or positive_id(row['batter']) != credited_batter
+                        or batter != terminal_batter):
+                    raise ValueError('official per-pitch player attribution differs')
+                fields['batter'] = batter
             if fields:
                 changes.append({'row_index': i, 'game_pk': pk, 'at_bat_number': ab,
                                 'fields': fields, 'original_fields': {k: row.get(k) for k in fields},
-                                'derivation_kind': 'official_automatic_count_event',
+                                'derivation_kind': ('official_automatic_count_event' if automatic
+                                    else 'official_substitution_pitch_attribution'),
                                 'official_source_sha256': source['receipt']['sha256']})
                 row.update(fields)
         if mixed:

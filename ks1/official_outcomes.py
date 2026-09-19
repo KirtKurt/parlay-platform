@@ -139,7 +139,8 @@ def schedule_times(schedule):
 
 def official_index(evidence, game_id, value, raw_rows, *, require_retained=True,
                    scheduled_times=None, pitch_evidence=False, accounting_evidence=False,
-                   inning_evidence=False, game_advisories=True, advisory_outs=True):
+                   inning_evidence=False, game_advisories=True, advisory_outs=True,
+                   two_strike_substitution=False):
     body, receipt = evidence['data'], evidence['receipt']
     if (receipt['endpoint'] != endpoint(game_id, pitch_evidence=pitch_evidence, accounting_evidence=accounting_evidence, inning_evidence=inning_evidence, game_advisories=game_advisories, advisory_outs=advisory_outs)
             or receipt['sha256'] != digest(body)):
@@ -199,8 +200,13 @@ def official_index(evidence, game_id, value, raw_rows, *, require_retained=True,
         raise ValueError('official and Statcast PA identities/outcomes disagree')
     rows_by_ab = {positive_id(row['at_bat_number']): row for row in raw_rows if is_plate_appearance(row)}
     from ks1.pa_accounting import same_force_out_accounting
+    from ks1.two_strike_credit import same_substitution_strikeout_credit
     for ab, expected in result.items():
         if observed[ab] == expected:
+            continue
+        if (two_strike_substitution
+                and observed[ab][1:] == expected[1:]
+                and same_substitution_strikeout_credit(rows_by_ab[ab], plays_by_ab[ab])):
             continue
         if (not (accounting_evidence or inning_evidence) or observed[ab][:2] != expected[:2]
                 or not same_force_out_accounting(rows_by_ab[ab], plays_by_ab[ab])):
@@ -211,7 +217,8 @@ def official_index(evidence, game_id, value, raw_rows, *, require_retained=True,
 def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
     if method not in (METHOD, GAME_ADVISORY_METHOD, MOUND_VISIT_METHOD, TWO_STRIKE_METHOD, INNING_METHOD, SUBSTITUTION_METHOD, ACCOUNTING_METHOD, PITCH_METHOD, CREDIT_METHOD, DENOMINATOR_METHOD, LEGACY_METHOD):
         raise ValueError('unsupported outcome reconciliation method')
-    if set(evidence) != set(needed_games(raw, method)):
+    required_evidence = set(needed_games(raw, method))
+    if not required_evidence.issubset(evidence):
         raise ValueError('official PA evidence set mismatch')
     for pk, source in evidence.items():
         source_endpoint = source['receipt']['endpoint']
@@ -262,7 +269,10 @@ def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
                        accounting_evidence=accounting_evidence,
                        inning_evidence=inning_evidence,
                        game_advisories=game_advisories,
-                       advisory_outs=advisory_outs)
+                       advisory_outs=advisory_outs,
+                       two_strike_substitution=method in (
+                           METHOD, GAME_ADVISORY_METHOD, MOUND_VISIT_METHOD,
+                           TWO_STRIKE_METHOD))
     rows, changes = deepcopy(raw['rows']), []
     for index, row in enumerate(rows):
         pk = str(row['game_pk'])
@@ -367,12 +377,32 @@ def reconciled_rows(raw, evidence, scheduled_by_game=None, method=METHOD):
                               two_strike_strikeouts=method in (METHOD, GAME_ADVISORY_METHOD, MOUND_VISIT_METHOD, TWO_STRIKE_METHOD),
                               prefix_mound_visits=method in (METHOD, GAME_ADVISORY_METHOD, MOUND_VISIT_METHOD),
                               prefix_game_advisories=method in (METHOD, GAME_ADVISORY_METHOD), raw_rows=raw['rows']))
+    changed_games = {item['game_pk'] for item in changes}
+    if set(evidence) - required_evidence - changed_games:
+        raise ValueError('unneeded official PA evidence')
     return rows, changes
 
 
-def reconcile(raw, get_official, raw_receipt, scheduled_by_game=None):
-    evidence = {pk: get_official(pk, [row for row in raw['rows'] if str(row['game_pk']) == pk])
-                for pk in needed_games(raw)}
+def reconcile(raw, get_official, raw_receipt, scheduled_by_game=None,
+              additional_games=None, inspection_games=None):
+    additional_games = {positive_id(pk) for pk in (additional_games or [])}
+    inspection_games = {positive_id(pk) for pk in (inspection_games or [])}
+    raw_games = {positive_id(row['game_pk']) for row in raw['rows']}
+    if not (additional_games | inspection_games).issubset(raw_games):
+        raise ValueError('additional official evidence game missing from Statcast')
+    games = sorted(set(needed_games(raw)) | additional_games)
+    def official_for(pk):
+        rows = [row for row in raw['rows'] if str(row['game_pk']) == pk]
+        if pk in additional_games or pk in inspection_games:
+            return get_official(pk, rows, force_pitch_evidence=True)
+        return get_official(pk, rows)
+    evidence = {pk: official_for(pk) for pk in games}
+    from ks1.two_strike_credit import needs_substitution_pitch_attribution
+    for pk in sorted(inspection_games - set(games)):
+        rows = [row for row in raw['rows'] if str(row['game_pk']) == pk]
+        source = get_official(pk, rows, force_pitch_evidence=True)
+        if needs_substitution_pitch_attribution(rows, source):
+            evidence[pk] = source
     rows, changes = reconciled_rows(raw, evidence, scheduled_by_game)
     if not changes:
         return raw

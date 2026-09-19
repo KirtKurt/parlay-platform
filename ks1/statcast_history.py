@@ -113,6 +113,19 @@ def physical_pitches_complete(rows, games, expected, batters, invalid, *, batter
     return dict(actual_batters) == wanted_batters
 
 
+def physical_batter_mismatch_games(rows, games, expected, batters, invalid):
+    """Games with exact pitch inventory but unresolved official PA credit."""
+    result = set()
+    for game_id in map(str, games):
+        game_rows = [row for row in rows if str(row.get('game_pk')) == game_id]
+        if (physical_pitch_inventory_complete(
+                game_rows, {game_id}, expected, batters, invalid)
+                and not physical_pitches_complete(
+                    game_rows, {game_id}, expected, batters, invalid)):
+            result.add(game_id)
+    return result
+
+
 def pitches_complete(rows, games, expected, invalid):
     games = {str(pk) for pk in games}
     if games & invalid or not games.issubset(expected):
