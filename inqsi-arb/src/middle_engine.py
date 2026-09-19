@@ -34,12 +34,11 @@ def _event_key(item: Mapping[str, Any]) -> str:
     event_id = str(item.get("event_id") or "").strip()
     if event_id:
         return event_id
-    item_id = str(item.get("id") or "").strip()
-    if item_id:
-        return item_id
     event = str(item.get("event") or "").strip()
     commence_time = str(item.get("commence_time") or "").strip()
-    return f"{event}|{commence_time}" if event and commence_time else ""
+    if event and commence_time:
+        return f"{event}|{commence_time}"
+    return str(item.get("id") or "").strip()
 
 
 def _family(market: str) -> Optional[str]:

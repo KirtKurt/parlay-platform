@@ -174,3 +174,58 @@ def test_executable_alternative_quote_can_replace_unusable_top_price():
     )
     assert row and row["arb"] is True and row["executable"] is True
     assert {leg["book"] for leg in row["legs"]} == {"usable", "two"}
+
+
+def test_executable_ninth_quote_is_not_truncated():
+    quotes = [
+        {"outcome": "A", "book": f"capped-{index}", "decimal": 2.2,
+         "limit": 0.5, "stake_increment": 1}
+        for index in range(8)
+    ] + [
+        {"outcome": "A", "book": "usable", "decimal": 2.1},
+        {"outcome": "B", "book": "two", "decimal": 2.1},
+    ]
+    row = scan_market(
+        market_id="ninth", event="A v B", market="h2h", bankroll=100,
+        expected_outcomes=["A", "B"], rules_status="compatible", quotes=quotes,
+    )
+    assert row and row["arb"] is True
+    assert {leg["book"] for leg in row["legs"]} == {"usable", "two"}
+
+
+def test_exact_discrete_thirteen_way_market_can_verify_without_enumeration():
+    outcomes = [f"O{index}" for index in range(13)]
+    row = scan_market(
+        market_id="thirteen", event="Field", market="outright", bankroll=1300,
+        expected_outcomes=outcomes, rules_status="compatible",
+        quotes=[{"outcome": outcome, "book": f"book-{index}", "decimal": 14.0, "stake_increment": 1}
+                for index, outcome in enumerate(outcomes)],
+    )
+    assert row and row["arb"] is True and row["executable"] is True
+    assert len(row["legs"]) == 13
+    assert all(leg["stake"] == 100 for leg in row["legs"])
+
+
+def test_non_finite_stake_constraint_rejects_quote_without_crashing_scan():
+    row = scan_market(
+        market_id="nonfinite", event="A v B", market="h2h", bankroll=100,
+        expected_outcomes=["A", "B"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "bad", "decimal": 2.2, "min_stake": "nan"},
+            {"outcome": "B", "book": "two", "decimal": 2.2},
+        ],
+    )
+    assert row is None
+
+
+def test_asymmetric_constraints_rebalance_beyond_initial_neighborhood():
+    row = scan_market(
+        market_id="rebalance", event="A v B", market="h2h", bankroll=30,
+        expected_outcomes=["A", "B"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "one", "decimal": 1.5, "limit": 7, "stake_increment": 1},
+            {"outcome": "B", "book": "two", "decimal": 4.0, "limit": 5, "stake_increment": 2},
+        ],
+    )
+    assert row and row["arb"] is True and row["executable"] is True
+    assert {leg["stake"] for leg in row["legs"]} == {2, 5}

@@ -237,6 +237,18 @@ def test_event_fallback_does_not_mix_rematches():
     assert detect_middles(events, bankroll=100) == []
 
 
+def test_event_fallback_groups_market_specific_ids_at_same_start():
+    events = [
+        {"id": "game|totals|8.5", "event": "A @ B", "commence_time": "2030-01-01T00:00:00Z", "market": "totals", "quotes": [
+            {"outcome": "Over", "book": "one", "decimal": 2.2, "point": 8.5},
+        ]},
+        {"id": "game|totals|9.5", "event": "A @ B", "commence_time": "2030-01-01T00:00:00Z", "market": "totals", "quotes": [
+            {"outcome": "Under", "book": "two", "decimal": 2.2, "point": 9.5},
+        ]},
+    ]
+    assert len(detect_middles(events, bankroll=100)) == 1
+
+
 def test_unidentified_participant_props_do_not_pair():
     events = [{"id": "e15", "event_id": "e15", "event": "A @ B", "market": "player_points", "quotes": [
         {"outcome": "Over", "book": "one", "decimal": 2.2, "point": 10.5},

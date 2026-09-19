@@ -8,7 +8,7 @@ label an opportunity a verified arb: settlement rules must be COMPATIBLE.
 from __future__ import annotations
 
 from itertools import islice, product
-from math import isfinite
+from math import ceil, floor, isfinite
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from stake_rounding import StakeRoundingError, optimize_rounding_neighborhood
@@ -81,6 +81,131 @@ def _cap(value: Any) -> Optional[float]:
     return parsed if parsed is not None and isfinite(parsed) and parsed >= 0 else None
 
 
+def _constraint(value: Any, default: float, *, positive: bool = False) -> Optional[float]:
+    if value is None or value == "":
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not isfinite(parsed) or (parsed <= 0 if positive else parsed < 0):
+        return None
+    return parsed
+
+
+def _quote_constraints_usable(raw: Mapping[str, Any], bankroll: float) -> bool:
+    cap = _constraint(raw.get("limit"), bankroll)
+    minimum = _constraint(raw.get("min_stake"), 0.0)
+    increment = _constraint(raw.get("stake_increment"), 0.01, positive=True)
+    if cap is None or minimum is None or increment is None or minimum > cap:
+        return False
+    maximum = min(cap, bankroll)
+    first_stake = max(increment, ceil(minimum / increment - 1e-10) * increment)
+    return first_stake <= maximum + 1e-9
+
+
+def _direct_discrete_plan(legs: List[Dict[str, Any]], bankroll: float) -> Optional[Dict[str, Any]]:
+    """Verify an already-discrete plan without exponential enumeration."""
+    if len(legs) < 2:
+        return None
+    normalized = []
+    total = 0.0
+    for leg in legs:
+        stake = float(leg["stake"])
+        odds = float(leg["net_decimal"])
+        increment = _constraint(leg.get("stake_increment"), 0.01, positive=True)
+        minimum = _constraint(leg.get("min_stake"), 0.0)
+        cap = _constraint(leg.get("constraint_cap"), bankroll)
+        if increment is None or minimum is None or cap is None:
+            return None
+        money_stake = round(stake, 2)
+        if abs(stake - money_stake) > 1e-7:
+            return None
+        if abs(money_stake / increment - round(money_stake / increment)) > 1e-7:
+            return None
+        if money_stake <= 0 or money_stake < minimum - 1e-9 or money_stake > cap + 1e-9:
+            return None
+        total += money_stake
+        normalized.append((leg, money_stake, odds, increment, minimum, cap))
+    if total > bankroll + 1e-9:
+        return None
+    rows = []
+    profits = []
+    for leg, stake, odds, increment, minimum, cap in normalized:
+        payout = round(stake * odds, 2)
+        profit = round(payout - total, 2)
+        profits.append(profit)
+        rows.append({
+            "outcome": leg["outcome"], "book": leg["book"], "decimal": odds,
+            "stake": stake, "stake_increment": increment, "min_stake": minimum,
+            "constraint_cap": cap, "payout_if_wins": payout, "profit_if_wins": profit,
+        })
+    minimum_profit = min(profits)
+    return {
+        "ok": True, "feasible": True, "places_bets": False,
+        "optimization_scope": "direct discrete plan verification",
+        "global_optimum_claimed": False, "combinations_checked": 1,
+        "bankroll": round(bankroll, 2), "allocated_stake": round(total, 2),
+        "unused_bankroll": round(bankroll - total, 2),
+        "minimum_profit": minimum_profit,
+        "strict_arbitrage_after_rounding": minimum_profit > 0,
+        "legs": rows,
+    }
+
+
+def _optimized_plan(legs: List[Dict[str, Any]], bankroll: float) -> Dict[str, Any]:
+    plans: List[Dict[str, Any]] = []
+    direct = _direct_discrete_plan(legs, bankroll)
+    if direct:
+        plans.append(direct)
+    try:
+        neighborhood = optimize_rounding_neighborhood(legs, bankroll=bankroll)
+        if neighborhood.get("feasible"):
+            plans.append(neighborhood)
+    except StakeRoundingError:
+        neighborhood = {"feasible": False, "reason": "ROUNDING_ERROR"}
+
+    # For two-way markets, re-anchor on each leg's nearby discrete stakes and
+    # equalize payout from that anchor. This catches executable plans that sit
+    # outside the floor/ceil neighborhood of a cap-scaled proportional target.
+    if len(legs) == 2:
+        for anchor_index in (0, 1):
+            anchor_leg = legs[anchor_index]
+            other_index = 1 - anchor_index
+            increment = float(anchor_leg.get("stake_increment") or 0.01)
+            target = float(anchor_leg["stake"])
+            minimum = float(anchor_leg.get("min_stake") or 0)
+            cap = anchor_leg.get("constraint_cap")
+            cap_value = bankroll if cap is None else float(cap)
+            anchors = {
+                floor(target / increment + 1e-10) * increment,
+                ceil(target / increment - 1e-10) * increment,
+                ceil(minimum / increment - 1e-10) * increment,
+                floor(cap_value / increment + 1e-10) * increment,
+            }
+            for anchor in anchors:
+                if anchor <= 0 or anchor < minimum - 1e-9 or anchor > cap_value + 1e-9:
+                    continue
+                adjusted = [dict(leg) for leg in legs]
+                adjusted[anchor_index]["stake"] = anchor
+                adjusted[other_index]["stake"] = (
+                    anchor * float(anchor_leg["net_decimal"])
+                    / float(adjusted[other_index]["net_decimal"])
+                )
+                try:
+                    candidate = optimize_rounding_neighborhood(adjusted, bankroll=bankroll)
+                except StakeRoundingError:
+                    continue
+                if candidate.get("feasible"):
+                    plans.append(candidate)
+    if plans:
+        return max(plans, key=lambda plan: (
+            bool(plan.get("strict_arbitrage_after_rounding")),
+            float(plan.get("minimum_profit") or float("-inf")),
+        ))
+    return neighborhood
+
+
 def _rounded_quote_plan(
     selected: Mapping[str, Mapping[str, Any]], outcomes: Iterable[str], bankroll: float,
 ) -> tuple[float, Dict[str, float], Optional[Dict[str, Any]], Optional[str]]:
@@ -109,8 +234,8 @@ def _rounded_quote_plan(
         "stake_increment": selected[outcome].get("stake_increment") or 0.01,
     } for outcome in ordered]
     try:
-        return implied, unrounded, optimize_rounding_neighborhood(legs, bankroll=bankroll), None
-    except StakeRoundingError:
+        return implied, unrounded, _optimized_plan(legs, bankroll), None
+    except (StakeRoundingError, ArithmeticError, ValueError):
         return implied, unrounded, None, "ROUNDING_ERROR"
 
 
@@ -136,6 +261,8 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
             d = _quote_decimal(raw); net_d = _net_decimal(d, float(raw.get("commission_rate") or 0.0))
         except (TypeError, ValueError, ArbValidationError):
             continue
+        if not _quote_constraints_usable(raw, bankroll):
+            continue
         valid_quotes += 1; seen_books.add(book)
         candidate = {"outcome": outcome, "book": book,
                      "american": raw.get("american") if raw.get("american") is not None else round(decimal_to_american(d), 2),
@@ -156,7 +283,7 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
     if complete:
         ordered_outcomes = sorted(expected_set)
         pools = [
-            sorted(candidates[outcome], key=lambda quote: quote["net_decimal"], reverse=True)[:8]
+            sorted(candidates[outcome], key=lambda quote: quote["net_decimal"], reverse=True)
             for outcome in ordered_outcomes
         ]
         executable_choice = None
