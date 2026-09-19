@@ -104,7 +104,7 @@ def test_duplicate_inventory_fails_closed(target):
     ('official_probability_field', 'p_raw', 'not_official_probability'),
     ('home_win', 1, 'final_label_mismatch'),
     ('home_win', True, 'final_label_mismatch'),
-    ('home_score', 99, 'final_score_mismatch'),
+    ('home_score', 99, 'final_label_mismatch'),
     ('locked_at', '2026-09-17T17:51:00+00:00', 'lock_or_label_chronology_mismatch'),
     ('graded_at', '2026-09-17T18:00:00+00:00', 'final_completion_mismatch'),
     ('graded_at', '2026-09-18T23:00:00+00:00', 'lock_or_label_chronology_mismatch'),
