@@ -24,12 +24,18 @@ def _row(offset=0.0):
         'away_individual_bullpen_rank1_k_bb_pct_7d': 8.0 - offset,
         'away_individual_bullpen_rank1_k_bb_pct_15d': 10.0 - offset,
         'away_individual_bullpen_rank1_k_bb_pct_30d': 13.0,
+        'home_individual_bullpen_rank1_xwoba_7d': .340 + offset / 100.0,
+        'home_individual_bullpen_rank1_xwoba_15d': .325 + offset / 100.0,
+        'home_individual_bullpen_rank1_xwoba_30d': .300,
+        'away_individual_bullpen_rank1_xwoba_7d': .275 - offset / 100.0,
+        'away_individual_bullpen_rank1_xwoba_15d': .290 - offset / 100.0,
+        'away_individual_bullpen_rank1_xwoba_30d': .315,
     }
 
 
 def test_individual_reliever_regime_features_use_same_rank_and_strict_prior_windows():
     derived = derive_mapping(_row())
-    assert CONTRACT == 'KS1-forensic-derived-features-v7'
+    assert CONTRACT == 'KS1-forensic-derived-features-v8'
     assert np.isclose(
         derived['forensic_home_individual_bullpen_rank1_fip_7d_regime_delta'], 1.0
     )
@@ -45,6 +51,15 @@ def test_individual_reliever_regime_features_use_same_rank_and_strict_prior_wind
     assert np.isclose(
         derived['forensic_away_individual_bullpen_rank1_k_bb_pct_15d_regime_delta'], -3.0
     )
+    assert np.isclose(
+        derived['forensic_home_individual_bullpen_rank1_xwoba_7d_regime_delta'], .04
+    )
+    assert np.isclose(
+        derived['forensic_away_individual_bullpen_rank1_xwoba_15d_regime_delta'], -.025
+    )
+    assert np.isclose(
+        derived['forensic_individual_bullpen_rank1_xwoba_7d_advantage'], -.065
+    )
     assert derive_mapping({**_row(), 'home_win': 1}) == derive_mapping({**_row(), 'home_win': 0})
 
 
@@ -55,6 +70,9 @@ def test_regime_features_are_development_only_and_fail_closed_on_missing_parent(
     assert name in admitted
     assert name not in rejected
     assert np.allclose(derived[name].to_numpy(), [1.0, 1.1, 1.2])
+    xwoba_name = 'forensic_home_individual_bullpen_rank1_xwoba_7d_regime_delta'
+    assert xwoba_name in admitted
+    assert np.allclose(derived[xwoba_name].to_numpy(), [.04, .041, .042])
 
     missing = frame.drop(columns=['home_individual_bullpen_rank1_fip_30d'])
     admitted2, rejected2, derived2 = admit(missing, admitted_raw=[], minimum_nonmissing=3)
@@ -75,5 +93,7 @@ def test_frame_and_mapping_paths_match_for_regime_features():
             'forensic_home_individual_bullpen_rank1_era_7d_regime_delta',
             'forensic_away_individual_bullpen_rank1_era_15d_regime_delta',
             'forensic_home_individual_bullpen_rank1_k_bb_pct_15d_regime_delta',
+            'forensic_home_individual_bullpen_rank1_xwoba_7d_regime_delta',
+            'forensic_individual_bullpen_rank1_xwoba_15d_advantage',
         ):
             assert np.isclose(derived.loc[index, name], mapping[name])
