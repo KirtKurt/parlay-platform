@@ -467,6 +467,18 @@ def test_middle_constraint_ratio_overflow_fails_closed():
     assert rows == []
 
 
+def test_middle_increment_cent_check_cannot_overflow():
+    rows = detect_middles([{
+        "id": "overflow-increment", "event_id": "overflow-increment", "event": "A @ B",
+        "market": "totals", "quotes": [
+            {"outcome": "Over", "book": "one", "decimal": 2.1, "point": 8.5,
+             "stake_increment": "1e308"},
+            {"outcome": "Under", "book": "two", "decimal": 2.1, "point": 9.5},
+        ],
+    }], bankroll=1e308)
+    assert rows == []
+
+
 def test_ui_marks_free_middles_as_settlement_unverified():
     from ui_page import HTML
     assert "UNVERIFIED FREE MIDDLE" in HTML

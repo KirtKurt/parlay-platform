@@ -63,7 +63,9 @@ def _valid_stake_constraints(quote: Mapping[str, Any], bankroll: float) -> bool:
         parsed[key] = value
     if parsed["stake_increment"] is not None:
         increment = float(parsed["stake_increment"])
-        if increment < 0.01 or abs(increment * 100 - round(increment * 100)) > 1e-7:
+        scaled_increment = increment * 100
+        if (increment < 0.01 or not isfinite(scaled_increment)
+                or abs(scaled_increment - round(scaled_increment)) > 1e-7):
             return False
     maximum = bankroll if parsed["limit"] is None else min(float(parsed["limit"]), bankroll)
     minimum = float(parsed["min_stake"] or 0)

@@ -288,7 +288,13 @@ def _two_way_feasible_plan(
 def _multiway_exact_plan(
     legs: List[Dict[str, Any]], bankroll: float, budget: Optional[Dict[str, int]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Search bounded active-set candidates without materializing raw grids."""
+    """Search total-stake levels and derive the least stake for every payout.
+
+    For any executable plan with total stake T, each leg's least allowed stake
+    whose rounded payout exceeds T is no larger than the corresponding stake in
+    that plan. Searching cent-aligned T therefore covers interior grid points
+    without materializing the Cartesian product of every leg's stake range.
+    """
     if len(legs) < 3 or len(legs) > MAX_ENUMERATED_LEGS:
         return None
     bounds = []
@@ -302,49 +308,40 @@ def _multiway_exact_plan(
         if last_multiple < first_multiple:
             return None
         bounds.append((first_multiple, last_multiple, increment))
+    minimum_total = sum(first * increment for first, _, increment in bounds)
+    maximum_total = min(
+        bankroll,
+        sum(last * increment for _, last, increment in bounds),
+    )
+    first_total_cent = ceil(minimum_total * 100 - 1e-7)
+    last_total_cent = floor(maximum_total * 100 + 1e-7)
+    remaining = MAX_SCAN_PLAN_WORK if budget is None else int(budget.get("remaining", 0))
     best = None
-    for fixed_mask in range(1, 1 << len(legs)):
-        fixed_total = sum(
-            bounds[index][0] * bounds[index][2]
-            for index in range(len(legs)) if fixed_mask & (1 << index)
-        )
-        variable = [index for index in range(len(legs)) if not fixed_mask & (1 << index)]
-        denominator = 1.0 - sum(1.0 / float(legs[index]["net_decimal"]) for index in variable)
-        if variable and denominator <= 0:
-            continue
-        target_total = fixed_total / denominator if variable else fixed_total
-        choices: List[List[float]] = []
-        for index, leg in enumerate(legs):
-            first, last, increment = bounds[index]
-            if fixed_mask & (1 << index):
-                multiples = {first}
-            else:
-                target_multiple = target_total / float(leg["net_decimal"]) / increment
-                lower = floor(target_multiple + 1e-10)
-                upper = ceil(target_multiple - 1e-10)
-                multiples = {lower, upper, upper + 1}
-            values = [
-                multiple * increment for multiple in sorted(multiples)
-                if first <= multiple <= last
-            ]
-            if not values:
+    for total_cent in range(first_total_cent, last_total_cent + 1):
+        if remaining <= 0:
+            break
+        remaining -= 1
+        if budget is not None:
+            budget["remaining"] = remaining
+        target_total = total_cent / 100
+        stakes = []
+        for leg, (first, last, increment) in zip(legs, bounds):
+            odds = float(leg["net_decimal"])
+            estimate = floor((target_total + 0.005) / odds / increment)
+            multiple = max(first, estimate - 2)
+            while multiple <= last and round(multiple * increment * odds, 2) <= target_total:
+                multiple += 1
+            if multiple > last:
                 break
-            choices.append(values)
-        if len(choices) != len(legs):
+            stakes.append(multiple * increment)
+        if len(stakes) != len(legs) or sum(stakes) > target_total + 1e-9:
             continue
-        for stakes in product(*choices):
-            if budget is not None:
-                if budget.get("remaining", 0) <= 0:
-                    return best
-                budget["remaining"] -= 1
-            if sum(stakes) > bankroll + 1e-9:
-                continue
-            adjusted = [dict(leg, stake=stake) for leg, stake in zip(legs, stakes)]
-            plan = _direct_discrete_plan(adjusted, bankroll)
-            if not plan or not plan.get("strict_arbitrage_after_rounding"):
-                continue
-            if best is None or float(plan["minimum_profit"]) > float(best["minimum_profit"]):
-                best = plan
+        adjusted = [dict(leg, stake=stake) for leg, stake in zip(legs, stakes)]
+        plan = _direct_discrete_plan(adjusted, bankroll)
+        if not plan or not plan.get("strict_arbitrage_after_rounding"):
+            continue
+        if best is None or float(plan["minimum_profit"]) > float(best["minimum_profit"]):
+            best = plan
     return best
 
 

@@ -482,6 +482,25 @@ def test_multiway_solver_prunes_large_grid_by_active_bounds():
     assert row and row["arb"] is True and row["allocated_stake"] <= 12
 
 
+def test_multiway_solver_searches_interior_bounded_grid():
+    row = scan_market(
+        market_id="interior-grid", event="A v B v C v D", market="winner", bankroll=18,
+        expected_outcomes=["A", "B", "C", "D"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "one", "decimal": 4.70861339,
+             "stake_increment": 0.5, "min_stake": 0.5, "limit": 3.5},
+            {"outcome": "B", "book": "two", "decimal": 5.5291653,
+             "stake_increment": 0.5, "min_stake": 1.5, "limit": 4},
+            {"outcome": "C", "book": "three", "decimal": 8.35831113,
+             "stake_increment": 1, "min_stake": 1, "limit": 3},
+            {"outcome": "D", "book": "four", "decimal": 2.34327911,
+             "stake_increment": 2, "min_stake": 2, "limit": 12},
+        ],
+    )
+    assert row and row["arb"] is True and row["executable"] is True
+    assert row["minimum_profit"] >= 0.32
+
+
 def test_duplicate_capped_quotes_do_not_hide_usable_profile():
     quotes = []
     for outcome in ("A", "B"):
