@@ -23,7 +23,7 @@ def _row(offset=0.0):
 
 def test_symmetric_starter_regime_advantages_are_home_oriented_and_label_free():
     derived = derive_mapping(_row())
-    assert CONTRACT == 'KS1-forensic-derived-features-v7'
+    assert CONTRACT == 'KS1-forensic-derived-features-v8'
     assert np.isclose(derived['forensic_starter_fip_regime_advantage'], 1.5)
     assert np.isclose(derived['forensic_starter_era_regime_advantage'], 1.7)
     assert np.isclose(derived['forensic_starter_xwoba_regime_advantage'], 0.06)

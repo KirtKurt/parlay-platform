@@ -11,8 +11,8 @@ Reliever slots are deterministic *usage ranks*, not leverage-role claims: among 
 on the observed pre-T10 roster with at least one prior 30-day appearance, rank by prior
 30-day appearances descending and player id as a stable tie-break.  The slot identity is
 therefore fixed independently of the metric window.  Performance values expose the
-strictly prior 7-, 15-, and 30-day official-box summaries already reconstructed by the
-shared point-in-time feature engine.
+strictly prior 7-, 15-, and 30-day official-box summaries and xwOBA already reconstructed
+by the shared point-in-time feature engine.
 """
 from __future__ import annotations
 
@@ -28,10 +28,10 @@ from ks1.features import Features
 from ks1.historical_feed import feed_team_context
 from ks1.inventory import encode
 
-CONTRACT = "KS1-historical-individual-bullpen-development-enrichment-v2"
+CONTRACT = "KS1-historical-individual-bullpen-development-enrichment-v3"
 RANKS = (1, 2, 3)
 WINDOWS = (7, 15, 30)
-METRICS = ("fip", "era", "k_bb_pct")
+METRICS = ("fip", "era", "k_bb_pct", "xwoba")
 FEATURES = tuple(
     f"individual_bullpen_rank{rank}_{metric}_{days}d"
     for rank in RANKS for metric in METRICS for days in WINDOWS
