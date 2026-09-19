@@ -9,14 +9,16 @@ this detector does not grant.
 from __future__ import annotations
 
 import re
+from itertools import combinations, islice, product
 from math import floor, isfinite
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
-from arb_engine import _net_decimal, _quote_decimal, _two_way_exact_plan
+from arb_engine import _net_decimal, _quote_decimal, _two_way_exact_plan, _two_way_feasible_plan
 from stake_rounding import StakeRoundingError, optimize_rounding_neighborhood
 
 _POINT_RE = re.compile(r"([+-]?\d+(?:\.\d+)?)\s*$")
 MAX_MIDDLES = 100
+MAX_PAIR_EVALUATIONS = 4096
 
 
 def _norm_books(raw: Any) -> Optional[set[str]]:
@@ -246,11 +248,16 @@ def _stake_plan(first: Mapping[str, Any], second: Mapping[str, Any], bankroll: f
         rounded = optimize_rounding_neighborhood(rounding_legs, bankroll=bankroll)
     except (StakeRoundingError, ArithmeticError, ValueError):
         rounded = {"feasible": False, "reason": "ROUNDING_ERROR", "legs": []}
-    if (implied < 1.0 and max(float(leg["net_decimal"]) for leg in rounding_legs) <= 1e12
-            and (not rounded.get("feasible") or not rounded.get("strict_arbitrage_after_rounding"))):
-        exact = _two_way_exact_plan(rounding_legs, bankroll)
-        if exact and exact.get("strict_arbitrage_after_rounding"):
-            rounded = exact
+    safe_exact = max(float(leg["net_decimal"]) for leg in rounding_legs) <= 1e12
+    if safe_exact and (not rounded.get("feasible") or not rounded.get("strict_arbitrage_after_rounding")):
+        if implied < 1.0:
+            exact = _two_way_exact_plan(rounding_legs, bankroll)
+            if exact and exact.get("strict_arbitrage_after_rounding"):
+                rounded = exact
+        if not rounded.get("feasible"):
+            feasible = _two_way_feasible_plan(rounding_legs, bankroll)
+            if feasible:
+                rounded = feasible
     if not rounded.get("feasible"):
         return {
             "implied_sum": implied,
@@ -352,53 +359,40 @@ def detect_middles(
         if family == "total":
             overs = [q for q in quotes if q["side"] == "over"]
             unders = [q for q in quotes if q["side"] == "under"]
-            for over in overs:
-                for under in unders:
-                    if over["book"] == under["book"]:
-                        continue
-                    gap = under["point"] - over["point"]
-                    increment = _scoring_increment(contract, over, under)
-                    if gap <= 0 or not _middle_result_exists(over["point"], under["point"], increment):
-                        continue
-                    plan = _stake_plan(over, under, bankroll)
-                    if not plan.get("feasible"):
-                        continue
-                    found.append(_row(
-                        market_id=f"{event_key}|middle|{contract}|{selection}|{over['point']}|{under['point']}|{over['book']}|{under['book']}",
-                        kind="total_middle",
-                        family=family,
-                        gap=gap,
-                        plan=plan,
-                        event=over["event"],
-                        market=f"{over['market']}/{under['market']}",
-                        commence_time=over.get("commence_time") or under.get("commence_time"),
-                        selection=selection,
-                    ))
+            for over, under in islice(product(overs, unders), MAX_PAIR_EVALUATIONS):
+                if over["book"] == under["book"]:
+                    continue
+                gap = under["point"] - over["point"]
+                increment = _scoring_increment(contract, over, under)
+                if gap <= 0 or not _middle_result_exists(over["point"], under["point"], increment):
+                    continue
+                plan = _stake_plan(over, under, bankroll)
+                if not plan.get("feasible"):
+                    continue
+                found.append(_row(
+                    market_id=f"{event_key}|middle|{contract}|{selection}|{over['point']}|{under['point']}|{over['book']}|{under['book']}",
+                    kind="total_middle", family=family, gap=gap, plan=plan,
+                    event=over["event"], market=f"{over['market']}/{under['market']}",
+                    commence_time=over.get("commence_time") or under.get("commence_time"), selection=selection,
+                ))
         else:
-            for left in quotes:
-                for right in quotes:
-                    if left["book"] == right["book"] or left["side"] == right["side"]:
-                        continue
-                    if (left["side"], left["book"]) > (right["side"], right["book"]):
-                        continue
-                    gap = left["point"] + right["point"]
-                    increment = _scoring_increment(contract, left, right)
-                    if gap <= 0 or not _middle_result_exists(-left["point"], right["point"], increment):
-                        continue
-                    plan = _spread_plan(left, right, bankroll)
-                    if not plan.get("feasible"):
-                        continue
-                    found.append(_row(
-                        market_id=f"{event_key}|middle|{contract}|{left['side']}:{left['point']}|{right['side']}:{right['point']}|{left['book']}|{right['book']}",
-                        kind="spread_middle",
-                        family=family,
-                        gap=gap,
-                        plan=plan,
-                        event=left["event"],
-                        market=f"{left['market']}/{right['market']}",
-                        commence_time=left.get("commence_time") or right.get("commence_time"),
-                        selection=selection,
-                    ))
+            for first, second in islice(combinations(quotes, 2), MAX_PAIR_EVALUATIONS):
+                left, right = sorted((first, second), key=lambda quote: (quote["side"], quote["book"]))
+                if left["book"] == right["book"] or left["side"] == right["side"]:
+                    continue
+                gap = left["point"] + right["point"]
+                increment = _scoring_increment(contract, left, right)
+                if gap <= 0 or not _middle_result_exists(-left["point"], right["point"], increment):
+                    continue
+                plan = _spread_plan(left, right, bankroll)
+                if not plan.get("feasible"):
+                    continue
+                found.append(_row(
+                    market_id=f"{event_key}|middle|{contract}|{left['side']}:{left['point']}|{right['side']}:{right['point']}|{left['book']}|{right['book']}",
+                    kind="spread_middle", family=family, gap=gap, plan=plan,
+                    event=left["event"], market=f"{left['market']}/{right['market']}",
+                    commence_time=left.get("commence_time") or right.get("commence_time"), selection=selection,
+                ))
     found.sort(key=lambda row: (
         0 if row["kind"] == "free_middle" else 1,
         -(row.get("gap") or 0),

@@ -7,6 +7,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+import arb_engine
 from arb_engine import ArbValidationError, american_to_decimal, scan_all, scan_market
 from provider import normalize_games
 from app import lambda_handler
@@ -302,3 +303,47 @@ def test_multiway_exact_solver_finds_interior_discrete_plan():
 def test_scalar_books_filter_fails_validation_instead_of_iteration():
     with pytest.raises(ArbValidationError):
         scan_all({"events": [], "books": 123})
+
+
+def test_exact_solver_keeps_inclusive_bankroll_endpoint():
+    row = scan_market(
+        market_id="inclusive", event="A v B", market="h2h", bankroll=7,
+        expected_outcomes=["A", "B"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "one", "decimal": 6.0, "min_stake": 5, "limit": 5.18, "stake_increment": 5},
+            {"outcome": "B", "book": "two", "decimal": 6.0, "stake_increment": 1},
+        ],
+    )
+    assert row and row["arb"] is True
+    assert sorted(leg["stake"] for leg in row["legs"]) == [2, 5]
+
+
+def test_plan_ranking_keeps_break_even_above_losing(monkeypatch):
+    row = scan_market(
+        market_id="break-even", event="A v B", market="h2h", bankroll=9,
+        expected_outcomes=["A", "B"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "one", "decimal": 3.0, "stake_increment": 0.5},
+            {"outcome": "B", "book": "two", "decimal": 1.5, "min_stake": 1, "limit": 3.72, "stake_increment": 1},
+        ],
+    )
+    assert row
+    assert min(leg["profit_if_wins"] for leg in row["legs"]) >= 0
+
+
+def test_equivalent_quote_combinations_reuse_exact_search(monkeypatch):
+    calls = 0
+    original = arb_engine._two_way_exact_plan
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+    monkeypatch.setattr(arb_engine, "_two_way_exact_plan", counted)
+    quotes = []
+    for outcome in ("A", "B"):
+        quotes.extend({"outcome": outcome, "book": f"{outcome}-{index}", "decimal": 2.00001} for index in range(64))
+    scan_market(
+        market_id="bounded", event="A v B", market="h2h", bankroll=20,
+        expected_outcomes=["A", "B"], rules_status="compatible", quotes=quotes,
+    )
+    assert calls <= 2

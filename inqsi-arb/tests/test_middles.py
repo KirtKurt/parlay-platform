@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from arb_engine import scan_all, scan_market
+import middle_engine
 from middle_engine import detect_middles
 from provider import normalize_games
 
@@ -296,3 +297,35 @@ def test_middle_exact_solver_finds_interior_stake_plan():
     assert row["kind"] == "free_middle"
     assert row["legs"][0]["stake"] == 8
     assert sum(leg["stake"] for leg in row["legs"]) <= 17
+
+
+def test_risk_middle_exact_solver_finds_feasible_interior_plan():
+    events = [{"id": "e19", "event_id": "e19", "event": "A @ B", "market": "totals", "quotes": [
+        {"outcome": "Over", "book": "one", "decimal": 4.0, "point": 8.5,
+         "min_stake": 8, "limit": 9, "stake_increment": 4},
+        {"outcome": "Under", "book": "two", "decimal": 1.3, "point": 10.5,
+         "limit": 16, "stake_increment": 1},
+    ]}]
+    row = detect_middles(events, bankroll=17)[0]
+    assert row["kind"] == "risk_middle"
+    assert row["legs"][0]["stake"] == 8
+    assert sum(leg["stake"] for leg in row["legs"]) <= 17
+
+
+def test_middle_pair_optimization_is_bounded(monkeypatch):
+    calls = 0
+    original = middle_engine._stake_plan
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+    monkeypatch.setattr(middle_engine, "_stake_plan", counted)
+    quotes = [
+        {"outcome": "Over", "book": f"over-{index}", "decimal": 1.91, "point": 8.5}
+        for index in range(100)
+    ] + [
+        {"outcome": "Under", "book": f"under-{index}", "decimal": 1.91, "point": 9.5}
+        for index in range(100)
+    ]
+    detect_middles([{"id": "bounded-middle", "event_id": "bounded-middle", "event": "A @ B", "market": "totals", "quotes": quotes}], bankroll=100)
+    assert calls <= middle_engine.MAX_PAIR_EVALUATIONS

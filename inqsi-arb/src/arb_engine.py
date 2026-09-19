@@ -107,7 +107,9 @@ def _quote_constraints_usable(raw: Mapping[str, Any], bankroll: float) -> bool:
     return first_stake <= maximum + 1e-9
 
 
-def _two_way_exact_plan(legs: List[Dict[str, Any]], bankroll: float) -> Optional[Dict[str, Any]]:
+def _two_way_exact_plan(
+    legs: List[Dict[str, Any]], bankroll: float, budget: Optional[Dict[str, int]] = None,
+) -> Optional[Dict[str, Any]]:
     """Solve a bounded two-way discrete plan when local neighborhoods fail."""
     if len(legs) != 2:
         return None
@@ -131,11 +133,22 @@ def _two_way_exact_plan(legs: List[Dict[str, Any]], bankroll: float) -> Optional
     other_odds = float(legs[other_index]["net_decimal"])
     best = None
     for offset in range(count):
+        if budget is not None:
+            if budget.get("remaining", 0) <= 0:
+                break
+            budget["remaining"] -= 1
         anchor = first + offset * increment
-        lower = max(other_first, anchor / (other_odds - 1.0))
-        upper = min(other_last, bankroll - anchor, anchor * (anchor_odds - 1.0))
-        low_multiple = floor(lower / other_increment + 1e-10) + 1
-        high_multiple = ceil(upper / other_increment - 1e-10) - 1
+        strict_lower = anchor / (other_odds - 1.0)
+        strict_upper = anchor * (anchor_odds - 1.0)
+        low_multiple = max(
+            ceil(other_first / other_increment - 1e-10),
+            floor(strict_lower / other_increment + 1e-10) + 1,
+        )
+        high_multiple = min(
+            floor(other_last / other_increment + 1e-10),
+            floor((bankroll - anchor) / other_increment + 1e-10),
+            ceil(strict_upper / other_increment - 1e-10) - 1,
+        )
         if low_multiple > high_multiple:
             continue
         equal = anchor * anchor_odds / other_odds
@@ -153,7 +166,63 @@ def _two_way_exact_plan(legs: List[Dict[str, Any]], bankroll: float) -> Optional
     return best
 
 
-def _multiway_exact_plan(legs: List[Dict[str, Any]], bankroll: float) -> Optional[Dict[str, Any]]:
+def _two_way_feasible_plan(
+    legs: List[Dict[str, Any]], bankroll: float, budget: Optional[Dict[str, int]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Find a bounded feasible two-leg plan even when it is not an arbitrage."""
+    if len(legs) != 2:
+        return None
+    bounds = []
+    for leg in legs:
+        increment = float(leg.get("stake_increment") or 0.01)
+        minimum = float(leg.get("min_stake") or 0)
+        cap_raw = leg.get("constraint_cap")
+        cap = bankroll if cap_raw is None else min(float(cap_raw), bankroll)
+        first_multiple = max(1, ceil(minimum / increment - 1e-10))
+        last_multiple = floor(cap / increment + 1e-10)
+        count = max(0, last_multiple - first_multiple + 1)
+        bounds.append((first_multiple, last_multiple, increment, count))
+    anchor_index = 0 if bounds[0][3] <= bounds[1][3] else 1
+    if bounds[anchor_index][3] > 20000:
+        return None
+    other_index = 1 - anchor_index
+    first_multiple, _, increment, count = bounds[anchor_index]
+    other_first_multiple, other_last_multiple, other_increment, _ = bounds[other_index]
+    best = None
+    for offset in range(count):
+        if budget is not None:
+            if budget.get("remaining", 0) <= 0:
+                break
+            budget["remaining"] -= 1
+        anchor = (first_multiple + offset) * increment
+        affordable_last = min(
+            other_last_multiple,
+            floor((bankroll - anchor) / other_increment + 1e-10),
+        )
+        if affordable_last < other_first_multiple:
+            continue
+        equal = anchor * float(legs[anchor_index]["net_decimal"]) / float(legs[other_index]["net_decimal"])
+        equal_multiple = round(equal / other_increment)
+        for multiple in {
+            other_first_multiple,
+            affordable_last,
+            max(other_first_multiple, min(affordable_last, equal_multiple)),
+        }:
+            adjusted = [dict(leg) for leg in legs]
+            adjusted[anchor_index]["stake"] = anchor
+            adjusted[other_index]["stake"] = multiple * other_increment
+            plan = _direct_discrete_plan(adjusted, bankroll)
+            if not plan:
+                continue
+            profit = plan.get("minimum_profit")
+            if best is None or (profit is not None and float(profit) > float(best["minimum_profit"])):
+                best = plan
+    return best
+
+
+def _multiway_exact_plan(
+    legs: List[Dict[str, Any]], bankroll: float, budget: Optional[Dict[str, int]] = None,
+) -> Optional[Dict[str, Any]]:
     """Enumerate a bounded discrete grid for small multiway markets."""
     if len(legs) < 3:
         return None
@@ -173,6 +242,10 @@ def _multiway_exact_plan(legs: List[Dict[str, Any]], bankroll: float) -> Optiona
         grids.append([multiple * increment for multiple in range(first_multiple, last_multiple + 1)])
     best = None
     for stakes in product(*grids):
+        if budget is not None:
+            if budget.get("remaining", 0) <= 0:
+                break
+            budget["remaining"] -= 1
         if sum(stakes) > bankroll + 1e-9:
             continue
         adjusted = [dict(leg, stake=stake) for leg, stake in zip(legs, stakes)]
@@ -233,7 +306,9 @@ def _direct_discrete_plan(legs: List[Dict[str, Any]], bankroll: float) -> Option
     }
 
 
-def _optimized_plan(legs: List[Dict[str, Any]], bankroll: float) -> Dict[str, Any]:
+def _optimized_plan(
+    legs: List[Dict[str, Any]], bankroll: float, exact_budget: Optional[Dict[str, int]] = None,
+) -> Dict[str, Any]:
     plans: List[Dict[str, Any]] = []
     direct = _direct_discrete_plan(legs, bankroll)
     if direct:
@@ -245,10 +320,10 @@ def _optimized_plan(legs: List[Dict[str, Any]], bankroll: float) -> Dict[str, An
     except StakeRoundingError:
         neighborhood = {"feasible": False, "reason": "ROUNDING_ERROR"}
     if not any(plan.get("strict_arbitrage_after_rounding") for plan in plans):
-        exact_two_way = _two_way_exact_plan(legs, bankroll)
+        exact_two_way = _two_way_exact_plan(legs, bankroll, exact_budget)
         if exact_two_way:
             plans.append(exact_two_way)
-        exact_multiway = _multiway_exact_plan(legs, bankroll)
+        exact_multiway = _multiway_exact_plan(legs, bankroll, exact_budget)
         if exact_multiway:
             plans.append(exact_multiway)
 
@@ -286,15 +361,19 @@ def _optimized_plan(legs: List[Dict[str, Any]], bankroll: float) -> Dict[str, An
                 if candidate.get("feasible"):
                     plans.append(candidate)
     if plans:
+        def minimum_profit(plan: Mapping[str, Any]) -> float:
+            value = plan.get("minimum_profit")
+            return float(value) if value is not None else float("-inf")
         return max(plans, key=lambda plan: (
             bool(plan.get("strict_arbitrage_after_rounding")),
-            float(plan.get("minimum_profit") or float("-inf")),
+            minimum_profit(plan),
         ))
     return neighborhood
 
 
 def _rounded_quote_plan(
     selected: Mapping[str, Mapping[str, Any]], outcomes: Iterable[str], bankroll: float,
+    exact_budget: Optional[Dict[str, int]] = None,
 ) -> tuple[float, Dict[str, float], Optional[Dict[str, Any]], Optional[str]]:
     ordered = sorted(outcomes)
     implied = sum(1.0 / selected[outcome]["net_decimal"] for outcome in ordered)
@@ -321,7 +400,7 @@ def _rounded_quote_plan(
         "stake_increment": selected[outcome].get("stake_increment") or 0.01,
     } for outcome in ordered]
     try:
-        return implied, unrounded, _optimized_plan(legs, bankroll), None
+        return implied, unrounded, _optimized_plan(legs, bankroll, exact_budget), None
     except (StakeRoundingError, ArithmeticError, ValueError):
         return implied, unrounded, None, "ROUNDING_ERROR"
 
@@ -377,12 +456,30 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
         ]
         executable_choice = None
         combinations = islice(product(*pools), 4096)
+        exact_budget = {"remaining": 20000}
+        plan_cache: Dict[tuple[Any, ...], tuple[float, Optional[Dict[str, Any]]]] = {}
         for combination in combinations:
             selected = dict(zip(ordered_outcomes, combination))
-            combo_implied = sum(1.0 / selected[outcome]["net_decimal"] for outcome in ordered_outcomes)
+            cache_key = tuple((
+                outcome,
+                selected[outcome]["net_decimal"],
+                selected[outcome].get("limit"),
+                selected[outcome].get("min_stake"),
+                selected[outcome].get("stake_increment"),
+            ) for outcome in ordered_outcomes)
+            cached = plan_cache.get(cache_key)
+            if cached is not None:
+                combo_implied, combo_plan = cached
+            else:
+                combo_implied = sum(1.0 / selected[outcome]["net_decimal"] for outcome in ordered_outcomes)
+                combo_plan = None
+                if combo_implied < 1.0:
+                    _, _, combo_plan, _ = _rounded_quote_plan(
+                        selected, ordered_outcomes, bankroll, exact_budget,
+                    )
+                plan_cache[cache_key] = (combo_implied, combo_plan)
             if combo_implied >= 1.0:
                 continue
-            _, _, combo_plan, _ = _rounded_quote_plan(selected, ordered_outcomes, bankroll)
             if not combo_plan or not combo_plan.get("feasible"):
                 continue
             if not combo_plan.get("strict_arbitrage_after_rounding"):
