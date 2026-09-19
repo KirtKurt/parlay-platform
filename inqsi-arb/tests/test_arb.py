@@ -501,6 +501,39 @@ def test_multiway_solver_searches_interior_bounded_grid():
     assert row["minimum_profit"] >= 0.32
 
 
+def test_multiway_solver_reaches_high_minimum_active_set():
+    row = scan_market(
+        market_id="high-minimum", event="A v B v C", market="winner", bankroll=1000,
+        expected_outcomes=["A", "B", "C"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "one", "decimal": 5,
+             "stake_increment": 1, "min_stake": 500, "limit": 500},
+            {"outcome": "B", "book": "two", "decimal": 5, "stake_increment": 1},
+            {"outcome": "C", "book": "three", "decimal": 5, "stake_increment": 1},
+        ],
+    )
+    assert row and row["arb"] is True and row["executable"] is True
+    assert [leg["stake"] for leg in row["legs"]] == [500, 168, 168]
+
+
+def test_multiway_solver_can_optimize_above_bankroll_payout_threshold():
+    row = scan_market(
+        market_id="payout-threshold", event="A v B v C", market="winner", bankroll=50,
+        expected_outcomes=["A", "B", "C"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "one", "decimal": 4,
+             "stake_increment": 5, "min_stake": 10, "limit": 50},
+            {"outcome": "B", "book": "two", "decimal": 10.2,
+             "stake_increment": 5, "min_stake": 5, "limit": 25},
+            {"outcome": "C", "book": "three", "decimal": 7,
+             "stake_increment": 5, "min_stake": 25, "limit": 30},
+        ],
+    )
+    assert row and row["arb"] is True and row["executable"] is True
+    assert [leg["stake"] for leg in row["legs"]] == [15, 10, 25]
+    assert row["minimum_profit"] == 10
+
+
 def test_duplicate_capped_quotes_do_not_hide_usable_profile():
     quotes = []
     for outcome in ("A", "B"):

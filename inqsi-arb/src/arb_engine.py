@@ -285,6 +285,57 @@ def _two_way_feasible_plan(
     return best
 
 
+def _multiway_active_set_plan(
+    legs: List[Dict[str, Any]], bankroll: float, bounds: List[tuple[int, int, float]],
+    budget: Optional[Dict[str, int]],
+) -> Optional[Dict[str, Any]]:
+    """Probe equality points for every combination of binding minimums."""
+    best = None
+    for fixed_mask in range(1, 1 << len(legs)):
+        fixed_total = sum(
+            bounds[index][0] * bounds[index][2]
+            for index in range(len(legs)) if fixed_mask & (1 << index)
+        )
+        variable = [index for index in range(len(legs)) if not fixed_mask & (1 << index)]
+        denominator = 1.0 - sum(1.0 / float(legs[index]["net_decimal"]) for index in variable)
+        if variable and denominator <= 0:
+            continue
+        target_total = fixed_total / denominator if variable else fixed_total
+        choices: List[List[float]] = []
+        for index, leg in enumerate(legs):
+            first, last, increment = bounds[index]
+            if fixed_mask & (1 << index):
+                multiples = {first}
+            else:
+                target_multiple = target_total / float(leg["net_decimal"]) / increment
+                lower = floor(target_multiple + 1e-10)
+                upper = ceil(target_multiple - 1e-10)
+                multiples = {lower, upper, upper + 1}
+            values = [
+                multiple * increment for multiple in sorted(multiples)
+                if first <= multiple <= last
+            ]
+            if not values:
+                break
+            choices.append(values)
+        if len(choices) != len(legs):
+            continue
+        for stakes in product(*choices):
+            if budget is not None:
+                if budget.get("remaining", 0) <= 0:
+                    return best
+                budget["remaining"] -= 1
+            if sum(stakes) > bankroll + 1e-9:
+                continue
+            adjusted = [dict(leg, stake=stake) for leg, stake in zip(legs, stakes)]
+            plan = _direct_discrete_plan(adjusted, bankroll)
+            if not plan or not plan.get("strict_arbitrage_after_rounding"):
+                continue
+            if best is None or float(plan["minimum_profit"]) > float(best["minimum_profit"]):
+                best = plan
+    return best
+
+
 def _multiway_exact_plan(
     legs: List[Dict[str, Any]], bankroll: float, budget: Optional[Dict[str, int]] = None,
 ) -> Optional[Dict[str, Any]]:
@@ -308,15 +359,16 @@ def _multiway_exact_plan(
         if last_multiple < first_multiple:
             return None
         bounds.append((first_multiple, last_multiple, increment))
+    active_best = _multiway_active_set_plan(legs, bankroll, bounds, budget)
     minimum_total = sum(first * increment for first, _, increment in bounds)
-    maximum_total = min(
-        bankroll,
-        sum(last * increment for _, last, increment in bounds),
+    maximum_threshold = min(
+        round(last * increment * float(leg["net_decimal"]), 2) - 0.01
+        for leg, (_, last, increment) in zip(legs, bounds)
     )
     first_total_cent = ceil(minimum_total * 100 - 1e-7)
-    last_total_cent = floor(maximum_total * 100 + 1e-7)
+    last_total_cent = floor(maximum_threshold * 100 + 1e-7)
     remaining = MAX_SCAN_PLAN_WORK if budget is None else int(budget.get("remaining", 0))
-    best = None
+    best = active_best
     for total_cent in range(first_total_cent, last_total_cent + 1):
         if remaining <= 0:
             break
