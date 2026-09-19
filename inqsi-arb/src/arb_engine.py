@@ -117,6 +117,17 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
     rounding_reason = None
     if complete and implied_sum > 0:
         unrounded = {o: bankroll * (1.0 / best[o]["net_decimal"]) / implied_sum for o in expected_set}
+        cap_scales = [1.0]
+        for outcome in expected_set:
+            cap = best[outcome].get("limit")
+            try:
+                cap_n = float(cap) if cap is not None and cap != "" else None
+            except (TypeError, ValueError):
+                cap_n = None
+            if cap_n is not None and cap_n > 0:
+                cap_scales.append(cap_n / unrounded[outcome])
+        target_scale = min(cap_scales)
+        target_stakes = {outcome: stake * target_scale for outcome, stake in unrounded.items()}
         rounding_legs = []
         for outcome in expected_set:
             q = best[outcome]
@@ -126,7 +137,7 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
             except (TypeError, ValueError):
                 cap_n = None
             rounding_legs.append({
-                "outcome": outcome, "book": q["book"], "stake": unrounded[outcome],
+                "outcome": outcome, "book": q["book"], "stake": target_stakes[outcome],
                 "net_decimal": q["net_decimal"], "constraint_cap": cap_n,
                 "min_stake": q.get("min_stake") or 0, "stake_increment": q.get("stake_increment") or 0.01,
             })
@@ -204,13 +215,19 @@ def scan_all(payload: Mapping[str, Any]) -> Dict[str, Any]:
     from middle_engine import detect_middles
     bankroll = float(payload.get("bankroll") or 1000.0)
     books = payload.get("books") if payload.get("books") is not None else payload.get("bookmakers")
+    allowed = _parse_books(books)
     hits: List[Dict[str, Any]] = []; detected: List[Dict[str, Any]] = []; near: List[Dict[str, Any]] = []; rejected: List[Dict[str, Any]] = []
     exchange_pending: List[Dict[str, Any]] = []
     events = list(payload.get("events") or [])
     for item in events:
         market = str(item.get("market") or "unknown")
         if market.endswith("_lay"):
-            quotes = list(item.get("quotes") or [])
+            quotes = [
+                quote for quote in (item.get("quotes") or [])
+                if not allowed or str(quote.get("book") or "").strip().lower() in allowed
+            ]
+            if not quotes:
+                continue
             exchange_pending.append({
                 "market_id": str(item.get("id") or item.get("market_id") or ""),
                 "event": str(item.get("event") or ""),

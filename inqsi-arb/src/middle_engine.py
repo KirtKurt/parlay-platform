@@ -81,8 +81,19 @@ def _point_and_side(quote: Mapping[str, Any], family: str) -> Optional[Tuple[str
     return side.lower(), point_f
 
 
-def _best_quotes(events: Iterable[Mapping[str, Any]], allowed: Optional[set[str]]) -> Dict[Tuple[str, str, str], List[Dict[str, Any]]]:
-    grouped: Dict[Tuple[str, str, str], Dict[Tuple[str, str, float], Dict[str, Any]]] = {}
+def _contract(market: str) -> str:
+    """Keep statistic/period identity while folding base/alternate variants."""
+    parts = [part for part in str(market or "").strip().lower().split("_") if part != "alternate"]
+    return "_".join(parts)
+
+
+def _integer_middle_exists(lower: float, upper: float) -> bool:
+    """Return whether an integer settlement result can satisfy both strict legs."""
+    return int(lower // 1) + 1 < upper
+
+
+def _best_quotes(events: Iterable[Mapping[str, Any]], allowed: Optional[set[str]]) -> Dict[Tuple[str, str, str, str], List[Dict[str, Any]]]:
+    grouped: Dict[Tuple[str, str, str, str], Dict[Tuple[str, str, float], Dict[str, Any]]] = {}
     for item in events or []:
         market = str(item.get("market") or "")
         family = _family(market)
@@ -107,7 +118,8 @@ def _best_quotes(events: Iterable[Mapping[str, Any]], allowed: Optional[set[str]
             if net <= 1:
                 continue
             selection = _selection(raw)
-            bucket = grouped.setdefault((event_key, family, selection), {})
+            contract = _contract(market)
+            bucket = grouped.setdefault((event_key, family, contract, selection), {})
             key = (book, side, point)
             candidate = {
                 "event": str(item.get("event") or event_key),
@@ -219,7 +231,7 @@ def _spread_plan(left: Mapping[str, Any], right: Mapping[str, Any], bankroll: fl
 def _row(*, market_id: str, kind: str, family: str, gap: float, plan: Mapping[str, Any],
          event: str, market: str, commence_time: Any, selection: str) -> Dict[str, Any]:
     implied = float(plan.get("implied_sum") or 0.0)
-    free = implied > 0 and implied < 1.0
+    free = implied > 0 and implied < 1.0 and float(plan.get("minimum_miss_pnl") or 0.0) > 0
     margin = (1.0 / implied - 1.0) if implied > 0 else -1.0
     return {
         "market_id": market_id,
@@ -261,7 +273,7 @@ def detect_middles(
     allowed = _norm_books(books)
     grouped = _best_quotes(events, allowed)
     found: List[Dict[str, Any]] = []
-    for (event_key, family, selection), quotes in grouped.items():
+    for (event_key, family, contract, selection), quotes in grouped.items():
         if family == "total":
             overs = [q for q in quotes if q["side"] == "over"]
             unders = [q for q in quotes if q["side"] == "under"]
@@ -270,7 +282,7 @@ def detect_middles(
                     if over["book"] == under["book"]:
                         continue
                     gap = under["point"] - over["point"]
-                    if gap <= 0:
+                    if gap <= 0 or not _integer_middle_exists(over["point"], under["point"]):
                         continue
                     plan = _stake_plan(over, under, bankroll)
                     found.append(_row(
@@ -292,7 +304,7 @@ def detect_middles(
                     if (left["side"], left["book"]) > (right["side"], right["book"]):
                         continue
                     gap = left["point"] + right["point"]
-                    if gap <= 0:
+                    if gap <= 0 or not _integer_middle_exists(-left["point"], right["point"]):
                         continue
                     plan = _spread_plan(left, right, bankroll)
                     found.append(_row(

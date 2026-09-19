@@ -146,3 +146,17 @@ def test_scan_all_separates_verified_from_unverified_math_arbs():
 def test_american_conversion():
     assert round(american_to_decimal(-110), 4) == 1.9091
     assert american_to_decimal(115) == 2.15
+
+
+def test_limits_scale_the_continuous_plan_before_rounding():
+    row = scan_market(
+        market_id="capped", event="A v B", market="h2h", bankroll=1000,
+        expected_outcomes=["A", "B"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "one", "decimal": 2.2, "limit": 100},
+            {"outcome": "B", "book": "two", "decimal": 2.2, "limit": 100},
+        ],
+    )
+    assert row and row["arb"] is True
+    assert row["allocated_stake"] == 200
+    assert all(leg["stake"] == 100 for leg in row["legs"])

@@ -127,3 +127,68 @@ def test_scan_market_book_filter():
         ],
     )
     assert row and {leg["book"] for leg in row["legs"]} == {"one", "two"}
+
+
+def test_middle_grouping_preserves_contract_identity():
+    events = [
+        {"id": "e6|totals", "event_id": "e6", "event": "A @ B", "market": "totals", "quotes": [
+            {"outcome": "Over", "book": "one", "decimal": 1.91, "point": 8.5},
+        ]},
+        {"id": "e6|totals_h1", "event_id": "e6", "event": "A @ B", "market": "totals_h1", "quotes": [
+            {"outcome": "Under", "book": "two", "decimal": 1.91, "point": 9.5},
+        ]},
+        {"id": "e6|player_points", "event_id": "e6", "event": "A @ B", "market": "player_points", "quotes": [
+            {"description": "Player A", "outcome": "Over", "book": "one", "decimal": 1.91, "point": 20.5},
+        ]},
+        {"id": "e6|player_rebounds", "event_id": "e6", "event": "A @ B", "market": "player_rebounds", "quotes": [
+            {"description": "Player A", "outcome": "Under", "book": "two", "decimal": 1.91, "point": 21.5},
+        ]},
+    ]
+    assert detect_middles(events, bankroll=100) == []
+
+
+def test_middle_grouping_folds_alternate_variant_of_same_contract():
+    events = [
+        {"id": "e7|totals", "event_id": "e7", "event": "A @ B", "market": "totals", "quotes": [
+            {"outcome": "Over", "book": "one", "decimal": 1.91, "point": 8.5},
+        ]},
+        {"id": "e7|alternate_totals", "event_id": "e7", "event": "A @ B", "market": "alternate_totals", "quotes": [
+            {"outcome": "Under", "book": "two", "decimal": 1.91, "point": 9.5},
+        ]},
+    ]
+    assert len(detect_middles(events, bankroll=100)) == 1
+
+
+def test_integer_scoring_rejects_gap_with_no_both_win_result():
+    totals = [{"id": "e8", "event_id": "e8", "event": "A @ B", "market": "totals", "quotes": [
+        {"outcome": "Over", "book": "one", "decimal": 2.2, "point": 8},
+        {"outcome": "Under", "book": "two", "decimal": 2.2, "point": 8.5},
+    ]}]
+    spreads = [{"id": "e9", "event_id": "e9", "event": "A @ B", "market": "spreads", "quotes": [
+        {"outcome": "A -3", "book": "one", "decimal": 2.2, "point": -3},
+        {"outcome": "B +3.5", "book": "two", "decimal": 2.2, "point": 3.5},
+    ]}]
+    assert detect_middles(totals, bankroll=100) == []
+    assert detect_middles(spreads, bankroll=100) == []
+
+
+def test_free_middle_requires_positive_rounded_miss_pnl():
+    events = [{"id": "e10", "event_id": "e10", "event": "A @ B", "market": "totals", "quotes": [
+        {"outcome": "Over", "book": "one", "decimal": 1.6053, "point": 8.5},
+        {"outcome": "Under", "book": "two", "decimal": 2.6523, "point": 9.5},
+    ]}]
+    row = detect_middles(events, bankroll=100)[0]
+    assert row["minimum_miss_pnl"] <= 0
+    assert row["kind"] == "risk_middle"
+    assert row["math_arb"] is False
+
+
+def test_book_filter_applies_to_exchange_pending():
+    result = scan_all({"books": "draftkings", "events": [{
+        "id": "e11", "event": "A @ B", "market": "h2h_lay", "quotes": [
+            {"outcome": "A", "book": "betfair", "decimal": 2.1},
+            {"outcome": "A", "book": "draftkings", "decimal": 2.0},
+        ],
+    }]})
+    assert result["n_exchange_pending"] == 1
+    assert result["exchange_pending"][0]["books"] == ["draftkings"]
