@@ -46,9 +46,12 @@ jobs:
           github.head_ref == 'codex/ks1-official-pitch-attribution-20260915' ||
           github.head_ref == 'codex/ks1-pa-identity-diagnostics-20260915' ||
           github.head_ref == 'codex/ks1-substitution-evidence-20260915' ||
-          github.head_ref == 'codex/ks1-unfinished-ending-evidence-20260915'
+          github.head_ref == 'codex/ks1-unfinished-ending-evidence-20260915' ||
+          github.head_ref == 'codex/ks1-gap-diagnostics-20260919'
         run: |
-          if [[ "$GITHUB_HEAD_REF" == 'codex/ks1-unfinished-ending-evidence-20260915' ]]; then
+          if [[ "$GITHUB_HEAD_REF" == 'codex/ks1-gap-diagnostics-20260919' ]]; then
+            python -m ks1.statcast_diagnostics --date 2025-04-26 --date 2026-09-18 --output /tmp/ks1-physical-diagnostics
+          elif [[ "$GITHUB_HEAD_REF" == 'codex/ks1-unfinished-ending-evidence-20260915' ]]; then
             python -m ks1.statcast_diagnostics --date 2026-07-24 --date 2026-05-23 --output /tmp/ks1-physical-diagnostics
           elif [[ "$GITHUB_HEAD_REF" == 'codex/ks1-substitution-evidence-20260915' ]]; then
             python -m ks1.statcast_diagnostics --date 2026-08-07 --date 2026-07-26 --output /tmp/ks1-physical-diagnostics
@@ -68,7 +71,8 @@ jobs:
           github.head_ref == 'codex/ks1-official-pitch-attribution-20260915' ||
           github.head_ref == 'codex/ks1-pa-identity-diagnostics-20260915' ||
           github.head_ref == 'codex/ks1-substitution-evidence-20260915' ||
-          github.head_ref == 'codex/ks1-unfinished-ending-evidence-20260915'
+          github.head_ref == 'codex/ks1-unfinished-ending-evidence-20260915' ||
+          github.head_ref == 'codex/ks1-gap-diagnostics-20260919'
         uses: actions/upload-artifact@v4
         with:
           name: ks1-physical-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
