@@ -157,3 +157,65 @@ for _family in ("winner", "spreads", "totals"):
         push_policy="market_specific",
         notes="Fanatics NY full-match tennis family; retirement and disqualification treatment is Fanatics-specific and is not cross-qualified with other books.",
     ))
+
+
+AZ_SOURCE = "https://sportsbook.fanatics.com/legal/az/house-rules"
+AZ_REVIEW = "2026-09-15"
+
+
+def _fanatics_state(jurisdiction: str, source: str, version: str) -> None:
+    register(Rule(
+        book="fanatics", sport="baseball", market_family="winner", jurisdiction=jurisdiction,
+        reviewed=True, version=version, source=source,
+        settlement_profile="fanatics_ny_mlb_full_game_2way_action_v1",
+        overtime=True, listed_pitcher=False, participation_required=False,
+        shortened_game_policy="called_early_requires_4.5_home_leading_or_5_away_leading;tie_or_away_lead_during_bottom_5_void;suspension_over_48h_void_unless_determined",
+        push_policy="tie_push",
+        notes=f"Fanatics {jurisdiction.upper()} default full-game 2-way baseball moneyline; listed-pitcher and 3-way variants excluded.",
+    ))
+    for family in ("spreads", "totals"):
+        register(Rule(
+            book="fanatics", sport="baseball", market_family=family, jurisdiction=jurisdiction,
+            reviewed=True, version=version, source=source,
+            settlement_profile="fanatics_ny_mlb_full_game_9_or_8.5_v1",
+            overtime=True, listed_pitcher=False, participation_required=False,
+            shortened_game_policy="9_or_8.5_home_ahead_unless_market_already_determined;scheduled_7_inning_games_7_or_6.5;suspension_over_48h_void_unless_determined",
+            push_policy="push",
+            notes=f"Fanatics {jurisdiction.upper()} default full-game MLB run-line/total family; periods and props excluded.",
+        ))
+    triplets = (
+        ("americanfootball", "fanatics_ny_football_full_game_v1", True,
+         "non_playoff_requires_at_least_10_minutes_of_q4_or_completion_within_48h_unless_determined;playoffs_remain_open_until_governing_body_completion",
+         f"Fanatics {jurisdiction.upper()} full-game 2-way football winner/spread/total only."),
+        ("basketball", "fanatics_ny_basketball_full_game_v1", True,
+         "non_playoff_called_early_action_with_2_minutes_or_less_remaining;otherwise_completion_within_48h_unless_determined;playoffs_remain_open_until_completion",
+         f"Fanatics {jurisdiction.upper()} full-game basketball winner/spread/total only."),
+        ("icehockey", "fanatics_ny_hockey_full_game_v1", True,
+         "non_playoff_called_early_action_with_2_minutes_or_less_remaining;otherwise_completion_within_48h_unless_determined;playoffs_remain_open_until_completion",
+         f"Fanatics {jurisdiction.upper()} full-game hockey winner/spread/total including overtime/shootout unless stated otherwise."),
+        ("soccer", "fanatics_ny_soccer_regulation_v1", False,
+         "regulation_90_plus_stoppage;postponed_under_48h_stands;format_changes_or_abandonment_follow_sport_specific_void_rules_unless_determined",
+         f"Fanatics {jurisdiction.upper()} standard regulation-time soccer winner/spread/total only."),
+    )
+    for sport, profile, overtime, shortened, notes in triplets:
+        for family in ("winner", "spreads", "totals"):
+            register(Rule(
+                book="fanatics", sport=sport, market_family=family, jurisdiction=jurisdiction,
+                reviewed=True, version=version, source=source,
+                settlement_profile=profile, overtime=overtime, participation_required=False,
+                shortened_game_policy=shortened, push_policy="push", notes=notes,
+            ))
+    for family in ("winner", "spreads", "totals"):
+        register(Rule(
+            book="fanatics", sport="tennis", market_family=family, jurisdiction=jurisdiction,
+            reviewed=True, version=version, source=source,
+            settlement_profile="fanatics_ny_tennis_full_match_v1",
+            participation_required=True,
+            retirement_policy="after_start_official_progressor_wins_moneyline;retiring_selection_void;other_undetermined_markets_void;determined_markets_stand",
+            shortened_game_policy="delayed_or_suspended_match_stands_unless_tournament_governing_body_cancels;changed_statutory_sets_void_unless_determined",
+            push_policy="market_specific",
+            notes=f"Fanatics {jurisdiction.upper()} full-match tennis family; not cross-qualified with other books.",
+        ))
+
+
+_fanatics_state("az", AZ_SOURCE, AZ_REVIEW)

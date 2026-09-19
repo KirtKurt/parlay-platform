@@ -19,6 +19,21 @@ def test_two_way_strict_arb_all_states_positive():
     assert result["minimum_net_pnl"] == 10.0
 
 
+def test_oversized_payout_fails_as_settlement_proof_error():
+    try:
+        settlement_matrix.evaluate_states(
+            states=["A", "B"],
+            legs=[
+                {"stake": 500, "payout_multiplier_by_state": {"A": "1e24", "B": 0}},
+                {"stake": 500, "payout_multiplier_by_state": {"A": 0, "B": "1e24"}},
+            ],
+        )
+    except settlement_matrix.SettlementProofError as exc:
+        assert "supported precision" in str(exc)
+    else:
+        raise AssertionError("oversized monetary proof must fail closed")
+
+
 def test_refund_branch_zero_profit_is_not_strict():
     result = settlement_matrix.evaluate_states(
         states=["A_WINS", "B_WINS", "BOTH_VOID"],
@@ -79,3 +94,35 @@ def test_quarter_line_helper_splits_stake_exactly():
     )
     assert len(legs) == 2
     assert sum(float(x["stake"]) for x in legs) == 100.0
+
+
+def test_line_proof_rejects_same_side_total_and_spread_legs():
+    cases = [
+        ("totals", [
+            {"outcome": "Over A", "point": 8.5, "stake": 50, "net_decimal": 2.2},
+            {"outcome": "Over B", "point": 8.5, "stake": 50, "net_decimal": 2.2},
+        ]),
+        ("spreads", [
+            {"outcome": "A +1.5", "point": 1.5, "stake": 50, "net_decimal": 2.2},
+            {"outcome": "A -1.5", "point": -1.5, "stake": 50, "net_decimal": 2.2},
+        ]),
+    ]
+    for market, legs in cases:
+        try:
+            settlement_matrix.prove_quoted_market(market=market, legs=legs)
+        except settlement_matrix.SettlementProofError as exc:
+            assert "opposing" in str(exc)
+        else:
+            raise AssertionError(f"{market} same-side legs must fail closed")
+
+
+def test_line_proof_rejects_points_outside_finite_runtime_range():
+    try:
+        settlement_matrix.prove_quoted_market(market="totals", legs=[
+            {"outcome": "Over", "point": "1e10000", "stake": 50, "net_decimal": 2.2},
+            {"outcome": "Under", "point": "1e10000", "stake": 50, "net_decimal": 2.2},
+        ])
+    except settlement_matrix.SettlementProofError as exc:
+        assert "finite runtime number" in str(exc)
+    else:
+        raise AssertionError("overflowing line points must fail closed")

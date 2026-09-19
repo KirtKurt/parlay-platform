@@ -1,4 +1,6 @@
 import json
+import os
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -32,7 +34,7 @@ def test_arizona_baseball_cross_book_is_compatible_after_house_rule_review():
 
 
 def test_unread_fanduel_state_still_fails_closed():
-    result = compatibility(["draftkings", "fanduel"], "baseball", "winner", "co")
+    result = compatibility(["draftkings", "fanduel"], "baseball", "winner", "wy")
     assert result["status"] == UNKNOWN
     assert "fanduel" in result["missing_books"]
 
@@ -45,8 +47,20 @@ def test_arizona_pack_lists_licensed_books_and_reviewed_coverage():
     assert "betmgm" in pack["missing_high_volume_books"]
 
 
+def test_direct_state_pack_import_bootstraps_supplemental_rules():
+    script = (
+        "import json; from state_packs import pack_summary; "
+        "print(json.dumps(pack_summary('az')['reviewed_books']))"
+    )
+    env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+    reviewed = set(json.loads(subprocess.check_output(
+        [sys.executable, "-c", script], env=env, text=True,
+    )))
+    assert {"draftkings", "fanduel", "fanatics", "williamhill_us"} <= reviewed
+
+
 def test_florida_pack_is_hard_rock_monopoly_hint():
-    assert licensed_books("fl") == ["hardrockbet"]
+    assert set(licensed_books("fl")) == {"hardrockbet", "hardrockbet_fl"}
     assert "monopoly" in pack_summary("fl")["notes"].lower()
 
 
@@ -97,7 +111,9 @@ def test_scan_reads_store_without_live_provider(monkeypatch):
     body = json.loads(response["body"])
     assert response["statusCode"] == 200
     assert body["source"] == "store"
-    assert body["n_arbs"] == 1
+    assert body["n_arbs"] == 0
+    assert body["n_detected_unverified"] == 1
+    assert body["detected_unverified"][0]["validation"]["qualification_reason"] == "SETTLEMENT_STATE_NOT_STRICT"
     assert body["pack"]["state"] == "az"
     reset_memory()
 

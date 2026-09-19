@@ -33,7 +33,7 @@ def test_new_york_basketball_hockey_and_tennis_are_reviewed_but_not_cross_qualif
 
 
 def test_unknown_jurisdiction_still_fails_closed_for_state_specific_fanduel_rules():
-    result = compatibility(["draftkings", "fanduel"], "basketball", "winner", "nj")
+    result = compatibility(["draftkings", "fanduel"], "basketball", "winner", "wy")
     assert result["status"] == UNKNOWN
     assert "fanduel" in result["missing_books"]
 

@@ -12,6 +12,7 @@ from itertools import product
 from math import ceil, floor, isfinite
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
+from settlement_matrix import SettlementProofError, prove_quoted_market
 from stake_rounding import MAX_ENUMERATED_LEGS, StakeRoundingError, optimize_rounding_neighborhood
 
 MAX_SCAN_PLAN_WORK = 20000
@@ -19,6 +20,17 @@ MAX_SCAN_PLAN_WORK = 20000
 
 class ArbValidationError(ValueError):
     pass
+
+
+def _point_profile_key(point: Any) -> tuple[Any, ...]:
+    """Return a hashable quote-profile identity without accepting bad lines."""
+    if point is None:
+        return ("none",)
+    if not isinstance(point, bool) and isinstance(point, (str, int, float, Decimal)):
+        return ("scalar", type(point).__name__, point)
+    # Keep malformed caller input distinct long enough for settlement proof to
+    # reject it.  Never put an untrusted list or mapping directly in a dict key.
+    return ("invalid", type(point).__name__, repr(point))
 
 
 def _bounded_rounding_neighborhood(
@@ -584,7 +596,8 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
                      "american": raw.get("american") if raw.get("american") is not None else round(decimal_to_american(d), 2),
                      "decimal": d, "net_decimal": net_d, "commission_rate": float(raw.get("commission_rate") or 0.0),
                      "provider": raw.get("provider"), "last_update": raw.get("last_update"), "link": raw.get("link"),
-                     "limit": raw.get("limit"), "min_stake": raw.get("min_stake"), "stake_increment": raw.get("stake_increment")}
+                     "limit": raw.get("limit"), "min_stake": raw.get("min_stake"), "stake_increment": raw.get("stake_increment"),
+                     "point": raw.get("point")}
         candidates.setdefault(outcome, []).append(candidate)
         if best.get(outcome) is None or net_d > best[outcome]["net_decimal"]: best[outcome] = candidate
     if expected_set:
@@ -592,6 +605,25 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
     else:
         missing, extra = [], []; complete = len(best) >= 2; expected_set = set(best)
     if len(best) < 2: return None
+
+    settlement_validation = (context or {}).get("settlement_validation")
+    push_policy = None
+    shortened_game_policy = None
+    if isinstance(settlement_validation, Mapping):
+        push_policies = {
+            str(rule.get("push_policy") or "").strip().lower()
+            for rule in (settlement_validation.get("rules") or [])
+            if isinstance(rule, Mapping) and str(rule.get("push_policy") or "").strip()
+        }
+        if len(push_policies) == 1:
+            push_policy = next(iter(push_policies))
+        shortened_policies = {
+            str(rule.get("shortened_game_policy") or "").strip().lower()
+            for rule in (settlement_validation.get("rules") or [])
+            if isinstance(rule, Mapping) and str(rule.get("shortened_game_policy") or "").strip()
+        }
+        if len(shortened_policies) == 1:
+            shortened_game_policy = next(iter(shortened_policies))
 
     # The best headline price is not always the best executable price. Search a
     # bounded set of quote combinations so a capped or discretely unusable top
@@ -603,7 +635,10 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
         for outcome in ordered_outcomes:
             profiles: Dict[tuple[Any, ...], Dict[str, Any]] = {}
             for quote in candidates[outcome]:
-                key = (quote.get("limit"), quote.get("min_stake"), quote.get("stake_increment"))
+                key = (
+                    quote.get("limit"), quote.get("min_stake"),
+                    quote.get("stake_increment"), _point_profile_key(quote.get("point")),
+                )
                 prior = profiles.get(key)
                 if prior is None or quote["net_decimal"] > prior["net_decimal"]:
                     profiles[key] = quote
@@ -623,6 +658,7 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
                 selected[outcome].get("limit"),
                 selected[outcome].get("min_stake"),
                 selected[outcome].get("stake_increment"),
+                _point_profile_key(selected[outcome].get("point")),
             ) for outcome in ordered_outcomes)
             cached = plan_cache.get(cache_key)
             if cached is not None:
@@ -641,7 +677,25 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
                 continue
             if not combo_plan.get("strict_arbitrage_after_rounding"):
                 continue
-            score = (float(combo_plan.get("minimum_profit") or 0), -combo_implied)
+            try:
+                proof_legs = [{
+                    **leg,
+                    "decimal": selected[str(leg["outcome"])]["decimal"],
+                    "net_decimal": selected[str(leg["outcome"])]["net_decimal"],
+                    "point": selected[str(leg["outcome"])].get("point"),
+                } for leg in combo_plan.get("legs") or []]
+                combo_settlement = prove_quoted_market(
+                    market=market, legs=proof_legs, push_policy=push_policy,
+                    shortened_game_policy=shortened_game_policy,
+                )
+            except SettlementProofError:
+                continue
+            if not combo_settlement.get("strict_arbitrage"):
+                continue
+            settlement_minimum = combo_settlement.get("minimum_net_pnl")
+            if settlement_minimum is None:
+                continue
+            score = (float(settlement_minimum), -combo_implied)
             if executable_choice is None or score > executable_choice[0]:
                 executable_choice = (score, selected, combo_plan)
         if executable_choice is not None:
@@ -684,7 +738,7 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
                                    "decimal": round(q["decimal"], 6), "net_decimal": round(q["net_decimal"], 6),
                                    "stake": stake, "payout_if_wins": round(payout, 2), "profit_if_wins": round(profit, 2),
                                    "last_update": q.get("last_update"), "provider": q.get("provider"), "link": q.get("link"),
-                                   "limit": q.get("limit")})
+                                   "limit": q.get("limit"), "point": q.get("point")})
             if math_arb and not executable:
                 rounding_reason = "NOT_EXECUTABLE_AFTER_ROUNDING"
         else:
@@ -699,10 +753,51 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
                                    "stake": stake, "payout_if_wins": round(payout, 2),
                                    "profit_if_wins": round(payout - allocated_stake, 2),
                                    "last_update": q.get("last_update"), "provider": q.get("provider"),
-                                   "link": q.get("link"), "limit": q.get("limit")})
+                                   "link": q.get("link"), "limit": q.get("limit"), "point": q.get("point")})
+    settlement_states = None
+    settlement_state_reason = None
+    if stake_rows and complete:
+        try:
+            # Public rows are display-rounded, but settlement proof is a money
+            # boundary and must retain the provider's full odds precision.
+            proof_legs = [
+                {
+                    **leg,
+                    "decimal": best[str(leg["outcome"])]["decimal"],
+                    "net_decimal": best[str(leg["outcome"])]["net_decimal"],
+                }
+                for leg in stake_rows
+            ]
+            settlement_states = prove_quoted_market(
+                market=market, legs=proof_legs, push_policy=push_policy,
+                shortened_game_policy=shortened_game_policy,
+            )
+        except SettlementProofError as exc:
+            settlement_state_reason = "SETTLEMENT_STATE_PROOF_FAILED"
+            settlement_states = {"ok": False, "strict_arbitrage": False, "reason": str(exc)[:200]}
+        if settlement_states and not settlement_states.get("strict_arbitrage"):
+            if math_arb:
+                settlement_state_reason = settlement_state_reason or "SETTLEMENT_STATE_NOT_STRICT"
+            executable = False
     is_arb = bool(math_arb and rules_compatible and executable)
-    min_profit = min((r["profit_if_wins"] for r in stake_rows), default=None)
-    min_payout = min((r["payout_if_wins"] for r in stake_rows), default=None)
+    settlement_proof_failed = bool(
+        settlement_states is not None and settlement_states.get("ok") is False
+    )
+    if settlement_proof_failed:
+        min_profit = None
+        min_payout = None
+    else:
+        min_profit = min((r["profit_if_wins"] for r in stake_rows), default=None)
+        if settlement_states and settlement_states.get("minimum_net_pnl") is not None:
+            min_profit = float(settlement_states["minimum_net_pnl"])
+        min_payout = min((r["payout_if_wins"] for r in stake_rows), default=None)
+        settlement_payouts = [
+            float(state["payout"])
+            for state in (settlement_states or {}).get("states") or []
+            if state.get("payout") is not None
+        ]
+        if settlement_payouts:
+            min_payout = min(settlement_payouts)
     validation = {
         "outcome_coverage": "complete" if complete else "incomplete",
         "rules_status": normalized_rules_status,
@@ -711,7 +806,16 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
         "extra_outcomes": extra,
         "executable": executable,
     }
-    settlement_validation = (context or {}).get("settlement_validation")
+    if settlement_states is not None:
+        validation["settlement_states"] = {
+            "strict_arbitrage": bool(settlement_states.get("strict_arbitrage")),
+            "includes_push": bool(settlement_states.get("includes_push")),
+            "minimum_net_pnl": settlement_states.get("minimum_net_pnl"),
+            "state_count": settlement_states.get("state_count"),
+            "states": settlement_states.get("states"),
+        }
+        if settlement_states.get("reason"):
+            validation["settlement_state_reason"] = str(settlement_states["reason"])
     if isinstance(settlement_validation, Mapping):
         if settlement_validation.get("reason"):
             validation["settlement_reason"] = str(settlement_validation["reason"])
@@ -721,6 +825,8 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
             })
     if math_arb and not rules_compatible:
         validation["qualification_reason"] = "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
+    elif math_arb and settlement_state_reason:
+        validation["qualification_reason"] = settlement_state_reason
     elif math_arb and not executable:
         validation["qualification_reason"] = rounding_reason or "NOT_EXECUTABLE_AFTER_ROUNDING"
     return {"market_id": market_id, "event": event, "market": market, "commence_time": commence_time,

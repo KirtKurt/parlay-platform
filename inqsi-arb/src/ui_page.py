@@ -28,7 +28,7 @@ HTML = r'''<!doctype html>
           <button id="scanBtn">Scan</button>
           <button id="allBtn" class="secondary">All markets</button>
         </div>
-        <div class="small" style="margin-top:7px">Worldwide scans include every provider-returned sportsbook. Verified is a quality stamp on a signal, not a hide-the-board switch. Middles are line gaps, shown separately from same-line surebets.</div>
+        <div class="small" style="margin-top:7px">Worldwide scans include every provider-returned sportsbook — US licensed, offshore, DFS and exchanges stay on the math board. Verified is a house-rule stamp, not a hide-the-board switch. Integer spreads and totals include the push state.</div>
         <div class="metrics">
           <div class="metric"><b id="mArbs">—</b><span>Verified arbs</span></div>
           <div class="metric"><b id="mUnverified">—</b><span>Math arbs held back</span></div>
