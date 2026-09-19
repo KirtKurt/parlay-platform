@@ -353,10 +353,10 @@ def test_scan_all_shares_plan_work_budget_across_markets_and_final_plans(monkeyp
     budget_ids = set()
     original = arb_engine._rounded_quote_plan
 
-    def observed(selected, outcomes, bankroll, exact_budget=None):
+    def observed(selected, outcomes, bankroll, exact_budget=None, **kwargs):
         assert exact_budget is not None
         budget_ids.add(id(exact_budget))
-        return original(selected, outcomes, bankroll, exact_budget)
+        return original(selected, outcomes, bankroll, exact_budget, **kwargs)
 
     monkeypatch.setattr(arb_engine, "_rounded_quote_plan", observed)
     events = []
@@ -394,4 +394,51 @@ def test_multiway_neighborhood_enumeration_respects_scan_work_budget(monkeypatch
     )
     assert row and row["math_arb"] is True
     assert row["arb"] is True
-    assert calls == 0
+    assert calls == 1
+
+
+def test_oversized_neighborhood_preserves_budget_for_later_markets():
+    budget = {"remaining": 100}
+    legs = [
+        {"outcome": f"O{index}", "book": f"book-{index}", "stake": 10.005,
+         "net_decimal": 10.2, "stake_increment": 0.01, "min_stake": 0}
+        for index in range(10)
+    ]
+    result = arb_engine._bounded_rounding_neighborhood(legs, 200, budget)
+    assert result["reason"] == "SCAN_PLAN_WORK_BUDGET_EXHAUSTED"
+    assert budget["remaining"] == 100
+
+
+def test_combination_search_reuses_exact_plan_after_budget_exhaustion():
+    row = scan_market(
+        market_id="reuse-plan", event="A v B", market="h2h", bankroll=200,
+        expected_outcomes=["A", "B"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "one", "decimal": 1.5878315585},
+            {"outcome": "B", "book": "two", "decimal": 2.7013866301},
+        ],
+    )
+    assert row and row["arb"] is True
+    assert row["minimum_profit"] == 0.01
+
+
+def test_non_arb_does_not_exhaust_exact_budget_before_later_arb():
+    result = scan_all({"bankroll": 200, "events": [
+        {
+            "id": "ordinary", "event": "A v B", "market": "h2h",
+            "expected_outcomes": ["A", "B"], "rules_status": "compatible",
+            "quotes": [
+                {"outcome": "A", "book": "one", "decimal": 1.9},
+                {"outcome": "B", "book": "two", "decimal": 1.9},
+            ],
+        },
+        {
+            "id": "arb", "event": "C v D", "market": "h2h",
+            "expected_outcomes": ["C", "D"], "rules_status": "compatible",
+            "quotes": [
+                {"outcome": "C", "book": "three", "decimal": 2.2},
+                {"outcome": "D", "book": "four", "decimal": 2.0},
+            ],
+        },
+    ]})
+    assert [row["market_id"] for row in result["hits"]] == ["arb"]

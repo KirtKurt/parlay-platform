@@ -68,7 +68,10 @@ def _valid_stake_constraints(quote: Mapping[str, Any], bankroll: float) -> bool:
     maximum = bankroll if parsed["limit"] is None else min(float(parsed["limit"]), bankroll)
     minimum = float(parsed["min_stake"] or 0)
     increment = float(parsed["stake_increment"] or 0.01)
-    first_stake = max(increment, ceil(minimum / increment - 1e-10) * increment)
+    ratio = minimum / increment
+    if not isfinite(ratio):
+        return False
+    first_stake = max(increment, ceil(ratio - 1e-10) * increment)
     return minimum <= maximum and first_stake <= maximum + 1e-9
 
 

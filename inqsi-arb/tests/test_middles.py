@@ -453,3 +453,15 @@ def test_raw_middle_pair_inspections_have_a_scan_wide_cap(monkeypatch):
         "market": "totals", "quotes": quotes,
     }], bankroll=100) == []
     assert calls == middle_engine.MAX_RAW_PAIR_INSPECTIONS
+
+
+def test_middle_constraint_ratio_overflow_fails_closed():
+    rows = detect_middles([{
+        "id": "overflow-profile", "event_id": "overflow-profile", "event": "A @ B",
+        "market": "totals", "quotes": [
+            {"outcome": "Over", "book": "one", "decimal": 2.1, "point": 8.5,
+             "min_stake": "1e308", "stake_increment": "0.01"},
+            {"outcome": "Under", "book": "two", "decimal": 2.1, "point": 9.5},
+        ],
+    }], bankroll=1e308)
+    assert rows == []

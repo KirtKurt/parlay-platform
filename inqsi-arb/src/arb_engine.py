@@ -24,15 +24,38 @@ def _bounded_rounding_neighborhood(
     legs: List[Dict[str, Any]], bankroll: float, budget: Optional[Dict[str, int]],
 ) -> Dict[str, Any]:
     """Run local enumeration only when it fits the caller's shared work budget."""
-    # The rounding helper considers floor, ceil, and (when distinct) minimum
-    # stakes for every leg. Charge the conservative Cartesian upper bound
-    # before entering it so many markets/quote combinations cannot multiply
-    # exponential work.
-    work = 3 ** len(legs)
+    work = 1
+    for leg in legs:
+        try:
+            stake = float(leg["stake"])
+            increment = float(leg.get("stake_increment") or 0.01)
+            minimum = float(leg.get("min_stake") or 0)
+            cap_raw = leg.get("constraint_cap")
+            cap = None if cap_raw is None else float(cap_raw)
+            stake_ratio = stake / increment
+            minimum_ratio = minimum / increment
+        except (KeyError, TypeError, ValueError, ZeroDivisionError, OverflowError):
+            work = MAX_SCAN_PLAN_WORK + 1
+            break
+        if not all(isfinite(value) for value in (stake, increment, minimum, stake_ratio, minimum_ratio)):
+            work = MAX_SCAN_PLAN_WORK + 1
+            break
+        multiples = {floor(stake_ratio), ceil(stake_ratio)}
+        if minimum > 0:
+            multiples.add(ceil(minimum_ratio))
+        candidates = {
+            multiple for multiple in multiples
+            if (value := multiple * increment) > 0
+            and value >= minimum - 1e-9
+            and (cap is None or value <= cap + 1e-9)
+        }
+        if not candidates:
+            work = 1
+            break
+        work *= len(candidates)
     if budget is not None:
         remaining = int(budget.get("remaining", 0))
         if work > remaining:
-            budget["remaining"] = 0
             return {
                 "ok": True,
                 "feasible": False,
@@ -333,6 +356,7 @@ def _direct_discrete_plan(legs: List[Dict[str, Any]], bankroll: float) -> Option
 
 def _optimized_plan(
     legs: List[Dict[str, Any]], bankroll: float, exact_budget: Optional[Dict[str, int]] = None,
+    *, allow_exact: bool = True,
 ) -> Dict[str, Any]:
     plans: List[Dict[str, Any]] = []
     direct = _direct_discrete_plan(legs, bankroll)
@@ -344,7 +368,7 @@ def _optimized_plan(
             plans.append(neighborhood)
     except StakeRoundingError:
         neighborhood = {"feasible": False, "reason": "ROUNDING_ERROR"}
-    if not any(plan.get("strict_arbitrage_after_rounding") for plan in plans):
+    if allow_exact and not any(plan.get("strict_arbitrage_after_rounding") for plan in plans):
         exact_two_way = _two_way_exact_plan(legs, bankroll, exact_budget)
         if exact_two_way:
             plans.append(exact_two_way)
@@ -399,6 +423,7 @@ def _optimized_plan(
 def _rounded_quote_plan(
     selected: Mapping[str, Mapping[str, Any]], outcomes: Iterable[str], bankroll: float,
     exact_budget: Optional[Dict[str, int]] = None,
+    *, allow_exact: bool = True,
 ) -> tuple[float, Dict[str, float], Optional[Dict[str, Any]], Optional[str]]:
     ordered = sorted(outcomes)
     implied = sum(1.0 / selected[outcome]["net_decimal"] for outcome in ordered)
@@ -425,7 +450,9 @@ def _rounded_quote_plan(
         "stake_increment": selected[outcome].get("stake_increment") or 0.01,
     } for outcome in ordered]
     try:
-        return implied, unrounded, _optimized_plan(legs, bankroll, exact_budget), None
+        return implied, unrounded, _optimized_plan(
+            legs, bankroll, exact_budget, allow_exact=allow_exact,
+        ), None
     except (StakeRoundingError, ArithmeticError, ValueError):
         return implied, unrounded, None, "ROUNDING_ERROR"
 
@@ -473,6 +500,7 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
     # The best headline price is not always the best executable price. Search a
     # bounded set of quote combinations so a capped or discretely unusable top
     # quote cannot hide a safe executable plan at the same outcome.
+    selected_plan = None
     if complete:
         ordered_outcomes = sorted(expected_set)
         pools = [
@@ -512,9 +540,10 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
                 continue
             score = (float(combo_plan.get("minimum_profit") or 0), -combo_implied)
             if executable_choice is None or score > executable_choice[0]:
-                executable_choice = (score, selected)
+                executable_choice = (score, selected, combo_plan)
         if executable_choice is not None:
             best = executable_choice[1]
+            selected_plan = executable_choice[2]
 
     implied_sum = sum(1.0 / best[o]["net_decimal"] for o in sorted(expected_set) if o in best)
     math_arb = bool(complete and implied_sum < 1.0)
@@ -527,9 +556,16 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
     allocated_stake = 0.0
     rounding_reason = None
     if complete and implied_sum > 0:
-        _, unrounded, rounded_plan, rounding_reason = _rounded_quote_plan(
-            best, expected_set, bankroll, work_budget,
-        )
+        unrounded = {
+            outcome: bankroll * (1.0 / best[outcome]["net_decimal"]) / implied_sum
+            for outcome in sorted(expected_set)
+        }
+        if selected_plan is not None:
+            rounded_plan = selected_plan
+        else:
+            _, unrounded, rounded_plan, rounding_reason = _rounded_quote_plan(
+                best, expected_set, bankroll, work_budget, allow_exact=math_arb,
+            )
         if rounded_plan and rounded_plan.get("feasible"):
             executable = bool(math_arb and rounded_plan.get("strict_arbitrage_after_rounding"))
             allocated_stake = float(rounded_plan.get("allocated_stake") or 0)
