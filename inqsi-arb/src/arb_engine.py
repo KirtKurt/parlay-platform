@@ -7,7 +7,8 @@ label an opportunity a verified arb: settlement rules must be COMPATIBLE.
 """
 from __future__ import annotations
 
-from itertools import islice, product
+from decimal import Decimal, InvalidOperation
+from itertools import product
 from math import ceil, floor, isfinite
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
@@ -155,8 +156,13 @@ def _quote_constraints_usable(raw: Mapping[str, Any], bankroll: float) -> bool:
     cap = _constraint(raw.get("limit"), bankroll)
     minimum = _constraint(raw.get("min_stake"), 0.0)
     increment = _constraint(raw.get("stake_increment"), 0.01, positive=True)
+    try:
+        scaled_increment = Decimal(str(increment)) * Decimal("100")
+        cent_aligned = scaled_increment == scaled_increment.to_integral_value()
+    except (InvalidOperation, TypeError):
+        cent_aligned = False
     if (cap is None or minimum is None or increment is None or increment < 0.01
-            or abs(increment * 100 - round(increment * 100)) > 1e-7 or minimum > cap):
+            or not cent_aligned or increment >= bankroll or minimum > cap):
         return False
     maximum = min(cap, bankroll)
     ratio = minimum / increment
@@ -282,11 +288,10 @@ def _two_way_feasible_plan(
 def _multiway_exact_plan(
     legs: List[Dict[str, Any]], bankroll: float, budget: Optional[Dict[str, int]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Enumerate a bounded discrete grid for small multiway markets."""
-    if len(legs) < 3:
+    """Search bounded active-set candidates without materializing raw grids."""
+    if len(legs) < 3 or len(legs) > MAX_ENUMERATED_LEGS:
         return None
-    grids: List[List[float]] = []
-    combinations = 1
+    bounds = []
     for leg in legs:
         increment = float(leg.get("stake_increment") or 0.01)
         minimum = float(leg.get("min_stake") or 0)
@@ -294,25 +299,52 @@ def _multiway_exact_plan(
         cap = bankroll if cap_raw is None else min(float(cap_raw), bankroll)
         first_multiple = max(1, ceil(minimum / increment - 1e-10))
         last_multiple = floor(cap / increment + 1e-10)
-        count = max(0, last_multiple - first_multiple + 1)
-        combinations *= count
-        if count == 0 or combinations > 20000:
+        if last_multiple < first_multiple:
             return None
-        grids.append([multiple * increment for multiple in range(first_multiple, last_multiple + 1)])
+        bounds.append((first_multiple, last_multiple, increment))
     best = None
-    for stakes in product(*grids):
-        if budget is not None:
-            if budget.get("remaining", 0) <= 0:
+    for fixed_mask in range(1, 1 << len(legs)):
+        fixed_total = sum(
+            bounds[index][0] * bounds[index][2]
+            for index in range(len(legs)) if fixed_mask & (1 << index)
+        )
+        variable = [index for index in range(len(legs)) if not fixed_mask & (1 << index)]
+        denominator = 1.0 - sum(1.0 / float(legs[index]["net_decimal"]) for index in variable)
+        if variable and denominator <= 0:
+            continue
+        target_total = fixed_total / denominator if variable else fixed_total
+        choices: List[List[float]] = []
+        for index, leg in enumerate(legs):
+            first, last, increment = bounds[index]
+            if fixed_mask & (1 << index):
+                multiples = {first}
+            else:
+                target_multiple = target_total / float(leg["net_decimal"]) / increment
+                lower = floor(target_multiple + 1e-10)
+                upper = ceil(target_multiple - 1e-10)
+                multiples = {lower, upper, upper + 1}
+            values = [
+                multiple * increment for multiple in sorted(multiples)
+                if first <= multiple <= last
+            ]
+            if not values:
                 break
-            budget["remaining"] -= 1
-        if sum(stakes) > bankroll + 1e-9:
+            choices.append(values)
+        if len(choices) != len(legs):
             continue
-        adjusted = [dict(leg, stake=stake) for leg, stake in zip(legs, stakes)]
-        plan = _direct_discrete_plan(adjusted, bankroll)
-        if not plan or not plan.get("strict_arbitrage_after_rounding"):
-            continue
-        if best is None or float(plan["minimum_profit"]) > float(best["minimum_profit"]):
-            best = plan
+        for stakes in product(*choices):
+            if budget is not None:
+                if budget.get("remaining", 0) <= 0:
+                    return best
+                budget["remaining"] -= 1
+            if sum(stakes) > bankroll + 1e-9:
+                continue
+            adjusted = [dict(leg, stake=stake) for leg, stake in zip(legs, stakes)]
+            plan = _direct_discrete_plan(adjusted, bankroll)
+            if not plan or not plan.get("strict_arbitrage_after_rounding"):
+                continue
+            if best is None or float(plan["minimum_profit"]) > float(best["minimum_profit"]):
+                best = plan
     return best
 
 
@@ -514,16 +546,23 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
     selected_plan = None
     if complete:
         ordered_outcomes = sorted(expected_set)
-        pools = [
-            sorted(candidates[outcome], key=lambda quote: (
+        pools = []
+        for outcome in ordered_outcomes:
+            profiles: Dict[tuple[Any, ...], Dict[str, Any]] = {}
+            for quote in candidates[outcome]:
+                key = (quote.get("limit"), quote.get("min_stake"), quote.get("stake_increment"))
+                prior = profiles.get(key)
+                if prior is None or quote["net_decimal"] > prior["net_decimal"]:
+                    profiles[key] = quote
+            pools.append(sorted(profiles.values(), key=lambda quote: (
                 float(quote.get("min_stake") or 0), -quote["net_decimal"],
-            ))
-            for outcome in ordered_outcomes
-        ]
+            )))
         executable_choice = None
-        combinations = islice(product(*pools), 4096)
+        combinations = product(*pools)
         plan_cache: Dict[tuple[Any, ...], tuple[float, Optional[Dict[str, Any]]]] = {}
-        for combination in combinations:
+        for combination_index, combination in enumerate(combinations):
+            if combination_index >= 4096:
+                break
             selected = dict(zip(ordered_outcomes, combination))
             cache_key = tuple((
                 outcome,

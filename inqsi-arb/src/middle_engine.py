@@ -408,6 +408,8 @@ def detect_middles(
                         if over["book"] == under["book"]:
                             continue
                         gap = under["point"] - over["point"]
+                        if not isfinite(gap):
+                            continue
                         increment = _scoring_increment(contract, over, under)
                         if _middle_result_exists(over["point"], under["point"], increment):
                             yield over, under, gap
@@ -444,6 +446,8 @@ def detect_middles(
                             if left["book"] == right["book"]:
                                 continue
                             gap = left["point"] + right["point"]
+                            if not isfinite(gap):
+                                continue
                             increment = _scoring_increment(contract, left, right)
                             if _middle_result_exists(-left["point"], right["point"], increment):
                                 yield left, right, gap

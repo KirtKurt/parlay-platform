@@ -467,3 +467,44 @@ def test_non_arb_does_not_exhaust_exact_budget_before_later_arb():
         },
     ]})
     assert [row["market_id"] for row in result["hits"]] == ["arb"]
+
+
+def test_multiway_solver_prunes_large_grid_by_active_bounds():
+    row = scan_market(
+        market_id="large-grid", event="A v B v C", market="h2h_3_way", bankroll=12,
+        expected_outcomes=["A", "B", "C"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "one", "decimal": 2.5, "stake_increment": 0.02},
+            {"outcome": "B", "book": "two", "decimal": 4.0, "stake_increment": 0.01},
+            {"outcome": "C", "book": "three", "decimal": 8.0, "stake_increment": 2, "min_stake": 4},
+        ],
+    )
+    assert row and row["arb"] is True and row["allocated_stake"] <= 12
+
+
+def test_duplicate_capped_quotes_do_not_hide_usable_profile():
+    quotes = []
+    for outcome in ("A", "B"):
+        quotes.extend({
+            "outcome": outcome, "book": f"{outcome}-capped-{index}",
+            "decimal": 2.2, "limit": 0.01,
+        } for index in range(64))
+        quotes.append({"outcome": outcome, "book": f"{outcome}-usable", "decimal": 2.1})
+    row = scan_market(
+        market_id="profile-dedupe", event="A v B", market="h2h", bankroll=100,
+        expected_outcomes=["A", "B"], rules_status="compatible", quotes=quotes,
+    )
+    assert row and row["arb"] is True
+    assert {leg["book"] for leg in row["legs"]} == {"A-usable", "B-usable"}
+
+
+def test_surebet_increment_cent_check_cannot_overflow():
+    row = scan_market(
+        market_id="overflow-increment", event="A v B", market="h2h", bankroll=1e308,
+        expected_outcomes=["A", "B"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "one", "decimal": 2.1, "stake_increment": "1e308"},
+            {"outcome": "B", "book": "two", "decimal": 2.1},
+        ],
+    )
+    assert row is None

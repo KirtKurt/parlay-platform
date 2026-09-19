@@ -472,3 +472,22 @@ def test_ui_marks_free_middles_as_settlement_unverified():
     assert "UNVERIFIED FREE MIDDLE" in HTML
     assert "MIDDLE_REQUIRES_CROSS_LINE_SETTLEMENT_REVIEW" in HTML
     assert "Free middles lock a profit" not in HTML
+
+
+def test_middle_rejects_overflowing_total_and_spread_gaps():
+    total = detect_middles([{
+        "id": "overflow-total", "event": "A @ B", "market": "totals",
+        "quotes": [
+            {"book": "one", "outcome": "Over", "point": -1e308, "decimal": 2.2},
+            {"book": "two", "outcome": "Under", "point": 1e308, "decimal": 2.2},
+        ],
+    }], bankroll=100)
+    spread = detect_middles([{
+        "id": "overflow-spread", "event": "A @ B", "market": "spreads",
+        "quotes": [
+            {"book": "one", "outcome": "A", "point": 1e308, "decimal": 2.2},
+            {"book": "two", "outcome": "B", "point": 1e308, "decimal": 2.2},
+        ],
+    }], bankroll=100)
+    assert total == []
+    assert spread == []
