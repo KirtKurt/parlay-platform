@@ -219,6 +219,33 @@ def test_audit_payload_retains_pack_filter_region_and_snapshot_context():
     assert payload["snapshot"]["head"]["fetched_at_ms"] == 123
 
 
+def test_audit_payload_retains_every_scanned_sport_snapshot_head():
+    sports = [
+        {
+            "ok": True, "source": "store", "sport": f"sport-{index}",
+            "age_ms": index,
+            "head": {
+                "sport": f"sport-{index}", "fetched_at_ms": 1000 + index,
+                "version": f"version-{index}", "n_events": index,
+                "markets": ["h2h"], "regions": "us",
+            },
+        }
+        for index in range(40)
+    ]
+    result = {
+        "source": "store", "status": {"source": "store", "sports": sports},
+        "n_markets": 0, "n_arbs": 0, "n_detected_unverified": 0,
+        "n_rejected": 0, "n_held_unverified": 0, "n_exchange_pending": 0,
+        "n_middles": 0, "hits": [], "detected_unverified": [], "rejected": [],
+        "exchange_pending": [], "middles": [],
+    }
+    snapshot = _audit_scan_payload(result, sport="all", jurisdiction="*")["snapshot"]
+    assert snapshot["n_sports_context"] == 40
+    assert snapshot["omitted_sports_context"] == 0
+    assert len(snapshot["sports"]) == 40
+    assert snapshot["sports"][39]["head"]["version"] == "version-39"
+
+
 def test_worldwide_default_uses_all_configured_provider_regions(monkeypatch):
     monkeypatch.delenv("ARB_DEFAULT_JURISDICTION", raising=False)
     monkeypatch.delenv("ARB_REGIONS", raising=False)

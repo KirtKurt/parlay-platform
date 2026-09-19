@@ -146,6 +146,39 @@ def _audit_scan_payload(result: Dict[str, Any], *, sport: str, jurisdiction: str
             return {str(key)[:64]: bounded(item) for key, item in list(value.items())[:25]}
         return value
 
+    def audit_snapshot(value: Any) -> Any:
+        if not isinstance(value, dict) or not isinstance(value.get("sports"), list):
+            return bounded(value)
+        sports = list(value.get("sports") or [])
+        compact = []
+        for row in sports:
+            if not isinstance(row, dict):
+                continue
+            head = dict(row.get("head") or {})
+            compact.append({
+                "sport": str(row.get("sport") or head.get("sport") or "")[:128],
+                "ok": bool(row.get("ok")),
+                "source": str(row.get("source") or "")[:32],
+                "error": str(row.get("error") or "")[:128],
+                "age_ms": row.get("age_ms"),
+                "head": {
+                    key: bounded(head.get(key), 128)
+                    for key in (
+                        "sport", "fetched_at_ms", "n_events", "n_chunks", "version",
+                        "ok", "regions", "markets", "error",
+                    )
+                    if head.get(key) is not None
+                },
+            })
+        output = {
+            str(key)[:64]: bounded(item)
+            for key, item in value.items() if key != "sports"
+        }
+        output["sports"] = compact
+        output["n_sports_context"] = len(sports)
+        output["omitted_sports_context"] = max(0, len(sports) - len(compact))
+        return output
+
     remaining = 25
     saved: Dict[str, list] = {}
     for name in ("hits", "detected_unverified", "rejected", "exchange_pending", "middles"):
@@ -168,7 +201,7 @@ def _audit_scan_payload(result: Dict[str, Any], *, sport: str, jurisdiction: str
         "books": bounded(result.get("books")),
         "licensed": bool(result.get("licensed")),
         "pack": bounded(result.get("pack")),
-        "snapshot": bounded(result.get("status")),
+        "snapshot": audit_snapshot(result.get("status")),
         "n_markets": result.get("n_markets"),
         "n_arbs": result.get("n_arbs"),
         "n_detected_unverified": result.get("n_detected_unverified"),
@@ -510,7 +543,7 @@ def lambda_handler(event, context):
                         statuses.append(status)
                         if events:
                             combined_events.extend(events)
-                        else:
+                        elif events is None or int((status.get("head") or {}).get("n_events") or 0) != 0:
                             cache_complete = False
                 if (
                     sports_meta.get("ok") and statuses and cache_complete
@@ -522,7 +555,10 @@ def lambda_handler(event, context):
                     })
             else:
                 events, status = _stored_events(sport, markets=markets, regions=regions)
-                if events:
+                if events or (
+                    events is not None
+                    and int((status.get("head") or {}).get("n_events") or 0) == 0
+                ):
                     return _scan_rows(events, status)
 
         if market_arg.lower() == "all":

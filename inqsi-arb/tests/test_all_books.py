@@ -451,7 +451,7 @@ def test_north_american_hockey_policy_applies_to_nhl(monkeypatch):
     assert any(row["rules_status"] == "compatible" for row in rows)
 
 
-def test_wnba_is_inside_reviewed_nba_ncaa_basketball_scope(monkeypatch):
+def test_wnba_is_outside_reviewed_nba_ncaa_basketball_scope(monkeypatch):
     monkeypatch.setattr(validation, "assess_quote", lambda quote: {
         "status": "fresh", "fresh": True, "age_seconds": 0, "max_age_seconds": 180,
         "reason": None,
@@ -463,7 +463,8 @@ def test_wnba_is_inside_reviewed_nba_ncaa_basketball_scope(monkeypatch):
             {"book": "fanduel", "outcome": "B", "decimal": 2.2},
         ],
     }, jurisdiction="nj")
-    assert any(row["rules_status"] == "compatible" for row in rows)
+    assert all(row["rules_status"] == "unknown" for row in rows)
+    assert rows[0]["context"]["settlement_validation"]["reason"] == "EVENT_OR_MARKET_SCOPE_UNREVIEWED"
 
 
 def test_explicit_non_us_hockey_branch_applies_to_swedish_league(monkeypatch):

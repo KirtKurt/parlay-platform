@@ -584,3 +584,43 @@ def test_surebet_increment_cent_check_cannot_overflow():
         ],
     )
     assert row is None
+
+
+def test_rounding_budget_counts_decimal_candidate_set(monkeypatch):
+    import arb_engine
+
+    called = False
+
+    def observed(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("oversized Decimal neighborhood must not run")
+
+    monkeypatch.setattr(arb_engine, "optimize_rounding_neighborhood", observed)
+    legs = [
+        {
+            "outcome": str(index), "book": str(index),
+            "stake": 0.09000000000000001, "net_decimal": 2.1,
+            "stake_increment": 0.01,
+        }
+        for index in range(12)
+    ]
+    result = arb_engine._bounded_rounding_neighborhood(
+        legs, bankroll=10, budget={"remaining": 4000},
+    )
+    assert result["reason"] == "SCAN_PLAN_WORK_BUDGET_EXHAUSTED"
+    assert called is False
+
+
+def test_empty_posted_book_list_preserves_unfiltered_scan():
+    result = scan_all({
+        "bankroll": 100, "books": [], "events": [{
+            "id": "empty-books", "event": "A v B", "market": "h2h",
+            "expected_outcomes": ["A", "B"], "rules_status": "compatible",
+            "quotes": [
+                {"outcome": "A", "book": "one", "decimal": 2.1},
+                {"outcome": "B", "book": "two", "decimal": 2.1},
+            ],
+        }],
+    })
+    assert result["n_arbs"] == 1
