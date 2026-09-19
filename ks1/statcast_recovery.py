@@ -13,6 +13,7 @@ import time
 from ks1.inventory import RESEARCH, Reader, encode
 from ks1.statcast_history import (official_physical_pitch_counts,
                                   official_pitch_counts, physical_pitch_inventory_complete,
+                                  physical_batter_mismatch_games,
                                   physical_validation_reason,
                                   validation_reason)
 
@@ -58,7 +59,9 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
     from mlb_research_store_v1 import Store
     from mlb_research_sources_v1 import statcast, fetch as source_fetch
     from ks1.official_outcomes import (METHOD, digest, endpoint, reconcile,
-                                       outcome_diagnostics, official_index, verify_official_time, schedule_times, read_retained_evidence, unfinished_at_bats, needs_pitch_evidence, source_name)
+                                       outcome_diagnostics, official_index, verify_official_time,
+                                       schedule_times, read_retained_evidence, unfinished_at_bats,
+                                       needs_pitch_evidence, needed_games, source_name)
     store = Store(bucket, s3)
     fetch = fetch or statcast
     fetch_official = fetch_official or source_fetch
@@ -115,7 +118,9 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                 return official_source(pk, rows, accounting_evidence=True)
             official_index(evidence, pk, value, rows, require_retained=False,
                            scheduled_times=scheduled_by_game[pk], pitch_evidence=pitch_evidence,
-                           accounting_evidence=accounting_evidence, inning_evidence=inning_evidence)
+                           accounting_evidence=accounting_evidence,
+                           inning_evidence=inning_evidence,
+                           two_strike_substitution=True)
             verify_official_time(evidence, completed_by_game[pk])
             evidence = store.once(name, evidence)
         from ks1.inning_ending import needs_inning_evidence
@@ -182,9 +187,17 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                 reason = validation_reason(payload, value, games, expected, invalid,
                                            completed_by_game, scheduled_by_game)
             diagnostics = outcome_diagnostics(payload)
+            credit_games = physical_batter_mismatch_games(
+                payload['rows'], games, physical_expected, physical_batters,
+                physical_invalid)
+            # Existing unfinished-PA repair paths already fetch exactly the
+            # richer evidence their shapes require. Additional pitch evidence
+            # is only for otherwise complete games whose terminal batter
+            # attribution differs from the official play record.
+            credit_games -= set(needed_games(payload))
             can_reconcile_credit = (
                 reason == 'physical_pitch_or_batter_attribution_mismatch'
-                and (needs_pitch_evidence(payload['rows'])
+                and (credit_games or needs_pitch_evidence(payload['rows'])
                      or (unfinished_at_bats(payload)
                          and physical_pitch_inventory_complete(
                              payload['rows'], games, physical_expected, physical_batters, physical_invalid)
@@ -201,7 +214,19 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                 receipt = raw_reader.receipts[-1]
                 raw_pointer = {'name': raw_name, 'versionId': receipt['versionId'],
                                'sha256': receipt['sha256']}
-                payload = reconcile(raw, official_source, raw_pointer, scheduled_by_game)
+                # A date already needing official PA repair can conceal a
+                # separate uniform-predecessor Statcast attribution in a
+                # completed strikeout. Inspect only games containing such a
+                # terminal shape, then retain evidence in the derivation only
+                # when MLB independently proves the two-strike substitution.
+                inspect_games = ({str(row['game_pk']) for row in raw['rows']
+                                  if str(row.get('events')).lower()
+                                  in ('strikeout', 'strike_out')}
+                                 if (unfinished_at_bats(raw)
+                                     or needs_pitch_evidence(raw['rows'])) else set())
+                payload = reconcile(raw, official_source, raw_pointer, scheduled_by_game,
+                                    additional_games=credit_games,
+                                    inspection_games=inspect_games)
                 reason = physical_validation_reason(
                     payload, value, games, physical_expected, physical_batters,
                     physical_invalid, scheduled_by_game=scheduled_by_game)
