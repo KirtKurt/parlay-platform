@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict
 
@@ -14,7 +15,9 @@ from market_catalog import MARKET_FAMILY_KEYS, expand_market_families
 from market_discovery import discover_event_market_keys, discover_events, fetch_all_discovered_markets
 from position_store import get as get_position, list_for_user, put as put_position
 from provider import MARKET_FAMILIES, list_sports, scan_sport_payload
+from quote_store import get_checkpoint, get_snapshot, list_snapshot_sports
 from rules import registry_rows, registry_size
+from state_packs import licensed_books, list_packs, pack_summary
 from ui_page import HTML
 from validation import validate_events
 
@@ -133,6 +136,15 @@ def _audit_candidate(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _audit_scan_payload(result: Dict[str, Any], *, sport: str, jurisdiction: str) -> Dict[str, Any]:
+    def bounded(value: Any, maximum: int = 256) -> Any:
+        if isinstance(value, str):
+            return value[:maximum]
+        if isinstance(value, list):
+            return [bounded(item, 128) for item in value[:25]]
+        if isinstance(value, dict):
+            return {str(key)[:64]: bounded(item) for key, item in list(value.items())[:25]}
+        return value
+
     remaining = 25
     saved: Dict[str, list] = {}
     for name in ("hits", "detected_unverified", "rejected", "exchange_pending", "middles"):
@@ -150,6 +162,12 @@ def _audit_scan_payload(result: Dict[str, Any], *, sport: str, jurisdiction: str
     return {
         "sport": str(sport)[:256],
         "jurisdiction": str(jurisdiction)[:256],
+        "source": str(result.get("source") or "")[:64],
+        "regions": str(result.get("regions") or "")[:256],
+        "books": bounded(result.get("books")),
+        "licensed": bool(result.get("licensed")),
+        "pack": bounded(result.get("pack")),
+        "snapshot": bounded(result.get("status")),
         "n_markets": result.get("n_markets"),
         "n_arbs": result.get("n_arbs"),
         "n_detected_unverified": result.get("n_detected_unverified"),
@@ -179,6 +197,73 @@ def _finalize_scan(result: Dict[str, Any], *, sport: str, jurisdiction: str) -> 
             "hits": result.get("hits", [])[:20],
         })
     return result
+
+
+def _fresh_seconds() -> int:
+    try:
+        return max(15, min(int(os.environ.get("ARB_QUOTE_FRESH_SECONDS", "120")), 7200))
+    except ValueError:
+        return 120
+
+
+def _licensed_book_filter(jurisdiction: str, books: str | None, licensed: bool) -> str | None:
+    if not licensed:
+        return books
+    allowed = set(licensed_books(jurisdiction))
+    if books:
+        requested = {part.strip().lower() for part in books.split(",") if part.strip()}
+        selected = sorted(requested & allowed)
+    else:
+        selected = sorted(allowed)
+    # Provider requests require a comma-delimited query value. Preserve an
+    # explicitly empty licensed intersection as a non-matching sentinel so it
+    # can never broaden back to every book.
+    return ",".join(selected) if selected else "__no_licensed_books__"
+
+
+def _dimension_set(raw: Any) -> set[str]:
+    values = raw.split(",") if isinstance(raw, str) else (raw or [])
+    return {str(value).strip().lower() for value in values if str(value).strip()}
+
+
+def _stored_event_is_open(row: Dict[str, Any], *, now: datetime | None = None) -> bool:
+    """Fail closed when a cached event is missing, invalid, or has commenced."""
+    raw = str(row.get("commence_time") or "").strip()
+    if not raw:
+        return False
+    try:
+        starts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if starts.tzinfo is None:
+            starts = starts.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return False
+    return starts > (now or datetime.now(timezone.utc))
+
+
+def _stored_events(sport: str, *, markets: list[str], regions: str) -> tuple[list | None, dict]:
+    snap = get_snapshot(sport, max_age_seconds=_fresh_seconds())
+    if not snap:
+        return None, {"ok": False, "source": "store", "error": "QUOTE_SNAPSHOT_MISSING", "sport": sport}
+    if not snap.get("ok"):
+        return None, {"ok": False, "source": "store", "error": "QUOTE_SNAPSHOT_STALE" if snap.get("stale") else "QUOTE_SNAPSHOT_INCOMPLETE", "sport": sport, "head": snap.get("head")}
+    head = dict(snap.get("head") or {})
+    wanted_markets = _dimension_set(markets)
+    stored_markets = _dimension_set(head.get("markets"))
+    wanted_regions = _dimension_set(regions)
+    stored_regions = _dimension_set(head.get("regions"))
+    # Stored rows carry no per-quote source-region tag, so a multi-region
+    # snapshot cannot be safely narrowed after retrieval.
+    if not wanted_markets <= stored_markets or wanted_regions != stored_regions:
+        return None, {
+            "ok": False, "source": "store", "error": "QUOTE_SNAPSHOT_DIMENSION_MISMATCH",
+            "sport": sport, "head": head, "requested_markets": sorted(wanted_markets),
+            "requested_regions": sorted(wanted_regions),
+        }
+    events = [
+        row for row in (snap.get("events") or [])
+        if str(row.get("market") or "").lower() in wanted_markets and _stored_event_is_open(row)
+    ]
+    return events, {"ok": True, "source": "store", "sport": sport, "head": head, "age_ms": snap.get("age_ms")}
 
 
 def lambda_handler(event, context):
@@ -213,6 +298,8 @@ def lambda_handler(event, context):
             "middle_detection": True,
             "executable_rounding": True,
             "user_book_filter": True,
+            "state_packs": True,
+            "quote_collector": True,
             "sportsbook_scope": "all_provider_returned",
             "default_regions": _regions(_default_jurisdiction()).split(","),
         })
@@ -252,6 +339,22 @@ def lambda_handler(event, context):
             "rules": rows,
             "policy": "Only reviewed exact-book rule combinations may qualify verified arbs; all others fail closed.",
         })
+
+    if method == "GET" and path == "/v1/arb/packs":
+        packs = list_packs()
+        return response(200, {
+            "ok": True,
+            "version": VERSION,
+            "count": len(packs),
+            "packs": packs,
+            "places_bets": False,
+            "policy": "State packs describe licensed-book availability and reviewed settlement coverage. They do not place bets.",
+        })
+
+    if method == "GET" and path.startswith("/v1/arb/packs/"):
+        state = path.rsplit("/", 1)[-1].strip().lower()
+        summary = pack_summary(state)
+        return response(200 if summary.get("ok") else 404, {"version": VERSION, "places_bets": False, **summary})
 
     if method == "GET" and path == "/v1/arb/catalog":
         sports, meta = list_sports(all_sports=query.get("all", "false").lower() == "true")
@@ -294,7 +397,102 @@ def lambda_handler(event, context):
 
         jurisdiction = (query.get("jurisdiction") or _default_jurisdiction()).strip().lower()
         regions = _regions(jurisdiction, query.get("regions", ""))
-        books = (query.get("books") or query.get("bookmakers") or "").strip() or None
+        source = (query.get("source") or "auto").strip().lower()
+        if source not in {"auto", "store", "live"}:
+            return response(400, {"ok": False, "error": "INVALID_SOURCE", "source": source})
+        licensed = (query.get("licensed") or "false").strip().lower() in {"1", "true", "yes"}
+        books = _licensed_book_filter(
+            jurisdiction,
+            (query.get("books") or query.get("bookmakers") or "").strip() or None,
+            licensed,
+        )
+        pack = pack_summary(jurisdiction)
+
+        markets: list[str] = []
+        if market_arg.lower() != "all":
+            markets = [m.strip() for m in market_arg.split(",") if m.strip()]
+            if families_arg:
+                markets.extend(expand_market_families([x.strip() for x in families_arg.split(",") if x.strip()]))
+            markets = list(dict.fromkeys(markets))
+            if not markets:
+                return response(400, {"ok": False, "error": "MARKETS_REQUIRED"})
+
+        def _scan_rows(rows, status):
+            rows = validate_events(rows, jurisdiction=jurisdiction)
+            result = scan_all({"bankroll": bankroll, "events": rows, "books": books})
+            result["status"] = status
+            result["pack"] = pack
+            result["source"] = status.get("source") or source
+            result["regions"] = regions
+            result["books"] = books
+            result["licensed"] = licensed
+            return response(200 if status.get("ok") else 503, _finalize_scan(result, sport=sport, jurisdiction=jurisdiction))
+
+        if source == "store":
+            if market_arg.lower() == "all":
+                return response(400, {"ok": False, "error": "STORE_ALL_MARKETS_UNSUPPORTED"})
+            if sport == "all":
+                active_inventory = {
+                    str(key) for key in (get_checkpoint().get("active_sports") or []) if str(key)
+                }
+                if active_inventory:
+                    # The checkpoint is the completeness contract. Iterating
+                    # existing HEAD rows would silently omit an active sport
+                    # whose first/most-recent collector write failed.
+                    keys = sorted(active_inventory)
+                else:
+                    keys = list_snapshot_sports()
+                if not keys:
+                    return response(503, {"ok": False, "error": "QUOTE_SNAPSHOT_UNAVAILABLE"})
+                combined_events = []
+                statuses = []
+                for key in keys:
+                    events, status = _stored_events(key, markets=markets, regions=regions)
+                    statuses.append(status)
+                    if events is not None:
+                        combined_events.extend(events)
+                if not all(status.get("ok") for status in statuses):
+                    return response(503, {"ok": False, "error": "QUOTE_SNAPSHOT_INCOMPLETE", "sports": statuses})
+                return _scan_rows(combined_events, {
+                    "ok": True, "source": "store", "sports": statuses,
+                    "n_sports_scanned": len(statuses),
+                })
+            else:
+                events, status = _stored_events(sport, markets=markets, regions=regions)
+                if events is not None:
+                    return _scan_rows(events, status)
+                return response(503, {"ok": False, "error": status.get("error") or "QUOTE_SNAPSHOT_UNAVAILABLE", "status": status})
+
+        catalog_cache = None
+        if source == "auto" and market_arg.lower() != "all":
+            if sport == "all":
+                sports, sports_meta = list_sports(all_sports=False)
+                catalog_cache = (sports, sports_meta)
+                combined_events = []
+                statuses = []
+                cache_complete = True
+                if sports_meta.get("ok"):
+                    limit = min(len(sports), int(os.environ.get("ARB_MAX_SPORTS_PER_ALL_SCAN", "100")))
+                    for row in sports[:limit]:
+                        events, status = _stored_events(row["key"], markets=markets, regions=regions)
+                        statuses.append(status)
+                        if events:
+                            combined_events.extend(events)
+                        else:
+                            cache_complete = False
+                if (
+                    sports_meta.get("ok") and statuses and cache_complete
+                    and all(status.get("ok") for status in statuses)
+                ):
+                    return _scan_rows(combined_events, {
+                        "ok": True, "source": "store", "sports": statuses,
+                        "n_sports_scanned": len(statuses), "catalog": sports_meta,
+                    })
+            else:
+                events, status = _stored_events(sport, markets=markets, regions=regions)
+                if events:
+                    return _scan_rows(events, status)
+
         if market_arg.lower() == "all":
             rows, status = fetch_all_discovered_markets(
                 sport,
@@ -303,45 +501,33 @@ def lambda_handler(event, context):
                 max_events=max_events,
                 max_markets_per_event=int(os.environ.get("ARB_MAX_MARKETS_PER_EVENT", "120")),
             )
-            rows = validate_events(rows, jurisdiction=jurisdiction)
-            result = scan_all({"bankroll": bankroll, "events": rows, "books": books})
-            result["status"] = status
-            return response(200 if status.get("ok") else 503, _finalize_scan(result, sport=sport, jurisdiction=jurisdiction))
-
-        markets = [m.strip() for m in market_arg.split(",") if m.strip()]
-        if families_arg:
-            markets.extend(expand_market_families([x.strip() for x in families_arg.split(",") if x.strip()]))
-        markets = list(dict.fromkeys(markets))
-        if not markets:
-            return response(400, {"ok": False, "error": "MARKETS_REQUIRED"})
+            status = {**status, "source": "live"}
+            return _scan_rows(rows, status)
 
         if sport == "all":
-            sports, sports_meta = list_sports(all_sports=False)
+            sports, sports_meta = catalog_cache or list_sports(all_sports=False)
             if not sports_meta.get("ok"):
                 return response(503, {"ok": False, "error": "SPORT_CATALOG_UNAVAILABLE", "provider": sports_meta})
             limit = min(len(sports), int(os.environ.get("ARB_MAX_SPORTS_PER_ALL_SCAN", "100")))
-            combined = {"bankroll": bankroll, "events": [], "books": books}
+            combined_events = []
             statuses = []
             for row in sports[:limit]:
                 payload = scan_sport_payload(
                     row["key"], bankroll=bankroll, markets=markets,
                     regions=regions, bookmakers=books, max_events=max_events,
                 )
-                combined["events"].extend(validate_events(payload["events"], jurisdiction=jurisdiction))
+                combined_events.extend(payload["events"])
                 statuses.append(payload["status"])
-            result = scan_all(combined)
-            result["status"] = {"sports": statuses, "n_sports_scanned": limit, "catalog": sports_meta}
-            return response(200, _finalize_scan(result, sport="all", jurisdiction=jurisdiction))
+            return _scan_rows(combined_events, {
+                "ok": True, "source": "live", "sports": statuses,
+                "n_sports_scanned": limit, "catalog": sports_meta,
+            })
 
         payload = scan_sport_payload(
             sport, bankroll=bankroll, markets=markets,
             regions=regions, bookmakers=books, max_events=max_events,
         )
-        payload["events"] = validate_events(payload["events"], jurisdiction=jurisdiction)
-        payload["books"] = books
-        result = scan_all(payload)
-        result["status"] = payload["status"]
-        return response(200 if payload["status"].get("ok") else 503, _finalize_scan(result, sport=sport, jurisdiction=jurisdiction))
+        return _scan_rows(payload["events"], {**(payload.get("status") or {}), "source": "live"})
 
     if method == "POST" and path in {"/v1/arb/scan", "/v1/scan"}:
         payload = _body(event)

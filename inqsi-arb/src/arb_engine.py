@@ -106,7 +106,7 @@ def _net_decimal(decimal_odds: float, commission_rate: float) -> float:
 
 
 def _parse_books(raw: Any) -> Optional[set[str]]:
-    if not raw:
+    if raw is None or raw == "":
         return None
     if isinstance(raw, str):
         values = [part.strip().lower() for part in raw.split(",")]
@@ -115,7 +115,7 @@ def _parse_books(raw: Any) -> Optional[set[str]]:
     else:
         raise ArbValidationError("books must be a comma-separated string or list")
     allowed = {part for part in values if part}
-    return allowed or None
+    return allowed
 
 
 def _candidate_signature(row: Mapping[str, Any]) -> tuple[Any, ...]:
@@ -572,7 +572,7 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
     for raw in quotes or []:
         outcome = str(raw.get("outcome") or "").strip(); book = str(raw.get("book") or "").strip()
         if not outcome or not book: continue
-        if allowed and book.lower() not in allowed: continue
+        if allowed is not None and book.lower() not in allowed: continue
         try:
             d = _quote_decimal(raw); net_d = _net_decimal(d, float(raw.get("commission_rate") or 0.0))
         except (TypeError, ValueError, ArbValidationError):
@@ -748,7 +748,7 @@ def scan_all(payload: Mapping[str, Any]) -> Dict[str, Any]:
         if market.endswith("_lay"):
             quotes = [
                 quote for quote in (item.get("quotes") or [])
-                if not allowed or str(quote.get("book") or "").strip().lower() in allowed
+                if allowed is None or str(quote.get("book") or "").strip().lower() in allowed
             ]
             if not quotes:
                 continue

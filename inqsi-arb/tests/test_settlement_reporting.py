@@ -201,6 +201,24 @@ def test_audit_payload_bounds_top_level_request_strings():
     assert len(json.dumps(payload).encode("utf-8")) < 10_000
 
 
+def test_audit_payload_retains_pack_filter_region_and_snapshot_context():
+    result = {
+        "source": "store", "regions": "us,us2", "books": ["draftkings"], "licensed": True,
+        "pack": {"state": "az", "as_of": "2026-09-15"},
+        "status": {"source": "store", "head": {"fetched_at_ms": 123, "markets": ["h2h"]}},
+        "n_markets": 0, "n_arbs": 0, "n_detected_unverified": 0, "n_rejected": 0,
+        "n_held_unverified": 0, "n_exchange_pending": 0, "n_middles": 0,
+        "hits": [], "detected_unverified": [], "rejected": [], "exchange_pending": [], "middles": [],
+    }
+    payload = _audit_scan_payload(result, sport="baseball_mlb", jurisdiction="az")
+    assert payload["source"] == "store"
+    assert payload["regions"] == "us,us2"
+    assert payload["books"] == ["draftkings"]
+    assert payload["licensed"] is True
+    assert payload["pack"]["state"] == "az"
+    assert payload["snapshot"]["head"]["fetched_at_ms"] == 123
+
+
 def test_worldwide_default_uses_all_configured_provider_regions(monkeypatch):
     monkeypatch.delenv("ARB_DEFAULT_JURISDICTION", raising=False)
     monkeypatch.delenv("ARB_REGIONS", raising=False)
@@ -217,6 +235,8 @@ def test_get_scan_applies_worldwide_default_without_bookmaker_filter(monkeypatch
         observed.update({"sport": sport, **kwargs})
         return {"bankroll": kwargs["bankroll"], "events": [], "status": {"ok": True}}
 
+    from quote_store import reset_memory
+    reset_memory()
     monkeypatch.setattr(app, "scan_sport_payload", fake_scan)
     response = app.lambda_handler({
         "httpMethod": "GET",

@@ -206,6 +206,35 @@ def test_period_classification_precedes_total_and_spread():
     assert market_family("spreads_1st_5_innings") == "periods"
 
 
+def test_mlb_house_rules_do_not_qualify_other_baseball_leagues():
+    ts = fresh_ts()
+    event = {
+        "sport": "baseball_kbo", "market": "h2h", "id": "kbo", "event": "A @ B",
+        "expected_outcomes": ["A", "B"],
+        "quotes": [
+            {"book": "draftkings", "outcome": "A", "decimal": 2.2, "last_update": ts},
+            {"book": "fanduel", "outcome": "B", "decimal": 2.2, "last_update": ts},
+        ],
+    }
+    rows = validate_events([event], jurisdiction="az")
+    assert all(row["rules_status"] == "unknown" for row in rows)
+
+
+def test_two_way_winner_rule_does_not_qualify_three_way_or_draw_no_bet():
+    ts = fresh_ts()
+    for market in ("h2h_3_way", "draw_no_bet"):
+        event = {
+            "sport": "baseball_mlb", "market": market, "id": market, "event": "A @ B",
+            "expected_outcomes": ["A", "Draw", "B"] if market == "h2h_3_way" else ["A", "B"],
+            "quotes": [
+                {"book": "draftkings", "outcome": "A", "decimal": 3.2, "last_update": ts},
+                {"book": "fanduel", "outcome": "B", "decimal": 3.2, "last_update": ts},
+                *([{"book": "fanduel", "outcome": "Draw", "decimal": 3.2, "last_update": ts}] if market == "h2h_3_way" else []),
+            ],
+        }
+        assert all(row["rules_status"] == "unknown" for row in validate_events([event], jurisdiction="az"))
+
+
 def test_constraint_analysis_flags_cap():
     result = apply_book_constraints(
         [{"book": "a", "stake": 60, "limit": 100}, {"book": "b", "stake": 40}],

@@ -14,6 +14,7 @@ from typing import Any, Dict, Iterable, List
 from freshness import assess_quote
 from rules import UNKNOWN, compatibility, lookup
 import rules_fanatics  # noqa: F401  # reviewed supplemental registrations
+import rules_state_packs  # noqa: F401  # reviewed US state house-rule packs
 
 
 def sport_family(sport_key: str) -> str:
@@ -69,6 +70,14 @@ def settlement_market_family(market_key: str) -> str:
     key = str(market_key or "").lower()
     broad = market_family(key)
     if broad != "periods":
+        if key == "h2h":
+            return "winner"
+        if key == "h2h_3_way":
+            return "winner_3way"
+        if key == "draw_no_bet":
+            return "draw_no_bet"
+        if broad == "winner":
+            return "winner_variant"
         return broad
     if "h2h_3_way" in key:
         return "period_winner_3way"
@@ -107,6 +116,7 @@ def validate_event(event: Dict[str, Any], *, jurisdiction: str = "*") -> List[Di
     raw_quotes = list(row.get("quotes") or [])
     s = sport_family(row.get("sport"))
     m = settlement_market_family(row.get("market"))
+    exact_sport = str(row.get("sport") or "").strip().lower()
 
     fresh_quotes: List[Dict[str, Any]] = []
     freshness_evidence: List[Dict[str, Any]] = []
@@ -133,6 +143,9 @@ def validate_event(event: Dict[str, Any], *, jurisdiction: str = "*") -> List[Di
         rule = rule_by_book.get(book)
         if rule is None:
             rule = lookup(book, s, m, jurisdiction)
+            if (rule is not None and s == "baseball" and exact_sport != "baseball_mlb"
+                    and str(rule.settlement_profile or "").startswith("mlb_")):
+                rule = None
             rule_by_book[book] = rule
         if rule is None or not rule.reviewed or not rule.settlement_profile:
             unknown_books.append(book)
@@ -172,6 +185,13 @@ def validate_event(event: Dict[str, Any], *, jurisdiction: str = "*") -> List[Di
             "status": UNKNOWN,
             "reason": "QUOTE_FRESHNESS_NOT_ESTABLISHED",
             "missing_books": sorted({str(q.get("book") or "").lower() for q in raw_quotes if q.get("book")}),
+            "rules": [],
+        }
+    elif unknown_books and not groups:
+        result = {
+            "status": UNKNOWN,
+            "reason": "EVENT_OR_MARKET_SCOPE_UNREVIEWED",
+            "missing_books": sorted(set(unknown_books)),
             "rules": [],
         }
     else:
