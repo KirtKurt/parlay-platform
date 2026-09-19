@@ -17,7 +17,7 @@ from pathlib import Path
 import re
 from zoneinfo import ZoneInfo
 
-CONTRACT = 'KS1-settled-loss-patterns-v1'
+CONTRACT = 'KS1-settled-loss-patterns-v2'
 PREFIX = 'mlb/ks1/loss-patterns-v1/'
 MIN_RESEARCH_GROUP = 20  # Descriptive research support, never a promotion gate.
 WINDOWS = ('7d', '15d', '30d')
@@ -295,6 +295,48 @@ def summarize(rows):
     return output
 
 
+def _validate_persisted_final(grade):
+    for side in ('home', 'away'):
+        score = grade.get(side+'_score')
+        if type(score) is not int or score < 0:
+            raise ValueError('invalid_persisted_final_score')
+    if grade['home_score'] == grade['away_score']:
+        raise ValueError('invalid_persisted_final_tie')
+    y = grade.get('home_win')
+    if type(y) is not int or y not in (0, 1) or y != int(grade['home_score'] > grade['away_score']):
+        raise ValueError('final_label_mismatch')
+    if not grade.get('final_evidence'):
+        raise ValueError('missing_final_receipts')
+    for item in grade['final_evidence']:
+        receipt(item)
+    return y
+
+
+def _crosscheck_current_final(source, grade, row, start, as_of):
+    """Cross-check a still-retained current final, but do not require it forever.
+
+    Official grading stores the final scores and immutable source receipts in the
+    append-only ledger. The research ingestion source intentionally retains only
+    the current and previous calendar years, so an older valid grade must remain
+    traceable after its convenience copy ages out of ``source['finals']``.
+    """
+    final = source.get('finals', {}).get(grade['game_id'])
+    if final is None:
+        return 'persisted_official_grade_only_current_final_aged_out'
+    if not isinstance(final, dict):
+        raise ValueError('malformed_current_final')
+    for side in ('home', 'away'):
+        if str(final[side+'_id']) != str(row[side+'_id']):
+            raise ValueError('final_team_mismatch')
+        if type(final[side+'_score']) is not int or final[side+'_score'] < 0 or final[side+'_score'] != grade[side+'_score']:
+            raise ValueError('final_score_mismatch')
+    if utc(final['observed_at']) > as_of:
+        raise ValueError('future_final_observation')
+    if not start < utc(final['completed_at']) <= utc(grade['graded_at']):
+        raise ValueError('final_completion_mismatch')
+    return 'verified_against_current_retained_final'
+
+
 def build(source, ledger, forbidden_game_ids):
     if source.get('system') != 'KS1' or ledger.get('system') != 'KS1':
         raise ValueError('not_ks1_evidence')
@@ -327,25 +369,8 @@ def build(source, ledger, forbidden_game_ids):
             raise ValueError('slate_date_mismatch')
         if not (utc(row['as_of']) <= utc(entry['evidence']['stored_at']) <= lock == start-timedelta(minutes=10) < utc(grade['graded_at']) <= as_of):
             raise ValueError('lock_or_label_chronology_mismatch')
-        final = source['finals'].get(gid)
-        if not isinstance(final, dict):
-            raise ValueError('missing_final')
-        for side in ('home', 'away'):
-            if str(final[side+'_id']) != str(row[side+'_id']):
-                raise ValueError('final_team_mismatch')
-            if type(final[side+'_score']) is not int or final[side+'_score'] < 0 or final[side+'_score'] != grade[side+'_score']:
-                raise ValueError('final_score_mismatch')
-        if utc(final['observed_at']) > as_of:
-            raise ValueError('future_final_observation')
-        if not start < utc(final['completed_at']) <= utc(grade['graded_at']):
-            raise ValueError('final_completion_mismatch')
-        y = grade['home_win']
-        if type(y) is not int or y not in (0, 1) or final['home_score'] == final['away_score'] or y != int(final['home_score'] > final['away_score']):
-            raise ValueError('final_label_mismatch')
-        if not grade.get('final_evidence'):
-            raise ValueError('missing_final_receipts')
-        for item in grade['final_evidence']:
-            receipt(item)
+        y = _validate_persisted_final(grade)
+        final_crosscheck = _crosscheck_current_final(source, grade, row, start, as_of)
         patterns, values, relievers = signals(row, lock)
         active = attribution(row)
         sign = 1 if p >= .5 else -1
@@ -369,7 +394,8 @@ def build(source, ledger, forbidden_game_ids):
             'calibration_method': row.get('calibration_method'),
             'calibration_version': row.get('calibration_version'),
             'source_row_sha256': digest(row), 'official_lock': entry['evidence'],
-            'final_evidence': grade['final_evidence'],
+            'final_score': {'home': grade['home_score'], 'away': grade['away_score']},
+            'final_evidence': grade['final_evidence'], 'current_final_crosscheck': final_crosscheck,
             'signal_role': 'research_diagnostic_not_a_serving_rule'})
     observations.sort(key=lambda r: (r['locked_at'], r['game_id']))
     patterns = summarize(observations)
@@ -407,6 +433,40 @@ def require_workflow():
         raise ValueError('loss_pattern_publication_requires_existing_main_workflow')
 
 
+def committed_ledger_key(report):
+    status = report.get('status')
+    date = report.get('night_date')
+    if not isinstance(date, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date):
+        return None
+    from ks1.calibration_store import PREFIX as GRADE_PREFIX, checkpoint_prefix
+    if status == 'completed':
+        return GRADE_PREFIX+'date='+date+'/graded_ledger.json'
+    if status == 'completed_catchup':
+        revision = report.get('catchup_revision')
+        if type(revision) is not int:
+            raise ValueError('invalid_catchup_revision')
+        return checkpoint_prefix(date, revision)+'graded_ledger.json'
+    return None
+
+
+def select_ledger(report, source, root, *, s3=None, bucket=None):
+    path = root/'graded_ledger.json'
+    ledger = json.loads(path.read_bytes()) if path.exists() else source.get('committed_ledger')
+    expected = report.get('ledger_rows')
+    if ledger and expected == len(ledger.get('rows', [])):
+        return ledger, {'source': 'same_run_artifact' if path.exists() else 'capture_committed_checkpoint'}
+    key = committed_ledger_key(report)
+    if s3 is None or not bucket or not key:
+        raise ValueError('nightly_ledger_count_mismatch')
+    from ks1.calibration_store import read_json
+    ledger, proof = read_json(s3, bucket, key)
+    if not ledger or expected != len(ledger.get('rows', [])):
+        raise ValueError('committed_nightly_ledger_count_mismatch')
+    if receipt(proof)[:2] != (bucket, key):
+        raise ValueError('committed_nightly_ledger_receipt_mismatch')
+    return ledger, {'source': 'exact_committed_aws_ledger', 'artifact': proof}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, required=True)
@@ -423,10 +483,12 @@ def main(argv=None):
             raise ValueError('nightly_not_successful')
         source_bytes = (args.root/'capture.json').read_bytes()
         source = json.loads(source_bytes)
-        path = args.root/'graded_ledger.json'
-        ledger = json.loads(path.read_bytes()) if path.exists() else source.get('committed_ledger')
-        if not ledger or report.get('ledger_rows') != len(ledger.get('rows', [])):
-            raise ValueError('nightly_ledger_count_mismatch')
+        s3 = bucket = None
+        if args.publish:
+            require_workflow()
+            from ks1.sources import aws_clients
+            _, s3, bucket = aws_clients('us-east-1', 'parlay-platform-dev')
+        ledger, ledger_identity = select_ledger(report, source, args.root, s3=s3, bucket=bucket)
         manifest_bytes = Path(__file__).with_name('qualification_holdout_20260914.json').read_bytes()
         manifest = json.loads(manifest_bytes)
         ids = manifest['game_ids']
@@ -434,14 +496,12 @@ def main(argv=None):
             raise ValueError('invalid_frozen_holdout_manifest')
         value = build(source, ledger, set(ids))
         value['input_files'] = {'capture_sha256': hashlib.sha256(source_bytes).hexdigest(),
-                                'frozen_manifest_sha256': hashlib.sha256(manifest_bytes).hexdigest()}
+                                'frozen_manifest_sha256': hashlib.sha256(manifest_bytes).hexdigest(),
+                                'ledger': ledger_identity}
         value['execution'] = {name: os.environ.get(name) for name in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_SHA')}
         (args.output/'report.json').write_bytes(encoded(value))
         status = {'published': False, 'aws_readback_verified': False, 'summary': value['summary']}
         if args.publish:
-            require_workflow()
-            from ks1.sources import aws_clients
-            _, s3, bucket = aws_clients('us-east-1', 'parlay-platform-dev')
             status.update(publish(value, s3, bucket))
         (args.output/'status.json').write_bytes(encoded(status))
         print(json.dumps(status, sort_keys=True))
