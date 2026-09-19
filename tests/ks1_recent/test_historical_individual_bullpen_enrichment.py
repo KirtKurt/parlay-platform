@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 import ks1.historical_individual_bullpen_enrichment as subject
-from ks1.inventory import encode
+from ks1.inventory import RESEARCH, encode
 
 
 def profile(player_id, appearances, fip, era, kbb, xwoba=None):
@@ -20,6 +20,19 @@ def profile(player_id, appearances, fip, era, kbb, xwoba=None):
             'xwoba': xwoba,
         }},
     }
+
+
+def _compact_statcast_receipts():
+    return (
+        {
+            'bucket': 'retained', 'key': RESEARCH + 'statcast.json',
+            'versionId': 'vp', 'sha256': 'd' * 64,
+        },
+        {
+            'bucket': 'retained', 'key': RESEARCH + 'statcast/' + 'e' * 64 + '.json',
+            'versionId': 'va', 'sha256': 'e' * 64,
+        },
+    )
 
 
 def test_usage_ranks_are_prior_appearances_with_deterministic_ties():
@@ -77,6 +90,7 @@ def test_proof_bound_statcast_replay_requires_exact_report_and_receipts(monkeypa
         'bucket': 'retained', 'key': 'official.json', 'versionId': 'vo',
         'sha256': 'b' * 64, 'complete_years': [2025, 2026],
     }
+    pointer_receipt, artifact_receipt = _compact_statcast_receipts()
     replay_receipt = {
         'bucket': 'retained', 'key': 'sources/statcast-v2/2026-05-31.json',
         'versionId': 'vs', 'sha256': 'c' * 64,
@@ -89,11 +103,16 @@ def test_proof_bound_statcast_replay_requires_exact_report_and_receipts(monkeypa
     proof = {
         'official_history_source': official,
         'historical_statcast_report': expected_report,
-        'source_receipts': [dict(official), dict(replay_receipt)],
+        'source_receipts': [
+            dict(official), dict(pointer_receipt), dict(artifact_receipt),
+            dict(replay_receipt),
+        ],
     }
     bundle = {
         'official_history_source': dict(official),
-        'source_receipts': [dict(official)],
+        'source_receipts': [
+            dict(official), dict(pointer_receipt), dict(artifact_receipt),
+        ],
     }
     row = {'game_pk': '50', 'pitcher': '10', 'game_date': '2026-05-31'}
 
@@ -112,10 +131,59 @@ def test_proof_bound_statcast_replay_requires_exact_report_and_receipts(monkeypa
     context, evidence = subject.proof_bound_statcast_context('cf', 's3', 'bucket', proof)
     assert context['rows'] == [row]
     assert context['retained_dates'] == ['2026-05-31']
+    assert evidence['all_preloaded_statcast_receipts_bound_to_input_proof'] is True
     assert evidence['all_replay_receipts_bound_to_input_proof'] is True
+    assert evidence['all_statcast_receipts_bound_to_input_proof'] is True
+    assert evidence['preloaded_source_receipt_count'] == 2
     assert evidence['replay_source_receipt_count'] == 1
+    assert evidence['bound_statcast_source_receipt_count'] == 3
     assert evidence['proof_report_sha256'] == evidence['replay_report_sha256']
     assert evidence['provider_requests'] == 0
+
+
+def test_proof_bound_statcast_replay_rejects_unbound_preloaded_compact_artifact(monkeypatch):
+    official = {
+        'bucket': 'retained', 'key': 'official.json', 'versionId': 'vo',
+        'sha256': 'b' * 64, 'complete_years': [2025, 2026],
+    }
+    pointer_receipt, artifact_receipt = _compact_statcast_receipts()
+    expected_report = {'provider_requests': 0, 'retained_pitch_rows': 1}
+    proof = {
+        'official_history_source': official,
+        'historical_statcast_report': expected_report,
+        'source_receipts': [dict(official), dict(pointer_receipt), dict(artifact_receipt)],
+    }
+    advanced_artifact = dict(artifact_receipt, versionId='new-version', sha256='f' * 64)
+    bundle = {
+        'official_history_source': dict(official),
+        'source_receipts': [dict(official), dict(pointer_receipt), advanced_artifact],
+    }
+    monkeypatch.setattr(subject, 'load_existing', lambda cf, s3, bucket: bundle)
+    monkeypatch.setattr(
+        subject, 'load_training_statcast', lambda value, s3, bucket: dict(expected_report))
+    with pytest.raises(ValueError, match='preloaded_receipt_unbound'):
+        subject.proof_bound_statcast_context('cf', 's3', 'bucket', proof)
+
+
+def test_proof_bound_statcast_replay_rejects_preloaded_receipt_without_identity(monkeypatch):
+    official = {
+        'bucket': 'retained', 'key': 'official.json', 'versionId': 'vo',
+        'sha256': 'b' * 64, 'complete_years': [2025, 2026],
+    }
+    pointer_receipt, artifact_receipt = _compact_statcast_receipts()
+    invalid_artifact = dict(artifact_receipt, versionId=None)
+    proof = {
+        'official_history_source': official,
+        'historical_statcast_report': {'provider_requests': 0},
+        'source_receipts': [dict(official), dict(pointer_receipt), dict(artifact_receipt)],
+    }
+    bundle = {
+        'official_history_source': dict(official),
+        'source_receipts': [dict(official), dict(pointer_receipt), invalid_artifact],
+    }
+    monkeypatch.setattr(subject, 'load_existing', lambda cf, s3, bucket: bundle)
+    with pytest.raises(ValueError, match='preloaded_receipt_invalid'):
+        subject.proof_bound_statcast_context('cf', 's3', 'bucket', proof)
 
 
 def test_proof_bound_statcast_replay_fails_closed_on_report_change(monkeypatch):
@@ -123,12 +191,16 @@ def test_proof_bound_statcast_replay_fails_closed_on_report_change(monkeypatch):
         'bucket': 'retained', 'key': 'official.json', 'versionId': 'vo',
         'sha256': 'b' * 64, 'complete_years': [2025, 2026],
     }
+    pointer_receipt, artifact_receipt = _compact_statcast_receipts()
     proof = {
         'official_history_source': official,
         'historical_statcast_report': {'provider_requests': 0, 'retained_pitch_rows': 1},
-        'source_receipts': [dict(official)],
+        'source_receipts': [dict(official), dict(pointer_receipt), dict(artifact_receipt)],
     }
-    bundle = {'official_history_source': dict(official), 'source_receipts': [dict(official)]}
+    bundle = {
+        'official_history_source': dict(official),
+        'source_receipts': [dict(official), dict(pointer_receipt), dict(artifact_receipt)],
+    }
     monkeypatch.setattr(subject, 'load_existing', lambda cf, s3, bucket: bundle)
     monkeypatch.setattr(subject, 'load_training_statcast',
                         lambda value, s3, bucket: {'provider_requests': 0, 'retained_pitch_rows': 2})
