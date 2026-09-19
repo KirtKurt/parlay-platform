@@ -21,6 +21,12 @@ on:
       - 'tests/unit/test_mlb_autofunction_identity.py'
       - '.github/workflows/mlb-autofunction-identity-readonly.yml'
   workflow_dispatch:
+  # Provisioning can succeed even when the later authority verifier fails.
+  # Retry metadata collection after the deploy finishes, not on its success alone.
+  workflow_run:
+    workflows: ['Deploy SAM to AWS']
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
@@ -36,7 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -44,7 +50,13 @@ jobs:
       - run: python -m pytest -q tests/unit/test_mlb_autofunction_identity.py tests/unit/test_provision_ks1_identity_reader.py
 
   evidence:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: >-
+      github.ref == 'refs/heads/main' && github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.head_branch == 'main' &&
+        (github.event.workflow_run.event == 'push' ||
+         github.event.workflow_run.event == 'workflow_dispatch')))
     needs: contract
     permissions:
       contents: read
@@ -65,20 +77,34 @@ jobs:
           role-to-assume: arn:aws:iam::735707987003:role/ks1-autofunction-identity-reader
           role-session-name: ks1-autofunction-readonly
           role-duration-seconds: 900
-          allowed-account-ids: '735707987003'
           aws-region: us-east-1
           unset-current-credentials: true
           inline-session-policy: >-
             {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["sts:GetCallerIdentity","cloudformation:DescribeStacks","cloudformation:ListStackResources","lambda:GetFunction","lambda:GetFunctionConfiguration","iam:GetRole","iam:ListRolePolicies","iam:GetRolePolicy","iam:ListAttachedRolePolicies","iam:GetPolicy","iam:GetPolicyVersion","events:ListRules","events:ListTargetsByRule"],"Resource":"*"},{"Effect":"Deny","NotAction":["sts:GetCallerIdentity","cloudformation:DescribeStacks","cloudformation:ListStackResources","lambda:GetFunction","lambda:GetFunctionConfiguration","iam:GetRole","iam:ListRolePolicies","iam:ListAttachedRolePolicies","iam:GetRolePolicy","iam:GetPolicy","iam:GetPolicyVersion","events:ListRules","events:ListTargetsByRule"],"Resource":"*"}]}
+      - name: Verify restricted AWS caller before repository checkout
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import boto3
+          path = Path('/tmp/mlb-autofunction-identity.json')
+          report = json.loads(path.read_text())
+          report['failedStage'] = 'restricted_principal_binding'
+          path.write_text(json.dumps(report) + '\n')
+          caller = boto3.client('sts').get_caller_identity()
+          expected = 'arn:aws:sts::735707987003:assumed-role/ks1-autofunction-identity-reader/ks1-autofunction-readonly'
+          if caller.get('Account') != '735707987003' or caller.get('Arn') != expected:
+              raise SystemExit('Restricted AWS caller mismatch')
+          PY
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - name: Collect stack, Lambda, IAM and rule evidence without invocation
         run: python scripts/collect_mlb_autofunction_identity.py --output /tmp/mlb-autofunction-identity.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mlb-autofunction-identity-${{ github.run_id }}
+          name: mlb-autofunction-identity-${{ github.run_id }}-${{ github.run_attempt }}
           path: /tmp/mlb-autofunction-identity.json
           if-no-files-found: error
           retention-days: 30

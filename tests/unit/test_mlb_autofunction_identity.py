@@ -142,7 +142,7 @@ def test_workflow_has_main_only_evidence_and_no_schedule():
     assert 'schedule:' not in text
     assert 'contents: read' in text
     assert 'test_mlb_autofunction_identity.py' in text
-    assert 'ref: ${{ github.sha }}' in text
+    assert 'ref: ${{ github.event_name == \'workflow_run\' && github.event.workflow_run.head_sha || github.sha }}' in text
     assert 'if: always()' in text
 
 
@@ -197,7 +197,8 @@ def test_workflow_has_only_restricted_oidc_authentication():
     assert 'create_role' not in text and 'put_role_policy' not in text
     assert 'id-token: write' in text
     assert 'role-session-name: ks1-autofunction-readonly' in text
-    assert "allowed-account-ids: '735707987003'" in text
+    assert "allowed-account-ids:" not in text
+    assert "Verify restricted AWS caller before repository checkout" in text
     assert 'role/ks1-autofunction-identity-reader' in text
     evidence = text.split('  evidence:')[1]
     assert evidence.index('failedStage') < evidence.index('uses: aws-actions/configure-aws-credentials')
@@ -220,3 +221,257 @@ def test_newer_runtime_grammar_preserves_identity_and_hashes(fixture, monkeypatc
     assert report['isolationAuthorized'] is False
     assert report['sourceSummary'][0]['parseStatus'] == 'unavailable_in_collector_runtime'
     assert report['sourceSummary'][0]['sha256']
+
+
+@pytest.mark.parametrize('environment,status', [
+    (None, 'not_returned'),
+    ({}, 'not_returned'),
+    ({'Variables': None}, 'malformed'),
+    ({'Variables': []}, 'malformed'),
+    ({'Variables': {'AUTO_TABLE': 12}}, 'malformed'),
+    ({'Error': {'ErrorCode': 'KMSAccessDeniedException', 'Message': 'must-not-leak'}}, 'error'),
+    ({'Error': {'ErrorCode': 'must-not-leak', 'Message': 'must-not-leak'}}, 'error'),
+    ({'Error': {}, 'Variables': {'AUTO_TABLE': 'must-not-leak'}}, 'error'),
+])
+def test_unavailable_environment_is_not_empty_scope(fixture, environment, status):
+    config = fixture[1]['get_function']['Configuration']
+    if environment is None:
+        config.pop('Environment')
+    else:
+        config['Environment'] = environment
+    report = run(fixture)
+    assert report['identityVerified'] is True
+    assert report['isolationAuthorized'] is False
+    assert report['environmentEvidence']['getFunction']['status'] == status
+    assert report['environmentEvidence']['complete'] is False
+    assert report['environmentKeys'] is None
+    assert report['resourceBindings'] is None
+    assert 'must-not-leak' not in json.dumps(report)
+
+
+def test_explicit_empty_environment_is_distinct_from_unavailable(fixture):
+    fixture[1]['get_function']['Configuration']['Environment'] = {'Variables': {}}
+    report = run(fixture)
+    assert report['environmentEvidence']['complete'] is True
+    assert report['environmentKeys'] == []
+    assert report['resourceBindings'] == {}
+    assert report['isolationAuthorized'] is False
+
+
+def test_environment_changes_are_not_silently_bound_to_old_values(fixture):
+    after = copy.deepcopy(fixture[1]['get_function_configuration'])
+    after['Environment']['Variables']['AUTO_TABLE'] = 'must-not-leak'
+    fixture[1]['get_function_configuration'] = after
+    report = run(fixture)
+    assert report['environmentEvidence']['valuesMatch'] is False
+    assert report['environmentEvidence']['complete'] is False
+    assert report['resourceBindings'] is None
+    assert 'must-not-leak' not in json.dumps(report)
+
+
+def test_one_read_cannot_hide_other_environment_read_failure(fixture):
+    after = copy.deepcopy(fixture[1]['get_function_configuration'])
+    after.pop('Environment')
+    fixture[1]['get_function_configuration'] = after
+    report = run(fixture)
+    assert report['environmentEvidence']['getFunction']['status'] == 'returned'
+    assert report['environmentEvidence']['getFunctionConfiguration']['status'] == 'not_returned'
+    assert report['environmentEvidence']['complete'] is False
+    assert report['resourceBindings'] is None
+
+
+def test_environment_completeness_requires_same_revision(fixture):
+    fixture[1]['get_function_configuration'] = dict(fixture[1]['get_function_configuration'], RevisionId='revision2')
+    report = run(fixture)
+    assert report['identityVerified'] is False
+    assert report['environmentEvidence']['complete'] is False
+    assert report['environmentKeys'] is None
+
+
+def workflow():
+    import yaml
+    return yaml.load(Path('.github/workflows/mlb-autofunction-identity-readonly.yml').read_text(), Loader=yaml.BaseLoader)
+
+
+def test_readonly_recovery_runs_after_completed_main_deployment():
+    value = workflow()
+    assert value['on']['workflow_run'] == {
+        'workflows': ['Deploy SAM to AWS'], 'types': ['completed'], 'branches': ['main']}
+    evidence = value['jobs']['evidence']
+    assert evidence['permissions'] == {'contents': 'read', 'id-token': 'write'}
+    assert 'github.event.workflow_run.head_repository.full_name == github.repository' in evidence['if']
+    assert "github.event.workflow_run.head_branch == 'main'" in evidence['if']
+    assert "github.event.workflow_run.event == 'push'" in evidence['if']
+    assert "github.event.workflow_run.event == 'workflow_dispatch'" in evidence['if']
+    assert 'workflow_run.conclusion' not in evidence['if']
+    # The failed post-deploy verifier must not prevent a read-only identity audit.
+    checkouts = [s for s in evidence['steps'] if s.get('uses', '').startswith('actions/checkout@')]
+    checkout_ref = "${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}"
+    assert all(s['with']['ref'] == checkout_ref for s in checkouts)
+    upload = next(s for s in evidence['steps'] if s.get('uses', '').startswith('actions/upload-artifact@'))
+    assert '${{ github.run_attempt }}' in upload['with']['name']
+
+
+@pytest.mark.parametrize('account,arn,allowed', [
+    (subject.EXPECTED_ACCOUNT, subject.EXPECTED_READER_ARN, True),
+    ('999999999999', subject.EXPECTED_READER_ARN, False),
+    (subject.EXPECTED_ACCOUNT, 'arn:aws:iam::735707987003:user/deployer', False),
+])
+def test_workflow_principal_check_precedes_checkout(tmp_path, monkeypatch, account, arn, allowed):
+    import sys
+    from types import SimpleNamespace
+    steps = workflow()['jobs']['evidence']['steps']
+    check = next(s for s in steps if s.get('name') == 'Verify restricted AWS caller before repository checkout')
+    checkout = next(s for s in steps if s.get('uses', '').startswith('actions/checkout@'))
+    assert steps.index(check) < steps.index(checkout)
+    calls = []
+    def client(service):
+        calls.append(service)
+        return SimpleNamespace(get_caller_identity=lambda: {'Account': account, 'Arn': arn})
+    monkeypatch.setitem(sys.modules, 'boto3', SimpleNamespace(client=client))
+    path = tmp_path / 'identity.json'
+    path.write_text(json.dumps({'identityVerified': False, 'isolationAuthorized': False}))
+    code = check['run'].split("python - <<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
+    code = code.replace('/tmp/mlb-autofunction-identity.json', str(path))
+    if allowed:
+        exec(compile(code, '<restricted-caller-check>', 'exec'), {})
+    else:
+        with pytest.raises(SystemExit, match='Restricted AWS caller mismatch'):
+            exec(compile(code, '<restricted-caller-check>', 'exec'), {})
+        assert json.loads(path.read_text())['failedStage'] == 'restricted_principal_binding'
+    assert calls == ['sts']
+
+
+@pytest.mark.parametrize('operation,field', [
+    ('list_rules', 'Rules'),
+    ('list_targets_by_rule', 'Targets'),
+    ('list_role_policies', 'PolicyNames'),
+    ('list_attached_role_policies', 'AttachedPolicies'),
+    ('list_stack_resources', 'StackResourceSummaries'),
+])
+@pytest.mark.parametrize('payload', ['absent', None, {}, '', 0])
+def test_missing_or_malformed_inventory_is_not_empty(fixture, operation, field, payload):
+    fixture[1][operation] = {} if payload == 'absent' else {field: payload}
+    with pytest.raises((ValueError, RuntimeError)):
+        run(fixture)
+
+
+@pytest.mark.parametrize('token', [0, False, '', [], {}, 42])
+def test_invalid_page_token_cannot_truncate_inventory(fixture, token):
+    fixture[1]['list_rules'] = {'Rules': [], 'NextToken': token}
+    with pytest.raises((ValueError, RuntimeError)):
+        run(fixture)
+
+
+def test_malformed_target_cannot_hide_a_scheduled_writer(fixture):
+    fixture[1]['list_targets_by_rule'] = {'Targets': [{'Id': 'target'}]}
+    with pytest.raises((ValueError, RuntimeError)):
+        run(fixture)
+
+
+def test_duplicate_inventory_identity_fails_closed(fixture):
+    rule = fixture[1]['list_rules']['Rules'][0]
+    fixture[1]['list_rules'] = [
+        {'Rules': [rule], 'NextToken': 'next'}, {'Rules': [rule]}]
+    with pytest.raises((ValueError, RuntimeError)):
+        run(fixture)
+
+
+def test_explicit_empty_inventory_is_still_valid(fixture):
+    fixture[1]['list_rules'] = {'Rules': []}
+    fixture[1]['list_role_policies'] = {'PolicyNames': []}
+    fixture[1]['list_attached_role_policies'] = {'AttachedPolicies': []}
+    report = run(fixture)
+    assert report['rules'] == []
+    assert report['policies'] == []
+    assert report['ruleInventoryComplete'] is True
+    assert report['isolationAuthorized'] is False
+
+
+@pytest.mark.parametrize('field,value', [
+    ('Handler', 'unrelated.handler'),
+    ('CodeSha256', 'different'),
+    ('FunctionName', 'lookalike'),
+])
+def test_storage_bindings_require_positive_function_identity(fixture, field, value):
+    fixture[1]['get_function']['Configuration'][field] = value
+    report = run(fixture)
+    assert report['identityVerified'] is False
+    assert report['environmentEvidence']['complete'] is False
+    assert report['resourceBindings'] is None
+
+
+@pytest.mark.parametrize('source', [
+    'import os\nx = os.environ["MLB_AUTO_STATE_TABLE"]',
+    'import os as runtime_os\nx = runtime_os.environ["MLB_AUTO_STATE_TABLE"]',
+    'from os import environ\nx = environ["MLB_AUTO_STATE_TABLE"]',
+    'from os import environ as env\nx = env["MLB_AUTO_STATE_TABLE"]',
+    'from os import getenv as read_env\nx = read_env("MLB_AUTO_STATE_TABLE")',
+])
+def test_source_summary_sees_direct_environment_reads(source):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w') as archive:
+        archive.writestr('mlb_auto/storage.py', source)
+    row = subject.source_summary(buffer.getvalue())[0]
+    assert 'MLB_AUTO_STATE_TABLE' in row['possibleEnvironmentKeys']
+    assert row['analysisScope'] == 'heuristic_ast_only_not_isolation_proof'
+
+
+def test_dynamic_environment_source_is_explicitly_unknown():
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w') as archive:
+        archive.writestr('mlb_auto/storage.py', 'import os\nx = os.environ[key]\ny = os.getenv(other)\n')
+    row = subject.source_summary(buffer.getvalue())[0]
+    assert row['dynamicEnvironmentAccessCount'] == 2
+    assert row['possibleEnvironmentKeys'] == []
+
+
+def test_incomplete_inventory_failure_retains_redacted_negative_receipt(fixture, tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    clients, responses, artifact, _ = fixture
+    responses['list_rules'] = {'NextToken': 'must-not-leak'}
+    monkeypatch.setitem(sys.modules, 'boto3', SimpleNamespace(client=lambda service, **kw: clients[service]))
+    original = subject.collect
+    monkeypatch.setattr(subject, 'collect', lambda clients: original(clients, lambda location: artifact))
+    output = tmp_path / 'negative.json'
+    monkeypatch.setattr(sys, 'argv', ['collector', '--output', str(output)])
+    assert subject.main() == 1
+    report = json.loads(output.read_text())
+    assert report['identityVerified'] is False
+    assert report['isolationAuthorized'] is False
+    assert report['awsWrites'] == report['lambdaInvocations'] == 0
+    assert report['failedRead'] == 'events.list_rules:IncompleteInventoryResponse'
+    assert 'must-not-leak' not in output.read_text()
+
+
+@pytest.mark.parametrize('page', [
+    {'Rules': [], 'IsTruncated': 'false'},
+    {'Rules': [], 'IsTruncated': 0},
+    {'Rules': [], 'IsTruncated': False, 'NextToken': 'secret-cursor'},
+])
+def test_contradictory_or_malformed_pagination_is_negative(fixture, page):
+    fixture[1]['list_rules'] = page
+    with pytest.raises(subject.InventoryEvidenceError) as error:
+        run(fixture)
+    assert 'secret-cursor' not in str(error.value)
+
+
+def test_unique_cursors_cannot_bypass_page_bound(fixture, monkeypatch):
+    monkeypatch.setattr(subject, 'MAX_METADATA_PAGES', 2)
+    fixture[1]['list_rules'] = [
+        {'Rules': [], 'NextToken': 'first'}, {'Rules': [], 'NextToken': 'second'}]
+    with pytest.raises(subject.InventoryEvidenceError, match='PaginationLimitExceeded'):
+        run(fixture)
+    assert sum(operation == 'list_rules' for _, operation, _ in fixture[3]) == 2
+
+
+def test_source_observations_do_not_expose_defaults_or_dynamic_values():
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w') as archive:
+        archive.writestr('mlb_auto/storage.py',
+                         'from os import getenv as env\nx = env("TABLE_NAME", "must-not-leak")\ny = env(key="lowercase_name")\n')
+    row = subject.source_summary(buffer.getvalue())[0]
+    assert row['possibleEnvironmentKeys'] == ['TABLE_NAME', 'lowercase_name']
+    assert row['dynamicEnvironmentAccessCount'] == 0
+    assert 'must-not-leak' not in json.dumps(row)
