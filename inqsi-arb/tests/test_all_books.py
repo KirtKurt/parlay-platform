@@ -497,6 +497,25 @@ def test_explicit_non_us_hockey_branch_applies_to_swedish_league(monkeypatch):
     assert any(row["rules_status"] == "compatible" for row in rows)
 
 
+@pytest.mark.parametrize("book", ["betmgm", "williamhill_us"])
+def test_field_hockey_does_not_reuse_ice_hockey_rules(monkeypatch, book):
+    monkeypatch.setattr(validation, "assess_quote", lambda quote: {
+        "status": "fresh", "fresh": True, "age_seconds": 0, "max_age_seconds": 180,
+        "reason": None,
+    })
+    rows = validation.validate_event({
+        "id": "field-hockey", "sport": "field_hockey_india_league", "market": "h2h",
+        "quotes": [
+            {"book": book, "outcome": "A", "decimal": 2.2},
+            {"book": book, "outcome": "B", "decimal": 2.2},
+        ],
+    }, jurisdiction="nj")
+    assert all(row["rules_status"] == "unknown" for row in rows)
+    assert rows[0]["context"]["settlement_validation"]["reason"] == (
+        "EVENT_OR_MARKET_SCOPE_UNREVIEWED"
+    )
+
+
 def test_market_specific_push_policy_fails_closed():
     with pytest.raises(SettlementProofError, match="explicit settlement-state model"):
         prove_quoted_market(

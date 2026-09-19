@@ -29,6 +29,8 @@ def _rule_matches_exact_sport(rule: Any, sport: str, exact_sport: str) -> bool:
     """Keep regional hockey policies from qualifying unrelated leagues."""
     policy = str(getattr(rule, "shortened_game_policy", "") or "").lower()
     if sport == "icehockey":
+        if not exact_sport.startswith("icehockey_"):
+            return False
         region_scoped = "north_american" in policy or "us_pro_55" in policy
         explicitly_non_na = "non_na_" in policy or "non_us_" in policy
         return (
