@@ -5,8 +5,9 @@ qualification holdout before invoking :func:`enrich_frame`. Every bullpen roster
 from the exact versioned MLB pre-T10 team-context object already bound to the game-table
 row, while pitcher results come from the exact official-history object bound to the
 input proof. Retained Statcast may be replayed only when its exact report and every
-newly read source receipt match that same input proof. No provider request,
-label-dependent row selection, prediction write, or serving mutation occurs here.
+retained source receipt contributing pitch rows match that same input proof. No provider
+request, label-dependent row selection, prediction write, or serving mutation occurs
+here.
 
 Reliever slots are deterministic *usage ranks*, not leverage-role claims: among relievers
 on the observed pre-T10 roster with at least one prior 30-day appearance, rank by prior
@@ -28,7 +29,7 @@ import pandas as pd
 
 from ks1.features import Features
 from ks1.historical_feed import feed_team_context
-from ks1.inventory import encode
+from ks1.inventory import RESEARCH, encode
 from ks1.sources import load_existing
 from ks1.statcast_history import load_training_statcast
 
@@ -56,12 +57,36 @@ def _finite(value):
 def _source_identity(receipt):
     if not isinstance(receipt, dict):
         return None
-    return (
-        str(receipt.get("bucket") or ""),
-        str(receipt.get("key") or ""),
-        str(receipt.get("versionId") or receipt.get("version_id") or ""),
-        str(receipt.get("sha256") or ""),
-    )
+    bucket = str(receipt.get("bucket") or "")
+    key = str(receipt.get("key") or "")
+    version = str(receipt.get("versionId") or receipt.get("version_id") or "")
+    sha256 = str(receipt.get("sha256") or "")
+    if not bucket or not key or not version or len(sha256) != 64:
+        return None
+    return bucket, key, version, sha256
+
+
+def _preloaded_statcast_identities(receipts):
+    """Return the exact compact Statcast pointer/artifact identities read by load_existing."""
+    pointer_key = RESEARCH + "statcast.json"
+    artifact_prefix = RESEARCH + "statcast/"
+    selected = []
+    pointer_count = artifact_count = 0
+    for candidate in receipts or []:
+        key = str(candidate.get("key") or "") if isinstance(candidate, dict) else ""
+        if key != pointer_key and not key.startswith(artifact_prefix):
+            continue
+        identity = _source_identity(candidate)
+        if identity is None:
+            raise ValueError("individual_bullpen_statcast_preloaded_receipt_invalid")
+        selected.append(identity)
+        if key == pointer_key:
+            pointer_count += 1
+        else:
+            artifact_count += 1
+    if pointer_count != 1 or artifact_count != 1:
+        raise ValueError("individual_bullpen_statcast_preloaded_receipt_set_invalid")
+    return sorted(selected)
 
 
 def _receipt(value):
@@ -113,11 +138,13 @@ def _read_exact(s3, receipt):
 def proof_bound_statcast_context(cf, s3, bucket, proof):
     """Replay the exact retained pitch inventory already admitted by ``proof``.
 
-    ``load_training_statcast`` never calls a provider, but it resolves retained daily
-    objects from the current source bundle. Fail closed unless that replay reproduces
-    the exact report captured while the input table was built and every newly read
-    immutable receipt is present in the input proof. This prevents a later source
-    revision from silently changing development features.
+    ``load_existing`` first reads the current compact Statcast pointer/artifact and
+    ``load_training_statcast`` then adds retained daily objects without provider calls.
+    Fail closed unless both the preloaded compact identities and every replay-added
+    immutable receipt are already present in the input proof, and unless the replay
+    reproduces the exact report captured while the input table was built. This prevents
+    either source path from silently changing development features after the proof was
+    created.
     """
     expected_report = proof.get("historical_statcast_report")
     if not isinstance(expected_report, dict):
@@ -125,10 +152,18 @@ def proof_bound_statcast_context(cf, s3, bucket, proof):
     if expected_report.get("provider_requests") != 0:
         raise ValueError("individual_bullpen_statcast_report_provider_requests")
 
+    proof_receipts = {
+        identity for candidate in proof.get("source_receipts", [])
+        if (identity := _source_identity(candidate)) is not None
+    }
     bundle = load_existing(cf, s3, bucket)
     expected_official = _official_receipt(proof)
     if _source_identity(bundle.get("official_history_source")) != _source_identity(expected_official):
         raise ValueError("individual_bullpen_statcast_official_history_mismatch")
+
+    preloaded_identities = _preloaded_statcast_identities(bundle.get("source_receipts", []))
+    if any(identity not in proof_receipts for identity in preloaded_identities):
+        raise ValueError("individual_bullpen_statcast_preloaded_receipt_unbound")
 
     before = len(bundle.get("source_receipts", []))
     replay_report = load_training_statcast(bundle, s3, bucket)
@@ -137,10 +172,6 @@ def proof_bound_statcast_context(cf, s3, bucket, proof):
     if encode(replay_report) != encode(expected_report):
         raise ValueError("individual_bullpen_statcast_replay_report_mismatch")
 
-    proof_receipts = {
-        identity for candidate in proof.get("source_receipts", [])
-        if (identity := _source_identity(candidate)) is not None
-    }
     replay_receipts = bundle.get("source_receipts", [])[before:]
     replay_identities = [_source_identity(candidate) for candidate in replay_receipts]
     if any(identity is None or identity not in proof_receipts for identity in replay_identities):
@@ -156,7 +187,9 @@ def proof_bound_statcast_context(cf, s3, bucket, proof):
         "physical_dates": list(bundle.get("statcast_physical_dates", [])),
         "physical_games": list(bundle.get("statcast_physical_games", [])),
     }
-    identities = sorted(replay_identities)
+    preloaded = sorted(preloaded_identities)
+    replay = sorted(replay_identities)
+    all_identities = sorted(set(preloaded + replay))
     evidence = {
         "contract": "KS1-individual-bullpen-proof-bound-statcast-replay-v1",
         "enabled": True,
@@ -166,9 +199,15 @@ def proof_bound_statcast_context(cf, s3, bucket, proof):
         "verified_physical_dates": replay_report.get("verified_physical_dates"),
         "proof_report_sha256": hashlib.sha256(encode(expected_report)).hexdigest(),
         "replay_report_sha256": hashlib.sha256(encode(replay_report)).hexdigest(),
-        "replay_source_receipt_count": len(identities),
-        "replay_source_receipts_sha256": hashlib.sha256(encode(identities)).hexdigest(),
+        "preloaded_source_receipt_count": len(preloaded),
+        "preloaded_source_receipts_sha256": hashlib.sha256(encode(preloaded)).hexdigest(),
+        "replay_source_receipt_count": len(replay),
+        "replay_source_receipts_sha256": hashlib.sha256(encode(replay)).hexdigest(),
+        "bound_statcast_source_receipt_count": len(all_identities),
+        "bound_statcast_source_receipts_sha256": hashlib.sha256(encode(all_identities)).hexdigest(),
+        "all_preloaded_statcast_receipts_bound_to_input_proof": True,
         "all_replay_receipts_bound_to_input_proof": True,
+        "all_statcast_receipts_bound_to_input_proof": True,
     }
     return context, evidence
 
