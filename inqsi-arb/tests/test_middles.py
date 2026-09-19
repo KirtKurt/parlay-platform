@@ -518,6 +518,18 @@ def test_middle_rejects_overflowing_score_grid_ratio():
     assert rows == []
 
 
+def test_empty_book_list_preserves_unfiltered_middle_detection():
+    rows = detect_middles([{
+        "id": "empty-books", "event": "A @ B", "market": "totals",
+        "quotes": [
+            {"book": "one", "outcome": "Over", "point": 8.5, "decimal": 2.1},
+            {"book": "two", "outcome": "Under", "point": 9.5, "decimal": 2.1},
+        ],
+    }], bankroll=100, books=[])
+    assert len(rows) == 1
+    assert rows[0]["kind"] == "free_middle"
+
+
 def test_middle_exact_search_bound_overflow_fails_closed():
     rows = detect_middles([{
         "id": "overflow-exact", "event": "A @ B", "market": "totals",

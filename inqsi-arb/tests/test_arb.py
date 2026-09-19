@@ -610,3 +610,17 @@ def test_rounding_budget_counts_decimal_candidate_set(monkeypatch):
     )
     assert result["reason"] == "SCAN_PLAN_WORK_BUDGET_EXHAUSTED"
     assert called is False
+
+
+def test_empty_posted_book_list_preserves_unfiltered_scan():
+    result = scan_all({
+        "bankroll": 100, "books": [], "events": [{
+            "id": "empty-books", "event": "A v B", "market": "h2h",
+            "expected_outcomes": ["A", "B"], "rules_status": "compatible",
+            "quotes": [
+                {"outcome": "A", "book": "one", "decimal": 2.1},
+                {"outcome": "B", "book": "two", "decimal": 2.1},
+            ],
+        }],
+    })
+    assert result["n_arbs"] == 1

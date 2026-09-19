@@ -23,7 +23,7 @@ MAX_RAW_PAIR_INSPECTIONS = 16384
 
 
 def _norm_books(raw: Any) -> Optional[set[str]]:
-    if not raw:
+    if raw is None or raw == "":
         return None
     if isinstance(raw, str):
         values = [part.strip().lower() for part in raw.split(",")]
@@ -180,7 +180,7 @@ def _best_quotes(
             continue
         for raw in item.get("quotes") or []:
             book = str(raw.get("book") or "").strip().lower()
-            if not book or (allowed and book not in allowed):
+            if not book or (allowed is not None and book not in allowed):
                 continue
             if not _valid_stake_constraints(raw, bankroll):
                 continue

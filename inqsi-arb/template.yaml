@@ -22,6 +22,15 @@ Globals:
         ARB_MAX_EVENT_MARKET_EVENTS: '40'
         ARB_MAX_MARKETS_PER_EVENT: '120'
         ARB_MAX_SPORTS_PER_ALL_SCAN: '100'
+        ARB_COLLECT_MARKETS: 'h2h,spreads,totals'
+        # Keep stored snapshots eligible for the default book-first scan. An
+        # explicit deployment override can still narrow both via ArbRegions.
+        ARB_COLLECT_REGIONS: !Ref ArbRegions
+        ARB_COLLECT_MAX_SPORTS: '6'
+        # Six sports are collected every two minutes. One hour safely covers
+        # a complete 100-sport rotation plus scheduling/provider jitter.
+        ARB_QUOTE_FRESH_SECONDS: '3600'
+        ARB_MAX_QUOTE_AGE_SECONDS: '3600'
         ARB_AUDIT_TABLE: !Ref ArbAuditTable
         ARB_STATE_TABLE: !Ref ArbStateTable
         ARB_CONNECTIONS_TABLE: !Ref ArbConnectionsTable
@@ -60,6 +69,9 @@ Resources:
           KeyType: RANGE
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
   ArbConnectionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -112,6 +124,12 @@ Resources:
         Rules:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/rules, Method: GET}
+        Packs:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/packs, Method: GET}
+        PackState:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: '/v1/arb/packs/{state}', Method: GET}
         History:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/history, Method: GET}
@@ -136,6 +154,23 @@ Resources:
         LegacyScan:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/scan, Method: POST}
+
+  ArbCollectorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: collector.handler
+      Timeout: 120
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ArbStateTable
+      Events:
+        Tick:
+          Type: Schedule
+          Properties:
+            Schedule: rate(2 minutes)
+            Enabled: true
+            Description: Rotate featured-market quote snapshots for the ARB desk
 
   ArbCalculatorFunction:
     Type: AWS::Serverless::Function
