@@ -9,6 +9,7 @@ import pandas as pd
 from sklearn.metrics import brier_score_loss, log_loss
 
 from ks1.inventory import encode
+from ks1.forensic_runtime import trace_model_trial
 from ks1.train import PARAMS
 
 HOLDOUT = Path(__file__).with_name('qualification_holdout_20260914.json')
@@ -124,14 +125,15 @@ def select(train):
         trials = {}
         for trial, updates in TRIALS.items():
             params = {**PARAMS, **updates}
-            model = lgb.LGBMClassifier(**params).fit(fit[columns].astype(float), fit.home_win.astype(int))
-            p = model.predict_proba(validation[columns].astype(float))[:, 1]
-            trials[trial] = {
-                'brier': float(brier_score_loss(validation.home_win.astype(int), p)),
-                'logloss': float(log_loss(validation.home_win.astype(int), p, labels=[0, 1])),
-                'parameters': params,
-                'features_used_in_splits': [c for c, count in zip(columns, model.booster_.feature_importance()) if count > 0],
-            }
+            with trace_model_trial('baseline_selection', fit, validation, columns, recipe=name, trial=trial):
+                model = lgb.LGBMClassifier(**params).fit(fit[columns].astype(float), fit.home_win.astype(int))
+                p = model.predict_proba(validation[columns].astype(float))[:, 1]
+                trials[trial] = {
+                    'brier': float(brier_score_loss(validation.home_win.astype(int), p)),
+                    'logloss': float(log_loss(validation.home_win.astype(int), p, labels=[0, 1])),
+                    'parameters': params,
+                    'features_used_in_splits': [c for c, count in zip(columns, model.booster_.feature_importance()) if count > 0],
+                }
         baseline = trials['baseline']
         eligible = ['baseline'] + [key for key, value in trials.items() if key != 'baseline'
                     and value['brier'] < baseline['brier'] and value['logloss'] <= baseline['logloss']]

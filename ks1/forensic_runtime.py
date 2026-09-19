@@ -6,15 +6,21 @@ The trace is scoped to one development invocation; ordinary trial callers are in
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from functools import wraps
+import argparse
 import json
+import math
+import os
+import re
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, time
 
 _STATE = ContextVar('ks1_forensic_runtime', default=None)
 PROGRESS_FILE = 'development_progress.json'
+WORK_BUDGET_SECONDS = 140 * 60  # Reserve cleanup inside the unchanged 150-minute job.
 
 
 def _record(state, stage, **details):
@@ -26,6 +32,7 @@ def _record(state, stage, **details):
         'trials_started': state['trials_started'],
         'trials_completed': state['trials_completed'],
         'qualification_evidence': False,
+        **state.get('last_trial', {}),
         **details,
     }
     payload = (json.dumps(event, sort_keys=True, allow_nan=False) + '\n').encode()
@@ -69,26 +76,67 @@ def trace_development_run(function):
     return wrapped
 
 
+@contextmanager
+def trace_model_trial(phase, fit, validation, columns, *, recipe=None, trial=None):
+    """Trace an existing fit/predict/score block without selecting or changing it."""
+    state = _STATE.get()
+    if state is None:
+        yield
+        return
+    state['trials_started'] += 1
+    started = perf_counter()
+    state['last_trial'] = {
+        'phase': phase, 'trial_number': state['trials_started'],
+        'fit_rows': len(fit), 'validation_rows': len(validation),
+        'feature_count': len(columns), 'recipe': recipe, 'trial': trial,
+    }
+    _record(state, 'trial_started')
+    try:
+        yield
+    except BaseException as exc:
+        _record_failure(state, 'trial_failed', exc)
+        raise
+    state['trials_completed'] += 1
+    _record(state, 'trial_completed', trial_seconds=round(perf_counter()-started, 6))
+
+
 def trace_trial(function):
-    """Record each unchanged trial's start/end so a timeout identifies its position."""
+    """Record unchanged forensic trials; baseline fits use the same scoped trace."""
     @wraps(function)
     def wrapped(fit, validation, columns, params):
-        state = _STATE.get()
-        if state is None:
+        with trace_model_trial('forensic', fit, validation, columns):
             return function(fit, validation, columns, params)
-        state['trials_started'] += 1
-        trial_number = state['trials_started']
-        started = perf_counter()
-        details = {'trial_number': trial_number, 'fit_rows': len(fit),
-                   'validation_rows': len(validation), 'feature_count': len(columns)}
-        _record(state, 'trial_started', **details)
-        try:
-            result = function(fit, validation, columns, params)
-        except BaseException as exc:
-            _record_failure(state, 'trial_failed', exc)
-            raise
-        state['trials_completed'] += 1
-        _record(state, 'trial_completed', trial_seconds=round(perf_counter()-started, 6),
-                **details)
-        return result
     return wrapped
+
+
+def remaining_evaluation_seconds(started_at, now):
+    """Shared job work budget, not a fresh timeout allowance for each command."""
+    if not isinstance(started_at, str) or not re.fullmatch(r'[0-9]{1,12}', started_at):
+        raise ValueError('missing_or_invalid_evaluation_clock')
+    if isinstance(now, bool) or not isinstance(now, (int, float)) or not math.isfinite(now):
+        raise ValueError('invalid_current_evaluation_clock')
+    started = int(started_at)
+    current = int(now)
+    if started <= 0 or current < started:
+        raise ValueError('future_or_invalid_evaluation_clock')
+    remaining = WORK_BUDGET_SECONDS - (current - started)
+    if remaining <= 0:
+        raise TimeoutError('evaluation_work_budget_exhausted')
+    return remaining
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description='Return the existing job work budget remaining.')
+    parser.add_argument('--remaining-budget', action='store_true', required=True)
+    parser.parse_args(argv)
+    try:
+        remaining = remaining_evaluation_seconds(os.environ.get('KS1_EVALUATE_STARTED_EPOCH'), time())
+    except TimeoutError:
+        parser.exit(124, 'evaluation_work_budget_exhausted\n')
+    except ValueError as exc:
+        parser.error(str(exc))
+    print(remaining, flush=True)
+
+
+if __name__ == '__main__':
+    main()
