@@ -72,6 +72,17 @@ class FakeS3:
         return {'Body': io.BytesIO(self.body)}
 
 
+class KeyedFakeS3:
+    def __init__(self, bodies):
+        self.bodies = bodies
+        self.calls = []
+
+    def get_object(self, **kwargs):
+        self.calls.append(kwargs)
+        body = self.bodies[(kwargs['Key'], kwargs['VersionId'])]
+        return {'Body': io.BytesIO(body)}
+
+
 class FakeHistory:
     def bullpen_roster_at(self, cutoff, team_id, roster_ids, game_date=None):
         assert cutoff == '2026-06-01T18:50:00+00:00'
@@ -194,6 +205,83 @@ def test_proof_bound_statcast_replay_restores_advanced_official_history_from_pro
     assert evidence['official_history_restored_from_input_proof'] is True
 
 
+def test_proof_bound_statcast_replay_restores_advanced_compact_snapshot_from_proof(
+        monkeypatch):
+    official = {
+        'bucket': 'retained', 'key': 'official.json', 'versionId': 'vo',
+        'sha256': 'b' * 64, 'complete_years': [2025, 2026],
+    }
+    exact_statcast = {
+        'rows': [{'game_pk': '50', 'pitcher': '10', 'game_date': '2026-05-31'}],
+        'retainedCompleteDates': ['2026-05-31'],
+        'retainedCompleteGames': ['50'],
+        'retainedPhysicalDates': ['2026-05-31'],
+        'retainedPhysicalGames': ['50'],
+        'current30CoverageComplete': True,
+        'currentYearCoverageComplete': True,
+        'priorYearCoverageComplete': True,
+        'priorYearProfiles': {'10': {'unused': True}},
+        'priorYear': 2025,
+    }
+    artifact_body = encode(exact_statcast)
+    artifact_receipt = {
+        'bucket': 'retained',
+        'key': RESEARCH + 'statcast/' + hashlib.sha256(artifact_body).hexdigest() + '.json',
+        'versionId': 'va', 'sha256': hashlib.sha256(artifact_body).hexdigest(),
+    }
+    pointer_body = encode({'artifact': dict(artifact_receipt)})
+    pointer_receipt = {
+        'bucket': 'retained', 'key': RESEARCH + 'statcast.json',
+        'versionId': 'vp', 'sha256': hashlib.sha256(pointer_body).hexdigest(),
+    }
+    replay_receipt = {
+        'bucket': 'retained', 'key': 'sources/statcast-v2/2026-05-31.json',
+        'versionId': 'vs', 'sha256': 'c' * 64,
+    }
+    expected_report = {'provider_requests': 0, 'retained_pitch_rows': 1}
+    proof = {
+        'official_history_source': official,
+        'historical_statcast_report': expected_report,
+        'source_receipts': [
+            dict(official), dict(pointer_receipt), dict(artifact_receipt),
+            dict(replay_receipt),
+        ],
+    }
+    advanced_pointer = dict(pointer_receipt, versionId='new-pointer', sha256='f' * 64)
+    advanced_artifact = dict(artifact_receipt, versionId='new-artifact', sha256='a' * 64)
+    bundle = {
+        'official_history_source': dict(official),
+        'statcast': [{'game_pk': '999'}],
+        'source_receipts': [dict(official), advanced_pointer, advanced_artifact],
+    }
+    s3 = KeyedFakeS3({
+        (pointer_receipt['key'], pointer_receipt['versionId']): pointer_body,
+        (artifact_receipt['key'], artifact_receipt['versionId']): artifact_body,
+    })
+    monkeypatch.setattr(subject, 'load_existing', lambda cf, value, bucket: bundle)
+
+    def replay(value, client, bucket):
+        assert value['statcast'] == exact_statcast['rows']
+        assert value['statcast_retained_dates'] == ['2026-05-31']
+        assert value['statcast_physical_games'] == ['50']
+        assert value['current_year_statcast_complete'] is True
+        assert value['prior_statcast_profiles'] == {'10': {'unused': True}}
+        assert subject._preloaded_statcast_identities(value['source_receipts']) == sorted((
+            subject._source_identity(pointer_receipt),
+            subject._source_identity(artifact_receipt),
+        ))
+        value['source_receipts'].append(dict(replay_receipt))
+        return dict(expected_report)
+
+    monkeypatch.setattr(subject, 'load_training_statcast', replay)
+    context, evidence = subject.proof_bound_statcast_context(
+        'cf', s3, 'bucket', proof)
+    assert context['rows'] == exact_statcast['rows']
+    assert evidence['current_compact_statcast_matched_input_proof'] is False
+    assert evidence['compact_statcast_restored_from_input_proof'] is True
+    assert evidence['all_preloaded_statcast_receipts_bound_to_input_proof'] is True
+
+
 def test_proof_bound_statcast_replay_rejects_unbound_preloaded_compact_artifact(monkeypatch):
     official = {
         'bucket': 'retained', 'key': 'official.json', 'versionId': 'vo',
@@ -214,8 +302,8 @@ def test_proof_bound_statcast_replay_rejects_unbound_preloaded_compact_artifact(
     monkeypatch.setattr(subject, 'load_existing', lambda cf, s3, bucket: bundle)
     monkeypatch.setattr(
         subject, 'load_training_statcast', lambda value, s3, bucket: dict(expected_report))
-    with pytest.raises(ValueError, match='preloaded_receipt_unbound'):
-        subject.proof_bound_statcast_context('cf', 's3', 'bucket', proof)
+    with pytest.raises(ValueError, match='compact_restore_invalid'):
+        subject.proof_bound_statcast_context('cf', FakeS3(b'{}'), 'bucket', proof)
 
 
 def test_proof_bound_statcast_replay_rejects_preloaded_receipt_without_identity(monkeypatch):

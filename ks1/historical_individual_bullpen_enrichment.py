@@ -33,7 +33,7 @@ from ks1.inventory import RESEARCH, encode
 from ks1.sources import load_existing
 from ks1.statcast_history import load_training_statcast
 
-CONTRACT = "KS1-historical-individual-bullpen-development-enrichment-v5"
+CONTRACT = "KS1-historical-individual-bullpen-development-enrichment-v6"
 RANKS = (1, 2, 3)
 WINDOWS = (7, 15, 30)
 METRICS = ("fip", "era", "k_bb_pct", "xwoba")
@@ -87,6 +87,86 @@ def _preloaded_statcast_identities(receipts):
     if pointer_count != 1 or artifact_count != 1:
         raise ValueError("individual_bullpen_statcast_preloaded_receipt_set_invalid")
     return sorted(selected)
+
+
+def _proof_compact_statcast_receipts(proof):
+    """Return the one compact pointer and artifact frozen by the input proof."""
+    pointer_key = RESEARCH + "statcast.json"
+    artifact_prefix = RESEARCH + "statcast/"
+    pointers, artifacts = [], []
+    for candidate in proof.get("source_receipts", []):
+        key = str(candidate.get("key") or "") if isinstance(candidate, dict) else ""
+        if key != pointer_key and not key.startswith(artifact_prefix):
+            continue
+        if _source_identity(candidate) is None:
+            raise ValueError("individual_bullpen_statcast_proof_receipt_invalid")
+        (pointers if key == pointer_key else artifacts).append(candidate)
+    if len(pointers) != 1 or len(artifacts) != 1:
+        raise ValueError("individual_bullpen_statcast_proof_receipt_set_invalid")
+    return dict(pointers[0]), dict(artifacts[0])
+
+
+def _restore_proof_bound_compact_statcast(bundle, s3, proof):
+    """Restore the exact compact Statcast snapshot if its live pointer advanced."""
+    pointer_receipt, artifact_receipt = _proof_compact_statcast_receipts(proof)
+    expected = sorted((_source_identity(pointer_receipt),
+                       _source_identity(artifact_receipt)))
+    current = _preloaded_statcast_identities(bundle.get("source_receipts", []))
+    if current == expected:
+        return True
+
+    try:
+        pointer = json.loads(_read_exact(s3, pointer_receipt))
+        artifact_pointer = pointer.get("artifact") if isinstance(pointer, dict) else None
+        if _source_identity(artifact_pointer) != _source_identity(artifact_receipt):
+            raise ValueError("compact pointer does not bind the proof artifact")
+        statcast = json.loads(_read_exact(s3, artifact_receipt))
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            "individual_bullpen_statcast_compact_restore_invalid") from exc
+
+    list_fields = (
+        "rows", "retainedCompleteDates", "retainedCompleteGames",
+        "retainedPhysicalDates", "retainedPhysicalGames",
+    )
+    if (not isinstance(statcast, dict)
+            or any(name in statcast and not isinstance(statcast[name], list)
+                   for name in list_fields)
+            or not isinstance(statcast.get("rows"), list)):
+        raise ValueError("individual_bullpen_statcast_compact_restore_invalid")
+
+    bundle["statcast"] = statcast["rows"]
+    bundle["statcast_retained_dates"] = list(
+        statcast.get("retainedCompleteDates", []))
+    bundle["statcast_verified_games"] = list(
+        statcast.get("retainedCompleteGames", []))
+    bundle["statcast_physical_dates"] = list(statcast.get(
+        "retainedPhysicalDates", statcast.get("retainedCompleteDates", [])))
+    bundle["statcast_physical_games"] = list(statcast.get(
+        "retainedPhysicalGames", statcast.get("retainedCompleteGames", [])))
+    bundle["statcast_coverage_complete"] = statcast.get(
+        "current30CoverageComplete", statcast.get("coverageComplete")) is True
+    bundle["current_year_statcast_complete"] = (
+        statcast.get("currentYearCoverageComplete") is True)
+    bundle["prior_year_statcast_complete"] = (
+        statcast.get("priorYearCoverageComplete") is True)
+    bundle["prior_statcast_profiles"] = statcast.get("priorYearProfiles", {})
+    bundle["prior_statcast_year"] = statcast.get("priorYear")
+
+    pointer_key = RESEARCH + "statcast.json"
+    artifact_prefix = RESEARCH + "statcast/"
+    other_receipts = [
+        candidate for candidate in bundle.get("source_receipts", [])
+        if not (isinstance(candidate, dict)
+                and (candidate.get("key") == pointer_key
+                     or str(candidate.get("key") or "").startswith(artifact_prefix)))
+    ]
+    bundle["source_receipts"] = sorted(
+        other_receipts + [pointer_receipt, artifact_receipt],
+        key=lambda candidate: (str(candidate.get("bucket") or ""),
+                               str(candidate.get("key") or "")),
+    )
+    return False
 
 
 def _receipt(value):
@@ -184,6 +264,8 @@ def proof_bound_statcast_context(cf, s3, bucket, proof):
         bundle["schedule"] = exact_official["schedule"]
         bundle["official_history_source"] = dict(expected_official)
 
+    current_compact_matches = _restore_proof_bound_compact_statcast(
+        bundle, s3, proof)
     preloaded_identities = _preloaded_statcast_identities(bundle.get("source_receipts", []))
     if any(identity not in proof_receipts for identity in preloaded_identities):
         raise ValueError("individual_bullpen_statcast_preloaded_receipt_unbound")
@@ -233,6 +315,8 @@ def proof_bound_statcast_context(cf, s3, bucket, proof):
         "all_statcast_receipts_bound_to_input_proof": True,
         "current_official_history_matched_input_proof": current_official_matches,
         "official_history_restored_from_input_proof": not current_official_matches,
+        "current_compact_statcast_matched_input_proof": current_compact_matches,
+        "compact_statcast_restored_from_input_proof": not current_compact_matches,
     }
     return context, evidence
 

@@ -45,4 +45,4 @@ def test_recency_windows_keep_rank_identity_bound_to_prior_30d_usage():
     assert values["individual_bullpen_rank2_k_bb_pct_15d"] == 22.0
     assert values["individual_bullpen_rank3_k_bb_pct_30d"] == 9.0
     assert subject.WINDOWS == (7, 15, 30)
-    assert subject.CONTRACT.endswith("-v5")
+    assert subject.CONTRACT.endswith("-v6")
