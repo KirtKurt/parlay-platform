@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 from datetime import date
 import hashlib
 from pathlib import Path
+import sys
 
 from ks1.features import day
 from ks1.inventory import RESEARCH, Reader, encode
@@ -172,6 +173,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--date', required=True, action='append')
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--fetch-official-game', action='append', default=[])
     args = parser.parse_args()
     dates = sorted({date.fromisoformat(value).isoformat() for value in args.date})
     if len(dates) > 2:
@@ -188,6 +190,21 @@ def main():
         print(encode({'date': value, 'sources': len(report['sources']),
                       'counts': [source['counts'] for source in report['sources']],
                       'errors': report['errors'], 'source_writes': 0}).decode())
+    if args.fetch_official_game:
+        # Current official feeds are diagnostic evidence only. They are never
+        # retained, qualified, or substituted for the point-in-time inputs.
+        if len(set(args.fetch_official_game)) > 2:
+            raise ValueError('official diagnostic is bounded to two games')
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'mlb_research'))
+        from mlb_research_sources_v1 import fetch
+        from ks1.official_outcomes import endpoint
+        for game_id in sorted(set(args.fetch_official_game), key=int):
+            data, receipt = fetch(endpoint(game_id, inning_evidence=True))
+            (args.output / f'official-current-{game_id}.json').write_bytes(encode({
+                'diagnostic_only': True, 'point_in_time_training_input': False,
+                'provider_requests': 1, 'source_writes': 0,
+                'game_id': game_id, 'data': data, 'receipt': receipt,
+            }))
 
 
 if __name__ == '__main__':
