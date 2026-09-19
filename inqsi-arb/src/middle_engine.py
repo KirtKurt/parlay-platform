@@ -37,8 +37,30 @@ def _event_key(item: Mapping[str, Any]) -> str:
     event = str(item.get("event") or "").strip()
     commence_time = str(item.get("commence_time") or "").strip()
     if event and commence_time:
-        return f"{event}|{commence_time}"
+        sport = str(item.get("sport") or item.get("sport_key") or "").strip()
+        return f"{sport}|{event}|{commence_time}"
     return str(item.get("id") or "").strip()
+
+
+def _valid_stake_constraints(quote: Mapping[str, Any]) -> bool:
+    parsed: Dict[str, Optional[float]] = {}
+    for key, default, positive in (
+        ("limit", None, False), ("min_stake", 0.0, False), ("stake_increment", 0.01, True),
+    ):
+        raw = quote.get(key)
+        if raw is None or raw == "":
+            parsed[key] = default
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return False
+        if not isfinite(value) or (value <= 0 if positive else value < 0):
+            return False
+        parsed[key] = value
+    if parsed["stake_increment"] is not None and parsed["stake_increment"] < 0.01:
+        return False
+    return parsed["limit"] is None or float(parsed["min_stake"] or 0) <= parsed["limit"]
 
 
 def _family(market: str) -> Optional[str]:
@@ -141,6 +163,8 @@ def _best_quotes(events: Iterable[Mapping[str, Any]], allowed: Optional[set[str]
             book = str(raw.get("book") or "").strip().lower()
             if not book or (allowed and book not in allowed):
                 continue
+            if not _valid_stake_constraints(raw):
+                continue
             parsed = _point_and_side(raw, family)
             if parsed is None:
                 continue
@@ -218,7 +242,7 @@ def _stake_plan(first: Mapping[str, Any], second: Mapping[str, Any], bankroll: f
         })
     try:
         rounded = optimize_rounding_neighborhood(rounding_legs, bankroll=bankroll)
-    except StakeRoundingError:
+    except (StakeRoundingError, ArithmeticError, ValueError):
         rounded = {"feasible": False, "reason": "ROUNDING_ERROR", "legs": []}
     if not rounded.get("feasible"):
         return {

@@ -255,3 +255,31 @@ def test_unidentified_participant_props_do_not_pair():
         {"outcome": "Under", "book": "two", "decimal": 2.2, "point": 11.5},
     ]}]
     assert detect_middles(events, bankroll=100) == []
+
+
+def test_malformed_middle_limit_fails_closed():
+    events = [{"id": "e16", "event_id": "e16", "event": "A @ B", "market": "totals", "quotes": [
+        {"outcome": "Over", "book": "one", "decimal": 2.2, "point": 8.5, "limit": "abc"},
+        {"outcome": "Under", "book": "two", "decimal": 2.2, "point": 9.5},
+    ]}]
+    assert detect_middles(events, bankroll=100) == []
+
+
+def test_large_middle_odds_arithmetic_failure_is_contained():
+    events = [{"id": "e17", "event_id": "e17", "event": "A @ B", "market": "totals", "quotes": [
+        {"outcome": "Over", "book": "one", "decimal": 1e100, "point": 8.5},
+        {"outcome": "Under", "book": "two", "decimal": 1e100, "point": 9.5},
+    ]}]
+    assert detect_middles(events, bankroll=100) == []
+
+
+def test_event_fallback_includes_sport_identity():
+    events = [
+        {"sport": "basketball_nba", "event": "United States @ Canada", "commence_time": "2030-01-01T00:00:00Z", "market": "totals", "quotes": [
+            {"outcome": "Over", "book": "one", "decimal": 2.2, "point": 8.5},
+        ]},
+        {"sport": "icehockey_nhl", "event": "United States @ Canada", "commence_time": "2030-01-01T00:00:00Z", "market": "totals", "quotes": [
+            {"outcome": "Under", "book": "two", "decimal": 2.2, "point": 9.5},
+        ]},
+    ]
+    assert detect_middles(events, bankroll=100) == []

@@ -229,3 +229,43 @@ def test_asymmetric_constraints_rebalance_beyond_initial_neighborhood():
     )
     assert row and row["arb"] is True and row["executable"] is True
     assert {leg["stake"] for leg in row["legs"]} == {2, 5}
+
+
+def test_two_way_search_continues_beyond_256_jointly_infeasible_quotes():
+    quotes = [{"outcome": "A", "book": "a", "decimal": 2.1}]
+    quotes.extend(
+        {"outcome": "B", "book": f"burdened-{index}", "decimal": 2.2, "min_stake": 60}
+        for index in range(256)
+    )
+    quotes.append({"outcome": "B", "book": "usable", "decimal": 2.1})
+    row = scan_market(
+        market_id="many", event="A v B", market="h2h", bankroll=100,
+        expected_outcomes=["A", "B"], rules_status="compatible", quotes=quotes,
+    )
+    assert row and row["arb"] is True
+    assert {leg["book"] for leg in row["legs"]} == {"a", "usable"}
+
+
+def test_two_way_exact_solver_finds_interior_stake_under_forced_minimum():
+    row = scan_market(
+        market_id="interior", event="A v B", market="h2h", bankroll=17,
+        expected_outcomes=["A", "B"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "one", "decimal": 4.0, "min_stake": 8, "limit": 9, "stake_increment": 4},
+            {"outcome": "B", "book": "two", "decimal": 2.2, "limit": 16, "stake_increment": 1},
+        ],
+    )
+    assert row and row["arb"] is True and row["executable"] is True
+    assert sum(leg["stake"] for leg in row["legs"]) <= 17
+
+
+def test_sub_cent_stake_increment_is_rejected_before_serialization():
+    row = scan_market(
+        market_id="subcent", event="A v B", market="h2h", bankroll=100,
+        expected_outcomes=["A", "B"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "one", "decimal": 2.1, "limit": 1.005, "stake_increment": 0.001},
+            {"outcome": "B", "book": "two", "decimal": 2.1},
+        ],
+    )
+    assert row is None

@@ -97,11 +97,57 @@ def _quote_constraints_usable(raw: Mapping[str, Any], bankroll: float) -> bool:
     cap = _constraint(raw.get("limit"), bankroll)
     minimum = _constraint(raw.get("min_stake"), 0.0)
     increment = _constraint(raw.get("stake_increment"), 0.01, positive=True)
-    if cap is None or minimum is None or increment is None or minimum > cap:
+    if cap is None or minimum is None or increment is None or increment < 0.01 or minimum > cap:
         return False
     maximum = min(cap, bankroll)
     first_stake = max(increment, ceil(minimum / increment - 1e-10) * increment)
     return first_stake <= maximum + 1e-9
+
+
+def _two_way_exact_plan(legs: List[Dict[str, Any]], bankroll: float) -> Optional[Dict[str, Any]]:
+    """Solve a bounded two-way discrete plan when local neighborhoods fail."""
+    if len(legs) != 2:
+        return None
+    bounds = []
+    for leg in legs:
+        increment = float(leg.get("stake_increment") or 0.01)
+        minimum = float(leg.get("min_stake") or 0)
+        cap_raw = leg.get("constraint_cap")
+        cap = bankroll if cap_raw is None else min(float(cap_raw), bankroll)
+        first = max(increment, ceil(minimum / increment - 1e-10) * increment)
+        last = floor(cap / increment + 1e-10) * increment
+        count = max(0, int(floor((last - first) / increment + 1e-9)) + 1)
+        bounds.append((first, last, increment, count))
+    anchor_index = 0 if bounds[0][3] <= bounds[1][3] else 1
+    if bounds[anchor_index][3] > 20000:
+        return None
+    other_index = 1 - anchor_index
+    first, _, increment, count = bounds[anchor_index]
+    other_first, other_last, other_increment, _ = bounds[other_index]
+    anchor_odds = float(legs[anchor_index]["net_decimal"])
+    other_odds = float(legs[other_index]["net_decimal"])
+    best = None
+    for offset in range(count):
+        anchor = first + offset * increment
+        lower = max(other_first, anchor / (other_odds - 1.0))
+        upper = min(other_last, bankroll - anchor, anchor * (anchor_odds - 1.0))
+        low_multiple = floor(lower / other_increment + 1e-10) + 1
+        high_multiple = ceil(upper / other_increment - 1e-10) - 1
+        if low_multiple > high_multiple:
+            continue
+        equal = anchor * anchor_odds / other_odds
+        equal_multiple = round(equal / other_increment)
+        for multiple in {low_multiple, high_multiple, max(low_multiple, min(high_multiple, equal_multiple))}:
+            other = multiple * other_increment
+            adjusted = [dict(leg) for leg in legs]
+            adjusted[anchor_index]["stake"] = anchor
+            adjusted[other_index]["stake"] = other
+            plan = _direct_discrete_plan(adjusted, bankroll)
+            if not plan or not plan.get("strict_arbitrage_after_rounding"):
+                continue
+            if best is None or float(plan["minimum_profit"]) > float(best["minimum_profit"]):
+                best = plan
+    return best
 
 
 def _direct_discrete_plan(legs: List[Dict[str, Any]], bankroll: float) -> Optional[Dict[str, Any]]:
@@ -164,6 +210,10 @@ def _optimized_plan(legs: List[Dict[str, Any]], bankroll: float) -> Dict[str, An
             plans.append(neighborhood)
     except StakeRoundingError:
         neighborhood = {"feasible": False, "reason": "ROUNDING_ERROR"}
+    if not any(plan.get("strict_arbitrage_after_rounding") for plan in plans):
+        exact_two_way = _two_way_exact_plan(legs, bankroll)
+        if exact_two_way:
+            plans.append(exact_two_way)
 
     # For two-way markets, re-anchor on each leg's nearby discrete stakes and
     # equalize payout from that anchor. This catches executable plans that sit
@@ -283,11 +333,16 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
     if complete:
         ordered_outcomes = sorted(expected_set)
         pools = [
-            sorted(candidates[outcome], key=lambda quote: quote["net_decimal"], reverse=True)
+            sorted(candidates[outcome], key=lambda quote: (
+                float(quote.get("min_stake") or 0), -quote["net_decimal"],
+            ))
             for outcome in ordered_outcomes
         ]
         executable_choice = None
-        for combination in islice(product(*pools), 256):
+        combinations = product(*pools)
+        if len(ordered_outcomes) > 2:
+            combinations = islice(combinations, 4096)
+        for combination in combinations:
             selected = dict(zip(ordered_outcomes, combination))
             combo_implied, _, combo_plan, _ = _rounded_quote_plan(selected, ordered_outcomes, bankroll)
             if combo_implied >= 1.0 or not combo_plan or not combo_plan.get("feasible"):
