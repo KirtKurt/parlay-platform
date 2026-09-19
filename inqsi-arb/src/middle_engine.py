@@ -154,7 +154,7 @@ def _participant_contract(contract: str) -> bool:
 
 
 def _best_quotes(events: Iterable[Mapping[str, Any]], allowed: Optional[set[str]]) -> Dict[Tuple[str, str, str, str], List[Dict[str, Any]]]:
-    grouped: Dict[Tuple[str, str, str, str], Dict[Tuple[str, str, float], Dict[str, Any]]] = {}
+    grouped: Dict[Tuple[str, str, str, str], Dict[Tuple[Any, ...], Dict[str, Any]]] = {}
     for item in events or []:
         market = str(item.get("market") or "")
         family = _family(market)
@@ -185,7 +185,15 @@ def _best_quotes(events: Iterable[Mapping[str, Any]], allowed: Optional[set[str]
             if _participant_contract(contract) and not selection:
                 continue
             bucket = grouped.setdefault((event_key, family, contract, selection), {})
-            key = (book, side, point)
+            # Price-deduplicate only within an identical execution profile. A
+            # top price with an unusable cap/increment must not hide a slightly
+            # worse executable quote from the same book, side, and line.
+            key = (
+                book, side, point,
+                str(raw.get("limit") if raw.get("limit") is not None else ""),
+                str(raw.get("min_stake") if raw.get("min_stake") is not None else ""),
+                str(raw.get("stake_increment") if raw.get("stake_increment") is not None else ""),
+            )
             candidate = {
                 "event": str(item.get("event") or event_key),
                 "event_id": str(item.get("event_id") or ""),
@@ -362,7 +370,10 @@ def detect_middles(
     grouped = _best_quotes(events, allowed)
     found: List[Dict[str, Any]] = []
     exact_budget = {"remaining": 20000}
+    remaining_pairs = MAX_PAIR_EVALUATIONS
     for (event_key, family, contract, selection), quotes in grouped.items():
+        if remaining_pairs <= 0:
+            break
         if family == "total":
             overs = sorted(
                 (q for q in quotes if q["side"] == "over"),
@@ -380,7 +391,8 @@ def detect_middles(
                     increment = _scoring_increment(contract, over, under)
                     if gap > 0 and _middle_result_exists(over["point"], under["point"], increment):
                         yield over, under, gap
-            for over, under, gap in islice(eligible_total_pairs(), MAX_PAIR_EVALUATIONS):
+            for over, under, gap in islice(eligible_total_pairs(), remaining_pairs):
+                remaining_pairs -= 1
                 plan = _stake_plan(over, under, bankroll, exact_budget)
                 if not plan.get("feasible"):
                     continue
@@ -406,7 +418,8 @@ def detect_middles(
                         increment = _scoring_increment(contract, left, right)
                         if gap > 0 and _middle_result_exists(-left["point"], right["point"], increment):
                             yield left, right, gap
-            for left, right, gap in islice(eligible_spread_pairs(), MAX_PAIR_EVALUATIONS):
+            for left, right, gap in islice(eligible_spread_pairs(), remaining_pairs):
+                remaining_pairs -= 1
                 plan = _spread_plan(left, right, bankroll, exact_budget)
                 if not plan.get("feasible"):
                     continue

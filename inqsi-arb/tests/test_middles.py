@@ -370,3 +370,42 @@ def test_middle_exact_search_uses_one_aggregate_budget(monkeypatch):
         "market": "totals", "quotes": quotes,
     }], bankroll=17)
     assert len(budget_ids) == 1
+
+
+def test_middle_pair_budget_is_shared_across_groups(monkeypatch):
+    calls = 0
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return {"feasible": False}
+    monkeypatch.setattr(middle_engine, "_stake_plan", counted)
+    events = []
+    for event_index in range(2):
+        quotes = [
+            {"outcome": "Over", "book": f"o-{index}", "decimal": 1.91, "point": 0}
+            for index in range(65)
+        ] + [
+            {"outcome": "Under", "book": f"u-{index}", "decimal": 1.91, "point": 5}
+            for index in range(65)
+        ]
+        events.append({
+            "id": f"group-{event_index}", "event_id": f"group-{event_index}",
+            "event": f"A{event_index} @ B{event_index}", "market": "totals", "quotes": quotes,
+        })
+    detect_middles(events, bankroll=100)
+    assert calls == middle_engine.MAX_PAIR_EVALUATIONS
+
+
+def test_executable_duplicate_quote_survives_better_unusable_price():
+    rows = detect_middles([{
+        "id": "duplicate-profile", "event_id": "duplicate-profile", "event": "A @ B",
+        "market": "totals", "quotes": [
+            {"outcome": "Over", "book": "one", "decimal": 2.2, "point": 8.5,
+             "limit": 1, "stake_increment": 5},
+            {"outcome": "Over", "book": "one", "decimal": 2.1, "point": 8.5},
+            {"outcome": "Under", "book": "two", "decimal": 2.1, "point": 9.5},
+        ],
+    }], bankroll=100)
+    assert rows
+    assert rows[0]["kind"] == "free_middle"
+    assert sorted(leg["decimal"] for leg in rows[0]["legs"]) == [2.1, 2.1]
