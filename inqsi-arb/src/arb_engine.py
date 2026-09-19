@@ -360,6 +360,10 @@ def _multiway_exact_plan(
             return None
         bounds.append((first_multiple, last_multiple, increment))
     active_best = _multiway_active_set_plan(legs, bankroll, bounds, budget)
+    if active_best and active_best.get("strict_arbitrage_after_rounding"):
+        # The shared budget exists to find an executable plan, not to maximize
+        # one early market's profit at the expense of later markets.
+        return active_best
     minimum_total = sum(first * increment for first, _, increment in bounds)
     maximum_threshold = min(
         round(last * increment * float(leg["net_decimal"]), 2) - 0.01

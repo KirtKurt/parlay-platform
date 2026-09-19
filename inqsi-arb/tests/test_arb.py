@@ -516,6 +516,30 @@ def test_multiway_solver_reaches_high_minimum_active_set():
     assert [leg["stake"] for leg in row["legs"]] == [500, 168, 168]
 
 
+def test_executable_active_set_preserves_budget_for_later_market():
+    result = scan_all({"bankroll": 1000, "events": [
+        {
+            "id": "high-minimum", "event": "A v B v C", "market": "winner",
+            "expected_outcomes": ["A", "B", "C"], "rules_status": "compatible",
+            "quotes": [
+                {"outcome": "A", "book": "one", "decimal": 5,
+                 "stake_increment": 1, "min_stake": 500, "limit": 500},
+                {"outcome": "B", "book": "two", "decimal": 5, "stake_increment": 1},
+                {"outcome": "C", "book": "three", "decimal": 5, "stake_increment": 1},
+            ],
+        },
+        {
+            "id": "later-arb", "event": "D v E", "market": "winner",
+            "expected_outcomes": ["D", "E"], "rules_status": "compatible",
+            "quotes": [
+                {"outcome": "D", "book": "four", "decimal": 1.5878315585},
+                {"outcome": "E", "book": "five", "decimal": 2.7013866301},
+            ],
+        },
+    ]})
+    assert [row["market_id"] for row in result["hits"]] == ["high-minimum", "later-arb"]
+
+
 def test_multiway_solver_can_optimize_above_bankroll_payout_threshold():
     row = scan_market(
         market_id="payout-threshold", event="A v B v C", market="winner", bankroll=50,
