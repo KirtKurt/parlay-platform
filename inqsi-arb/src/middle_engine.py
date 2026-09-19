@@ -30,7 +30,7 @@ def _norm_books(raw: Any) -> Optional[set[str]]:
     else:
         values = [str(part).strip().lower() for part in raw]
     allowed = {part for part in values if part}
-    return allowed
+    return allowed or None
 
 
 def _event_key(item: Mapping[str, Any]) -> str:

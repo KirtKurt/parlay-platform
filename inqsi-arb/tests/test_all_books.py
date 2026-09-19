@@ -466,6 +466,21 @@ def test_wnba_is_outside_reviewed_nba_ncaa_basketball_scope(monkeypatch):
     assert rows[0]["context"]["settlement_validation"]["reason"] == "EVENT_OR_MARKET_SCOPE_UNREVIEWED"
 
 
+def test_wncaab_provider_key_is_inside_reviewed_ncaa_scope(monkeypatch):
+    monkeypatch.setattr(validation, "assess_quote", lambda quote: {
+        "status": "fresh", "fresh": True, "age_seconds": 0, "max_age_seconds": 180,
+        "reason": None,
+    })
+    rows = validation.validate_event({
+        "id": "wncaab", "sport": "basketball_wncaab", "market": "h2h",
+        "quotes": [
+            {"book": "fanduel", "outcome": "A", "decimal": 2.2},
+            {"book": "fanduel", "outcome": "B", "decimal": 2.2},
+        ],
+    }, jurisdiction="nj")
+    assert any(row["rules_status"] == "compatible" for row in rows)
+
+
 def test_explicit_non_us_hockey_branch_applies_to_swedish_league(monkeypatch):
     monkeypatch.setattr(validation, "assess_quote", lambda quote: {
         "status": "fresh", "fresh": True, "age_seconds": 0, "max_age_seconds": 180,
