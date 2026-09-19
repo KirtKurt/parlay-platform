@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from itertools import combinations
 import json
 import os
@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from ks1.calibration_store import checkpoint_prefix, commit_json, latest_checkpoint
+from ks1.features import ET, utc
 from ks1.forensic_consideration import evaluate
 from ks1.inventory import encode
 from ks1.platt_inputs import dataset
@@ -148,17 +149,50 @@ def build(source: dict[str, Any], ledger: dict[str, Any], frozen_ids: set[str]) 
     if ledger.get("system") != "KS1":
         raise ValueError("invalid KS1 ledger for loss tracing")
 
-    # Re-run the same prospective grade-admission contract used by nightly grading.
-    admitted, admission = dataset(source, include_predecessors=True)
+    # Inspect IDs only until the frozen holdout is excluded. Neither dataset()
+    # nor evaluate() may receive its labels, predictions, or first-seen records.
+    grades = []
+    seen_ids = set()
+    holdout_excluded = 0
+    outside_horizon = 0
+    # Research ingestion retains the current and previous ET calendar years.
+    # Older official grades remain in the ledger, but cannot be reproduced
+    # from this capture. Do not silently waive missing finals inside the window.
+    finals_start = datetime(utc(source['as_of']).astimezone(ET).year - 1, 1, 1, tzinfo=ET)
+    for grade in ledger.get("rows") or []:
+        game_id = str(grade.get("game_id") or "")
+        if not game_id or game_id in seen_ids:
+            raise ValueError("missing or duplicate game ID in loss trace ledger")
+        seen_ids.add(game_id)
+        if game_id in frozen_ids:
+            holdout_excluded += 1
+            continue
+        if utc(grade['locked_at']) + timedelta(minutes=10) < finals_start:
+            outside_horizon += 1
+            continue
+        grades.append(grade)
+    trace_ids = {str(grade['game_id']) for grade in grades}
+    first_seen = (source.get('platt_model') or {}).get('label_first_seen', {})
+    trace_source = {
+        'system': 'KS1', 'as_of': source['as_of'],
+        'locked': [entry for entry in source.get('locked') or []
+                   if str((entry.get('row') or {}).get('game_id') or '') in trace_ids],
+        'finals': {gid: final for gid, final in (source.get('finals') or {}).items()
+                   if str(gid) in trace_ids},
+        'final_sources': source.get('final_sources'),
+        'platt_model': {'label_first_seen': {gid: record for gid, record in first_seen.items()
+                                           if str(gid) in trace_ids}},
+    }
+    # Re-run the unchanged prospective admission contract only on this scope.
+    admitted, admission = dataset(trace_source, include_predecessors=True)
     admitted_by_id = {str(row["game_id"]): row for row in admitted}
     if len(admitted_by_id) != len(admitted):
         raise ValueError("duplicate admitted grade ID in loss trace")
-    locked = _locked_index(source)
+    locked = _locked_index(trace_source)
 
     observations: list[dict[str, Any]] = []
-    holdout_excluded = []
     incomplete_signal_rows = Counter()
-    for grade in ledger.get("rows") or []:
+    for grade in grades:
         game_id = str(grade.get("game_id") or "")
         if not game_id or game_id not in admitted_by_id:
             raise ValueError("committed ledger row is not prospectively reproducible from capture")
@@ -166,9 +200,6 @@ def build(source: dict[str, Any], ledger: dict[str, Any], frozen_ids: set[str]) 
         if (reproduced.get("signature") != grade.get("signature")
                 or int(reproduced.get("home_win")) != int(grade.get("home_win"))):
             raise ValueError("committed grade differs from prospectively reproduced observation")
-        if game_id in frozen_ids:
-            holdout_excluded.append(game_id)
-            continue
         entry = locked.get(game_id)
         if entry is None:
             raise ValueError("committed grade missing immutable locked prediction row")
@@ -234,12 +265,17 @@ def build(source: dict[str, Any], ledger: dict[str, Any], frozen_ids: set[str]) 
         "sample": {
             "committed_ledger_rows": len(ledger.get("rows") or []),
             "prospectively_reproduced_rows": len(admitted),
-            "frozen_holdout_ids_excluded": len(holdout_excluded),
+            "frozen_holdout_ids_excluded": holdout_excluded,
+            "outside_final_horizon_rows": outside_horizon,
             "analyzed_non_holdout_rows": len(observations),
             "wins": wins,
             "losses": losses,
             "loss_rate": losses / len(observations) if observations else None,
             "missing_signal_surface_rows": dict(sorted(incomplete_signal_rows.items())),
+        },
+        "reproducibility_scope": {
+            "finals_start_date_et": finals_start.date().isoformat(),
+            "policy": "current_and_previous_ET_calendar_years_only; older ledger rows excluded, not regraded",
         },
         "holdout_boundary": {
             "id_list_read_only_for_exclusion": True,

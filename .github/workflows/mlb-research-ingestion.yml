@@ -65,10 +65,17 @@ jobs:
           print(json.loads(path.read_text()).get('status') if path.exists() else 'missing_report')
           PY
           )
-          if [ "$STATUS" = "not_due_or_already_completed" ]; then
-            echo "KS1 nightly checkpoint is not due; no settled-loss trace is expected."
-            exit 0
-          fi
+          case "$STATUS" in
+            not_due_or_already_completed|no_new_final_grades)
+              echo "KS1 committed no new checkpoint; no settled-loss trace is expected."
+              exit 0
+              ;;
+            completed|completed_catchup) ;;
+            *)
+              echo "Unexpected KS1 nightly status: $STATUS" >&2
+              exit 1
+              ;;
+          esac
           test -s /tmp/ks1-nightly/capture.json
           python -m ks1.loss_trace \
             --inputs /tmp/ks1-nightly/capture.json \
