@@ -29,6 +29,7 @@ from ks1.forensic_features import (
     raw_parents,
 )
 from ks1.inventory import encode
+from ks1.forensic_runtime import trace_trial
 from ks1.prior_pitcher_context import PriorPitcherContext, pregame_identity_index
 from ks1.retrain_recent import (
     EVALUATION_GAMES,
@@ -52,11 +53,25 @@ CONTRACT = "KS1-unified-forensic-derived-training-v1"
 def _augment(frame, derived):
     result = frame.copy()
     values = derive_frame(frame)
+    derived = list(derived)
+    if (not isinstance(frame.columns, pd.MultiIndex) and frame.columns.is_unique
+            and not set(derived).intersection(frame.columns)):
+        # Append the same derived columns in their original first-occurrence order
+        # as one block, instead of fragmenting a wide frame one column at a time.
+        columns = list(dict.fromkeys(derived))
+        if columns:
+            attributes = result.attrs
+            result = pd.concat([result, values[columns]], axis=1)
+            result.columns.name = frame.columns.name
+            result.attrs = attributes
+        return result
+    # Preserve legacy replacement/duplicate-column semantics for unusual callers.
     for column in derived:
         result[column] = values[column]
     return result
 
 
+@trace_trial
 def _trial(fit, validation, columns, params):
     model = lgb.LGBMClassifier(**params).fit(
         fit[columns].astype(float), fit.home_win.astype(int))
