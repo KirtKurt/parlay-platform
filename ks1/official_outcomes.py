@@ -393,7 +393,7 @@ def reconcile(raw, get_official, raw_receipt, scheduled_by_game=None,
     games = sorted(set(needed_games(raw)) | additional_games)
     def official_for(pk):
         rows = [row for row in raw['rows'] if str(row['game_pk']) == pk]
-        if pk in additional_games:
+        if pk in additional_games or pk in inspection_games:
             return get_official(pk, rows, force_pitch_evidence=True)
         return get_official(pk, rows)
     evidence = {pk: official_for(pk) for pk in games}
