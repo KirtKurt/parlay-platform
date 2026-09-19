@@ -7,9 +7,10 @@ and chronology. Final per-batter box totals remain a separate admission gate.
 
 def proven_strikeout(play, substitution, prior_pitches, terminal_row):
     from ks1.features import utc
+    from ks1.official_outcomes import event_name
     count = substitution.get('count', {})
     if (play['result'].get('eventType') != 'strikeout'
-            or terminal_row.get('events') != 'strikeout'
+            or event_name(terminal_row.get('events')) != 'strikeout'
             or substitution.get('isPitch') is not False
             or substitution.get('type') != 'action'
             or type(count.get('strikes')) is not int or count['strikes'] != 2
