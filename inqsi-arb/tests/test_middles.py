@@ -192,3 +192,54 @@ def test_book_filter_applies_to_exchange_pending():
     }]})
     assert result["n_exchange_pending"] == 1
     assert result["exchange_pending"][0]["books"] == ["draftkings"]
+
+
+def test_middle_plan_enforces_caps_and_discrete_stakes_before_free_label():
+    events = [{"id": "e12", "event_id": "e12", "event": "A @ B", "market": "totals", "quotes": [
+        {"outcome": "Over", "book": "one", "decimal": 2.2, "point": 8.5, "limit": 1},
+        {"outcome": "Under", "book": "two", "decimal": 2.2, "point": 9.5, "limit": 1},
+    ]}]
+    row = detect_middles(events, bankroll=100)[0]
+    assert row["kind"] == "free_middle"
+    assert row["allocated_stake"] == 2
+    assert all(leg["stake"] == 1 for leg in row["legs"])
+
+    for quote in events[0]["quotes"]:
+        quote["stake_increment"] = 5
+    assert detect_middles(events, bankroll=100) == []
+
+
+def test_middle_market_id_contains_normalized_contract():
+    events = [{"id": "e13", "event_id": "e13", "event": "A @ B", "market": "alternate_totals", "quotes": [
+        {"outcome": "Over", "book": "one", "decimal": 2.2, "point": 8.5},
+        {"outcome": "Under", "book": "two", "decimal": 2.2, "point": 9.5},
+    ]}]
+    assert "|totals|" in detect_middles(events, bankroll=100)[0]["market_id"]
+
+
+def test_fractional_fantasy_scoring_allows_attainable_middle():
+    events = [{"id": "e14", "event_id": "e14", "event": "A @ B", "market": "player_fantasy_points", "quotes": [
+        {"description": "Player A", "outcome": "Over", "book": "one", "decimal": 2.2, "point": 10},
+        {"description": "Player A", "outcome": "Under", "book": "two", "decimal": 2.2, "point": 10.5},
+    ]}]
+    assert len(detect_middles(events, bankroll=100)) == 1
+
+
+def test_event_fallback_does_not_mix_rematches():
+    events = [
+        {"event": "A @ B", "commence_time": "2030-01-01T00:00:00Z", "market": "totals", "quotes": [
+            {"outcome": "Over", "book": "one", "decimal": 2.2, "point": 8.5},
+        ]},
+        {"event": "A @ B", "commence_time": "2030-01-02T00:00:00Z", "market": "totals", "quotes": [
+            {"outcome": "Under", "book": "two", "decimal": 2.2, "point": 9.5},
+        ]},
+    ]
+    assert detect_middles(events, bankroll=100) == []
+
+
+def test_unidentified_participant_props_do_not_pair():
+    events = [{"id": "e15", "event_id": "e15", "event": "A @ B", "market": "player_points", "quotes": [
+        {"outcome": "Over", "book": "one", "decimal": 2.2, "point": 10.5},
+        {"outcome": "Under", "book": "two", "decimal": 2.2, "point": 11.5},
+    ]}]
+    assert detect_middles(events, bankroll=100) == []

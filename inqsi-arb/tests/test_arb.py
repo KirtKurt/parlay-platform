@@ -160,3 +160,17 @@ def test_limits_scale_the_continuous_plan_before_rounding():
     assert row and row["arb"] is True
     assert row["allocated_stake"] == 200
     assert all(leg["stake"] == 100 for leg in row["legs"])
+
+
+def test_executable_alternative_quote_can_replace_unusable_top_price():
+    row = scan_market(
+        market_id="alternative", event="A v B", market="h2h", bankroll=100,
+        expected_outcomes=["A", "B"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "capped", "decimal": 2.2, "limit": 0.5, "stake_increment": 1},
+            {"outcome": "A", "book": "usable", "decimal": 2.1},
+            {"outcome": "B", "book": "two", "decimal": 2.1},
+        ],
+    )
+    assert row and row["arb"] is True and row["executable"] is True
+    assert {leg["book"] for leg in row["legs"]} == {"usable", "two"}

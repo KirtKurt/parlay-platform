@@ -7,6 +7,7 @@ label an opportunity a verified arb: settlement rules must be COMPATIBLE.
 """
 from __future__ import annotations
 
+from itertools import islice, product
 from math import isfinite
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
@@ -72,6 +73,47 @@ def _candidate_signature(row: Mapping[str, Any]) -> tuple[Any, ...]:
     )
 
 
+def _cap(value: Any) -> Optional[float]:
+    try:
+        parsed = float(value) if value is not None and value != "" else None
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed is not None and isfinite(parsed) and parsed >= 0 else None
+
+
+def _rounded_quote_plan(
+    selected: Mapping[str, Mapping[str, Any]], outcomes: Iterable[str], bankroll: float,
+) -> tuple[float, Dict[str, float], Optional[Dict[str, Any]], Optional[str]]:
+    ordered = sorted(outcomes)
+    implied = sum(1.0 / selected[outcome]["net_decimal"] for outcome in ordered)
+    if implied <= 0:
+        return implied, {}, None, "INVALID_IMPLIED_SUM"
+    unrounded = {
+        outcome: bankroll * (1.0 / selected[outcome]["net_decimal"]) / implied
+        for outcome in ordered
+    }
+    cap_scales = [1.0]
+    for outcome in ordered:
+        cap = _cap(selected[outcome].get("limit"))
+        if cap is not None:
+            cap_scales.append(cap / unrounded[outcome])
+    scale = min(cap_scales)
+    target_stakes = {outcome: stake * scale for outcome, stake in unrounded.items()}
+    legs = [{
+        "outcome": outcome,
+        "book": selected[outcome]["book"],
+        "stake": target_stakes[outcome],
+        "net_decimal": selected[outcome]["net_decimal"],
+        "constraint_cap": _cap(selected[outcome].get("limit")),
+        "min_stake": selected[outcome].get("min_stake") or 0,
+        "stake_increment": selected[outcome].get("stake_increment") or 0.01,
+    } for outcome in ordered]
+    try:
+        return implied, unrounded, optimize_rounding_neighborhood(legs, bankroll=bankroll), None
+    except StakeRoundingError:
+        return implied, unrounded, None, "ROUNDING_ERROR"
+
+
 def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Mapping[str, Any]],
                 bankroll: float = 1000.0, expected_outcomes: Optional[Iterable[str]] = None,
                 rules_status: str = "unknown", context: Optional[Mapping[str, Any]] = None,
@@ -83,6 +125,7 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
     expected = [str(x).strip() for x in (expected_outcomes or []) if str(x).strip()]
     expected_set = set(expected)
     best: Dict[str, Dict[str, Any]] = {}
+    candidates: Dict[str, List[Dict[str, Any]]] = {}
     seen_books = set()
     valid_quotes = 0
     for raw in quotes or []:
@@ -99,12 +142,37 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
                      "decimal": d, "net_decimal": net_d, "commission_rate": float(raw.get("commission_rate") or 0.0),
                      "provider": raw.get("provider"), "last_update": raw.get("last_update"), "link": raw.get("link"),
                      "limit": raw.get("limit"), "min_stake": raw.get("min_stake"), "stake_increment": raw.get("stake_increment")}
+        candidates.setdefault(outcome, []).append(candidate)
         if best.get(outcome) is None or net_d > best[outcome]["net_decimal"]: best[outcome] = candidate
     if expected_set:
         missing = sorted(expected_set - set(best)); extra = sorted(set(best) - expected_set); complete = not missing and not extra
     else:
         missing, extra = [], []; complete = len(best) >= 2; expected_set = set(best)
     if len(best) < 2: return None
+
+    # The best headline price is not always the best executable price. Search a
+    # bounded set of quote combinations so a capped or discretely unusable top
+    # quote cannot hide a safe executable plan at the same outcome.
+    if complete:
+        ordered_outcomes = sorted(expected_set)
+        pools = [
+            sorted(candidates[outcome], key=lambda quote: quote["net_decimal"], reverse=True)[:8]
+            for outcome in ordered_outcomes
+        ]
+        executable_choice = None
+        for combination in islice(product(*pools), 256):
+            selected = dict(zip(ordered_outcomes, combination))
+            combo_implied, _, combo_plan, _ = _rounded_quote_plan(selected, ordered_outcomes, bankroll)
+            if combo_implied >= 1.0 or not combo_plan or not combo_plan.get("feasible"):
+                continue
+            if not combo_plan.get("strict_arbitrage_after_rounding"):
+                continue
+            score = (float(combo_plan.get("minimum_profit") or 0), -combo_implied)
+            if executable_choice is None or score > executable_choice[0]:
+                executable_choice = (score, selected)
+        if executable_choice is not None:
+            best = executable_choice[1]
+
     implied_sum = sum(1.0 / best[o]["net_decimal"] for o in sorted(expected_set) if o in best)
     math_arb = bool(complete and implied_sum < 1.0)
     normalized_rules_status = str(rules_status or "unknown").strip().lower()
@@ -116,36 +184,7 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
     allocated_stake = 0.0
     rounding_reason = None
     if complete and implied_sum > 0:
-        unrounded = {o: bankroll * (1.0 / best[o]["net_decimal"]) / implied_sum for o in expected_set}
-        cap_scales = [1.0]
-        for outcome in expected_set:
-            cap = best[outcome].get("limit")
-            try:
-                cap_n = float(cap) if cap is not None and cap != "" else None
-            except (TypeError, ValueError):
-                cap_n = None
-            if cap_n is not None and cap_n > 0:
-                cap_scales.append(cap_n / unrounded[outcome])
-        target_scale = min(cap_scales)
-        target_stakes = {outcome: stake * target_scale for outcome, stake in unrounded.items()}
-        rounding_legs = []
-        for outcome in expected_set:
-            q = best[outcome]
-            cap = q.get("limit")
-            try:
-                cap_n = float(cap) if cap is not None and cap != "" else None
-            except (TypeError, ValueError):
-                cap_n = None
-            rounding_legs.append({
-                "outcome": outcome, "book": q["book"], "stake": target_stakes[outcome],
-                "net_decimal": q["net_decimal"], "constraint_cap": cap_n,
-                "min_stake": q.get("min_stake") or 0, "stake_increment": q.get("stake_increment") or 0.01,
-            })
-        rounded_plan = None
-        try:
-            rounded_plan = optimize_rounding_neighborhood(rounding_legs, bankroll=bankroll)
-        except StakeRoundingError:
-            rounding_reason = "ROUNDING_ERROR"
+        _, unrounded, rounded_plan, rounding_reason = _rounded_quote_plan(best, expected_set, bankroll)
         if rounded_plan and rounded_plan.get("feasible"):
             executable = bool(math_arb and rounded_plan.get("strict_arbitrage_after_rounding"))
             allocated_stake = float(rounded_plan.get("allocated_stake") or 0)

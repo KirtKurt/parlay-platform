@@ -9,10 +9,11 @@ this detector does not grant.
 from __future__ import annotations
 
 import re
-from math import isfinite
+from math import floor, isfinite
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from arb_engine import _net_decimal, _quote_decimal
+from stake_rounding import StakeRoundingError, optimize_rounding_neighborhood
 
 _POINT_RE = re.compile(r"([+-]?\d+(?:\.\d+)?)\s*$")
 MAX_MIDDLES = 100
@@ -30,7 +31,15 @@ def _norm_books(raw: Any) -> Optional[set[str]]:
 
 
 def _event_key(item: Mapping[str, Any]) -> str:
-    return str(item.get("event_id") or item.get("event") or item.get("id") or "").strip()
+    event_id = str(item.get("event_id") or "").strip()
+    if event_id:
+        return event_id
+    item_id = str(item.get("id") or "").strip()
+    if item_id:
+        return item_id
+    event = str(item.get("event") or "").strip()
+    commence_time = str(item.get("commence_time") or "").strip()
+    return f"{event}|{commence_time}" if event and commence_time else ""
 
 
 def _family(market: str) -> Optional[str]:
@@ -87,9 +96,36 @@ def _contract(market: str) -> str:
     return "_".join(parts)
 
 
-def _integer_middle_exists(lower: float, upper: float) -> bool:
-    """Return whether an integer settlement result can satisfy both strict legs."""
-    return int(lower // 1) + 1 < upper
+def _scoring_increment(contract: str, left: Mapping[str, Any], right: Mapping[str, Any]) -> Optional[float]:
+    explicit = []
+    for quote in (left, right):
+        raw = quote.get("scoring_increment")
+        if raw is None or raw == "":
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if not isfinite(value) or value <= 0:
+            return None
+        explicit.append(value)
+    if len(explicit) == 2 and abs(explicit[0] - explicit[1]) > 1e-9:
+        return None
+    if explicit:
+        return explicit[0]
+    return 0.01 if "fantasy" in contract else 1.0
+
+
+def _middle_result_exists(lower: float, upper: float, increment: Optional[float]) -> bool:
+    """Return whether an attainable score on the contract grid wins both legs."""
+    if increment is None or increment <= 0 or upper <= lower:
+        return False
+    next_result = (floor(lower / increment + 1e-10) + 1) * increment
+    return next_result < upper - 1e-9
+
+
+def _participant_contract(contract: str) -> bool:
+    return contract.startswith(("player_", "batter_", "pitcher_", "team_"))
 
 
 def _best_quotes(events: Iterable[Mapping[str, Any]], allowed: Optional[set[str]]) -> Dict[Tuple[str, str, str, str], List[Dict[str, Any]]]:
@@ -119,6 +155,8 @@ def _best_quotes(events: Iterable[Mapping[str, Any]], allowed: Optional[set[str]
                 continue
             selection = _selection(raw)
             contract = _contract(market)
+            if _participant_contract(contract) and not selection:
+                continue
             bucket = grouped.setdefault((event_key, family, contract, selection), {})
             key = (book, side, point)
             candidate = {
@@ -139,6 +177,9 @@ def _best_quotes(events: Iterable[Mapping[str, Any]], allowed: Optional[set[str]
                 "provider": raw.get("provider"),
                 "link": raw.get("link"),
                 "limit": raw.get("limit"),
+                "min_stake": raw.get("min_stake"),
+                "stake_increment": raw.get("stake_increment"),
+                "scoring_increment": raw.get("scoring_increment", item.get("scoring_increment")),
             }
             current = bucket.get(key)
             if current is None or net > current["net_decimal"]:
@@ -146,18 +187,53 @@ def _best_quotes(events: Iterable[Mapping[str, Any]], allowed: Optional[set[str]
     return {key: list(rows.values()) for key, rows in grouped.items()}
 
 
-def _stake_plan(over: Mapping[str, Any], under: Mapping[str, Any], bankroll: float) -> Dict[str, Any]:
-    implied = (1.0 / over["net_decimal"]) + (1.0 / under["net_decimal"])
+def _stake_plan(first: Mapping[str, Any], second: Mapping[str, Any], bankroll: float) -> Dict[str, Any]:
+    quotes = (first, second)
+    implied = sum(1.0 / quote["net_decimal"] for quote in quotes)
     if implied <= 0:
-        return {"implied_sum": implied, "legs": []}
-    stakes = {
-        "over": bankroll * (1.0 / over["net_decimal"]) / implied,
-        "under": bankroll * (1.0 / under["net_decimal"]) / implied,
-    }
+        return {"implied_sum": implied, "feasible": False, "legs": []}
+    targets = [bankroll * (1.0 / quote["net_decimal"]) / implied for quote in quotes]
+    cap_scales = [1.0]
+    for target, quote in zip(targets, quotes):
+        try:
+            cap = float(quote["limit"]) if quote.get("limit") not in (None, "") else None
+        except (TypeError, ValueError):
+            cap = None
+        if cap is not None and isfinite(cap) and cap >= 0:
+            cap_scales.append(cap / target)
+    scale = min(cap_scales)
+    rounding_legs = []
+    for index, (target, quote) in enumerate(zip(targets, quotes)):
+        try:
+            cap = float(quote["limit"]) if quote.get("limit") not in (None, "") else None
+        except (TypeError, ValueError):
+            cap = None
+        rounding_legs.append({
+            "outcome": f"leg_{index}",
+            "book": quote["book"],
+            "stake": target * scale,
+            "net_decimal": quote["net_decimal"],
+            "constraint_cap": cap,
+            "min_stake": quote.get("min_stake") or 0,
+            "stake_increment": quote.get("stake_increment") or 0.01,
+        })
+    try:
+        rounded = optimize_rounding_neighborhood(rounding_legs, bankroll=bankroll)
+    except StakeRoundingError:
+        rounded = {"feasible": False, "reason": "ROUNDING_ERROR", "legs": []}
+    if not rounded.get("feasible"):
+        return {
+            "implied_sum": implied,
+            "feasible": False,
+            "reason": rounded.get("reason") or "ROUNDING_INFEASIBLE",
+            "legs": [],
+        }
+    rounded_by_key = {leg["outcome"]: leg for leg in rounded.get("legs") or []}
     legs = []
-    for key, quote in (("over", over), ("under", under)):
-        stake = round(stakes[key], 2)
-        payout = stake * quote["net_decimal"]
+    for index, quote in enumerate(quotes):
+        planned = rounded_by_key[f"leg_{index}"]
+        stake = float(planned["stake"])
+        payout = float(planned["payout_if_wins"])
         legs.append({
             "outcome": quote["outcome"],
             "side": quote["side"],
@@ -172,53 +248,17 @@ def _stake_plan(over: Mapping[str, Any], under: Mapping[str, Any], bankroll: flo
             "provider": quote.get("provider"),
             "link": quote.get("link"),
             "limit": quote.get("limit"),
+            "min_stake": quote.get("min_stake"),
+            "stake_increment": quote.get("stake_increment") or 0.01,
         })
-    total = round(sum(leg["stake"] for leg in legs), 2)
-    over_only = round(legs[0]["payout_if_wins"] - total, 2)
-    under_only = round(legs[1]["payout_if_wins"] - total, 2)
-    both = round(legs[0]["payout_if_wins"] + legs[1]["payout_if_wins"] - total, 2)
-    return {
-        "implied_sum": implied,
-        "allocated_stake": total,
-        "pnl_if_over_only": over_only,
-        "pnl_if_under_only": under_only,
-        "pnl_if_middle_hits": both,
-        "minimum_miss_pnl": min(over_only, under_only),
-        "legs": legs,
-    }
-
-
-def _spread_plan(left: Mapping[str, Any], right: Mapping[str, Any], bankroll: float) -> Dict[str, Any]:
-    implied = (1.0 / left["net_decimal"]) + (1.0 / right["net_decimal"])
-    if implied <= 0:
-        return {"implied_sum": implied, "legs": []}
-    quotes = (left, right)
-    stakes = [bankroll * (1.0 / q["net_decimal"]) / implied for q in quotes]
-    legs = []
-    for quote, stake_raw in zip(quotes, stakes):
-        stake = round(stake_raw, 2)
-        payout = stake * quote["net_decimal"]
-        legs.append({
-            "outcome": quote["outcome"],
-            "side": quote["side"],
-            "point": quote["point"],
-            "book": quote["book"],
-            "american": quote.get("american"),
-            "decimal": round(quote["decimal"], 6),
-            "net_decimal": round(quote["net_decimal"], 6),
-            "stake": stake,
-            "payout_if_wins": round(payout, 2),
-            "last_update": quote.get("last_update"),
-            "provider": quote.get("provider"),
-            "link": quote.get("link"),
-            "limit": quote.get("limit"),
-        })
-    total = round(sum(leg["stake"] for leg in legs), 2)
+    total = float(rounded["allocated_stake"])
     first_only = round(legs[0]["payout_if_wins"] - total, 2)
     second_only = round(legs[1]["payout_if_wins"] - total, 2)
     both = round(legs[0]["payout_if_wins"] + legs[1]["payout_if_wins"] - total, 2)
     return {
         "implied_sum": implied,
+        "feasible": True,
+        "strict_arbitrage_after_rounding": rounded.get("strict_arbitrage_after_rounding", False),
         "allocated_stake": total,
         "pnl_if_first_only": first_only,
         "pnl_if_second_only": second_only,
@@ -228,10 +268,15 @@ def _spread_plan(left: Mapping[str, Any], right: Mapping[str, Any], bankroll: fl
     }
 
 
+def _spread_plan(left: Mapping[str, Any], right: Mapping[str, Any], bankroll: float) -> Dict[str, Any]:
+    return _stake_plan(left, right, bankroll)
+
+
 def _row(*, market_id: str, kind: str, family: str, gap: float, plan: Mapping[str, Any],
          event: str, market: str, commence_time: Any, selection: str) -> Dict[str, Any]:
     implied = float(plan.get("implied_sum") or 0.0)
-    free = implied > 0 and implied < 1.0 and float(plan.get("minimum_miss_pnl") or 0.0) > 0
+    free = (bool(plan.get("feasible")) and implied > 0 and implied < 1.0
+            and float(plan.get("minimum_miss_pnl") or 0.0) > 0)
     margin = (1.0 / implied - 1.0) if implied > 0 else -1.0
     return {
         "market_id": market_id,
@@ -282,11 +327,14 @@ def detect_middles(
                     if over["book"] == under["book"]:
                         continue
                     gap = under["point"] - over["point"]
-                    if gap <= 0 or not _integer_middle_exists(over["point"], under["point"]):
+                    increment = _scoring_increment(contract, over, under)
+                    if gap <= 0 or not _middle_result_exists(over["point"], under["point"], increment):
                         continue
                     plan = _stake_plan(over, under, bankroll)
+                    if not plan.get("feasible"):
+                        continue
                     found.append(_row(
-                        market_id=f"{event_key}|middle|{selection}|{over['point']}|{under['point']}|{over['book']}|{under['book']}",
+                        market_id=f"{event_key}|middle|{contract}|{selection}|{over['point']}|{under['point']}|{over['book']}|{under['book']}",
                         kind="total_middle",
                         family=family,
                         gap=gap,
@@ -304,11 +352,14 @@ def detect_middles(
                     if (left["side"], left["book"]) > (right["side"], right["book"]):
                         continue
                     gap = left["point"] + right["point"]
-                    if gap <= 0 or not _integer_middle_exists(-left["point"], right["point"]):
+                    increment = _scoring_increment(contract, left, right)
+                    if gap <= 0 or not _middle_result_exists(-left["point"], right["point"], increment):
                         continue
                     plan = _spread_plan(left, right, bankroll)
+                    if not plan.get("feasible"):
+                        continue
                     found.append(_row(
-                        market_id=f"{event_key}|middle|{left['side']}:{left['point']}|{right['side']}:{right['point']}|{left['book']}|{right['book']}",
+                        market_id=f"{event_key}|middle|{contract}|{left['side']}:{left['point']}|{right['side']}:{right['point']}|{left['book']}|{right['book']}",
                         kind="spread_middle",
                         family=family,
                         gap=gap,
