@@ -229,7 +229,11 @@ def test_proof_bound_statcast_replay_restores_advanced_compact_snapshot_from_pro
         'key': RESEARCH + 'statcast/' + hashlib.sha256(artifact_body).hexdigest() + '.json',
         'versionId': 'va', 'sha256': hashlib.sha256(artifact_body).hexdigest(),
     }
-    pointer_body = encode({'artifact': dict(artifact_receipt)})
+    pointer_body = encode({'artifact': {
+        'name': artifact_receipt['key'].removeprefix(RESEARCH),
+        'versionId': artifact_receipt['versionId'],
+        'sha256': artifact_receipt['sha256'],
+    }})
     pointer_receipt = {
         'bucket': 'retained', 'key': RESEARCH + 'statcast.json',
         'versionId': 'vp', 'sha256': hashlib.sha256(pointer_body).hexdigest(),

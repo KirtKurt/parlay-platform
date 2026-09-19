@@ -118,7 +118,16 @@ def _restore_proof_bound_compact_statcast(bundle, s3, proof):
     try:
         pointer = json.loads(_read_exact(s3, pointer_receipt))
         artifact_pointer = pointer.get("artifact") if isinstance(pointer, dict) else None
-        if _source_identity(artifact_pointer) != _source_identity(artifact_receipt):
+        artifact_name = (artifact_pointer.get("name")
+                         if isinstance(artifact_pointer, dict) else None)
+        normalized_artifact_pointer = {
+            "bucket": pointer_receipt["bucket"],
+            "key": RESEARCH + artifact_name if isinstance(artifact_name, str) else "",
+            "versionId": (artifact_pointer or {}).get("versionId"),
+            "sha256": (artifact_pointer or {}).get("sha256"),
+        }
+        if (_source_identity(normalized_artifact_pointer)
+                != _source_identity(artifact_receipt)):
             raise ValueError("compact pointer does not bind the proof artifact")
         statcast = json.loads(_read_exact(s3, artifact_receipt))
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
