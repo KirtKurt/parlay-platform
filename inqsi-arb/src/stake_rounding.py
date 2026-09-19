@@ -22,9 +22,12 @@ class StakeRoundingError(ValueError):
 
 def _d(value: Any) -> Decimal:
     try:
-        return Decimal(str(value))
+        parsed = Decimal(str(value))
     except Exception as exc:
         raise StakeRoundingError(f"invalid numeric value: {value!r}") from exc
+    if not parsed.is_finite():
+        raise StakeRoundingError(f"numeric value must be finite: {value!r}")
+    return parsed
 
 
 def _money(value: Decimal) -> Decimal:

@@ -121,7 +121,7 @@ def _audit_candidate(row: Dict[str, Any]) -> Dict[str, Any]:
     return {
         key: bounded(row.get(key)) for key in (
             "market_id", "event", "market", "commence_time", "math_arb", "arb",
-            "sum_implied", "margin_pct", "hold_pct", "bankroll", "minimum_payout",
+            "executable", "kind", "gap", "sum_implied", "margin_pct", "hold_pct", "bankroll", "minimum_payout",
             "minimum_profit", "n_quotes", "n_books", "outcomes", "books",
         )
     } | {
@@ -135,7 +135,7 @@ def _audit_candidate(row: Dict[str, Any]) -> Dict[str, Any]:
 def _audit_scan_payload(result: Dict[str, Any], *, sport: str, jurisdiction: str) -> Dict[str, Any]:
     remaining = 25
     saved: Dict[str, list] = {}
-    for name in ("hits", "detected_unverified", "rejected", "exchange_pending"):
+    for name in ("hits", "detected_unverified", "rejected", "exchange_pending", "middles"):
         rows = list(result.get(name) or [])
         selected = rows[:remaining]
         saved[name] = [_audit_candidate(row) for row in selected]
@@ -145,6 +145,7 @@ def _audit_scan_payload(result: Dict[str, Any], *, sport: str, jurisdiction: str
         "detected_unverified": int(result.get("n_detected_unverified") or 0),
         "rejected": int(result.get("n_rejected") or 0),
         "exchange_pending": int(result.get("n_exchange_pending") or 0),
+        "middles": int(result.get("n_middles") or 0),
     }
     return {
         "sport": str(sport)[:256],
@@ -155,6 +156,7 @@ def _audit_scan_payload(result: Dict[str, Any], *, sport: str, jurisdiction: str
         "n_rejected": result.get("n_rejected"),
         "n_held_unverified": result.get("n_held_unverified"),
         "n_exchange_pending": result.get("n_exchange_pending"),
+        "n_middles": result.get("n_middles"),
         **saved,
         "truncated": {name: max(0, count - len(saved[name])) for name, count in counts.items()},
     }
@@ -208,6 +210,9 @@ def lambda_handler(event, context):
             "candidate_evidence_audit": True,
             "required_outcome_universe_preserved": True,
             "exchange_lay_routed": True,
+            "middle_detection": True,
+            "executable_rounding": True,
+            "user_book_filter": True,
             "sportsbook_scope": "all_provider_returned",
             "default_regions": _regions(_default_jurisdiction()).split(","),
         })
@@ -289,16 +294,17 @@ def lambda_handler(event, context):
 
         jurisdiction = (query.get("jurisdiction") or _default_jurisdiction()).strip().lower()
         regions = _regions(jurisdiction, query.get("regions", ""))
+        books = (query.get("books") or query.get("bookmakers") or "").strip() or None
         if market_arg.lower() == "all":
             rows, status = fetch_all_discovered_markets(
                 sport,
                 regions=regions,
-                bookmakers=query.get("bookmakers"),
+                bookmakers=books,
                 max_events=max_events,
                 max_markets_per_event=int(os.environ.get("ARB_MAX_MARKETS_PER_EVENT", "120")),
             )
             rows = validate_events(rows, jurisdiction=jurisdiction)
-            result = scan_all({"bankroll": bankroll, "events": rows})
+            result = scan_all({"bankroll": bankroll, "events": rows, "books": books})
             result["status"] = status
             return response(200 if status.get("ok") else 503, _finalize_scan(result, sport=sport, jurisdiction=jurisdiction))
 
@@ -314,12 +320,12 @@ def lambda_handler(event, context):
             if not sports_meta.get("ok"):
                 return response(503, {"ok": False, "error": "SPORT_CATALOG_UNAVAILABLE", "provider": sports_meta})
             limit = min(len(sports), int(os.environ.get("ARB_MAX_SPORTS_PER_ALL_SCAN", "100")))
-            combined = {"bankroll": bankroll, "events": []}
+            combined = {"bankroll": bankroll, "events": [], "books": books}
             statuses = []
             for row in sports[:limit]:
                 payload = scan_sport_payload(
                     row["key"], bankroll=bankroll, markets=markets,
-                    regions=regions, bookmakers=query.get("bookmakers"), max_events=max_events,
+                    regions=regions, bookmakers=books, max_events=max_events,
                 )
                 combined["events"].extend(validate_events(payload["events"], jurisdiction=jurisdiction))
                 statuses.append(payload["status"])
@@ -329,9 +335,10 @@ def lambda_handler(event, context):
 
         payload = scan_sport_payload(
             sport, bankroll=bankroll, markets=markets,
-            regions=regions, bookmakers=query.get("bookmakers"), max_events=max_events,
+            regions=regions, bookmakers=books, max_events=max_events,
         )
         payload["events"] = validate_events(payload["events"], jurisdiction=jurisdiction)
+        payload["books"] = books
         result = scan_all(payload)
         result["status"] = payload["status"]
         return response(200 if payload["status"].get("ok") else 503, _finalize_scan(result, sport=sport, jurisdiction=jurisdiction))
