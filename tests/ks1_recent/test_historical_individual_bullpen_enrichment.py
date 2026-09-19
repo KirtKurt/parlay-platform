@@ -141,6 +141,59 @@ def test_proof_bound_statcast_replay_requires_exact_report_and_receipts(monkeypa
     assert evidence['provider_requests'] == 0
 
 
+def test_proof_bound_statcast_replay_restores_advanced_official_history_from_proof(
+        monkeypatch):
+    exact_payload = {
+        'games': [{'officialGamePk': 50, 'startAtUtc': '2026-05-31T18:00:00+00:00'}],
+        'schedule': [{'gamePk': 50, 'gameDate': '2026-05-31T18:00:00+00:00'}],
+    }
+    body = encode(exact_payload)
+    official = {
+        'bucket': 'retained', 'key': 'official.json', 'versionId': 'vo',
+        'sha256': hashlib.sha256(body).hexdigest(), 'complete_years': [2025, 2026],
+    }
+    pointer_receipt, artifact_receipt = _compact_statcast_receipts()
+    replay_receipt = {
+        'bucket': 'retained', 'key': 'sources/statcast-v2/2026-05-31.json',
+        'versionId': 'vs', 'sha256': 'c' * 64,
+    }
+    expected_report = {'provider_requests': 0, 'retained_pitch_rows': 1}
+    proof = {
+        'official_history_source': official,
+        'historical_statcast_report': expected_report,
+        'source_receipts': [
+            dict(official), dict(pointer_receipt), dict(artifact_receipt),
+            dict(replay_receipt),
+        ],
+    }
+    bundle = {
+        'official_history_source': {
+            **official, 'versionId': 'advanced', 'sha256': 'f' * 64,
+        },
+        'full': [{'officialGamePk': 999}],
+        'schedule': [{'gamePk': 999}],
+        'source_receipts': [
+            dict(pointer_receipt), dict(artifact_receipt),
+        ],
+    }
+    monkeypatch.setattr(subject, 'load_existing', lambda cf, s3, bucket: bundle)
+
+    def replay(value, s3, bucket):
+        assert value['full'] == exact_payload['games']
+        assert value['schedule'] == exact_payload['schedule']
+        assert value['official_history_source'] == official
+        value['statcast'] = [{'game_pk': '50', 'pitcher': '10'}]
+        value['source_receipts'].append(dict(replay_receipt))
+        return dict(expected_report)
+
+    monkeypatch.setattr(subject, 'load_training_statcast', replay)
+    context, evidence = subject.proof_bound_statcast_context(
+        'cf', FakeS3(body), 'bucket', proof)
+    assert context['rows'] == [{'game_pk': '50', 'pitcher': '10'}]
+    assert evidence['current_official_history_matched_input_proof'] is False
+    assert evidence['official_history_restored_from_input_proof'] is True
+
+
 def test_proof_bound_statcast_replay_rejects_unbound_preloaded_compact_artifact(monkeypatch):
     official = {
         'bucket': 'retained', 'key': 'official.json', 'versionId': 'vo',
