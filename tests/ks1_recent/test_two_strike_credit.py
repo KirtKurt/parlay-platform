@@ -92,6 +92,23 @@ def test_uniform_predecessor_attribution_derives_only_terminal_pitch_batter():
         'official_substitution_pitch_attribution', 'official_mid_at_bat_credit']
 
 
+def test_required_game_still_forces_inspection_pitch_evidence():
+    _, raw, _, source = fixture()
+    raw['rows'][2]['batter'] = '202'
+    raw['rows'][4]['woba_denom'] = ''
+    reseal(source, raw)
+    calls = []
+    def get_official(*args, **kwargs):
+        calls.append(kwargs)
+        return source
+    payload = reconcile(
+        raw, get_official, raw_receipt(raw), inspection_games={'1'})
+    assert calls == [{'force_pitch_evidence': True}]
+    assert payload['rows'][2]['batter'] == '201'
+    assert payload['rows'][4]['woba_denom'] == 1
+    assert verified_batter_credits(payload) == {('1', '201'): '202'}
+
+
 @pytest.mark.parametrize('defect', ['inherited', 'prior_missing', 'prior_boolean', 'prior_balls',
     'terminal_count', 'terminal_missing', 'play_count', 'terminal_time', 'non_pitch',
     'missing_weight', 'nonzero_weight', 'missing_denom', 'wrong_batter', 'wrong_pitcher',
