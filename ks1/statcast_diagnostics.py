@@ -11,6 +11,72 @@ from ks1.statcast_events import credited_at_bat_ids, is_thrown_pitch
 from ks1.statcast_history import official_physical_pitch_counts, physical_validation_reason
 
 
+def retained_official_diagnostics(payload, s3, bucket):
+    """Summarize already-retained official evidence without provider calls."""
+    from ks1.official_outcomes import (event_name, needed_games, source_name,
+                                       unfinished_at_bats)
+    from ks1.statcast_events import PLATE_APPEARANCE_EVENTS, is_plate_appearance
+
+    results = []
+    for game_id in needed_games(payload):
+        rows = [row for row in payload['rows'] if str(row.get('game_pk')) == game_id]
+        unfinished = {ab for (pk, ab) in unfinished_at_bats({'rows': rows}) if pk == game_id}
+        for mode, kwargs in (
+                ('pitch', {'pitch_evidence': True}),
+                ('accounting', {'accounting_evidence': True}),
+                ('inning', {'inning_evidence': True})):
+            name = source_name(game_id, rows, **kwargs)
+            try:
+                reader = Reader(s3, bucket)
+                evidence = reader.read(RESEARCH + name)
+                official = {}
+                unfinished_plays = []
+                for play in evidence['data']['liveData']['plays']['allPlays']:
+                    at_bat = str(play['about']['atBatIndex'] + 1)
+                    event = event_name(play['result'].get('eventType'))
+                    identity = [str(play['matchup']['batter']['id']),
+                                str(play['matchup']['pitcher']['id']), event]
+                    if event in PLATE_APPEARANCE_EVENTS:
+                        official[at_bat] = identity
+                    if at_bat in unfinished:
+                        unfinished_plays.append({
+                            'at_bat_number': at_bat,
+                            'identity': identity,
+                            'events': [{
+                                'index': item.get('index'),
+                                'type': item.get('type'),
+                                'isPitch': item.get('isPitch'),
+                                'isSubstitution': item.get('isSubstitution'),
+                                'description': item.get('details', {}).get('description'),
+                                'eventType': item.get('details', {}).get('eventType'),
+                                'code': (item.get('details', {}).get('code') or
+                                         item.get('details', {}).get('call', {}).get('code')),
+                                'count': item.get('count'),
+                            } for item in play.get('playEvents', [])],
+                            'runners': play.get('runners', []),
+                        })
+                observed = {str(row['at_bat_number']): [str(row['batter']),
+                            str(row['pitcher']), event_name(row['events'])]
+                            for row in rows if is_plate_appearance(row)}
+                results.append({
+                    'game_id': game_id, 'mode': mode, 'name': name,
+                    'retained_receipt': reader.receipts[-1],
+                    'official_only': [{'at_bat_number': key, 'identity': official[key]}
+                                      for key in sorted(set(official) - set(observed), key=int)],
+                    'statcast_only': [{'at_bat_number': key, 'identity': observed[key]}
+                                      for key in sorted(set(observed) - set(official), key=int)],
+                    'identity_mismatches': [{'at_bat_number': key,
+                        'official': official[key], 'statcast': observed[key]}
+                        for key in sorted(set(official) & set(observed), key=int)
+                        if official[key] != observed[key]],
+                    'unfinished_plays': unfinished_plays,
+                })
+            except Exception as exc:
+                results.append({'game_id': game_id, 'mode': mode, 'name': name,
+                                'error': type(exc).__name__})
+    return results
+
+
 def differences(expected, actual):
     return [{'game_pk': key[0], 'player_id': key[1],
              'expected': expected.get(key, 0), 'observed': actual.get(key, 0)}
@@ -89,7 +155,8 @@ def diagnose_date(bundle, s3, bucket, value):
             if hashlib.sha256(encoded).hexdigest() != receipt['sha256']:
                 raise ValueError('diagnostic serialization differs from retained bytes')
             sources.append({'payload': payload, 'retained_receipt': receipt,
-                            'counts': count_diagnostics(payload, value, games, expected, batters, invalid)})
+                            'counts': count_diagnostics(payload, value, games, expected, batters, invalid),
+                            'retained_official': retained_official_diagnostics(payload, s3, bucket)})
         except Exception as exc:
             errors.append({'key': key, 'error': type(exc).__name__,
                            'reason': str(exc)[:240] if isinstance(exc, ValueError) else
