@@ -21,13 +21,24 @@ def transport(monkeypatch):
     responses = []
 
     def install(code, location=None, body=b'{"data": []}'):
+        class RecordedBody(io.BytesIO):
+            def __init__(self, content):
+                super().__init__(content)
+                self.read_sizes = []
+
+            def read(self, size=-1):
+                self.read_sizes.append(size)
+                return super().read(size)
+
         class OfflineHTTPS(HTTPSHandler):
             def https_open(self, request):
                 calls.append(request)
                 headers = Message()
                 if location is not None:
                     headers["Location"] = location
-                response = addinfourl(io.BytesIO(body), headers, request.full_url, code)
+                stream = RecordedBody(body)
+                response = addinfourl(stream, headers, request.full_url, code)
+                response.read_sizes = stream.read_sizes
                 response.msg = "offline fixture"
                 responses.append(response)
                 return response
@@ -40,6 +51,44 @@ def transport(monkeypatch):
         )
 
     return install, calls, responses
+
+
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+@pytest.mark.parametrize("extra_bytes", [-1, 0, 1, 4096])
+def test_successful_response_size_boundary(transport, operation, extra_bytes):
+    install, calls, responses = transport
+    limit = bbd_provider.MAX_RESPONSE_BYTES
+    payload = b'{"data": []}'
+    install(200, body=payload + b" " * (limit + extra_bytes - len(payload)))
+
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is (extra_bytes <= 0)
+    assert all(response.closed for response in responses)
+    assert all(response.read_sizes == [limit + 1] for response in responses)
+    if extra_bytes > 0:
+        assert result["reason"] == "BBD_RESPONSE_TOO_LARGE"
+        assert len(calls) == 1
+    if operation == "health":
+        assert result["sports_count"] == (None if extra_bytes > 0 else 0)
+    else:
+        assert result[operation] == []
+
+
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+def test_oversized_response_rejected_before_json_decoding(transport, monkeypatch, operation):
+    install, _, responses = transport
+    install(200, body=b"x" * (bbd_provider.MAX_RESPONSE_BYTES + 1))
+
+    def unexpected_decode(*args, **kwargs):
+        pytest.fail("Oversized response must not reach JSON decoding")
+
+    monkeypatch.setattr(bbd_provider.json, "loads", unexpected_decode)
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_RESPONSE_TOO_LARGE"
+    assert responses[0].closed
 
 
 @pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
