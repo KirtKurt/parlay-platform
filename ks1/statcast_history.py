@@ -209,6 +209,34 @@ def validation_reason(payload, value, games, expected, invalid,
     return None
 
 
+def verified_raw_games(payload, value, games, expected, invalid,
+                       physical_expected, physical_batters, physical_invalid):
+    """Retain independently complete games, never certify a partial date.
+
+    Only an unmodified daily payload with the exact scheduled game set can
+    enter this fallback. Reconciled envelopes require their whole-proof path;
+    projecting them would discard the binding to raw/official evidence.
+    """
+    if 'outcome_reconciliation' in payload or 'raw_statcast' in payload:
+        return {}
+    rows = payload.get('rows', [])
+    games = {str(pk) for pk in games}
+    if (payload.get('date') != value
+            or any(row.get('game_date') != value for row in rows)
+            or {str(row.get('game_pk')) for row in rows} != games):
+        return {}
+    grouped = {pk: [] for pk in games}
+    for row in rows:
+        grouped[str(row['game_pk'])].append(row)
+    verified = {}
+    for pk, game_rows in grouped.items():
+        if not physical_pitches_complete(
+                game_rows, {pk}, physical_expected, physical_batters, physical_invalid):
+            continue
+        verified[pk] = (game_rows, pitches_complete(game_rows, {pk}, expected, invalid))
+    return verified
+
+
 def load_training_statcast(bundle, s3, bucket, *, requested_dates=None):
     """Restore prior pitch windows from retained objects; never call a provider.
 
@@ -258,15 +286,16 @@ def load_training_statcast(bundle, s3, bucket, *, requested_dates=None):
     def read_date(value):
         games = expected_dates[value]
         if value in unfinished:
-            return value, [], [], 'unfinished_scheduled_game', False, None
+            return value, [], [], 'unfinished_scheduled_game', False, None, set()
         if not games:
-            return value, [], [], None, True, None
+            return value, [], [], None, True, None, set()
         reader = Reader(s3, bucket)
         revision = hashlib.sha256(encode(sorted(games))).hexdigest()
         keys = [RESEARCH+f'sources/statcast-v2/{value}.json',
                 RESEARCH+f'sources/statcast-v2-revisions/{value}/{revision}.json']
         reasons = []
         physical_candidate = None
+        partial_games = {}
         for key in keys:
             receipt_start = len(reader.receipts)
             try:
@@ -279,6 +308,15 @@ def load_training_statcast(bundle, s3, bucket, *, requested_dates=None):
                                            completed_by_game, scheduled_by_game)
                 if receipt.get('versionId') in (None, '', 'null'):
                     physical_reason = reason = 'unversioned_source'
+                elif physical_reason or reason:
+                    for pk, (game_rows, outcomes) in verified_raw_games(
+                            payload, value, games, expected, invalid,
+                            physical_expected, physical_batters, physical_invalid).items():
+                        # Keep every game's rows and proof from one exact
+                        # version. Prefer outcome-complete evidence, but never
+                        # splice pitches across source revisions.
+                        if pk not in partial_games or (outcomes and not partial_games[pk][1]):
+                            partial_games[pk] = (game_rows, outcomes, receipt)
                 if 'outcome_reconciliation' in payload or 'raw_statcast' in payload:
                     from ks1.official_outcomes import read_retained_evidence
                     read_retained_evidence(payload, reader)
@@ -288,7 +326,7 @@ def load_training_statcast(bundle, s3, bucket, *, requested_dates=None):
                     reasons.append(physical_reason)
                     continue
                 if reason is None:
-                    return value, payload['rows'], list(reader.receipts[receipt_start:]), None, True, None
+                    return value, payload['rows'], list(reader.receipts[receipt_start:]), None, True, None, set()
                 reasons.append(reason)
                 if physical_candidate is None:
                     physical_candidate = (payload['rows'], [receipt], reason)
@@ -306,22 +344,44 @@ def load_training_statcast(bundle, s3, bucket, *, requested_dates=None):
                     reason = validation_reason(payload, value, games, expected, invalid,
                                                completed_by_game, scheduled_by_game)
                 if reason is None:
-                    return value, payload['rows'], recovery_receipts, None, True, None
+                    return value, payload['rows'], recovery_receipts, None, True, None, set()
                 reasons.append('recovered_' + reason)
         except Exception as exc:
             reasons.append('recovery_read:' + type(exc).__name__)
         if physical_candidate is not None:
             daily_rows, daily_receipts, outcome_reason = physical_candidate
-            return value, daily_rows, daily_receipts, None, False, outcome_reason
+            # A complete physical date can still contain games with complete
+            # outcomes. Use only the same source version as the chosen rows.
+            outcomes = {pk for pk, (_, ok, receipt) in partial_games.items()
+                        if ok and receipt == daily_receipts[0]}
+            return value, daily_rows, daily_receipts, None, False, outcome_reason, outcomes
+        if partial_games:
+            daily_rows, daily_receipts, outcomes = [], [], set()
+            for pk in sorted(partial_games):
+                game_rows, ok, receipt = partial_games[pk]
+                daily_rows.extend(game_rows)
+                if receipt not in daily_receipts:
+                    daily_receipts.append(receipt)
+                if ok:
+                    outcomes.add(pk)
+            error = {'reason': 'retained_pitches_unavailable_or_unverified',
+                     'details': sorted(set(reasons)),
+                     'independently_verified_physical_games': sorted(partial_games),
+                     'independently_verified_outcome_games': sorted(outcomes)}
+            return value, daily_rows, daily_receipts, error, False, None, outcomes
         return value, [], [], {'reason': 'retained_pitches_unavailable_or_unverified',
-                              'details': sorted(set(reasons))}, False, None
+                              'details': sorted(set(reasons))}, False, None, set()
 
     rows, receipts, verified_physical, verified_outcomes, errors = [], [], [], [], []
     verified_physical_pitch_objects = 0
     verified_outcome_pitch_objects = 0
+    independently_verified_outcomes = set()
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for value, daily_rows, daily_receipts, error, outcomes_complete, outcome_reason in pool.map(
+        for value, daily_rows, daily_receipts, error, outcomes_complete, outcome_reason, game_outcomes in pool.map(
                 read_date, sorted(expected_dates)):
+            rows.extend(daily_rows)
+            receipts.extend(daily_receipts)
+            independently_verified_outcomes.update(game_outcomes)
             if error:
                 errors.append({'date': value, **(error if isinstance(error, dict) else {'reason': error})})
             else:
@@ -336,8 +396,6 @@ def load_training_statcast(bundle, s3, bucket, *, requested_dates=None):
                         'details': [outcome_reason],
                         'physical_pitch_coverage_retained': True,
                     })
-                rows.extend(daily_rows)
-                receipts.extend(daily_receipts)
                 verified_physical_pitch_objects += bool(daily_rows)
     loaded_games = {str(row['game_pk']) for row in rows}
     # Keep compact starter-only rows for other games, but give them no new
@@ -372,7 +430,8 @@ def load_training_statcast(bundle, s3, bucket, *, requested_dates=None):
                      and existing_game_dates[str(pk)] not in expected_dates}
     outcome_games = {str(row['game_pk']) for row in rows
                      if row.get('game_date') in set(verified_outcomes)}
-    bundle['statcast_verified_games'] = sorted(outside_games | outcome_games)
+    bundle['statcast_verified_games'] = sorted(
+        outside_games | outcome_games | independently_verified_outcomes)
     existing_physical_games = {str(pk) for pk in prior_physical_games
         if existing_game_dates.get(str(pk))
         and existing_game_dates[str(pk)] not in expected_dates}
@@ -387,6 +446,8 @@ def load_training_statcast(bundle, s3, bucket, *, requested_dates=None):
             'verified_dates': len(verified_outcomes),
             'verified_pitch_objects': verified_outcome_pitch_objects,
             'verified_physical_pitch_objects': verified_physical_pitch_objects,
+            'verified_physical_games': len(loaded_games),
+            'verified_outcome_games': len(outcome_games | independently_verified_outcomes),
             'retained_pitch_rows': len(rows), 'errors': errors,
             'pitch_coverage_method': 'official_box_physical_v1_plus_pa_outcomes_v3',
             'original_prospective_storage_claimed': False}
