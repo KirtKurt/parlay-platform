@@ -155,8 +155,11 @@ def _middle_result_exists(lower: float, upper: float, increment: Optional[float]
     """Return whether an attainable score on the contract grid wins both legs."""
     if increment is None or increment <= 0 or upper <= lower:
         return False
-    next_result = (floor(lower / increment + 1e-10) + 1) * increment
-    return next_result < upper - 1e-9
+    ratio = lower / increment
+    if not isfinite(ratio):
+        return False
+    next_result = (floor(ratio + 1e-10) + 1) * increment
+    return isfinite(next_result) and next_result < upper - 1e-9
 
 
 def _participant_contract(contract: str) -> bool:

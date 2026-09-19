@@ -503,3 +503,16 @@ def test_middle_rejects_overflowing_total_and_spread_gaps():
     }], bankroll=100)
     assert total == []
     assert spread == []
+
+
+def test_middle_rejects_overflowing_score_grid_ratio():
+    rows = detect_middles([{
+        "id": "overflow-grid", "event": "A @ B", "market": "totals",
+        "quotes": [
+            {"book": "one", "outcome": "Over", "point": 1e308,
+             "decimal": 2.2, "scoring_increment": 0.01},
+            {"book": "two", "outcome": "Under", "point": 1.5e308,
+             "decimal": 2.2, "scoring_increment": 0.01},
+        ],
+    }], bankroll=100)
+    assert rows == []

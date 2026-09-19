@@ -7,7 +7,7 @@ label an opportunity a verified arb: settlement rules must be COMPATIBLE.
 """
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_FLOOR
 from itertools import product
 from math import ceil, floor, isfinite
 from typing import Any, Dict, Iterable, List, Mapping, Optional
@@ -36,28 +36,29 @@ def _bounded_rounding_neighborhood(
     work = 1
     for leg in legs:
         try:
-            stake = float(leg["stake"])
-            increment = float(leg.get("stake_increment") or 0.01)
-            minimum = float(leg.get("min_stake") or 0)
+            stake = Decimal(str(leg["stake"]))
+            increment = Decimal(str(leg.get("stake_increment") or "0.01"))
+            minimum = Decimal(str(leg.get("min_stake") or "0"))
             cap_raw = leg.get("constraint_cap")
-            cap = None if cap_raw is None else float(cap_raw)
-            stake_ratio = stake / increment
-            minimum_ratio = minimum / increment
-        except (KeyError, TypeError, ValueError, ZeroDivisionError, OverflowError):
+            cap = None if cap_raw is None else Decimal(str(cap_raw))
+            if (not stake.is_finite() or not increment.is_finite()
+                    or not minimum.is_finite() or increment <= 0
+                    or (cap is not None and not cap.is_finite())):
+                raise InvalidOperation
+            floor_value = (stake / increment).to_integral_value(rounding=ROUND_FLOOR) * increment
+            ceil_value = (stake / increment).to_integral_value(rounding=ROUND_CEILING) * increment
+            candidates = {floor_value, ceil_value}
+            if minimum > 0:
+                candidates.add(
+                    (minimum / increment).to_integral_value(rounding=ROUND_CEILING) * increment
+                )
+            candidates = {
+                value for value in candidates
+                if value > 0 and value >= minimum and (cap is None or value <= cap)
+            }
+        except (KeyError, TypeError, ValueError, ZeroDivisionError, OverflowError, InvalidOperation):
             work = MAX_SCAN_PLAN_WORK + 1
             break
-        if not all(isfinite(value) for value in (stake, increment, minimum, stake_ratio, minimum_ratio)):
-            work = MAX_SCAN_PLAN_WORK + 1
-            break
-        multiples = {floor(stake_ratio), ceil(stake_ratio)}
-        if minimum > 0:
-            multiples.add(ceil(minimum_ratio))
-        candidates = {
-            multiple for multiple in multiples
-            if (value := multiple * increment) > 0
-            and value >= minimum - 1e-9
-            and (cap is None or value <= cap + 1e-9)
-        }
         if not candidates:
             work = 1
             break
