@@ -194,7 +194,7 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
             # richer evidence their shapes require. Additional pitch evidence
             # is only for otherwise complete games whose terminal batter
             # attribution differs from the official play record.
-            credit_games -= set(needed_games(payload))
+            additional_credit_games = credit_games - set(needed_games(payload))
             can_reconcile_credit = (
                 reason == 'physical_pitch_or_batter_attribution_mismatch'
                 and (credit_games or needs_pitch_evidence(payload['rows'])
@@ -223,9 +223,10 @@ def recover(bundle, s3, bucket, initial_report, *, fetch=None, max_dates=MAX_DAT
                                   if str(row.get('events')).lower()
                                   in ('strikeout', 'strike_out')}
                                  if (unfinished_at_bats(raw)
-                                     or needs_pitch_evidence(raw['rows'])) else set())
+                                     or needs_pitch_evidence(raw['rows'])
+                                     or credit_games) else set())
                 payload = reconcile(raw, official_source, raw_pointer, scheduled_by_game,
-                                    additional_games=credit_games,
+                                    additional_games=additional_credit_games,
                                     inspection_games=inspect_games)
                 reason = physical_validation_reason(
                     payload, value, games, physical_expected, physical_batters,
