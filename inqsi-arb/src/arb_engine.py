@@ -53,8 +53,10 @@ def _parse_books(raw: Any) -> Optional[set[str]]:
         return None
     if isinstance(raw, str):
         values = [part.strip().lower() for part in raw.split(",")]
-    else:
+    elif isinstance(raw, (list, tuple, set, frozenset)):
         values = [str(part).strip().lower() for part in raw]
+    else:
+        raise ArbValidationError("books must be a comma-separated string or list")
     allowed = {part for part in values if part}
     return allowed or None
 
@@ -97,7 +99,8 @@ def _quote_constraints_usable(raw: Mapping[str, Any], bankroll: float) -> bool:
     cap = _constraint(raw.get("limit"), bankroll)
     minimum = _constraint(raw.get("min_stake"), 0.0)
     increment = _constraint(raw.get("stake_increment"), 0.01, positive=True)
-    if cap is None or minimum is None or increment is None or increment < 0.01 or minimum > cap:
+    if (cap is None or minimum is None or increment is None or increment < 0.01
+            or abs(increment * 100 - round(increment * 100)) > 1e-7 or minimum > cap):
         return False
     maximum = min(cap, bankroll)
     first_stake = max(increment, ceil(minimum / increment - 1e-10) * increment)
@@ -147,6 +150,37 @@ def _two_way_exact_plan(legs: List[Dict[str, Any]], bankroll: float) -> Optional
                 continue
             if best is None or float(plan["minimum_profit"]) > float(best["minimum_profit"]):
                 best = plan
+    return best
+
+
+def _multiway_exact_plan(legs: List[Dict[str, Any]], bankroll: float) -> Optional[Dict[str, Any]]:
+    """Enumerate a bounded discrete grid for small multiway markets."""
+    if len(legs) < 3:
+        return None
+    grids: List[List[float]] = []
+    combinations = 1
+    for leg in legs:
+        increment = float(leg.get("stake_increment") or 0.01)
+        minimum = float(leg.get("min_stake") or 0)
+        cap_raw = leg.get("constraint_cap")
+        cap = bankroll if cap_raw is None else min(float(cap_raw), bankroll)
+        first_multiple = max(1, ceil(minimum / increment - 1e-10))
+        last_multiple = floor(cap / increment + 1e-10)
+        count = max(0, last_multiple - first_multiple + 1)
+        combinations *= count
+        if count == 0 or combinations > 20000:
+            return None
+        grids.append([multiple * increment for multiple in range(first_multiple, last_multiple + 1)])
+    best = None
+    for stakes in product(*grids):
+        if sum(stakes) > bankroll + 1e-9:
+            continue
+        adjusted = [dict(leg, stake=stake) for leg, stake in zip(legs, stakes)]
+        plan = _direct_discrete_plan(adjusted, bankroll)
+        if not plan or not plan.get("strict_arbitrage_after_rounding"):
+            continue
+        if best is None or float(plan["minimum_profit"]) > float(best["minimum_profit"]):
+            best = plan
     return best
 
 
@@ -214,6 +248,9 @@ def _optimized_plan(legs: List[Dict[str, Any]], bankroll: float) -> Dict[str, An
         exact_two_way = _two_way_exact_plan(legs, bankroll)
         if exact_two_way:
             plans.append(exact_two_way)
+        exact_multiway = _multiway_exact_plan(legs, bankroll)
+        if exact_multiway:
+            plans.append(exact_multiway)
 
     # For two-way markets, re-anchor on each leg's nearby discrete stakes and
     # equalize payout from that anchor. This catches executable plans that sit
@@ -339,13 +376,14 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
             for outcome in ordered_outcomes
         ]
         executable_choice = None
-        combinations = product(*pools)
-        if len(ordered_outcomes) > 2:
-            combinations = islice(combinations, 4096)
+        combinations = islice(product(*pools), 4096)
         for combination in combinations:
             selected = dict(zip(ordered_outcomes, combination))
-            combo_implied, _, combo_plan, _ = _rounded_quote_plan(selected, ordered_outcomes, bankroll)
-            if combo_implied >= 1.0 or not combo_plan or not combo_plan.get("feasible"):
+            combo_implied = sum(1.0 / selected[outcome]["net_decimal"] for outcome in ordered_outcomes)
+            if combo_implied >= 1.0:
+                continue
+            _, _, combo_plan, _ = _rounded_quote_plan(selected, ordered_outcomes, bankroll)
+            if not combo_plan or not combo_plan.get("feasible"):
                 continue
             if not combo_plan.get("strict_arbitrage_after_rounding"):
                 continue

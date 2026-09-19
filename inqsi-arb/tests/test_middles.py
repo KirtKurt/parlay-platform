@@ -283,3 +283,16 @@ def test_event_fallback_includes_sport_identity():
         ]},
     ]
     assert detect_middles(events, bankroll=100) == []
+
+
+def test_middle_exact_solver_finds_interior_stake_plan():
+    events = [{"id": "e18", "event_id": "e18", "event": "A @ B", "market": "totals", "quotes": [
+        {"outcome": "Over", "book": "one", "decimal": 4.0, "point": 8.5,
+         "min_stake": 8, "limit": 9, "stake_increment": 4},
+        {"outcome": "Under", "book": "two", "decimal": 2.2, "point": 9.5,
+         "limit": 16, "stake_increment": 1},
+    ]}]
+    row = detect_middles(events, bankroll=17)[0]
+    assert row["kind"] == "free_middle"
+    assert row["legs"][0]["stake"] == 8
+    assert sum(leg["stake"] for leg in row["legs"]) <= 17

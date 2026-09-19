@@ -12,7 +12,7 @@ import re
 from math import floor, isfinite
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
-from arb_engine import _net_decimal, _quote_decimal
+from arb_engine import _net_decimal, _quote_decimal, _two_way_exact_plan
 from stake_rounding import StakeRoundingError, optimize_rounding_neighborhood
 
 _POINT_RE = re.compile(r"([+-]?\d+(?:\.\d+)?)\s*$")
@@ -58,8 +58,10 @@ def _valid_stake_constraints(quote: Mapping[str, Any]) -> bool:
         if not isfinite(value) or (value <= 0 if positive else value < 0):
             return False
         parsed[key] = value
-    if parsed["stake_increment"] is not None and parsed["stake_increment"] < 0.01:
-        return False
+    if parsed["stake_increment"] is not None:
+        increment = float(parsed["stake_increment"])
+        if increment < 0.01 or abs(increment * 100 - round(increment * 100)) > 1e-7:
+            return False
     return parsed["limit"] is None or float(parsed["min_stake"] or 0) <= parsed["limit"]
 
 
@@ -244,6 +246,11 @@ def _stake_plan(first: Mapping[str, Any], second: Mapping[str, Any], bankroll: f
         rounded = optimize_rounding_neighborhood(rounding_legs, bankroll=bankroll)
     except (StakeRoundingError, ArithmeticError, ValueError):
         rounded = {"feasible": False, "reason": "ROUNDING_ERROR", "legs": []}
+    if (implied < 1.0 and max(float(leg["net_decimal"]) for leg in rounding_legs) <= 1e12
+            and (not rounded.get("feasible") or not rounded.get("strict_arbitrage_after_rounding"))):
+        exact = _two_way_exact_plan(rounding_legs, bankroll)
+        if exact and exact.get("strict_arbitrage_after_rounding"):
+            rounded = exact
     if not rounded.get("feasible"):
         return {
             "implied_sum": implied,

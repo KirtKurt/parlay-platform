@@ -2,10 +2,12 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from arb_engine import american_to_decimal, scan_all, scan_market
+from arb_engine import ArbValidationError, american_to_decimal, scan_all, scan_market
 from provider import normalize_games
 from app import lambda_handler
 
@@ -269,3 +271,34 @@ def test_sub_cent_stake_increment_is_rejected_before_serialization():
         ],
     )
     assert row is None
+
+
+def test_non_cent_aligned_increment_is_rejected_before_serialization():
+    row = scan_market(
+        market_id="noncent", event="A v B", market="h2h", bankroll=100,
+        expected_outcomes=["A", "B"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "one", "decimal": 2.1, "limit": 1.005, "stake_increment": 0.015},
+            {"outcome": "B", "book": "two", "decimal": 2.1},
+        ],
+    )
+    assert row is None
+
+
+def test_multiway_exact_solver_finds_interior_discrete_plan():
+    row = scan_market(
+        market_id="three-way-interior", event="A v B", market="h2h_3_way", bankroll=8,
+        expected_outcomes=["A", "Draw", "B"], rules_status="compatible",
+        quotes=[
+            {"outcome": "A", "book": "one", "decimal": 3.0, "stake_increment": 1},
+            {"outcome": "Draw", "book": "two", "decimal": 3.0, "stake_increment": 2},
+            {"outcome": "B", "book": "three", "decimal": 6.0, "stake_increment": 1},
+        ],
+    )
+    assert row and row["arb"] is True and row["executable"] is True
+    assert sorted(leg["stake"] for leg in row["legs"]) == [1, 2, 2]
+
+
+def test_scalar_books_filter_fails_validation_instead_of_iteration():
+    with pytest.raises(ArbValidationError):
+        scan_all({"events": [], "books": 123})
