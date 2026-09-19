@@ -16,21 +16,20 @@ from market_discovery import discover_event_market_keys, discover_events, fetch_
 from position_store import get as get_position, list_for_user, put as put_position
 from provider import MARKET_FAMILIES, list_sports, scan_sport_payload
 from quote_store import get_checkpoint, get_snapshot, list_snapshot_sports
-from provider_books import catalog_summary
+from provider_books import catalog_summary, regions_for_books
 from rules import registry_rows, registry_size
-from state_packs import licensed_books, list_packs, pack_summary
+from state_packs import list_packs, pack_summary
 from ui_page import HTML
 from validation import validate_events
 
 VERSION = "INQSI-ARB-v3"
 DEFAULT_MARKETS = "h2h,spreads,totals"
-US_JURISDICTIONS = {
-    "al", "ak", "az", "ar", "ca", "co", "ct", "de", "dc", "fl", "ga",
-    "hi", "id", "il", "in", "ia", "ks", "ky", "la", "me", "md", "ma",
-    "mi", "mn", "ms", "mo", "mt", "ne", "nv", "nh", "nj", "nm", "ny",
-    "nc", "nd", "oh", "ok", "or", "pa", "ri", "sc", "sd", "tn", "tx",
-    "ut", "vt", "va", "wa", "wv", "wi", "wy",
-}
+
+
+def _bool_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes"}
 
 
 def response(status: int, body: Any, *, content_type: str = "application/json") -> Dict[str, Any]:
@@ -87,11 +86,9 @@ def _default_jurisdiction() -> str:
     return (os.environ.get("ARB_DEFAULT_JURISDICTION") or "*").strip().lower() or "*"
 
 
-def _regions(jurisdiction: str, explicit: str = "") -> str:
+def _regions(_jurisdiction: str = "*", explicit: str = "") -> str:
     if explicit.strip():
         return explicit.strip()
-    if jurisdiction.strip().lower() in US_JURISDICTIONS:
-        return os.environ.get("ARB_US_REGIONS", "us,us2")
     return os.environ.get("ARB_REGIONS", "us,us2,us_dfs,us_ex,uk,eu,fr,se,au")
 
 
@@ -196,11 +193,16 @@ def _audit_scan_payload(result: Dict[str, Any], *, sport: str, jurisdiction: str
     return {
         "sport": str(sport)[:256],
         "jurisdiction": str(jurisdiction)[:256],
+        "product_filter": str(result.get("product_filter") or "books")[:64],
         "source": str(result.get("source") or "")[:64],
         "regions": str(result.get("regions") or "")[:256],
         "books": bounded(result.get("books")),
-        "licensed": bool(result.get("licensed")),
-        "pack": bounded(result.get("pack")),
+        "pack": bounded(result.get("_audit_pack") or result.get("pack")),
+        "licensed_requested": _bool_flag(
+            result.get("_audit_licensed_requested")
+            if result.get("_audit_licensed_requested") is not None
+            else result.get("licensed")
+        ),
         "snapshot": audit_snapshot(result.get("status")),
         "n_markets": result.get("n_markets"),
         "n_arbs": result.get("n_arbs"),
@@ -230,6 +232,8 @@ def _finalize_scan(result: Dict[str, Any], *, sport: str, jurisdiction: str) -> 
             "sport": sport, "n_arbs": result.get("n_arbs"),
             "hits": result.get("hits", [])[:20],
         })
+    result.pop("_audit_pack", None)
+    result.pop("_audit_licensed_requested", None)
     return result
 
 
@@ -240,24 +244,30 @@ def _fresh_seconds() -> int:
         return 120
 
 
-def _licensed_book_filter(jurisdiction: str, books: str | None, licensed: bool) -> str | None:
-    if not licensed:
-        return books
-    allowed = set(licensed_books(jurisdiction))
-    if books:
-        requested = {part.strip().lower() for part in books.split(",") if part.strip()}
-        selected = sorted(requested & allowed)
-    else:
-        selected = sorted(allowed)
-    # Provider requests require a comma-delimited query value. Preserve an
-    # explicitly empty licensed intersection as a non-matching sentinel so it
-    # can never broaden back to every book.
-    return ",".join(selected) if selected else "__no_licensed_books__"
+def _book_filter(query: Dict[str, str]) -> str | None:
+    """Product filter is the user's sportsbook list. State/license flags are ignored."""
+    return (query.get("books") or query.get("bookmakers") or "").strip() or None
 
 
 def _dimension_set(raw: Any) -> set[str]:
     values = raw.split(",") if isinstance(raw, str) else (raw or [])
     return {str(value).strip().lower() for value in values if str(value).strip()}
+
+
+def _filter_event_quotes(rows: Any, books: str | None) -> list[Dict[str, Any]]:
+    """Apply the product's book selection before settlement qualification."""
+    allowed = _dimension_set(books)
+    if not allowed:
+        return [dict(row) for row in (rows or [])]
+    filtered = []
+    for row in rows or []:
+        copy = dict(row)
+        copy["quotes"] = [
+            dict(quote) for quote in (row.get("quotes") or [])
+            if str(quote.get("book") or "").strip().lower() in allowed
+        ]
+        filtered.append(copy)
+    return filtered
 
 
 def _stored_event_is_open(row: Dict[str, Any], *, now: datetime | None = None) -> bool:
@@ -274,24 +284,61 @@ def _stored_event_is_open(row: Dict[str, Any], *, now: datetime | None = None) -
     return starts > (now or datetime.now(timezone.utc))
 
 
-def _stored_events(sport: str, *, markets: list[str], regions: str) -> tuple[list | None, dict]:
+def _stored_events(
+    sport: str,
+    *,
+    markets: list[str],
+    required_regions: set[str] | None = None,
+    required_book_regions: list[set[str]] | None = None,
+) -> tuple[list | None, dict]:
     snap = get_snapshot(sport, max_age_seconds=_fresh_seconds())
     if not snap:
         return None, {"ok": False, "source": "store", "error": "QUOTE_SNAPSHOT_MISSING", "sport": sport}
     if not snap.get("ok"):
         return None, {"ok": False, "source": "store", "error": "QUOTE_SNAPSHOT_STALE" if snap.get("stale") else "QUOTE_SNAPSHOT_INCOMPLETE", "sport": sport, "head": snap.get("head")}
     head = dict(snap.get("head") or {})
+    snapshot_regions = {
+        part.strip() for part in str(head.get("regions") or "").split(",") if part.strip()
+    }
     wanted_markets = _dimension_set(markets)
     stored_markets = _dimension_set(head.get("markets"))
-    wanted_regions = _dimension_set(regions)
-    stored_regions = _dimension_set(head.get("regions"))
-    # Stored rows carry no per-quote source-region tag, so a multi-region
-    # snapshot cannot be safely narrowed after retrieval.
-    if not wanted_markets <= stored_markets or wanted_regions != stored_regions:
+    missing_markets = not wanted_markets <= stored_markets
+    # Quotes do not retain source-region provenance, so an explicit/effective
+    # region selection must match the snapshot exactly. Book-only requests
+    # intentionally leave this set empty and use the book alternatives below.
+    missing_required_regions = (
+        required_regions is None
+        or (bool(required_regions) and required_regions != snapshot_regions)
+    )
+    missing_selected_book = (
+        required_book_regions is None
+        or any(not alternatives.intersection(snapshot_regions) for alternatives in required_book_regions)
+    )
+    if missing_required_regions or missing_selected_book:
         return None, {
-            "ok": False, "source": "store", "error": "QUOTE_SNAPSHOT_DIMENSION_MISMATCH",
-            "sport": sport, "head": head, "requested_markets": sorted(wanted_markets),
-            "requested_regions": sorted(wanted_regions),
+            "ok": False,
+            "source": "store",
+            "error": "QUOTE_SNAPSHOT_REGION_MISMATCH",
+            "sport": sport,
+            "head": head,
+            "requested_markets": sorted(wanted_markets),
+            "snapshot_regions": sorted(snapshot_regions),
+            "required_regions": None if required_regions is None else sorted(required_regions),
+            "required_book_region_alternatives": (
+                None if required_book_regions is None
+                else [sorted(regions) for regions in required_book_regions]
+            ),
+        }
+    if missing_markets:
+        return None, {
+            "ok": False,
+            "source": "store",
+            "error": "QUOTE_SNAPSHOT_MARKET_MISMATCH",
+            "sport": sport,
+            "head": head,
+            "requested_markets": sorted(wanted_markets),
+            "snapshot_markets": sorted(stored_markets),
+            "snapshot_regions": sorted(snapshot_regions),
         }
     events = [
         row for row in (snap.get("events") or [])
@@ -338,6 +385,8 @@ def lambda_handler(event, context):
             "middle_detection": True,
             "executable_rounding": True,
             "user_book_filter": True,
+            "book_first_desk": True,
+            "product_filter": "books",
             "state_packs": True,
             "quote_collector": True,
             "provider_book_catalog": True,
@@ -413,7 +462,7 @@ def lambda_handler(event, context):
             "count": len(packs),
             "packs": packs,
             "places_bets": False,
-            "policy": "State packs describe licensed-book availability and reviewed settlement coverage. They do not place bets.",
+            "policy": "Internal house-rule/license footprint. The product filter is sportsbooks, not states.",
         })
 
     if method == "GET" and path.startswith("/v1/arb/packs/"):
@@ -465,13 +514,27 @@ def lambda_handler(event, context):
         source = (query.get("source") or "auto").strip().lower()
         if source not in {"auto", "store", "live"}:
             return response(400, {"ok": False, "error": "INVALID_SOURCE", "source": source})
-        licensed = (query.get("licensed") or "false").strip().lower() in {"1", "true", "yes"}
-        books = _licensed_book_filter(
-            jurisdiction,
-            (query.get("books") or query.get("bookmakers") or "").strip() or None,
-            licensed,
+        books = _book_filter(query)
+        selected_region_options = regions_for_books(books)
+        explicit_snapshot_regions = {
+            part.strip() for part in query.get("regions", "").split(",") if part.strip()
+        }
+        required_snapshot_regions = (
+            explicit_snapshot_regions
+            if books and explicit_snapshot_regions
+            else (set() if books else {part.strip() for part in regions.split(",") if part.strip()})
         )
-        pack = pack_summary(jurisdiction)
+        if books and explicit_snapshot_regions and selected_region_options is not None:
+            # A stored snapshot must cover the selected book in a region the
+            # caller actually requested. Satisfying these dimensions with two
+            # different regions (for example Pinnacle via EU and regions=US)
+            # is not evidence that the requested quote set is present.
+            required_book_regions = [
+                alternatives.intersection(explicit_snapshot_regions)
+                for alternatives in selected_region_options
+            ]
+        else:
+            required_book_regions = selected_region_options if books else []
 
         markets: list[str] = []
         if market_arg.lower() != "all":
@@ -483,14 +546,18 @@ def lambda_handler(event, context):
                 return response(400, {"ok": False, "error": "MARKETS_REQUIRED"})
 
         def _scan_rows(rows, status):
-            rows = validate_events(rows, jurisdiction=jurisdiction)
+            # Stored snapshots contain the collector's wider inventory. Remove
+            # unselected books before house-rule grouping so they cannot affect
+            # settlement compatibility for the user's requested book set.
+            rows = validate_events(_filter_event_quotes(rows, books), jurisdiction=jurisdiction)
             result = scan_all({"bankroll": bankroll, "events": rows, "books": books})
             result["status"] = status
-            result["pack"] = pack
             result["source"] = status.get("source") or source
-            result["regions"] = regions
             result["books"] = books
-            result["licensed"] = licensed
+            result["product_filter"] = "books"
+            result["regions"] = regions
+            result["_audit_pack"] = pack_summary(jurisdiction)
+            result["_audit_licensed_requested"] = _bool_flag(query.get("licensed"))
             return response(200 if status.get("ok") else 503, _finalize_scan(result, sport=sport, jurisdiction=jurisdiction))
 
         if source == "store":
@@ -512,7 +579,10 @@ def lambda_handler(event, context):
                 combined_events = []
                 statuses = []
                 for key in keys:
-                    events, status = _stored_events(key, markets=markets, regions=regions)
+                    events, status = _stored_events(
+                        key, markets=markets, required_regions=required_snapshot_regions,
+                        required_book_regions=required_book_regions,
+                    )
                     statuses.append(status)
                     if events is not None:
                         combined_events.extend(events)
@@ -523,10 +593,18 @@ def lambda_handler(event, context):
                     "n_sports_scanned": len(statuses),
                 })
             else:
-                events, status = _stored_events(sport, markets=markets, regions=regions)
+                events, status = _stored_events(
+                    sport, markets=markets, required_regions=required_snapshot_regions,
+                    required_book_regions=required_book_regions,
+                )
                 if events is not None:
                     return _scan_rows(events, status)
-                return response(503, {"ok": False, "error": status.get("error") or "QUOTE_SNAPSHOT_UNAVAILABLE", "status": status})
+                return response(503, {
+                    **status,
+                    "ok": False,
+                    "error": status.get("error") or "QUOTE_SNAPSHOT_UNAVAILABLE",
+                    "status": status,
+                })
 
         catalog_cache = None
         if source == "auto" and market_arg.lower() != "all":
@@ -539,7 +617,10 @@ def lambda_handler(event, context):
                 if sports_meta.get("ok"):
                     limit = min(len(sports), int(os.environ.get("ARB_MAX_SPORTS_PER_ALL_SCAN", "100")))
                     for row in sports[:limit]:
-                        events, status = _stored_events(row["key"], markets=markets, regions=regions)
+                        events, status = _stored_events(
+                            row["key"], markets=markets, required_regions=required_snapshot_regions,
+                            required_book_regions=required_book_regions,
+                        )
                         statuses.append(status)
                         if events:
                             combined_events.extend(events)
@@ -554,7 +635,10 @@ def lambda_handler(event, context):
                         "n_sports_scanned": len(statuses), "catalog": sports_meta,
                     })
             else:
-                events, status = _stored_events(sport, markets=markets, regions=regions)
+                events, status = _stored_events(
+                    sport, markets=markets, required_regions=required_snapshot_regions,
+                    required_book_regions=required_book_regions,
+                )
                 if events or (
                     events is not None
                     and int((status.get("head") or {}).get("n_events") or 0) == 0
@@ -602,12 +686,19 @@ def lambda_handler(event, context):
         if not isinstance(payload.get("events"), list):
             return response(400, {"ok": False, "error": "BODY_EVENTS_REQUIRED"})
         jurisdiction = str(payload.get("jurisdiction") or _default_jurisdiction()).strip().lower()
-        payload["events"] = validate_events(payload["events"], jurisdiction=jurisdiction)
+        books = payload.get("books") if payload.get("books") is not None else payload.get("bookmakers")
         try:
+            payload["events"] = validate_events(
+                _filter_event_quotes(payload["events"], books), jurisdiction=jurisdiction,
+            )
             result = scan_all(payload)
-        except (ValueError, ArbValidationError) as exc:
+        except (TypeError, ValueError, ArbValidationError) as exc:
             return response(400, {"ok": False, "error": "INVALID_SCAN_PAYLOAD", "detail": str(exc)[:200]})
         result["status"] = {"source": "posted", "places_bets": False}
+        result["product_filter"] = "books"
+        result["books"] = books
+        result["_audit_pack"] = pack_summary(jurisdiction)
+        result["_audit_licensed_requested"] = _bool_flag(payload.get("licensed"))
         return response(200, _finalize_scan(
             result, sport=str(payload.get("sport") or "posted"), jurisdiction=jurisdiction
         ))

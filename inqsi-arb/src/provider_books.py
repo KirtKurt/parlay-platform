@@ -1,8 +1,9 @@
 """Odds API sportsbook inventory for the national ARB information desk.
 
-This is the product catalog: every provider book the desk can see. It is not a
-settlement proof and not a license. Math scans still use every book the Odds API
-returns in the requested regions. Verified remains a per-book house-rule overlay.
+This is the product catalog: every provider book the desk can see. Users pick
+sportsbooks. It is not a settlement proof and not a state license map. Math
+scans still use every book the Odds API returns in the requested regions unless
+the user filters with `books=`. Verified remains a per-book house-rule overlay.
 """
 from __future__ import annotations
 
@@ -10,7 +11,6 @@ from typing import Any, Dict, List, Optional, Set
 
 import rules_bootstrap  # noqa: F401  # canonical supplemental registrations
 from rules import registry_rows
-from state_packs import BOOK_STATES
 
 AS_OF = "2026-09-15"
 
@@ -83,6 +83,30 @@ for _group in (US_SPORTSBOOKS, OFFSHORE, DFS, EXCHANGES, INTERNATIONAL):
     CATALOG.update(_group)
 
 
+def regions_for_books(raw: Any) -> Optional[List[Set[str]]]:
+    """Return acceptable provider-region alternatives for each selected book.
+
+    ``None`` means at least one selected key is absent from the metadata overlay,
+    so a stored snapshot cannot prove that it covers the requested books.
+    """
+    if not raw:
+        return []
+    values = raw.split(",") if isinstance(raw, str) else raw
+    alternatives: List[Set[str]] = []
+    for value in values:
+        key = str(value or "").strip().lower()
+        if not key:
+            continue
+        meta = CATALOG.get(key)
+        if meta is None:
+            return None
+        regions = {str(region) for region in (meta.get("regions") or []) if str(region)}
+        if not regions:
+            return None
+        alternatives.append(regions)
+    return alternatives
+
+
 def _reviewed_coverage(book: str) -> tuple[List[str], List[str]]:
     families: Set[str] = set()
     jurisdictions: Set[str] = set()
@@ -97,15 +121,12 @@ def _reviewed_coverage(book: str) -> tuple[List[str], List[str]]:
 
 def book_row(key: str) -> Dict[str, Any]:
     meta = CATALOG.get(key) or {"title": key, "regions": (), "kind": "unknown"}
-    licensed = sorted(BOOK_STATES.get(key, set()))
     reviewed_families, reviewed_jurisdictions = _reviewed_coverage(key)
     return {
         "key": key,
         "title": meta.get("title") or key,
         "kind": meta.get("kind") or "unknown",
         "regions": list(meta.get("regions") or []),
-        "licensed_states": licensed,
-        "n_licensed_states": len(licensed),
         "reviewed_families": reviewed_families,
         "reviewed_jurisdictions": reviewed_jurisdictions,
         "settlement_reviewed": bool(reviewed_families),
@@ -143,9 +164,11 @@ def catalog_summary() -> Dict[str, Any]:
         "by_kind": by_kind,
         "books": rows,
         "places_bets": False,
+        "product_filter": "books",
         "policy": (
             "This route is a partial metadata overlay, not the authoritative observed inventory. "
-            "Live scans retain every provider-returned sportsbook. State packs are license footprints. "
-            "Verified is a house-rule overlay and is never inferred across unread books or states."
+            "Users choose sportsbooks, and live scans retain every provider-returned book unless "
+            "filtered with books=. Jurisdiction and license metadata remain separate. Verified is a house-rule "
+            "overlay and is never inferred across unread books, states, or house-rule pages."
         ),
     }

@@ -97,7 +97,7 @@ def test_scan_reads_store_without_live_provider(monkeypatch):
             {"book": "draftkings", "outcome": "A", "decimal": 2.2, "last_update": fresh_ts()},
             {"book": "fanduel", "outcome": "B", "decimal": 2.2, "last_update": fresh_ts()},
         ],
-    }], meta={"ok": True, "markets": ["h2h"], "regions": "us,us2"})
+    }], meta={"ok": True, "markets": ["h2h"], "regions": "us,us2,us_dfs,us_ex,uk,eu,fr,se,au"})
 
     def boom(*args, **kwargs):
         raise AssertionError("live provider should not run")
@@ -106,19 +106,26 @@ def test_scan_reads_store_without_live_provider(monkeypatch):
     response = lambda_handler({
         "httpMethod": "GET",
         "path": "/v1/arb/scan",
-        "queryStringParameters": {"sport": "baseball_mlb", "markets": "h2h", "jurisdiction": "az", "source": "store"},
+        "queryStringParameters": {"sport": "baseball_mlb", "markets": "h2h", "source": "store"},
     }, None)
     body = json.loads(response["body"])
     assert response["statusCode"] == 200
     assert body["source"] == "store"
+    assert "pack" not in body
+    assert body["product_filter"] == "books"
+    assert body["books"] is None
     assert body["n_arbs"] == 0
+    assert body["n_held_unverified"] >= 1
     assert body["n_detected_unverified"] == 1
-    assert body["detected_unverified"][0]["validation"]["qualification_reason"] == "SETTLEMENT_STATE_NOT_STRICT"
-    assert body["pack"]["state"] == "az"
+    assert body["detected_unverified"][0]["validation"]["qualification_reason"] == "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
     reset_memory()
 
 
 def test_failed_provider_snapshot_is_not_returned_as_success():
+    reset_memory()
+    put_snapshot("baseball_mlb", [], meta={"ok": False, "error": "provider down"})
+    snap = get_snapshot("baseball_mlb", max_age_seconds=120)
+    assert snap and snap["ok"] is False and snap["incomplete"] is True
     reset_memory()
 
 
@@ -155,16 +162,6 @@ def test_store_scan_rejects_event_at_or_after_commencement(monkeypatch):
     reset_memory()
 
 
-def test_ui_loads_complete_pack_selector_without_html_injection():
-    response = lambda_handler({"httpMethod": "GET", "path": "/v1/arb/ui"}, None)
-    assert "/v1/arb/packs" in response["body"]
-    assert "option.textContent" in response["body"]
-    put_snapshot("baseball_mlb", [], meta={"ok": False, "error": "provider down"})
-    snap = get_snapshot("baseball_mlb", max_age_seconds=120)
-    assert snap and snap["ok"] is False and snap["incomplete"] is True
-    reset_memory()
-
-
 def test_snapshot_rejects_individually_oversized_event_before_writes():
     reset_memory()
     with pytest.raises(ValueError, match="safety budget"):
@@ -189,12 +186,12 @@ def test_store_scan_requires_requested_market_and_region_dimensions(monkeypatch)
         "sport": "baseball_mlb", "markets": "spreads", "regions": "eu", "source": "store",
     }}, None)
     assert mismatch["statusCode"] == 503
-    assert json.loads(mismatch["body"])["error"] == "QUOTE_SNAPSHOT_DIMENSION_MISMATCH"
+    assert json.loads(mismatch["body"])["error"] == "QUOTE_SNAPSHOT_REGION_MISMATCH"
     subset = lambda_handler({"httpMethod": "GET", "path": "/v1/arb/scan", "queryStringParameters": {
         "sport": "baseball_mlb", "markets": "h2h", "regions": "us", "source": "store",
     }}, None)
     assert subset["statusCode"] == 503
-    assert json.loads(subset["body"])["error"] == "QUOTE_SNAPSHOT_DIMENSION_MISMATCH"
+    assert json.loads(subset["body"])["error"] == "QUOTE_SNAPSHOT_REGION_MISMATCH"
     reset_memory()
 
 
@@ -211,7 +208,7 @@ def test_store_all_sports_uses_only_persisted_inventory(monkeypatch):
     reset_memory()
 
 
-def test_licensed_filter_intersects_explicit_books_and_preserves_empty(monkeypatch):
+def test_book_first_child_ignores_legacy_licensed_filter(monkeypatch):
     observed = []
     def fake_scan(sport, **kwargs):
         observed.append(kwargs.get("bookmakers"))
@@ -223,8 +220,7 @@ def test_licensed_filter_intersects_explicit_books_and_preserves_empty(monkeypat
             "jurisdiction": jurisdiction, "books": "draftkings,unlicensed",
         }}, None)
         assert response["statusCode"] == 200
-    assert observed[0] == "draftkings"
-    assert observed[1] == "__no_licensed_books__"
+    assert observed == ["draftkings,unlicensed", "draftkings,unlicensed"]
 
 
 def test_collector_rotates_sports(monkeypatch):
