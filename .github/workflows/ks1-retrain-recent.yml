@@ -46,6 +46,9 @@ jobs:
       OPENBLAS_NUM_THREADS: '1'
       OMP_NUM_THREADS: '2'
     steps:
+      # One clock for all expensive commands; reserve cleanup inside 300 minutes.
+      - name: Start bounded KS1 evaluation clock
+        run: echo "KS1_EVALUATE_STARTED_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
@@ -58,25 +61,30 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
       - name: Backfill timestamped pregame starters and compare on rolling holdout
-        run: python -m ks1.retrain_recent --output /tmp/ks1-recent
+        run: |
+          remaining=$(python -m ks1.forensic_runtime --remaining-budget)
+          timeout --signal=TERM --kill-after=30s "${remaining}s" python -m ks1.retrain_recent --output /tmp/ks1-recent
       - name: Train forensic signals and existing KS1 features as one challenger
-        run: >-
-          python -m ks1.forensic_unified
-          --input /tmp/ks1-recent/input_table.parquet
-          --proof /tmp/ks1-recent/input_proof.json
-          --output /tmp/ks1-unified
+        run: |
+          remaining=$(python -m ks1.forensic_runtime --remaining-budget)
+          timeout --signal=TERM --kill-after=30s "${remaining}s" python -m ks1.forensic_unified \
+            --input /tmp/ks1-recent/input_table.parquet \
+            --proof /tmp/ks1-recent/input_proof.json \
+            --output /tmp/ks1-unified
       - name: Develop explicit forensic derived features without consuming final holdout
-        run: >-
-          python -m ks1.forensic_derived_development
-          --input /tmp/ks1-recent/input_table.parquet
-          --proof /tmp/ks1-recent/input_proof.json
-          --output /tmp/ks1-forensic-derived
+        run: |
+          remaining=$(python -m ks1.forensic_runtime --remaining-budget)
+          timeout --signal=TERM --kill-after=30s "${remaining}s" python -m ks1.forensic_derived_development \
+            --input /tmp/ks1-recent/input_table.parquet \
+            --proof /tmp/ks1-recent/input_proof.json \
+            --output /tmp/ks1-forensic-derived
       - name: Prove retained pre-T10 lineup season-batting coverage on development fit only
-        run: >-
-          python -m ks1.historical_lineup_season_probe
-          --input /tmp/ks1-recent/input_table.parquet
-          --proof /tmp/ks1-recent/input_proof.json
-          --output /tmp/ks1-historical-lineup-season
+        run: |
+          remaining=$(python -m ks1.forensic_runtime --remaining-budget)
+          timeout --signal=TERM --kill-after=30s "${remaining}s" python -m ks1.historical_lineup_season_probe \
+            --input /tmp/ks1-recent/input_table.parquet \
+            --proof /tmp/ks1-recent/input_proof.json \
+            --output /tmp/ks1-historical-lineup-season
       - uses: actions/upload-artifact@v4
         if: always()
         with:

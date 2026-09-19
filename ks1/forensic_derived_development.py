@@ -25,6 +25,7 @@ from ks1.historical_individual_bullpen_enrichment import (
 from ks1.historical_lineup_season_probe import enrich_frame as enrich_lineup
 from ks1.historical_starter_15d_enrichment import enrich_frame as enrich_starter_15d
 from ks1.inventory import encode
+from ks1.forensic_runtime import trace_development_run
 from ks1.retrain_recent import qualified_training_population
 from ks1.sources import aws_clients
 from ks1.train import save_artifact
@@ -45,6 +46,7 @@ def _exclude_reserved_holdout_pitches(context, evidence, holdout):
     return result, replay
 
 
+@trace_development_run
 def run(input_path, proof_path, output):
     output.mkdir(parents=True, exist_ok=True)
     proof = json.loads(Path(proof_path).read_bytes())
