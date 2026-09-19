@@ -16,6 +16,7 @@ from market_discovery import discover_event_market_keys, discover_events, fetch_
 from position_store import get as get_position, list_for_user, put as put_position
 from provider import MARKET_FAMILIES, list_sports, scan_sport_payload
 from quote_store import get_checkpoint, get_snapshot, list_snapshot_sports
+from provider_books import catalog_summary
 from rules import registry_rows, registry_size
 from state_packs import licensed_books, list_packs, pack_summary
 from ui_page import HTML
@@ -119,7 +120,7 @@ def _audit_candidate(row: Dict[str, Any]) -> Dict[str, Any]:
     for leg in all_legs[:4]:
         legs.append({key: bounded(leg.get(key)) for key in (
             "outcome", "book", "american", "decimal", "net_decimal", "stake",
-            "payout_if_wins", "profit_if_wins", "last_update", "provider", "link", "limit",
+            "payout_if_wins", "profit_if_wins", "last_update", "provider", "link", "limit", "point",
         )})
     return {
         key: bounded(row.get(key)) for key in (
@@ -310,6 +311,12 @@ def lambda_handler(event, context):
         return response(200, HTML.replace("__INQSI_WS_URL__", ws_url), content_type="text/html; charset=utf-8")
 
     if method == "GET" and path == "/v1/arb/health":
+        checkpoint = None
+        checkpoint_error = None
+        try:
+            checkpoint = get_checkpoint() or None
+        except Exception as exc:
+            checkpoint_error = type(exc).__name__
         return response(200, {
             "ok": True,
             "service": "inqsi-arb",
@@ -333,7 +340,11 @@ def lambda_handler(event, context):
             "user_book_filter": True,
             "state_packs": True,
             "quote_collector": True,
+            "provider_book_catalog": True,
+            "live_settlement_states": True,
             "sportsbook_scope": "all_provider_returned",
+            "collector_checkpoint": checkpoint,
+            "collector_checkpoint_error": checkpoint_error,
             "default_regions": _regions(_default_jurisdiction()).split(","),
         })
 
@@ -371,6 +382,27 @@ def lambda_handler(event, context):
             "count": len(rows),
             "rules": rows,
             "policy": "Only reviewed exact-book rule combinations may qualify verified arbs; all others fail closed.",
+        })
+
+    if method == "GET" and path == "/v1/arb/books":
+        return response(200, {"version": VERSION, **catalog_summary()})
+
+    if method == "GET" and path == "/v1/arb/collector":
+        checkpoint = None
+        checkpoint_error = None
+        try:
+            checkpoint = get_checkpoint() or None
+        except Exception as exc:
+            checkpoint_error = type(exc).__name__
+        return response(200, {
+            "ok": True,
+            "version": VERSION,
+            "places_bets": False,
+            "schedule": "rate(2 minutes)",
+            "checkpoint": checkpoint,
+            "checkpoint_error": checkpoint_error,
+            "fresh_seconds": _fresh_seconds(),
+            "policy": "Collector writes featured-market snapshots. It never places bets.",
         })
 
     if method == "GET" and path == "/v1/arb/packs":

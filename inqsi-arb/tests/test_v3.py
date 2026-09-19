@@ -80,9 +80,9 @@ def test_unreviewed_book_does_not_poison_reviewed_pair():
     assert {q["book"] for q in compatible[0]["quotes"]} == {"draftkings", "fanduel"}
     assert compatible[0]["context"]["excluded_unreviewed_books"] == ["unknownbook"]
     result = scan_all({"bankroll": 100, "events": rows})
-    assert result["n_arbs"] == 1
-    assert result["n_detected_unverified"] == 1
-    held = result["detected_unverified"][0]
+    assert result["n_arbs"] == 0
+    assert result["n_detected_unverified"] == 2
+    held = next(row for row in result["detected_unverified"] if row["market_id"].endswith("rules:unverified"))
     assert held["validation"]["settlement_reason"] == "UNREVIEWED_OR_MISSING_RULE"
     assert held["validation"]["missing_books"] == ["unknownbook"]
 
@@ -100,8 +100,12 @@ def test_worse_unreviewed_quotes_do_not_duplicate_verified_candidate():
         ],
     }
     result = scan_all({"bankroll": 100, "events": validate_events([event], jurisdiction="ny")})
-    assert result["n_arbs"] == 1
-    assert result["n_detected_unverified"] == 0
+    assert result["n_arbs"] == 0
+    assert result["n_detected_unverified"] == 2
+    assert any(
+        row["validation"].get("qualification_reason") == "SETTLEMENT_STATE_NOT_STRICT"
+        for row in result["detected_unverified"]
+    )
 
 
 def test_incompatible_profile_does_not_duplicate_verified_candidate():

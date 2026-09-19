@@ -13,17 +13,45 @@ from typing import Any, Dict, Iterable, List
 
 from freshness import assess_quote
 from rules import UNKNOWN, compatibility, lookup
-import rules_fanatics  # noqa: F401  # reviewed supplemental registrations
-import rules_state_packs  # noqa: F401  # reviewed US state house-rule packs
+import rules_bootstrap  # noqa: F401  # canonical supplemental registrations
+
+
+_NORTH_AMERICAN_HOCKEY_PREFIXES = (
+    "icehockey_nhl", "icehockey_ahl", "icehockey_echl", "icehockey_ncaa",
+    "icehockey_usa", "icehockey_canada",
+)
+_NBA_NCAA_BASKETBALL_PREFIXES = (
+    "basketball_nba", "basketball_ncaab", "basketball_ncaaw", "basketball_wncaab",
+)
+
+
+def _rule_matches_exact_sport(rule: Any, sport: str, exact_sport: str) -> bool:
+    """Keep regional hockey policies from qualifying unrelated leagues."""
+    policy = str(getattr(rule, "shortened_game_policy", "") or "").lower()
+    if sport == "icehockey":
+        if not exact_sport.startswith("icehockey_"):
+            return False
+        region_scoped = "north_american" in policy or "us_pro_55" in policy
+        explicitly_non_na = "non_na_" in policy or "non_us_" in policy
+        return (
+            not region_scoped
+            or exact_sport.startswith(_NORTH_AMERICAN_HOCKEY_PREFIXES)
+            or explicitly_non_na
+        )
+    if sport == "basketball" and "nba_or_ncaa" in policy:
+        return exact_sport.startswith(_NBA_NCAA_BASKETBALL_PREFIXES)
+    return True
 
 
 def sport_family(sport_key: str) -> str:
     key = str(sport_key or "").lower()
-    if "baseball" in key: return "baseball"
+    if key == "baseball_mlb": return "baseball"
+    if "baseball" in key: return key or "baseball_unknown"
     if "basketball" in key: return "basketball"
     if "football" in key and "soccer" not in key: return "americanfootball"
     if "hockey" in key: return "icehockey"
     if "soccer" in key: return "soccer"
+    if "tabletennis" in key or "table_tennis" in key: return "tabletennis"
     if "tennis" in key: return "tennis"
     if "mma" in key or "ufc" in key: return "mma"
     if "boxing" in key: return "boxing"
@@ -34,7 +62,6 @@ def sport_family(sport_key: str) -> str:
     if "lacrosse" in key: return "lacrosse"
     if "volleyball" in key: return "volleyball"
     if "handball" in key: return "handball"
-    if "tabletennis" in key or "table_tennis" in key: return "tabletennis"
     return key or "unknown"
 
 
@@ -146,11 +173,7 @@ def validate_event(event: Dict[str, Any], *, jurisdiction: str = "*") -> List[Di
             if (rule is not None and s == "baseball" and exact_sport != "baseball_mlb"
                     and str(rule.settlement_profile or "").startswith("mlb_")):
                 rule = None
-            if (
-                rule is not None and s == "basketball"
-                and exact_sport not in {"basketball_nba", "basketball_ncaab", "basketball_wncaab"}
-                and str(rule.settlement_profile or "").startswith("fd_ny_basketball_")
-            ):
+            if rule is not None and not _rule_matches_exact_sport(rule, s, exact_sport):
                 rule = None
             rule_by_book[book] = rule
         if rule is None or not rule.reviewed or not rule.settlement_profile:
