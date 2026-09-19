@@ -18,13 +18,31 @@ import pandas as pd
 
 from ks1.development import HOLDOUT, frozen_split
 from ks1.forensic_starter_15d_selection import CONTRACT, development_select
-from ks1.historical_individual_bullpen_enrichment import enrich_frame as enrich_individual_bullpen
+from ks1.historical_individual_bullpen_enrichment import (
+    enrich_frame as enrich_individual_bullpen,
+    proof_bound_statcast_context,
+)
 from ks1.historical_lineup_season_probe import enrich_frame as enrich_lineup
 from ks1.historical_starter_15d_enrichment import enrich_frame as enrich_starter_15d
 from ks1.inventory import encode
 from ks1.retrain_recent import qualified_training_population
 from ks1.sources import aws_clients
 from ks1.train import save_artifact
+
+
+def _exclude_reserved_holdout_pitches(context, evidence, holdout):
+    """Do not expose frozen-holdout game pitches to the development feature engine."""
+    reserved = {str(value) for value in holdout.game_id.astype(str)}
+    rows = list(context.get("rows", []))
+    filtered = [row for row in rows if str(row.get("game_pk")) not in reserved]
+    result = dict(context)
+    result["rows"] = filtered
+    replay = dict(evidence)
+    replay["retained_pitch_rows_before_holdout_exclusion"] = len(rows)
+    replay["retained_pitch_rows_after_holdout_exclusion"] = len(filtered)
+    replay["reserved_holdout_pitch_rows_removed"] = len(rows) - len(filtered)
+    replay["reserved_holdout_game_ids_supplied_to_feature_engine"] = 0
+    return result, replay
 
 
 def run(input_path, proof_path, output):
@@ -37,15 +55,26 @@ def run(input_path, proof_path, output):
     train, holdout = frozen_split(frame, json.loads(HOLDOUT.read_bytes()))
     train, population = qualified_training_population(train, proof.get("source_receipts", []))
 
-    # Holdout separation is deliberately above every retained-source read below.
+    # Holdout separation is deliberately above every retained-source enrichment below.
     # Only the qualified pre-holdout population can cause a game-specific pre-T10
     # source object to be fetched. The exact official-history object is proof-bound
     # and each feature call independently filters it to games completed before that
-    # row's cutoff/date.
-    _, s3, _ = aws_clients("us-east-1", "parlay-platform-dev")
+    # row's cutoff/date. Retained pitch replay is also proof-bound, and frozen-holdout
+    # game rows are removed before the point-in-time feature engine receives them.
+    cf, s3, bucket = aws_clients("us-east-1", "parlay-platform-dev")
+    statcast_context, statcast_replay = proof_bound_statcast_context(
+        cf, s3, bucket, proof)
+    statcast_context, statcast_replay = _exclude_reserved_holdout_pitches(
+        statcast_context, statcast_replay, holdout)
     train, lineup_source_enrichment = enrich_lineup(train, s3)
     train, starter_15d_enrichment = enrich_starter_15d(train, s3, proof)
-    train, individual_bullpen_enrichment = enrich_individual_bullpen(train, s3, proof)
+    train, individual_bullpen_enrichment = enrich_individual_bullpen(
+        train,
+        s3,
+        proof,
+        statcast_context=statcast_context,
+        statcast_evidence=statcast_replay,
+    )
     selected, development = development_select(train)
     development["direct_lineup_source_enrichment"] = lineup_source_enrichment
     development["starter_15d_source_enrichment"] = starter_15d_enrichment
