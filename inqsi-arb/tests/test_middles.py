@@ -329,3 +329,44 @@ def test_middle_pair_optimization_is_bounded(monkeypatch):
     ]
     detect_middles([{"id": "bounded-middle", "event_id": "bounded-middle", "event": "A @ B", "market": "totals", "quotes": quotes}], bankroll=100)
     assert calls <= middle_engine.MAX_PAIR_EVALUATIONS
+
+
+def test_middle_pair_cap_is_applied_after_gap_filtering():
+    quotes = [
+        {"outcome": "Over", "book": f"over-{index}", "decimal": 1.91, "point": 10}
+        for index in range(64)
+    ] + [
+        {"outcome": "Over", "book": "valid-over", "decimal": 1.91, "point": 0}
+    ] + [
+        {"outcome": "Under", "book": f"under-{index}", "decimal": 1.91, "point": 5}
+        for index in range(65)
+    ]
+    rows = detect_middles([{
+        "id": "eligible-after-cap", "event_id": "eligible-after-cap", "event": "A @ B",
+        "market": "totals", "quotes": quotes,
+    }], bankroll=100)
+    assert rows
+    assert all(row["legs"][0]["point"] == 0 for row in rows)
+
+
+def test_middle_exact_search_uses_one_aggregate_budget(monkeypatch):
+    budget_ids = set()
+    original = middle_engine._two_way_feasible_plan
+    def observed(legs, bankroll, budget=None):
+        assert budget is not None
+        budget_ids.add(id(budget))
+        return original(legs, bankroll, budget)
+    monkeypatch.setattr(middle_engine, "_two_way_feasible_plan", observed)
+    quotes = []
+    for index in range(64):
+        quotes.extend([
+            {"outcome": "Over", "book": f"over-{index}", "decimal": 4.0, "point": 8.5,
+             "min_stake": 8, "limit": 9, "stake_increment": 4},
+            {"outcome": "Under", "book": f"under-{index}", "decimal": 1.3, "point": 10.5,
+             "limit": 16, "stake_increment": 1},
+        ])
+    detect_middles([{
+        "id": "aggregate-budget", "event_id": "aggregate-budget", "event": "A @ B",
+        "market": "totals", "quotes": quotes,
+    }], bankroll=17)
+    assert len(budget_ids) == 1

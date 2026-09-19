@@ -214,7 +214,10 @@ def _best_quotes(events: Iterable[Mapping[str, Any]], allowed: Optional[set[str]
     return {key: list(rows.values()) for key, rows in grouped.items()}
 
 
-def _stake_plan(first: Mapping[str, Any], second: Mapping[str, Any], bankroll: float) -> Dict[str, Any]:
+def _stake_plan(
+    first: Mapping[str, Any], second: Mapping[str, Any], bankroll: float,
+    exact_budget: Optional[Dict[str, int]] = None,
+) -> Dict[str, Any]:
     quotes = (first, second)
     implied = sum(1.0 / quote["net_decimal"] for quote in quotes)
     if implied <= 0:
@@ -251,11 +254,11 @@ def _stake_plan(first: Mapping[str, Any], second: Mapping[str, Any], bankroll: f
     safe_exact = max(float(leg["net_decimal"]) for leg in rounding_legs) <= 1e12
     if safe_exact and (not rounded.get("feasible") or not rounded.get("strict_arbitrage_after_rounding")):
         if implied < 1.0:
-            exact = _two_way_exact_plan(rounding_legs, bankroll)
+            exact = _two_way_exact_plan(rounding_legs, bankroll, exact_budget)
             if exact and exact.get("strict_arbitrage_after_rounding"):
                 rounded = exact
         if not rounded.get("feasible"):
-            feasible = _two_way_feasible_plan(rounding_legs, bankroll)
+            feasible = _two_way_feasible_plan(rounding_legs, bankroll, exact_budget)
             if feasible:
                 rounded = feasible
     if not rounded.get("feasible"):
@@ -305,8 +308,11 @@ def _stake_plan(first: Mapping[str, Any], second: Mapping[str, Any], bankroll: f
     }
 
 
-def _spread_plan(left: Mapping[str, Any], right: Mapping[str, Any], bankroll: float) -> Dict[str, Any]:
-    return _stake_plan(left, right, bankroll)
+def _spread_plan(
+    left: Mapping[str, Any], right: Mapping[str, Any], bankroll: float,
+    exact_budget: Optional[Dict[str, int]] = None,
+) -> Dict[str, Any]:
+    return _stake_plan(left, right, bankroll, exact_budget)
 
 
 def _row(*, market_id: str, kind: str, family: str, gap: float, plan: Mapping[str, Any],
@@ -355,18 +361,27 @@ def detect_middles(
     allowed = _norm_books(books)
     grouped = _best_quotes(events, allowed)
     found: List[Dict[str, Any]] = []
+    exact_budget = {"remaining": 20000}
     for (event_key, family, contract, selection), quotes in grouped.items():
         if family == "total":
-            overs = [q for q in quotes if q["side"] == "over"]
-            unders = [q for q in quotes if q["side"] == "under"]
-            for over, under in islice(product(overs, unders), MAX_PAIR_EVALUATIONS):
-                if over["book"] == under["book"]:
-                    continue
-                gap = under["point"] - over["point"]
-                increment = _scoring_increment(contract, over, under)
-                if gap <= 0 or not _middle_result_exists(over["point"], under["point"], increment):
-                    continue
-                plan = _stake_plan(over, under, bankroll)
+            overs = sorted(
+                (q for q in quotes if q["side"] == "over"),
+                key=lambda quote: (quote["point"], quote["book"]),
+            )
+            unders = sorted(
+                (q for q in quotes if q["side"] == "under"),
+                key=lambda quote: (-quote["point"], quote["book"]),
+            )
+            def eligible_total_pairs():
+                for over, under in product(overs, unders):
+                    if over["book"] == under["book"]:
+                        continue
+                    gap = under["point"] - over["point"]
+                    increment = _scoring_increment(contract, over, under)
+                    if gap > 0 and _middle_result_exists(over["point"], under["point"], increment):
+                        yield over, under, gap
+            for over, under, gap in islice(eligible_total_pairs(), MAX_PAIR_EVALUATIONS):
+                plan = _stake_plan(over, under, bankroll, exact_budget)
                 if not plan.get("feasible"):
                     continue
                 found.append(_row(
@@ -376,15 +391,23 @@ def detect_middles(
                     commence_time=over.get("commence_time") or under.get("commence_time"), selection=selection,
                 ))
         else:
-            for first, second in islice(combinations(quotes, 2), MAX_PAIR_EVALUATIONS):
-                left, right = sorted((first, second), key=lambda quote: (quote["side"], quote["book"]))
-                if left["book"] == right["book"] or left["side"] == right["side"]:
-                    continue
-                gap = left["point"] + right["point"]
-                increment = _scoring_increment(contract, left, right)
-                if gap <= 0 or not _middle_result_exists(-left["point"], right["point"], increment):
-                    continue
-                plan = _spread_plan(left, right, bankroll)
+            by_side: Dict[str, List[Dict[str, Any]]] = {}
+            for quote in quotes:
+                by_side.setdefault(quote["side"], []).append(quote)
+            def eligible_spread_pairs():
+                for first_side, second_side in combinations(sorted(by_side), 2):
+                    first_rows = sorted(by_side[first_side], key=lambda quote: (-quote["point"], quote["book"]))
+                    second_rows = sorted(by_side[second_side], key=lambda quote: (-quote["point"], quote["book"]))
+                    for first, second in product(first_rows, second_rows):
+                        left, right = sorted((first, second), key=lambda quote: (quote["side"], quote["book"]))
+                        if left["book"] == right["book"]:
+                            continue
+                        gap = left["point"] + right["point"]
+                        increment = _scoring_increment(contract, left, right)
+                        if gap > 0 and _middle_result_exists(-left["point"], right["point"], increment):
+                            yield left, right, gap
+            for left, right, gap in islice(eligible_spread_pairs(), MAX_PAIR_EVALUATIONS):
+                plan = _spread_plan(left, right, bankroll, exact_budget)
                 if not plan.get("feasible"):
                     continue
                 found.append(_row(
