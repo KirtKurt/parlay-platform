@@ -4,78 +4,11 @@ from collections import Counter, defaultdict
 from datetime import date
 import hashlib
 from pathlib import Path
-import sys
 
 from ks1.features import day
 from ks1.inventory import RESEARCH, Reader, encode
 from ks1.statcast_events import credited_at_bat_ids, is_thrown_pitch
 from ks1.statcast_history import official_physical_pitch_counts, physical_validation_reason
-
-
-def retained_official_diagnostics(payload, s3, bucket):
-    """Summarize already-retained official evidence without provider calls."""
-    from ks1.official_outcomes import (event_name, needed_games, source_name,
-                                       unfinished_at_bats)
-    from ks1.statcast_events import PLATE_APPEARANCE_EVENTS, is_plate_appearance
-
-    results = []
-    for game_id in needed_games(payload):
-        rows = [row for row in payload['rows'] if str(row.get('game_pk')) == game_id]
-        unfinished = {ab for (pk, ab) in unfinished_at_bats({'rows': rows}) if pk == game_id}
-        for mode, kwargs in (
-                ('pitch', {'pitch_evidence': True}),
-                ('accounting', {'accounting_evidence': True}),
-                ('inning', {'inning_evidence': True})):
-            name = source_name(game_id, rows, **kwargs)
-            try:
-                reader = Reader(s3, bucket)
-                evidence = reader.read(RESEARCH + name)
-                official = {}
-                unfinished_plays = []
-                for play in evidence['data']['liveData']['plays']['allPlays']:
-                    at_bat = str(play['about']['atBatIndex'] + 1)
-                    event = event_name(play['result'].get('eventType'))
-                    identity = [str(play['matchup']['batter']['id']),
-                                str(play['matchup']['pitcher']['id']), event]
-                    if event in PLATE_APPEARANCE_EVENTS:
-                        official[at_bat] = identity
-                    if at_bat in unfinished:
-                        unfinished_plays.append({
-                            'at_bat_number': at_bat,
-                            'identity': identity,
-                            'events': [{
-                                'index': item.get('index'),
-                                'type': item.get('type'),
-                                'isPitch': item.get('isPitch'),
-                                'isSubstitution': item.get('isSubstitution'),
-                                'description': item.get('details', {}).get('description'),
-                                'eventType': item.get('details', {}).get('eventType'),
-                                'code': (item.get('details', {}).get('code') or
-                                         item.get('details', {}).get('call', {}).get('code')),
-                                'count': item.get('count'),
-                            } for item in play.get('playEvents', [])],
-                            'runners': play.get('runners', []),
-                        })
-                observed = {str(row['at_bat_number']): [str(row['batter']),
-                            str(row['pitcher']), event_name(row['events'])]
-                            for row in rows if is_plate_appearance(row)}
-                results.append({
-                    'game_id': game_id, 'mode': mode, 'name': name,
-                    'retained_receipt': reader.receipts[-1],
-                    'official_only': [{'at_bat_number': key, 'identity': official[key]}
-                                      for key in sorted(set(official) - set(observed), key=int)],
-                    'statcast_only': [{'at_bat_number': key, 'identity': observed[key]}
-                                      for key in sorted(set(observed) - set(official), key=int)],
-                    'identity_mismatches': [{'at_bat_number': key,
-                        'official': official[key], 'statcast': observed[key]}
-                        for key in sorted(set(official) & set(observed), key=int)
-                        if official[key] != observed[key]],
-                    'unfinished_plays': unfinished_plays,
-                })
-            except Exception as exc:
-                results.append({'game_id': game_id, 'mode': mode, 'name': name,
-                                'error': type(exc).__name__})
-    return results
 
 
 def differences(expected, actual):
@@ -156,8 +89,7 @@ def diagnose_date(bundle, s3, bucket, value):
             if hashlib.sha256(encoded).hexdigest() != receipt['sha256']:
                 raise ValueError('diagnostic serialization differs from retained bytes')
             sources.append({'payload': payload, 'retained_receipt': receipt,
-                            'counts': count_diagnostics(payload, value, games, expected, batters, invalid),
-                            'retained_official': retained_official_diagnostics(payload, s3, bucket)})
+                            'counts': count_diagnostics(payload, value, games, expected, batters, invalid)})
         except Exception as exc:
             errors.append({'key': key, 'error': type(exc).__name__,
                            'reason': str(exc)[:240] if isinstance(exc, ValueError) else
@@ -173,7 +105,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--date', required=True, action='append')
     parser.add_argument('--output', required=True, type=Path)
-    parser.add_argument('--fetch-official-game', action='append', default=[])
     args = parser.parse_args()
     dates = sorted({date.fromisoformat(value).isoformat() for value in args.date})
     if len(dates) > 2:
@@ -190,21 +121,6 @@ def main():
         print(encode({'date': value, 'sources': len(report['sources']),
                       'counts': [source['counts'] for source in report['sources']],
                       'errors': report['errors'], 'source_writes': 0}).decode())
-    if args.fetch_official_game:
-        # Current official feeds are diagnostic evidence only. They are never
-        # retained, qualified, or substituted for the point-in-time inputs.
-        if len(set(args.fetch_official_game)) > 2:
-            raise ValueError('official diagnostic is bounded to two games')
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'mlb_research'))
-        from mlb_research_sources_v1 import fetch
-        from ks1.official_outcomes import endpoint
-        for game_id in sorted(set(args.fetch_official_game), key=int):
-            data, receipt = fetch(endpoint(game_id, inning_evidence=True))
-            (args.output / f'official-current-{game_id}.json').write_bytes(encode({
-                'diagnostic_only': True, 'point_in_time_training_input': False,
-                'provider_requests': 1, 'source_writes': 0,
-                'game_id': game_id, 'data': data, 'receipt': receipt,
-            }))
 
 
 if __name__ == '__main__':
