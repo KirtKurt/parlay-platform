@@ -31,7 +31,35 @@ def fetch_json(url):
     with urlopen(request, timeout=45) as response:
         if not response.geturl().startswith(API):
             raise ValueError("unexpected archive redirect")
-        return json.load(response)
+        if getattr(response, "status", 200) >= 400:
+            raise ValueError(f"ARCHIVE_HTTP_{response.status}")
+        payload = json.load(response)
+        if not isinstance(payload, (dict, list)):
+            raise ValueError("ARCHIVE_EMPTY_OR_INVALID_JSON")
+        return payload
+
+
+def read_cached_snapshot(path):
+    try:
+        raw = path.read_text()
+    except OSError:
+        return None
+    if not raw.strip():
+        return None
+    try:
+        snapshot = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(snapshot, dict) or "branches" not in snapshot:
+        return None
+    return snapshot
+
+
+def write_cached_snapshot(path, snapshot):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(canonical_json(snapshot))
+    tmp.replace(path)
 
 
 def build_bundle(repo, *, as_of, cache_dir):
@@ -40,16 +68,19 @@ def build_bundle(repo, *, as_of, cache_dir):
               and parse_utc("2023-07-01T00:00:00Z") <= parse_utc(v["date"]) <= parse_utc(as_of)]
     visits.sort(key=lambda v: (v["date"], v["visit"]))
     cache_dir.mkdir(parents=True, exist_ok=True)
-    def load_snapshot(visit):
-        path = cache_dir / (visit["snapshot"] + ".json")
-        if path.exists():
-            snapshot = json.loads(path.read_text())
-        else:
-            snapshot = fetch_json(API + f"snapshot/{visit['snapshot']}/")
-            path.write_text(canonical_json(snapshot))
-        return {"visit": visit, "snapshot": snapshot}
+
+    def fetch_one(snapshot_id):
+        path = cache_dir / (snapshot_id + ".json")
+        snapshot = read_cached_snapshot(path)
+        if snapshot is None:
+            snapshot = fetch_json(API + f"snapshot/{snapshot_id}/")
+            write_cached_snapshot(path, snapshot)
+        return snapshot_id, snapshot
+
+    snapshot_ids = list(dict.fromkeys(visit["snapshot"] for visit in visits))
     with ThreadPoolExecutor(max_workers=3) as pool:
-        witnesses = list(pool.map(load_snapshot, visits))
+        fetched = dict(pool.map(fetch_one, snapshot_ids))
+    witnesses = [{"visit": visit, "snapshot": fetched[visit["snapshot"]]} for visit in visits]
     print(f"Loaded {len(witnesses)} independent archive witnesses", flush=True)
     bundle = {"schema": SCHEMA, "origin": ORIGIN, "retrieved_at": as_of,
               "witnesses": witnesses, "objects": {}, "captures": []}

@@ -63,7 +63,9 @@ jobs:
       - uses: actions/checkout@v4
         if: steps.gate.outputs.run == 'true'
         with:
-          ref: main
+          # Audit the immutable commit that triggered this run; publication uses its own
+          # current-main worktree and remains separate from audit generation.
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - uses: actions/setup-python@v5

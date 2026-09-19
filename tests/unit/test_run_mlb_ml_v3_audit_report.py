@@ -633,6 +633,30 @@ def test_matching_fresh_modes_require_same_deployment_identity(monkeypatch) -> N
     assert result["ok"] is False
 
 
+def test_extra_status_identity_metadata_does_not_create_false_mismatch(monkeypatch) -> None:
+    training = _status("training", 1)
+    capture = _status("selection_capture", 1)
+    capture["deploymentIdentity"]["mlbIdentity"] = {
+        "scope": "diagnostic",
+        "version": "v1",
+    }
+    capture["statusFingerprint"] = trainer._status_fingerprint(capture)
+    _install_table(
+        monkeypatch,
+        {
+            (PK, "STATUS#LATEST#TRAINING"): training,
+            (PK, "STATUS#LATEST#SELECTION_CAPTURE"): capture,
+        },
+    )
+
+    result = audit_report._read_v2_training_state(now_utc=NOW)
+
+    assert result["trainingHealth"]["deploymentIdentityMatches"] is True
+    assert result["selectionCaptureHealth"]["deploymentIdentityMatches"] is True
+    assert result["deploymentIdentityAgreement"] is True
+    assert result["ok"] is True
+
+
 def test_status_contract_tamper_and_manifest_advance_fail_closed(monkeypatch) -> None:
     tampered = _status("training", 1)
     tampered["version"] = "stale-version"

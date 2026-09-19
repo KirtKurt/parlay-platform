@@ -1224,7 +1224,21 @@ def _read_v2_training_state(*, now_utc=None, deployed_identity=None) -> dict:
         elif not fresh:
             errors.append("status_stale")
         deployment = status.get("deploymentIdentity") or {}
-        deployment_matches = bool(present and deployment == deployed_identity)
+        # Compare the required release-attestation fields explicitly. Status
+        # records may carry additional diagnostic identity metadata; that must
+        # not create a false mismatch, while missing/wrong required fields
+        # continue to fail closed.
+        required_identity_keys = ("gitSha", "templateSha256")
+        deployment_matches = bool(
+            present
+            and isinstance(deployment, dict)
+            and isinstance(deployed_identity, dict)
+            and all(
+                deployment.get(key)
+                and deployment.get(key) == deployed_identity.get(key)
+                for key in required_identity_keys
+            )
+        )
         if present and not deployment_matches:
             errors.append("status_deployment_identity_mismatch")
         return {
@@ -1260,10 +1274,16 @@ def _read_v2_training_state(*, now_utc=None, deployed_identity=None) -> dict:
         execution_mode="selection_capture",
         maximum_age_minutes=V2_SELECTION_CAPTURE_STATUS_MAX_AGE_MINUTES,
     )
+    training_deployment = training_health["deploymentIdentity"] or {}
+    capture_deployment = selection_capture_health["deploymentIdentity"] or {}
     deployment_identity_agreement = bool(
-        training_health["deploymentIdentity"]
-        and training_health["deploymentIdentity"]
-        == selection_capture_health["deploymentIdentity"]
+        training_deployment
+        and capture_deployment
+        and all(
+            training_deployment.get(key)
+            and training_deployment.get(key) == capture_deployment.get(key)
+            for key in ("gitSha", "templateSha256")
+        )
     )
     return {
         "ok": bool(

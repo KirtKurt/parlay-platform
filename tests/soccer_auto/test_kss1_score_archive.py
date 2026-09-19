@@ -216,3 +216,20 @@ def test_installer_requires_independent_verification_and_artifact_readback(monke
     else:
         assert importer.install_bundle(store, bundle)["installed"] is True
         assert len(load_archive(store)[0]) == 1
+
+
+def test_empty_or_corrupt_snapshot_cache_is_ignored(tmp_path):
+    from scripts.import_kss1_score_archive import read_cached_snapshot, write_cached_snapshot
+    empty = tmp_path / "empty.json"
+    empty.write_text("")
+    assert read_cached_snapshot(empty) is None
+    (tmp_path / "html.json").write_text("<html>429</html>")
+    assert read_cached_snapshot(tmp_path / "html.json") is None
+    missing = tmp_path / "missing.json"
+    assert read_cached_snapshot(missing) is None
+    valid = tmp_path / "ok.json"
+    write_cached_snapshot(valid, {"branches": {"refs/heads/master": {"target_type": "revision", "target": "a" * 40}}})
+    cached = read_cached_snapshot(valid)
+    assert cached["branches"]["refs/heads/master"]["target_type"] == "revision"
+    tmp = valid.with_name(valid.name + ".tmp")
+    assert not tmp.exists()

@@ -254,8 +254,55 @@ def correlate_persistence(live_rows, persisted):
             'observedBlocks':len(matches),'matchedBlocks':sum(m['status']=='PROVEN' for m in matches),
             'errors':sorted(set(errors)),'matches':matches,'readOnly':True}
 
+def read_persistence_with_retry(report, table, day, wait_seconds=0):
+    """Reconcile one fixed source cohort; never collect again or write to AWS."""
+    if type(wait_seconds) is not int or not 0 <= wait_seconds <= 300:
+        raise ValueError('persistence wait must be an integer between 0 and 300 seconds')
+    started = time.monotonic()
+    progress = {'readOnly': True, 'fixedSourceObservations': True,
+                'maxWaitSeconds': wait_seconds, 'attempts': []}
+    report['persistenceReadback'] = progress
+    retryable = re.compile(
+        r'^[1-9][0-9]*:(lineup|bullpen):(missing_game_row|'
+        r'missing_valid_persisted_block|'
+        r'(home|away)_(observation_not_persisted|batter_samples_not_persisted))$')
+    while True:
+        attempt = {'attempt': len(progress['attempts']) + 1,
+                   'readAtUtc': datetime.now(timezone.utc).isoformat()}
+        progress['attempts'].append(attempt)
+        try:
+            evidence = persisted_observations(table, day)
+            correlation = correlate_persistence(report['rows'], evidence)
+        except Exception as exc:
+            # Do not retry invalid evidence or SDK/authentication failures.
+            attempt.update(status='INVALID', errorType=type(exc).__name__)
+            progress.update(stopReason='READ_OR_VALIDATION_FAILED',
+                            elapsedSeconds=round(time.monotonic() - started, 3))
+            raise
+        report['persistedCollectorEvidence'] = evidence
+        report['persistenceCorrelation'] = correlation
+        attempt.update(status=correlation['status'],
+                       observedBlocks=correlation['observedBlocks'],
+                       matchedBlocks=correlation['matchedBlocks'],
+                       errors=list(correlation['errors']))
+        elapsed = time.monotonic() - started
+        progress['elapsedSeconds'] = round(elapsed, 3)
+        if correlation['status'] == 'PROVEN':
+            progress['stopReason'] = 'PROVEN'
+            return
+        errors = correlation['errors']
+        if not errors or not all(retryable.fullmatch(error) for error in errors):
+            progress['stopReason'] = 'NON_RETRYABLE_CORRELATION'
+            return
+        remaining = wait_seconds - elapsed
+        if remaining <= 0:
+            progress['stopReason'] = 'WAIT_EXHAUSTED'
+            return
+        # Re-read the complete cohort, not just successful rows from prior tries.
+        time.sleep(min(15, remaining))
+
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--persisted',action='store_true');a=p.parse_args();now=datetime.now(timezone.utc);day=now.astimezone(ZoneInfo('America/New_York')).date().isoformat();schedule=advanced._statsapi_schedule(day);history=advanced._statsapi_schedule_history(day)
+    p=argparse.ArgumentParser();p.add_argument('--persisted',action='store_true');p.add_argument('--persistence-wait-seconds',type=int,choices=range(301),default=0,metavar='0..300');a=p.parse_args();now=datetime.now(timezone.utc);day=now.astimezone(ZoneInfo('America/New_York')).date().isoformat();schedule=advanced._statsapi_schedule(day);history=advanced._statsapi_schedule_history(day)
     if not schedule.get('ok') or not history.get('ok'):raise RuntimeError('official schedule unavailable')
     started=time.monotonic();rows=[]
     for game in advanced._schedule_games(schedule):
@@ -266,8 +313,7 @@ def main():
     if a.persisted:
         import boto3
         try:
-            report['persistedCollectorEvidence']=persisted_observations(boto3.resource('dynamodb').Table('parlay_platform_snapshots'),day)
-            report['persistenceCorrelation']=correlate_persistence(rows,report['persistedCollectorEvidence'])
+            read_persistence_with_retry(report,boto3.resource('dynamodb').Table('parlay_platform_snapshots'),day,a.persistence_wait_seconds)
         except Exception as exc:
             # Persist diagnostics without exposing arbitrary SDK exception payloads.
             report['persistedCollectorEvidence']={'readOnly':True,'status':'INVALID','errorType':type(exc).__name__,

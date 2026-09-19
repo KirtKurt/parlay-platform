@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -305,6 +306,16 @@ HISTORICAL_NONCANONICAL_WRITER_TOKENS = (
 ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN = (
     "PARLAYPLATFORMMLBAUTOLLMMLBAUTOLLMFUNCTION"
 )
+ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN = re.compile(
+    r"^parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-[A-Za-z0-9]+$"
+)
+ISOLATED_THREE_SOURCE_TABLE_NAME_PATTERN = re.compile(
+    r"^parlay-platform-mlb-auto-llm-MLBAutoLLMTable-[A-Za-z0-9]+$"
+)
+ISOLATED_THREE_SOURCE_SECRET_ARN_PATTERN = re.compile(
+    r"^arn:(?:aws|aws-us-gov|aws-cn):secretsmanager:[a-z0-9-]+:"
+    r"[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$"
+)
 ISOLATED_THREE_SOURCE_HANDLER = "orchestrator.lambda_handler"
 ISOLATED_THREE_SOURCE_HANDLERS = (
     ISOLATED_THREE_SOURCE_HANDLER,
@@ -324,6 +335,9 @@ ISOLATED_THREE_SOURCE_BOUNDARY_ENVIRONMENT = (
 )
 ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT = (
     "SNAPSHOTS_TABLE",
+    "SIGNALS_TABLE",
+    "SIGNAL_LEDGER_TABLE",
+    "PREDICTIONS_TABLE",
     "OUTCOMES_TABLE",
     "MLB_ML_ARTIFACTS_BUCKET",
 )
@@ -459,23 +473,29 @@ def _is_authorized_isolated_three_source_auto(function: Any) -> bool:
     if not isinstance(environment, dict):
         return False
 
-    boundary_present = all(
-        str(environment.get(key) or "").strip()
-        for key in ISOLATED_THREE_SOURCE_BOUNDARY_ENVIRONMENT
-    )
+    isolated_table = str(environment.get("MLB_AUTO_TABLE") or "").strip()
     forbidden_absent = all(
         not str(environment.get(key) or "").strip()
         for key in ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT
     )
+    unexpected_provider_authority_absent = all(
+        key == "BBS" + "_API_SECRET_ARN"
+        or not (
+            key in RETIRED_PROVIDER_ENVIRONMENT
+            or str(key).startswith("BBS" + "_")
+            or str(key).startswith("Bbs" + "Api")
+        )
+        for key in environment
+    )
     secret_arn = str(environment.get("BBS" + "_API_SECRET_ARN") or "")
     return bool(
-        ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN in _authority_text(name)
+        ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN.fullmatch(name)
         and arn
         and handler in ISOLATED_THREE_SOURCE_HANDLERS
-        and boundary_present
+        and ISOLATED_THREE_SOURCE_TABLE_NAME_PATTERN.fullmatch(isolated_table)
         and forbidden_absent
-        and secret_arn.startswith("arn:")
-        and ":secretsmanager:" in secret_arn
+        and unexpected_provider_authority_absent
+        and ISOLATED_THREE_SOURCE_SECRET_ARN_PATTERN.fullmatch(secret_arn)
     )
 
 
@@ -1473,6 +1493,7 @@ def verify(
 
     alternate_writer_rules: List[Dict[str, Any]] = []
     discovered_writer_functions: List[Dict[str, Any]] = []
+    isolated_writer_functions: List[Dict[str, Any]] = []
     canonical_writer_arns = {
         _base_lambda_arn(arn)
         for role, arn in function_arns.items()
@@ -1480,7 +1501,59 @@ def verify(
     }
     try:
         writer_functions_by_arn: Dict[str, Dict[str, Any]] = {}
-        for function in _root_authority_lambda_functions(lambdas):
+        all_functions = _all_lambda_functions(lambdas)
+        all_functions_by_arn: Dict[str, Dict[str, Any]] = {}
+        isolated_writer_functions_by_arn: Dict[str, Dict[str, Any]] = {}
+        for function in all_functions:
+            function_name = str(function.get("FunctionName") or "")
+            function_arn = str(function.get("FunctionArn") or "")
+            function_handler = str(function.get("Handler") or "")
+            function_environment = (
+                (function.get("Environment") or {}).get("Variables") or {}
+            )
+            if not isinstance(function_environment, dict):
+                function_environment = {}
+            all_functions_by_arn[_base_lambda_arn(function_arn)] = {
+                "functionName": function_name,
+                "functionArn": function_arn,
+                "handler": function_handler or None,
+                "isolatedNameContractMatches": (
+                    ISOLATED_THREE_SOURCE_FUNCTION_NAME_PATTERN.fullmatch(
+                        function_name
+                    )
+                    is not None
+                ),
+                "isolatedBoundaryEnvironmentPresent": sorted(
+                    key
+                    for key in ISOLATED_THREE_SOURCE_BOUNDARY_ENVIRONMENT
+                    if str(function_environment.get(key) or "").strip()
+                ),
+                "forbiddenRootEnvironmentPresent": sorted(
+                    key
+                    for key in ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT
+                    if str(function_environment.get(key) or "").strip()
+                ),
+                "authorizedIsolatedWriter": (
+                    _is_authorized_isolated_three_source_auto(function)
+                ),
+            }
+            if not _is_authorized_isolated_three_source_auto(function):
+                continue
+            proof = {
+                "functionName": str(function.get("FunctionName") or ""),
+                "functionArn": str(function.get("FunctionArn") or ""),
+                "handler": str(function.get("Handler") or "") or None,
+                "authorityScope": "isolated_three_source_mlb_auto",
+            }
+            isolated_writer_functions_by_arn[
+                _base_lambda_arn(proof["functionArn"])
+            ] = proof
+            isolated_writer_functions.append(proof)
+
+        for function in all_functions:
+            authorized_isolated = _is_authorized_isolated_three_source_auto(
+                function
+            )
             name = str(function.get("FunctionName") or "")
             arn = str(function.get("FunctionArn") or "")
             handler = str(function.get("Handler") or "")
@@ -1489,9 +1562,15 @@ def verify(
             retired_present = sorted(
                 key
                 for key in environment
-                if key in RETIRED_PROVIDER_ENVIRONMENT
-                or str(key).startswith("BBS" + "_")
-                or str(key).startswith("Bbs" + "Api")
+                if (
+                    key in RETIRED_PROVIDER_ENVIRONMENT
+                    or str(key).startswith("BBS" + "_")
+                    or str(key).startswith("Bbs" + "Api")
+                )
+                and not (
+                    authorized_isolated
+                    and key == "BBS" + "_API_SECRET_ARN"
+                )
             )
             if retired_present:
                 provider_credential_proof["retiredProviderEnvironmentAbsent"] = False
@@ -1508,6 +1587,8 @@ def verify(
                     f"RETIRED_PROVIDER_ENVIRONMENT_PRESENT_ON_DISCOVERED_LAMBDA:{name}:"
                     + ",".join(retired_present)
                 )
+            if authorized_isolated:
+                continue
             if not arn or not _is_mlb_pull_or_training_writer(
                 name, handler, description
             ):
@@ -1528,29 +1609,59 @@ def verify(
             rule_name = str(rule.get("name") or "")
             targets = rule.get("targets") or []
             rule_looks_like_writer = _is_mlb_pull_or_training_writer(rule_name)
-            relevant_targets = []
+            lambda_targets = []
+            rule_has_writer_target = False
             for target in targets:
                 target_arn = str(target.get("Arn") or "")
                 target_base_arn = _base_lambda_arn(target_arn)
                 function = writer_functions_by_arn.get(target_base_arn)
+                target_is_unqualified = target_arn == target_base_arn
+                isolated_function = (
+                    isolated_writer_functions_by_arn.get(target_base_arn)
+                    if target_is_unqualified
+                    else None
+                )
+                observed_function = all_functions_by_arn.get(target_base_arn)
                 target_looks_like_writer = bool(
                     function
+                    or isolated_function
+                    or (
+                        observed_function
+                        and (
+                            observed_function.get(
+                                "isolatedNameContractMatches"
+                            )
+                            is True
+                            or ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN
+                            in _authority_text(
+                                observed_function.get("functionName")
+                            )
+                        )
+                    )
                     or _is_mlb_pull_or_training_writer(target_arn)
                 )
-                if not rule_looks_like_writer and not target_looks_like_writer:
-                    continue
-                relevant_targets.append({
+                rule_has_writer_target = (
+                    rule_has_writer_target or target_looks_like_writer
+                )
+                lambda_targets.append({
                     "arn": target_arn,
                     "id": target.get("Id"),
                     "knownWriterFunction": function,
+                    "observedTargetFunction": observed_function,
                     "canonicalWriter": target_base_arn in canonical_writer_arns,
+                    "authorizedIsolatedWriter": bool(isolated_function),
+                    "isolatedWriterFunction": isolated_function,
                 })
+            if not rule_looks_like_writer and not rule_has_writer_target:
+                continue
+            relevant_targets = lambda_targets
             if not relevant_targets:
                 continue
             alternate_targets = [
                 target
                 for target in relevant_targets
-                if target.get("canonicalWriter") is not True
+                if (target.get("canonicalWriter") is not True
+                    and target.get("authorizedIsolatedWriter") is not True)
             ]
             legacy_named_rule = any(
                 token in _authority_text(rule_name) for token in LEGACY_TOKENS
@@ -1568,6 +1679,10 @@ def verify(
 
     discovered_writer_functions = sorted(
         discovered_writer_functions,
+        key=lambda item: (str(item.get("functionName") or ""), str(item.get("functionArn") or "")),
+    )
+    isolated_writer_functions = sorted(
+        isolated_writer_functions,
         key=lambda item: (str(item.get("functionName") or ""), str(item.get("functionArn") or "")),
     )
     alternate_writer_rules = sorted(
@@ -1610,6 +1725,7 @@ def verify(
         "alternateWriterAuthority": {
             "canonicalWriterArns": sorted(canonical_writer_arns),
             "discoveredWriterFunctions": discovered_writer_functions,
+            "authorizedIsolatedWriterFunctions": isolated_writer_functions,
             "enabledAlternateRules": alternate_writer_rules,
             "eventBridgeScope": "default_bus_rules",
             "scanComplete": not any(

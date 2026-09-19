@@ -67,7 +67,7 @@ def test_third_runner_out_restores_both_gates_with_exact_retained_proof(monkeypa
     detached['rows'][-1]['events'] = 'official_non_pa_inning_ending'
     assert physical_validation_reason(detached, raw['date'], {1}, expected, batters, invalid)
     for k, v in list(s3.versions):
-        if 'official-inning-ending-v1/' in k: del s3.versions[k, v]
+        if 'official-game-advisory-count-inning-v1/' in k: del s3.versions[k, v]
     assert load_training_statcast(bundle, s3, 'b')['errors']
 
 
@@ -111,6 +111,14 @@ def test_v6_substitution_artifacts_still_reproduce(kind):
     from tests.ks1_recent.test_extended_substitutions import extended_fixture
     from ks1.official_outcomes import verify_reconciliation
     bundle, raw, _, source = extended_fixture(kind)
+    source['receipt'].update(endpoint=endpoint('1', pitch_evidence=True,
+                                               game_advisories=False),
+                             sha256=digest(source['data']))
+    source['retained_receipt'] = {
+        'name': source_name('1', raw['rows'], pitch_evidence=True,
+                            game_advisories=False),
+        'versionId': 'official-v6',
+        'sha256': digest({key: source[key] for key in ('data', 'receipt')})}
     rows, changes = reconciled_rows(raw, {'1': source}, method=SUBSTITUTION_METHOD)
     payload = {'date': raw['date'], 'raw_statcast': raw, 'rows': rows,
         'outcome_reconciliation': {'method': SUBSTITUTION_METHOD, 'official_sources': {'1': source},

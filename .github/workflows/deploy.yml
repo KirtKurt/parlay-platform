@@ -8,6 +8,9 @@ on:
     # must not consume the serialized production deploy queue.
     paths:
       - ".github/workflows/deploy.yml"
+      - "infra/ks1-autofunction-reader.json"
+      - "scripts/provision_ks1_identity_reader.py"
+      - "tests/unit/test_provision_ks1_identity_reader.py"
       - "template.yaml"
       - "samconfig.toml"
       - "backend/src/**"
@@ -358,6 +361,20 @@ jobs:
           # succeeded, even if a later diagnostic step fails the deploy job.
           echo "deployment_succeeded=true" >> "$GITHUB_OUTPUT"
           echo "deployed_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Provision dedicated AutoFunction metadata reader infrastructure
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/unit/test_provision_ks1_identity_reader.py
+          python scripts/provision_ks1_identity_reader.py --output runtime_reports/ks1_identity_reader_provision.json
+
+      - name: Upload dedicated reader infrastructure receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ks1-identity-reader-provision-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime_reports/ks1_identity_reader_provision.json
+          if-no-files-found: warn
 
       - name: Read stack outputs
         id: stack

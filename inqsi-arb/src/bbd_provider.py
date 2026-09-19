@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import math
 import os
 import re
 from dataclasses import dataclass, asdict
@@ -129,6 +130,14 @@ def _reject_json_constant(value: str) -> Any:
     raise BBDError("BBD_RESPONSE_JSON_INVALID")
 
 
+def _finite_json_float(value: str) -> float:
+    """Reject valid JSON numbers that overflow Python's finite float range."""
+    number = float(value)
+    if not math.isfinite(number):
+        raise BBDError("BBD_RESPONSE_JSON_INVALID")
+    return number
+
+
 def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int = 20,
              optional: bool = False) -> Tuple[int, Dict[str, str], Any]:
     key = api_key()
@@ -151,6 +160,7 @@ def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int
                 raw.decode("utf-8"),
                 object_pairs_hook=_unique_json_object,
                 parse_constant=_reject_json_constant,
+                parse_float=_finite_json_float,
             ) if raw else {}
             return int(response.status), dict(response.headers.items()), payload
     except HTTPError as exc:
@@ -174,14 +184,25 @@ def _items(payload: Any) -> List[Dict[str, Any]]:
     # Provider error envelopes must not masquerade as successful empty data.
     if payload.get("error") is not None:
         raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
-    for key in ("data", "sports", "matches", "events", "results"):
+    keys = [key for key in ("data", "sports", "matches", "events", "results") if key in payload]
+    # Count present fields, including null or malformed alternatives: choosing
+    # the first usable collection could conceal conflicting provider context.
+    if len(keys) != 1:
+        raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
+    for key in keys:
         value = payload.get(key)
         if isinstance(value, list):
             return _items(value)
         if isinstance(value, dict):
             if value.get("error") is not None:
                 raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
-            for nested in ("sports", "matches", "events", "results", "items"):
+            nested_keys = [
+                nested for nested in ("sports", "matches", "events", "results", "items")
+                if nested in value
+            ]
+            if len(nested_keys) != 1:
+                raise BBDError("BBD_COLLECTION_SCHEMA_INVALID")
+            for nested in nested_keys:
                 rows = value.get(nested)
                 if isinstance(rows, list):
                     return _items(rows)

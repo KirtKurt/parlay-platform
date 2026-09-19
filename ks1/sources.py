@@ -13,6 +13,36 @@ FINALS = "mlb/historical-daily-v1/official-finals/"
 ODDS = "mlb/odds-v8-shadow/"
 
 
+def _snapshot_starter_identity_valid(snapshot):
+    """Require each claimed snapshot starter to bind to exactly one captured player."""
+    teams = snapshot.get("playerWindows", {}).get("teams", {})
+    for side in ("home", "away"):
+        team = teams.get(side, {})
+        starter = team.get("starterId")
+        if not starter:
+            continue
+        players = team.get("players", [])
+        if not isinstance(players, list):
+            return False
+        matches = [player for player in players
+                   if str(player.get("id")) == str(starter)]
+        if len(matches) != 1:
+            return False
+    return True
+
+
+def filter_snapshots_with_bound_starters(snapshots):
+    """Fail closed per immutable snapshot instead of poisoning the entire history build."""
+    accepted, rejected = [], []
+    for snapshot in snapshots:
+        if _snapshot_starter_identity_valid(snapshot):
+            accepted.append(snapshot)
+        else:
+            rejected.append({"officialGamePk": str(snapshot.get("officialGamePk")),
+                             "source_key": snapshot.get("source_key")})
+    return accepted, rejected
+
+
 def aws_clients(region, stack):
     import boto3
     from botocore.config import Config
@@ -50,6 +80,7 @@ def load_existing(cf, s3, bucket):
         compact = list(pool.map(reader.read, sorted(reader.keys(RECONSTRUCTED + "source-games/"))))
     snapshots = [{**reader.read(key), "source_key": key}
                  for key in sorted(reader.keys(RESEARCH + "snapshots/"))]
+    snapshots, rejected_snapshot_starters = filter_snapshots_with_bound_starters(snapshots)
     # The archive bucket is an observed immutable pointer, never a guessed name.
     archives = {r["sourceArtifact"]["bucket"] for r in reconstructed}
     finals = []
@@ -62,6 +93,12 @@ def load_existing(cf, s3, bucket):
         for key, value in zip(sorted(keys), values):
             finals.extend({**game, "source_key": f"s3://{archive}/{key}"} for game in value["games"])
     odds, optional_reads = [], []
+    if rejected_snapshot_starters:
+        optional_reads.append({"source": RESEARCH + "snapshots/",
+                               "status": "invalid_starter_identity_filtered_fail_closed",
+                               "rows": len(rejected_snapshot_starters),
+                               "games": sorted({row["officialGamePk"]
+                                                for row in rejected_snapshot_starters})})
     try:
         response = cf.describe_stacks(StackName="parlay-platform-mlb-odds-v8-shadow")
         outputs = {r["OutputKey"]: r["OutputValue"] for r in response["Stacks"][0].get("Outputs", [])}

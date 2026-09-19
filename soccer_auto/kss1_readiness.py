@@ -70,9 +70,32 @@ def verify_rollout(training, status, picks):
             require(parse_utc(context["context_as_of"]) <= parse_utc(row["created_at"]),
                     "GOALS_PICK_PREDATES_CONTEXT")
         recorded = len(rows)
+    elif published_any > 0:
+        require(picks.get("reason") == "NO_MATCHING_RECORDED_PICKS", "NO_RECORDED_TRAINED_PUBLISHED_BOOKS")
+        require(int(picks.get("count") or 0) == 0, "GOALS_PICK_COUNT_MISMATCH")
+        recorded = 0
     else:
-        require(published_any > 0, "NO_RECORDED_TRAINED_PUBLISHED_BOOKS")
-        recorded = published_any
+        safe_empty = (
+            picks.get("reason") == "NO_MATCHING_RECORDED_PICKS"
+            and published_any == 0
+            and isinstance(picks.get("missing"), list)
+            and bool(picks["missing"])
+            and int(picks.get("count") or 0) == 0
+            and all(
+                row.get("reason") in {
+                    "NO_RECORDED_T60_TRAINED_PICK",
+                    "NO_RECORDED_T60_TRAINED_PUBLISHED_BOOK",
+                }
+                for row in picks["missing"]
+            )
+            and all(
+                int(published.get(key) or 0) == 0
+                for key in ("1x2", "double_chance", "ou25", "btts", "any")
+            )
+            and len(picks["missing"]) == int(picks.get("fixture_count") or 0)
+        )
+        require(safe_empty, "NO_RECORDED_TRAINED_PUBLISHED_BOOKS")
+        recorded = 0
     return {"verified": True, "model_digest": model, "recorded_12_picks": recorded,
             "published_counts": published, "authority": "SHADOW_LEARNING",
             "automatic_prediction_allowed": False}

@@ -3,7 +3,7 @@ from copy import deepcopy
 import pytest
 
 from ks1.inventory import RESEARCH
-from ks1.official_outcomes import (INNING_METHOD, SUBSTITUTION_METHOD, reconcile,
+from ks1.official_outcomes import (INNING_METHOD, SUBSTITUTION_METHOD, digest, endpoint, reconcile,
                                   reconciled_rows, source_name, verified_batter_credits,
                                   verify_reconciliation)
 from ks1.statcast_history import load_training_statcast
@@ -67,7 +67,7 @@ def test_two_strike_strikeout_retains_pitch_batters_and_credits_predecessor(monk
     altered['outcome_reconciliation']['derivations'][-1]['credited_batter'] = '201'
     with pytest.raises(ValueError): verified_batter_credits(altered)
     for k, v in list(s3.versions):
-        if 'official-pitch-attribution-v1/' in k: del s3.versions[k, v]
+            if 'official-game-advisory-count-pitch-v1/' in k: del s3.versions[k, v]
     assert load_training_statcast(bundle, s3, 'b')['errors']
     assert raw['date'] not in bundle['statcast_retained_dates']
 
@@ -118,6 +118,14 @@ def test_conflicting_official_batter_totals_keep_the_date_unqualified(monkeypatc
 @pytest.mark.parametrize('method', [SUBSTITUTION_METHOD, INNING_METHOD])
 def test_older_methods_do_not_gain_two_strike_strikeout_policy(method):
     _, raw, _, source = fixture()
+    source['receipt'].update(endpoint=endpoint('1', pitch_evidence=True,
+                                               game_advisories=False),
+                             sha256=digest(source['data']))
+    source['retained_receipt'] = {
+        'name': source_name('1', raw['rows'], pitch_evidence=True,
+                            game_advisories=False),
+        'versionId': 'official-old',
+        'sha256': digest({key: source[key] for key in ('data', 'receipt')})}
     with pytest.raises(ValueError, match='unsupported official mid-at-bat substitution'):
         reconciled_rows(raw, {'1': source}, method=method)
 
@@ -125,6 +133,14 @@ def test_older_methods_do_not_gain_two_strike_strikeout_policy(method):
 def test_v7_inning_ending_artifact_still_reproduces():
     from tests.ks1_recent.test_inning_ending import fixture as inning_fixture
     bundle, raw, _, source = inning_fixture()
+    source['receipt'].update(endpoint=endpoint('1', inning_evidence=True,
+                                               game_advisories=False),
+                             sha256=digest(source['data']))
+    source['retained_receipt'] = {
+        'name': source_name('1', raw['rows'], inning_evidence=True,
+                            game_advisories=False),
+        'versionId': 'official-v7',
+        'sha256': digest({key: source[key] for key in ('data', 'receipt')})}
     rows, changes = reconciled_rows(raw, {'1': source}, method=INNING_METHOD)
     payload = {'date': raw['date'], 'raw_statcast': raw, 'rows': rows,
         'outcome_reconciliation': {'method': INNING_METHOD, 'official_sources': {'1': source},
