@@ -39,18 +39,24 @@ def raw_row():
             f'away_individual_bullpen_rank{rank}_era_7d': 5.1 + rank / 10,
             f'home_individual_bullpen_rank{rank}_k_bb_pct_7d': 22.0 - rank,
             f'away_individual_bullpen_rank{rank}_k_bb_pct_7d': 10.0 - rank,
+            f'home_individual_bullpen_rank{rank}_xwoba_7d': .280 + rank / 1000,
+            f'away_individual_bullpen_rank{rank}_xwoba_7d': .330 + rank / 1000,
             f'home_individual_bullpen_rank{rank}_fip_15d': 3.3 + rank / 10,
             f'away_individual_bullpen_rank{rank}_fip_15d': 4.5 + rank / 10,
             f'home_individual_bullpen_rank{rank}_era_15d': 3.5 + rank / 10,
             f'away_individual_bullpen_rank{rank}_era_15d': 4.7 + rank / 10,
             f'home_individual_bullpen_rank{rank}_k_bb_pct_15d': 21.0 - rank,
             f'away_individual_bullpen_rank{rank}_k_bb_pct_15d': 11.0 - rank,
+            f'home_individual_bullpen_rank{rank}_xwoba_15d': .290 + rank / 1000,
+            f'away_individual_bullpen_rank{rank}_xwoba_15d': .325 + rank / 1000,
             f'home_individual_bullpen_rank{rank}_fip_30d': 3.1 + rank / 10,
             f'away_individual_bullpen_rank{rank}_fip_30d': 4.1 + rank / 10,
             f'home_individual_bullpen_rank{rank}_era_30d': 3.3 + rank / 10,
             f'away_individual_bullpen_rank{rank}_era_30d': 4.4 + rank / 10,
             f'home_individual_bullpen_rank{rank}_k_bb_pct_30d': 20.0 - rank,
             f'away_individual_bullpen_rank{rank}_k_bb_pct_30d': 12.0 - rank,
+            f'home_individual_bullpen_rank{rank}_xwoba_30d': .300 + rank / 1000,
+            f'away_individual_bullpen_rank{rank}_xwoba_30d': .320 + rank / 1000,
         })
     return row
 
@@ -71,6 +77,9 @@ def test_derived_features_are_signed_label_free_pregame_values():
     assert np.isclose(derived['forensic_individual_bullpen_rank1_k_bb_pct_7d_advantage'], 12.0)
     assert np.isclose(derived['forensic_individual_bullpen_rank1_k_bb_pct_15d_advantage'], 10.0)
     assert np.isclose(derived['forensic_individual_bullpen_rank1_k_bb_pct_advantage'], 8.0)
+    assert np.isclose(derived['forensic_individual_bullpen_rank1_xwoba_7d_advantage'], .05)
+    assert np.isclose(derived['forensic_individual_bullpen_rank1_xwoba_15d_advantage'], .035)
+    assert np.isclose(derived['forensic_individual_bullpen_rank1_xwoba_advantage'], .02)
     assert derived_mapping_with_outcome(row, 1) == derived_mapping_with_outcome(row, 0)
 
 
@@ -84,6 +93,7 @@ def test_frame_and_mapping_paths_match_and_missing_parents_fail_closed():
     second['home_lineup_ops_7d'] = None
     second['home_individual_bullpen_rank1_fip_7d'] = None
     second['home_individual_bullpen_rank1_fip_30d'] = None
+    second['home_individual_bullpen_rank1_xwoba_7d'] = None
     frame = pd.DataFrame([first, second])
     derived = derive_frame(frame)
     for name, value in derive_mapping(first).items():
@@ -92,6 +102,7 @@ def test_frame_and_mapping_paths_match_and_missing_parents_fail_closed():
     assert pd.isna(derived.loc[1, 'forensic_home_lineup_ops_regime_delta'])
     assert pd.isna(derived.loc[1, 'forensic_individual_bullpen_rank1_fip_7d_advantage'])
     assert pd.isna(derived.loc[1, 'forensic_individual_bullpen_rank1_fip_advantage'])
+    assert pd.isna(derived.loc[1, 'forensic_individual_bullpen_rank1_xwoba_7d_advantage'])
 
 
 def test_admission_requires_raw_parent_admission_and_nonmissing_floor():
@@ -103,6 +114,9 @@ def test_admission_requires_raw_parent_admission_and_nonmissing_floor():
         row['away_individual_bullpen_rank1_fip_7d'] += index / 100
         row['away_individual_bullpen_rank1_fip_15d'] += index / 100
         row['away_individual_bullpen_rank1_fip_30d'] += index / 100
+        row['away_individual_bullpen_rank1_xwoba_7d'] += index / 10000
+        row['away_individual_bullpen_rank1_xwoba_15d'] += index / 10000
+        row['away_individual_bullpen_rank1_xwoba_30d'] += index / 10000
         rows.append(row)
     frame = pd.DataFrame(rows)
     admitted_raw = list(frame.columns)
@@ -112,6 +126,9 @@ def test_admission_requires_raw_parent_admission_and_nonmissing_floor():
     assert 'forensic_individual_bullpen_rank1_fip_7d_advantage' in admitted
     assert 'forensic_individual_bullpen_rank1_fip_15d_advantage' in admitted
     assert 'forensic_individual_bullpen_rank1_fip_advantage' in admitted
+    assert 'forensic_individual_bullpen_rank1_xwoba_7d_advantage' in admitted
+    assert 'forensic_individual_bullpen_rank1_xwoba_15d_advantage' in admitted
+    assert 'forensic_individual_bullpen_rank1_xwoba_advantage' in admitted
     without_market = [column for column in admitted_raw if column != 'market_home_prob']
     admitted2, rejected2, _ = admit(frame, without_market, minimum_nonmissing=5)
     assert 'forensic_market_home_strength' not in admitted2
@@ -125,12 +142,16 @@ def test_individual_bullpen_parents_are_narrow_development_only_exception():
         row = raw_row()
         row['away_individual_bullpen_rank1_fip_7d'] += index / 100
         row['away_individual_bullpen_rank1_fip_30d'] += index / 100
+        row['away_individual_bullpen_rank1_xwoba_7d'] += index / 10000
+        row['away_individual_bullpen_rank1_xwoba_30d'] += index / 10000
         rows.append(row)
     frame = pd.DataFrame(rows)
     raw = [column for column in frame.columns if 'individual_bullpen_rank' not in column]
     admitted, _, _ = admit(frame, raw, minimum_nonmissing=5)
     assert 'forensic_individual_bullpen_rank1_fip_7d_advantage' in admitted
     assert 'forensic_individual_bullpen_rank1_fip_advantage' in admitted
+    assert 'forensic_individual_bullpen_rank1_xwoba_7d_advantage' in admitted
+    assert 'forensic_individual_bullpen_rank1_xwoba_advantage' in admitted
 
     missing = frame.drop(columns=['away_individual_bullpen_rank1_fip_7d'])
     admitted2, rejected2, _ = admit(missing, raw, minimum_nonmissing=5)
@@ -151,6 +172,9 @@ def test_groups_and_parent_receipts_cover_all_six_signal_families():
         'away_individual_bullpen_rank1_fip_7d': 5.0,
         'away_individual_bullpen_rank1_fip_15d': 4.9,
         'away_individual_bullpen_rank1_fip_30d': 4.7,
+        'away_individual_bullpen_rank1_xwoba_7d': .340,
+        'away_individual_bullpen_rank1_xwoba_15d': .335,
+        'away_individual_bullpen_rank1_xwoba_30d': .330,
     })
     frame = pd.DataFrame([raw_row(), second])
     admitted, _, _ = admit(frame, list(frame.columns), minimum_nonmissing=2)
@@ -168,3 +192,6 @@ def test_groups_and_parent_receipts_cover_all_six_signal_families():
     assert 'away_individual_bullpen_rank1_fip_7d' in parents
     assert 'away_individual_bullpen_rank1_fip_15d' in parents
     assert 'away_individual_bullpen_rank1_fip_30d' in parents
+    assert 'away_individual_bullpen_rank1_xwoba_7d' in parents
+    assert 'away_individual_bullpen_rank1_xwoba_15d' in parents
+    assert 'away_individual_bullpen_rank1_xwoba_30d' in parents
