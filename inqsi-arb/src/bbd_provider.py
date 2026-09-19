@@ -13,6 +13,7 @@ import math
 import os
 import re
 from dataclasses import dataclass, asdict
+from http.client import HTTPException
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
@@ -138,6 +139,14 @@ def _finite_json_float(value: str) -> float:
     return number
 
 
+def _read_response(response: Any) -> bytes:
+    """Keep interrupted HTTP body reads inside the adapter's failure contract."""
+    try:
+        return response.read()
+    except (OSError, HTTPException) as exc:
+        raise BBDError(f"BBD_REQUEST_FAILED: {type(exc).__name__}") from exc
+
+
 def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int = 20,
              optional: bool = False) -> Tuple[int, Dict[str, str], Any]:
     key = api_key()
@@ -155,7 +164,7 @@ def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int
     })
     try:
         with build_opener(_RejectRedirects()).open(request, timeout=timeout) as response:
-            raw = response.read()
+            raw = _read_response(response)
             payload = json.loads(
                 raw.decode("utf-8"),
                 object_pairs_hook=_unique_json_object,
@@ -164,7 +173,8 @@ def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int
             ) if raw else {}
             return int(response.status), dict(response.headers.items()), payload
     except HTTPError as exc:
-        raw = exc.read()
+        with exc:
+            raw = _read_response(exc)
         if optional and exc.code in {401, 403, 404}:
             return int(exc.code), dict(exc.headers.items()), {}
         detail = raw.decode("utf-8", "replace")[:500]
