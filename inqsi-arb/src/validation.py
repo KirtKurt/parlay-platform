@@ -21,7 +21,7 @@ _NORTH_AMERICAN_HOCKEY_PREFIXES = (
     "icehockey_usa", "icehockey_canada",
 )
 _NBA_NCAA_BASKETBALL_PREFIXES = (
-    "basketball_nba", "basketball_ncaab", "basketball_ncaaw",
+    "basketball_nba", "basketball_ncaab", "basketball_ncaaw", "basketball_wncaab",
 )
 
 
