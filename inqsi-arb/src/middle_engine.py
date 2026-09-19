@@ -276,14 +276,19 @@ def _stake_plan(
         rounded = {"feasible": False, "reason": "ROUNDING_ERROR", "legs": []}
     safe_exact = max(float(leg["net_decimal"]) for leg in rounding_legs) <= 1e12
     if safe_exact and (not rounded.get("feasible") or not rounded.get("strict_arbitrage_after_rounding")):
-        if implied < 1.0:
-            exact = _two_way_exact_plan(rounding_legs, bankroll, exact_budget)
-            if exact and exact.get("strict_arbitrage_after_rounding"):
-                rounded = exact
-        if not rounded.get("feasible"):
-            feasible = _two_way_feasible_plan(rounding_legs, bankroll, exact_budget)
-            if feasible:
-                rounded = feasible
+        try:
+            if implied < 1.0:
+                exact = _two_way_exact_plan(rounding_legs, bankroll, exact_budget)
+                if exact and exact.get("strict_arbitrage_after_rounding"):
+                    rounded = exact
+            if not rounded.get("feasible"):
+                feasible = _two_way_feasible_plan(rounding_legs, bankroll, exact_budget)
+                if feasible:
+                    rounded = feasible
+        except (ArithmeticError, ValueError):
+            # Malformed but finite caller bounds can overflow the float-based
+            # exact solvers.  Keep the candidate fail-closed and scan-safe.
+            pass
     if not rounded.get("feasible"):
         return {
             "implied_sum": implied,

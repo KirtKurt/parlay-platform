@@ -516,3 +516,15 @@ def test_middle_rejects_overflowing_score_grid_ratio():
         ],
     }], bankroll=100)
     assert rows == []
+
+
+def test_middle_exact_search_bound_overflow_fails_closed():
+    rows = detect_middles([{
+        "id": "overflow-exact", "event": "A @ B", "market": "totals",
+        "quotes": [
+            {"book": "one", "outcome": "Over", "point": 8.5, "decimal": 2.1,
+             "limit": 0.01},
+            {"book": "two", "outcome": "Under", "point": 9.5, "decimal": 2.1},
+        ],
+    }], bankroll=1e308)
+    assert rows == []
