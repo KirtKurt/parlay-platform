@@ -309,6 +309,44 @@ def test_auto_falls_live_when_commencement_filter_empties_snapshot(monkeypatch):
 
 def test_auto_cached_all_sports_honors_scan_limit(monkeypatch):
     reset_memory()
+
+
+def test_auto_scan_accepts_successful_empty_snapshot(monkeypatch):
+    reset_memory()
+    put_snapshot(
+        "baseball_mlb", [],
+        meta={"ok": True, "markets": ["h2h"], "regions": "us"},
+    )
+    monkeypatch.setattr("app.scan_sport_payload", lambda *args, **kwargs: (
+        _ for _ in ()
+    ).throw(AssertionError("successful empty snapshot must not fan out live")))
+    response = lambda_handler({
+        "httpMethod": "GET", "path": "/v1/arb/scan",
+        "queryStringParameters": {
+            "sport": "baseball_mlb", "markets": "h2h", "regions": "us",
+            "source": "auto",
+        },
+    }, None)
+    body = json.loads(response["body"])
+    assert response["statusCode"] == 200
+    assert body["source"] == "store"
+    assert body["n_markets"] == 0
+    reset_memory()
+
+
+def test_arizona_basketball_rule_is_scoped_to_reviewed_competitions(monkeypatch):
+    monkeypatch.setenv("ARB_MAX_QUOTE_AGE_SECONDS", "3600")
+    event = {
+        "id": "euroleague", "sport": "basketball_euroleague", "market": "h2h",
+        "quotes": [
+            {"book": "fanduel", "outcome": "A", "decimal": 2.1, "last_update": fresh_ts()},
+            {"book": "fanduel", "outcome": "B", "decimal": 2.1, "last_update": fresh_ts()},
+        ],
+    }
+    rows = validation.validate_event(event, jurisdiction="az")
+    assert len(rows) == 1
+    assert rows[0]["rules_status"] == "unknown"
+    assert rows[0]["context"]["settlement_validation"]["reason"] == "EVENT_OR_MARKET_SCOPE_UNREVIEWED"
     sports = [{"key": f"sport-{index}"} for index in range(3)]
     monkeypatch.setattr("app.list_sports", lambda all_sports=False: (sports, {"ok": True}))
     monkeypatch.setenv("ARB_MAX_SPORTS_PER_ALL_SCAN", "2")

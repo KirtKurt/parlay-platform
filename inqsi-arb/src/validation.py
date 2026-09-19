@@ -146,6 +146,12 @@ def validate_event(event: Dict[str, Any], *, jurisdiction: str = "*") -> List[Di
             if (rule is not None and s == "baseball" and exact_sport != "baseball_mlb"
                     and str(rule.settlement_profile or "").startswith("mlb_")):
                 rule = None
+            if (
+                rule is not None and s == "basketball"
+                and exact_sport not in {"basketball_nba", "basketball_ncaab", "basketball_wncaab"}
+                and str(rule.settlement_profile or "").startswith("fd_ny_basketball_")
+            ):
+                rule = None
             rule_by_book[book] = rule
         if rule is None or not rule.reviewed or not rule.settlement_profile:
             unknown_books.append(book)
