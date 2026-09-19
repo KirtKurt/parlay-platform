@@ -20,7 +20,7 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 
-CONTRACT = "KS1-forensic-derived-features-v7"
+CONTRACT = "KS1-forensic-derived-features-v8"
 GROUPS = (
     "market", "starter_regime", "starter_workload", "lineup", "bullpen",
     "individual_bullpen",
@@ -196,7 +196,7 @@ SPECS = {
     },
     # Individual reliever usage ranks are reconstructed only after the final
     # qualification holdout is removed. They deliberately make no leverage-role
-    # claim. Lower FIP/ERA and higher K-BB% are oriented as home advantages.
+    # claim. Lower FIP/ERA/xwOBA and higher K-BB% are oriented as home advantages.
     # The 30-day feature names are retained for backward evidence continuity;
     # 7- and 15-day features add recency without changing rank identity.
     **{
@@ -210,21 +210,21 @@ SPECS = {
             "parents": (
                 (f"away_individual_bullpen_rank{rank}_{metric}_{days}d",
                  f"home_individual_bullpen_rank{rank}_{metric}_{days}d")
-                if metric in ("fip", "era") else
+                if metric in ("fip", "era", "xwoba") else
                 (f"home_individual_bullpen_rank{rank}_{metric}_{days}d",
                  f"away_individual_bullpen_rank{rank}_{metric}_{days}d")
             ),
             "development_only_parent": True,
         }
         for rank in (1, 2, 3)
-        for metric in ("fip", "era", "k_bb_pct")
+        for metric in ("fip", "era", "k_bb_pct", "xwoba")
         for days in INDIVIDUAL_BULLPEN_WINDOWS
     },
     # The pooled bullpen and starter families already expose short-vs-long regime
     # movement. The exact same strict-prior 7/15/30-day windows are available for
     # each deterministic individual-reliever slot, so expose that movement without
-    # changing rank identity or inventing a leverage role. Positive FIP/ERA deltas
-    # mean recent deterioration; positive K-BB% deltas mean recent improvement.
+    # changing rank identity or inventing a leverage role. Positive FIP/ERA/xwOBA
+    # deltas mean recent deterioration; positive K-BB% deltas mean recent improvement.
     **{
         f"forensic_{side}_individual_bullpen_rank{rank}_{metric}_{days}d_regime_delta": {
             "group": "individual_bullpen",
@@ -237,7 +237,7 @@ SPECS = {
         }
         for side in ("home", "away")
         for rank in (1, 2, 3)
-        for metric in ("fip", "era", "k_bb_pct")
+        for metric in ("fip", "era", "k_bb_pct", "xwoba")
         for days in (7, 15)
     },
 }
