@@ -9,7 +9,7 @@ import ks1.historical_individual_bullpen_enrichment as subject
 from ks1.inventory import encode
 
 
-def profile(player_id, appearances, fip, era, kbb):
+def profile(player_id, appearances, fip, era, kbb, xwoba=None):
     return {
         'player_id': str(player_id),
         'windows': {'30d': {
@@ -17,21 +17,24 @@ def profile(player_id, appearances, fip, era, kbb):
             'fip': fip,
             'era': era,
             'k_bb_pct': kbb,
+            'xwoba': xwoba,
         }},
     }
 
 
 def test_usage_ranks_are_prior_appearances_with_deterministic_ties():
     values = subject._ranked_values([
-        profile(30, 5, 4.3, 4.0, 10.0),
-        profile(20, 8, 2.8, 2.5, 21.0),
-        profile(10, 8, 3.1, 2.9, 19.0),
-        profile(40, 0, 1.0, 1.0, 30.0),
+        profile(30, 5, 4.3, 4.0, 10.0, .340),
+        profile(20, 8, 2.8, 2.5, 21.0, .280),
+        profile(10, 8, 3.1, 2.9, 19.0, .300),
+        profile(40, 0, 1.0, 1.0, 30.0, .200),
     ])
     assert values['individual_bullpen_rank1_fip_30d'] == 3.1
     assert values['individual_bullpen_rank2_fip_30d'] == 2.8
     assert values['individual_bullpen_rank3_fip_30d'] == 4.3
     assert values['individual_bullpen_rank1_k_bb_pct_30d'] == 19.0
+    assert values['individual_bullpen_rank1_xwoba_30d'] == .300
+    assert values['individual_bullpen_rank2_xwoba_30d'] == .280
 
 
 def test_official_history_must_be_exactly_bound_to_input_proof():
@@ -63,9 +66,9 @@ class FakeHistory:
         assert game_date == '2026-06-01'
         offset = 0.0 if str(team_id) == '1' else 1.0
         return {'_reliever_profiles': [
-            profile(10, 9, 2.8 + offset, 2.6 + offset, 22.0 - offset),
-            profile(20, 7, 3.3 + offset, 3.1 + offset, 17.0 - offset),
-            profile(30, 5, 4.0 + offset, 4.2 + offset, 11.0 - offset),
+            profile(10, 9, 2.8 + offset, 2.6 + offset, 22.0 - offset, .285 + offset / 100),
+            profile(20, 7, 3.3 + offset, 3.1 + offset, 17.0 - offset, .310 + offset / 100),
+            profile(30, 5, 4.0 + offset, 4.2 + offset, 11.0 - offset, .335 + offset / 100),
         ]}
 
 
@@ -110,6 +113,8 @@ def test_enrichment_uses_only_exact_bound_pret10_roster_and_no_labels(monkeypatc
     enriched, report = subject.enrich_frame(frame, s3, {'unused': True}, minimum_nonmissing=1)
     assert enriched.loc[0, 'home_individual_bullpen_rank1_fip_30d'] == 2.8
     assert enriched.loc[0, 'away_individual_bullpen_rank1_fip_30d'] == 3.8
+    assert enriched.loc[0, 'home_individual_bullpen_rank1_xwoba_30d'] == .285
+    assert enriched.loc[0, 'away_individual_bullpen_rank1_xwoba_30d'] == .295
     assert report['exact_team_context_rows_verified'] == 1
     assert report['feature_rows_recovered'] == 1
     assert report['provider_requests'] == 0
