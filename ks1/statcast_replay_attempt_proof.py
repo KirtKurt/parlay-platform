@@ -73,7 +73,10 @@ class RecordingS3:
         except Exception as exc:
             code = _error_code(exc)
             if code in _MISSING_CODES or isinstance(exc, KeyError):
-                self._record({**base, "state": "absent"})
+                item = {**base, "state": "absent", "errorType": type(exc).__name__}
+                if code:
+                    item["errorCode"] = code
+                self._record(item)
             else:
                 item = {**base, "state": "error", "errorType": type(exc).__name__}
                 if code:
@@ -124,6 +127,10 @@ class RecordingS3:
                     raise ValueError("statcast replay requested version mismatch")
                 item.update(versionId=str(version), sha256=sha256)
             elif state == "error":
+                item["errorType"] = str(candidate.get("errorType") or "UnknownError")
+                if candidate.get("errorCode"):
+                    item["errorCode"] = str(candidate["errorCode"])
+            elif state == "absent":
                 item["errorType"] = str(candidate.get("errorType") or "UnknownError")
                 if candidate.get("errorCode"):
                     item["errorCode"] = str(candidate["errorCode"])
@@ -182,8 +189,24 @@ class ProofBoundS3:
             raise ValueError("statcast replay omitted historically explicit version")
 
         if attempt["state"] == "absent":
-            code = "NoSuchVersion" if frozen_requested else "NoSuchKey"
-            raise ClientError({"Error": {"Code": code, "Message": "frozen Statcast replay absence"}}, "GetObject")
+            code = str(attempt.get("errorCode") or (
+                "NoSuchVersion" if frozen_requested else "NoSuchKey"))
+            response = {"Error": {
+                "Code": code,
+                "Message": "frozen Statcast replay absence",
+            }}
+            error_type = str(attempt.get("errorType") or "")
+            if error_type == "KeyError":
+                raise KeyError("frozen Statcast replay absence")
+            if error_type and error_type != "ClientError":
+                factory = getattr(getattr(self._s3, "exceptions", None), "from_code", None)
+                exception_class = factory(code) if callable(factory) else None
+                if (isinstance(exception_class, type)
+                        and issubclass(exception_class, ClientError)
+                        and exception_class.__name__ == error_type):
+                    raise exception_class(response, "GetObject")
+                raise ValueError("statcast replay missing-read exception is not reproducible")
+            raise ClientError(response, "GetObject")
         if attempt["state"] == "error":
             raise ValueError("statcast replay input proof contains non-replayable read error")
 
