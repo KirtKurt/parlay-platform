@@ -331,9 +331,10 @@ def test_expired_finals_are_counted_outside_supported_horizon():
 
 def test_missing_final_within_supported_horizon_still_fails():
     source, ledger = _real_source_and_ledger()
+    original_finals = _verified(source, ledger['rows'])
     del source['finals']['0']
     with pytest.raises(ValueError, match='not prospectively reproducible'):
-        _build(source, ledger, set())
+        subject.build(source, ledger, set(), lambda grades: original_finals)
 
 
 @pytest.mark.parametrize('as_of,start_date,expired', [
