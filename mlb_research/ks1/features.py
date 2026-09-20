@@ -353,6 +353,18 @@ class Features:
         return all((target-timedelta(days=age)).isoformat() in self.statcast_retained_dates
                    for age in range(1, window+1))
 
+    def statcast_games_complete(self, game_ids, *, outcomes=False):
+        """Require proof for each exact game contributing to one Statcast feature."""
+        game_ids = {str(game_id) for game_id in game_ids}
+        if not game_ids:
+            return False
+        dates = self.statcast_retained_dates if outcomes else self.statcast_physical_dates
+        games = self.statcast_verified_games if outcomes else self.statcast_physical_games
+        if dates is None:
+            return self.statcast_complete
+        return all(self.game_dates.get(game_id) in dates or game_id in games
+                   for game_id in game_ids)
+
     @staticmethod
     def _finite(value):
         if value in (None, "") or isinstance(value, bool):
@@ -652,6 +664,16 @@ class Features:
         recent_game_ids = {r["game_id"] for r in completed
                            if r["day"] >= target-timedelta(days=30)}
         ids = [str(value) for value in lineup_ids]
+        official_starter_game_ids = {
+            row["game_id"] for row in completed
+            if row["game_id"] in recent_game_ids
+            and any(player["id"] == str(opposing_starter_id)
+                    and number(player["stats"].get("gamesStarted")) == 1
+                    for player in row["context_players"])}
+        starter_game_ids = official_starter_game_ids | {
+            game_id for pitcher_id, game_id in self.statcast_by_pitcher_game
+            if pitcher_id == str(opposing_starter_id) and game_id in recent_game_ids}
+        starter_physical_complete = self.statcast_games_complete(starter_game_ids)
         starter_rows = [row for game_id in self.statcast_by_pitcher_game
                         if game_id[0] == str(opposing_starter_id)
                         and game_id[1] in recent_game_ids
@@ -687,6 +709,10 @@ class Features:
             for window in (7, 30):
                 chosen = [(r, stats) for r, stats in pairs
                           if r["day"] >= target-timedelta(days=window)]
+                chosen_game_ids = {r["game_id"] for r, _ in chosen}
+                matchup_physical_complete = self.statcast_games_complete(chosen_game_ids)
+                matchup_outcome_complete = self.statcast_games_complete(
+                    chosen_game_ids, outcomes=True)
                 summary = box([stats for _, stats in chosen])
                 pitch_rows = [pitch for r, _ in chosen
                               for pitch in self.statcast_by_batter_game.get((pid, r["game_id"]), ())]
@@ -738,18 +764,23 @@ class Features:
                                       if str(pitch.get("description") or "").lower() in SWINGS
                                       or pitch.get("type") == "X"]
                     by_type[pitch_type] = {
-                        "xwoba": sum(values)/len(values) if outcome_complete and values and all(v is not None for v in values) else None,
-                        "woba": sum(actual_values)/len(actual_values) if outcome_complete and actual_values and all(v is not None for v in actual_values) else None,
+                        "xwoba": (sum(values)/len(values)
+                                  if matchup_outcome_complete and values
+                                  and all(v is not None for v in values) else None),
+                        "woba": (sum(actual_values)/len(actual_values)
+                                if matchup_outcome_complete and actual_values
+                                and all(v is not None for v in actual_values) else None),
                         "whiff_pct": (100*sum(str(pitch.get("description") or "").lower() in SWINGING_STRIKES
                                                for pitch in swings_by_type)/len(swings_by_type)
-                                      if complete and swing_classified and swings_by_type else None)}
+                                      if matchup_physical_complete and swing_classified
+                                      and swings_by_type else None)}
                 supported_mix = [(count, by_type.get(pitch_type, {}).get("xwoba"))
                                  for pitch_type, count in starter_mix.items()
                                  if by_type.get(pitch_type, {}).get("xwoba") is not None]
                 supported_pitches = sum(count for count, _ in supported_mix)
                 summary["pitch_type_matchup_xwoba"] = (
                     sum(count*value for count, value in supported_mix)/starter_total
-                    if (outcome_complete and self.team_statcast_outcome_window_complete(target, 30)
+                    if (matchup_outcome_complete and starter_physical_complete
                         and starter_total > 0 and starter_total == len(starter_rows)
                         and supported_pitches == starter_total) else None)
                 supported_whiff = [(count, by_type.get(pitch_type, {}).get("whiff_pct"))
@@ -758,7 +789,7 @@ class Features:
                 whiff_pitches = sum(count for count, _ in supported_whiff)
                 summary["pitch_type_matchup_whiff_pct"] = (
                     sum(count*value for count, value in supported_whiff)/starter_total
-                    if (complete and self.team_statcast_window_complete(target, 30)
+                    if (matchup_physical_complete and starter_physical_complete
                         and starter_total > 0 and starter_total == len(starter_rows)
                         and whiff_pitches == starter_total) else None)
                 summary["pitch_type_xwoba"] = by_type

@@ -33,6 +33,7 @@ def fixture():
     source['teams']['away']['players'] = deepcopy(source['teams']['home']['players'])
     for player in source['teams']['away']['players'].values():
         player['person']['id'] += 100
+    source['teams']['away']['players']['151']['stats']['pitching']['gamesStarted'] = 1
     rows = []
     for pitcher, base in ((151, 200), (251, 100)):
         for batter in range(base+1, base+10):
@@ -123,7 +124,9 @@ def test_verified_historical_windows_survive_an_unrelated_current_fetch_gap():
     _, values = engine.lineup_batters_at('2026-09-02T17:50:00Z', range(101, 110), '251', 'R')
     assert values['lineup_pitch_type_matchup_xwoba_7d'] == .5
     assert values['lineup_pitch_type_matchup_xwoba_30d'] == .5
-    # A missing starter-arsenal day outside 7d still blocks the 30d matchup.
+    # A missing calendar date with no contributing game no longer blocks an
+    # exact-game-proven pitch-type matchup. Generic whole-window features keep
+    # their original date-completeness contract.
     kwargs['statcast_physical_dates'] = [d for d in kwargs['statcast_physical_dates']
                                          if d != '2026-08-10']
     kwargs['statcast_retained_dates'] = [d for d in kwargs['statcast_retained_dates']
@@ -131,12 +134,15 @@ def test_verified_historical_windows_survive_an_unrelated_current_fetch_gap():
     _, partial = Features(bundle['full'], bundle['statcast'], **kwargs).lineup_batters_at(
         '2026-09-02T17:50:00Z', range(101, 110), '251', 'R')
     assert partial['lineup_xwoba_7d'] == .5
-    assert partial['lineup_pitch_type_matchup_xwoba_7d'] is None
-    assert partial['lineup_pitch_type_matchup_xwoba_30d'] is None
+    assert partial['lineup_pitch_type_matchup_xwoba_7d'] == .5
+    assert partial['lineup_pitch_type_matchup_xwoba_30d'] == .5
+    assert partial['lineup_pitch_type_matchup_whiff_pct_30d'] == 0
     kwargs['statcast_retained_dates'] = []
     _, missing = Features(bundle['full'], bundle['statcast'], **kwargs).lineup_batters_at(
         '2026-09-02T17:50:00Z', range(101, 110), '251', 'R')
     assert missing['lineup_xwoba_7d'] is None
+    assert missing['lineup_pitch_type_matchup_xwoba_30d'] is None
+    assert missing['lineup_pitch_type_matchup_whiff_pct_30d'] == 0
 
 
 @pytest.mark.parametrize('dates', [None, []])
