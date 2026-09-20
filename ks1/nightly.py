@@ -301,6 +301,11 @@ def main():
         args.output.mkdir(parents=True, exist_ok=True)
         (args.output/'capture.json').write_bytes(encode(source))
         report = execute(source, args.output, s3=s3, bucket=bucket, checkpoint=checkpoint)
+        report_path = args.output/'report.json'
+        if not report_path.exists():
+            # The pre-02:00 path is a no-write grading decision, but downstream
+            # idempotent trace recovery still requires its explicit status.
+            report_path.write_bytes(encode(report))
     else:
         if not args.inputs:
             parser.error('--inputs is required without --publish')
