@@ -127,7 +127,8 @@ def test_publish_reuses_verified_existing_checkpoint_trace(monkeypatch, tmp_path
     source = _source()
     ledger = _ledger(source)
     existing = {
-        'contract': subject.CONTRACT, 'system': 'KS1', 'ledger_as_of': ledger['as_of'],
+        'contract': subject.CONTRACT, 'system': 'KS1', 'as_of': source['as_of'],
+        'ledger_as_of': ledger['as_of'],
         'sample': {'analyzed_non_holdout_rows': 3}, 'authority_effect': 'none',
         'prediction_writes': 0, 'official_ledger_writes': 0,
         'model_ref_writes': 0, 'lock_writes': 0,
@@ -332,11 +333,14 @@ def test_real_publication_is_write_once_and_only_touches_trace(monkeypatch, tmp_
     assert output.read_bytes() == store.objects[first['key']]
     assert store.objects['protected/predictions'] == b'untouched'
     assert (source, ledger) == before
-    # The workflow skips changed captures without a new checkpoint; the store
-    # itself must retain its hard refusal of different bytes at the same key.
+    # A later capture may recover or observe the same immutable checkpoint.
+    # Reuse the verified trace bytes instead of rebuilding or overwriting them.
     source['as_of'] = '2026-09-19T08:00:00+00:00'
-    with pytest.raises(ValueError, match='refuse to overwrite'):
-        subject.publish(source, output, s3=store, bucket='test')
+    third = subject.publish(source, output, s3=store, bucket='test')
+    assert third['status'] == 'already_published'
+    assert third['key'] == first['key']
+    assert third['proof'] == first['proof']
+    assert output.read_bytes() == store.objects[first['key']]
     assert len(store.writes) == 1
 
 
