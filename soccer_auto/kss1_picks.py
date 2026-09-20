@@ -2,13 +2,37 @@
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Attr, Key
 
 from .canonical import parse_utc
 from .storage import now_utc, plain
 
 SELECTIONS = {None, "12", "1X", "X2", "1x2", "ou25", "btts"}
 PUBLISHED_MARKET_FIELDS = ("1x2_published", "double_chance_published", "ou25_published", "btts_published")
+
+# Readback never consumes the large training-feature payload carried by each
+# immutable shadow. Project every field used below, including the research
+# exclusion, while retaining strongly consistent reads and every query page.
+PICK_READ_FIELDS = (
+    "immutable", "prediction_status", "automatic_prediction_allowed",
+    "event_key", "schedule_revision", "commence_time", "home_team",
+    "away_team", "created_at", "model_digest", "goals_context_as_of",
+    "kss1.goals_model_digest", "kss1.observation.action", "kss1.markets",
+    "kss1.input_coverage", "goals_features.research_only",
+)
+
+
+def _projection(fields):
+    names = {}
+    paths = []
+    for field in fields:
+        parts = []
+        for part in field.split("."):
+            alias = "#" + part
+            names[alias] = part
+            parts.append(alias)
+        paths.append(".".join(parts))
+    return {"ProjectionExpression": ", ".join(paths), "ExpressionAttributeNames": names}
 
 
 def _matches_selection(markets, selection):
@@ -35,7 +59,12 @@ def recorded_picks(store, day=None, *, selection=None, trained_only=True):
     start = datetime.combine(day, time(), zone).astimezone(timezone.utc)
     end = datetime.combine(day + timedelta(days=1), time(), zone).astimezone(timezone.utc)
     fixtures = []
-    for value in store.scan_all(store.events, ConsistentRead=True):
+    for value in store.scan_all(
+        store.events,
+        ConsistentRead=True,
+        FilterExpression=Attr("entity_type").eq("SOCCER_EVENT") & Attr("SK").eq("METADATA"),
+        **_projection(("entity_type", "SK", "event_key", "schedule_revision", "home_team", "away_team", "commence_time")),
+    ):
         row = plain(value)
         if row.get("entity_type") != "SOCCER_EVENT" or row.get("SK") != "METADATA":
             continue
@@ -49,7 +78,7 @@ def recorded_picks(store, day=None, *, selection=None, trained_only=True):
     published_counts = {"1x2": 0, "double_chance": 0, "ou25": 0, "btts": 0, "any": 0}
     for fixture in fixtures[:500]:
         revision = int(fixture.get("schedule_revision") or 0)
-        query = {"KeyConditionExpression": Key("PK").eq(fixture["event_key"]) & Key("SK").begins_with(f"PRED#KSS1#REV#{revision}#TARGET#kss1_book#MODEL#"), "ConsistentRead": True}
+        query = {"KeyConditionExpression": Key("PK").eq(fixture["event_key"]) & Key("SK").begins_with(f"PRED#KSS1#REV#{revision}#TARGET#kss1_book#MODEL#"), "ConsistentRead": True, **_projection(PICK_READ_FIELDS)}
         valid = []
         while True:
             response = store.predictions.query(**query)

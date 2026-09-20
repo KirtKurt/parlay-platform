@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Mapping
 
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Attr, Key
 
 from .canonical import iso_utc, parse_utc, schedule_identity
 from .config import (
@@ -32,22 +32,29 @@ from .storage import SoccerStore, now_utc, plain
 
 HEALTH_CONTRACT_VERSION = "soccer-auto-health-proof-v1"
 HEALTH_SCAN_LIMIT = 10000
+HEALTH_SCAN_MAX_PAGES = 1000
 RECENT_DECISION_AUDIT_HOURS = 24
 UPCOMING_DECISION_AUDIT_HOURS = 24
 
 
-def _scan(table: Any, *, limit: int = HEALTH_SCAN_LIMIT) -> tuple[list[dict[str, Any]], bool]:
-    """Read up to ``limit`` rows across DynamoDB's 1 MiB response pages."""
+def _scan(table: Any, *, limit: int = HEALTH_SCAN_LIMIT, filter_expression=None) -> tuple[list[dict[str, Any]], bool]:
+    """Read the complete audit cohort, failing closed at either safety bound.
+
+    A server-side filter limits returned rows, not the evaluated DynamoDB
+    pages. Empty filtered pages must still advance to the end of the table.
+    """
     rows: list[dict[str, Any]] = []
     exclusive_start_key: Mapping[str, Any] | None = None
     seen_keys: set[str] = set()
-    while len(rows) < limit:
+    for _ in range(HEALTH_SCAN_MAX_PAGES):
         kwargs: dict[str, Any] = {
             "ConsistentRead": True,
             "Limit": max(1, limit - len(rows)),
         }
         if exclusive_start_key is not None:
             kwargs["ExclusiveStartKey"] = exclusive_start_key
+        if filter_expression is not None:
+            kwargs["FilterExpression"] = filter_expression
         response = table.scan(**kwargs)
         next_key = response.get("LastEvaluatedKey")
         if exclusive_start_key is not None and next_key == exclusive_start_key:
@@ -273,7 +280,18 @@ def prediction_and_training_health(
     events, events_truncated = _scan(store.events)
     locks, locks_truncated = _scan(store.locks)
     settlement_rows, settlements_truncated = _scan(store.settlements)
-    predictions, predictions_truncated = _scan(store.predictions)
+    # This proof audits only immutable CHAMPION public decisions. KSS1 shadow
+    # learning can accumulate arbitrarily many rows without consuming that
+    # cohort's row budget. The predicate is identical to public_rows below;
+    # the complete physical table still has to be traversed.
+    predictions, predictions_truncated = _scan(
+        store.predictions,
+        filter_expression=(
+            Attr("model_authority").eq("CHAMPION")
+            & Attr("prediction_status").is_in(["PUBLISHED", "NO_PICK"])
+            & Attr("immutable").eq(True)
+        ),
+    )
     conflicted_events, conflicts_truncated = _conflicted_events(store)
 
     current_events = {
@@ -519,6 +537,13 @@ def prediction_and_training_health(
         "integrity_failures": integrity_failures,
         "availability_warnings": availability_warnings,
         "scan_truncated": scan_truncated,
+        "truncated_tables": [
+            name for name, truncated in (
+                ("events", events_truncated), ("locks", locks_truncated),
+                ("settlements", settlements_truncated),
+                ("predictions", predictions_truncated), ("conflicts", conflicts_truncated),
+            ) if truncated
+        ],
         "t10_decisions": {
             "due_events": due_events,
             "open_capture_events": open_capture_events,
