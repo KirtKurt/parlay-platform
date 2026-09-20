@@ -77,18 +77,18 @@ def _object(value: Any) -> dict[str, Any]:
 def verified_final_receipts(s3, bucket: str, grades: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Verify original provider receipts one immutable version at a time.
 
-    Historical ``prior-games`` objects can be large.  The original tracer retained every
-    exact-version JSON payload in a cache while walking the ledger, which made memory grow
-    with the number of historical receipt versions.  Keep only receipt metadata and game
-    IDs in memory; read each unique version once, resolve every grade that version proves,
-    then release the payload before opening the next version.  This preserves exact body
-    checksum/version validation and the original score/team binding without weakening the
-    fail-closed receipt contract.
+    Historical ``prior-games`` objects can be large. The original tracer retained every
+    exact-version JSON payload in a cache while walking the ledger, so memory grew with
+    the number of historical receipt versions. Validate receipt metadata up front, then
+    process each receipt position in the same fail-closed order as before. Within one
+    position, read each shared immutable version once, resolve all grades it proves, and
+    release the payload before opening another version. This preserves exact body
+    checksum/version, score and team binding without retaining historical source bodies.
     """
-    requirements: dict[tuple[str, str, str], dict[str, Any]] = {}
-    order: list[tuple[str, str, str]] = []
     grade_by_id: dict[str, dict[str, Any]] = {}
     receipts_by_id: dict[str, list[dict[str, Any]]] = {}
+    specs_by_id: dict[str, list[tuple[tuple[str, str, str], str]]] = {}
+    checksum_by_token: dict[tuple[str, str, str], str] = {}
 
     for grade in grades:
         game_id = str(grade["game_id"])
@@ -99,6 +99,7 @@ def verified_final_receipts(s3, bucket: str, grades: list[dict[str, Any]]) -> di
             raise ValueError("committed grade missing original final evidence")
         grade_by_id[game_id] = grade
         receipts_by_id[game_id] = receipts
+        specs = []
         for receipt in receipts:
             if not isinstance(receipt, dict) or receipt.get("bucket") != bucket:
                 raise ValueError("final receipt escaped the KS1 artifact bucket")
@@ -110,48 +111,58 @@ def verified_final_receipts(s3, bucket: str, grades: list[dict[str, Any]]) -> di
                     or not re.fullmatch(r"[0-9a-f]{64}", str(sha or ""))):
                 raise ValueError("invalid immutable final receipt")
             token = (bucket, key, version)
-            requirement = requirements.get(token)
-            if requirement is None:
-                requirement = {"sha256": sha, "game_ids": []}
-                requirements[token] = requirement
-                order.append(token)
-            elif requirement["sha256"] != sha:
+            previous_sha = checksum_by_token.setdefault(token, sha)
+            if previous_sha != sha:
                 raise ValueError("same immutable final receipt version has conflicting checksum")
-            requirement["game_ids"].append(game_id)
+            specs.append((token, sha))
+        specs_by_id[game_id] = specs
 
     verified: dict[str, dict[str, Any]] = {}
     unresolved = set(grade_by_id)
-    for token in order:
-        wanted = unresolved.intersection(requirements[token]["game_ids"])
-        if not wanted:
-            continue
-        _, key, version = token
-        payload, proof = read_json(s3, bucket, key, version)
-        if payload is None or proof.get("sha256") != requirements[token]["sha256"]:
-            raise ValueError("original final receipt is missing or changed")
-        for game in payload.get("games") or []:
-            game_id = str(game.get("officialGamePk") or "")
-            if game_id not in wanted:
+    max_receipts = max((len(specs) for specs in specs_by_id.values()), default=0)
+    for receipt_index in range(max_receipts):
+        grouped: dict[tuple[str, str, str], list[str]] = {}
+        token_order: list[tuple[str, str, str]] = []
+        for game_id in grade_by_id:
+            if game_id not in unresolved or receipt_index >= len(specs_by_id[game_id]):
                 continue
-            grade = grade_by_id[game_id]
-            try:
-                candidate = {
-                    "home_score": game["teams"]["home"]["teamStats"]["batting"]["runs"],
-                    "away_score": game["teams"]["away"]["teamStats"]["batting"]["runs"],
-                    "home_id": str(game["teams"]["home"]["team"]["id"]),
-                    "away_id": str(game["teams"]["away"]["team"]["id"]),
-                    "completed_at": game["completedAtUtc"],
-                    "final_evidence": receipts_by_id[game_id],
-                }
-            except KeyError as exc:
-                raise ValueError("original final receipt lacks settled identity or score") from exc
-            if (candidate["home_score"] != grade.get("home_score")
-                    or candidate["away_score"] != grade.get("away_score")):
-                raise ValueError("committed score differs from original final receipt")
-            verified[game_id] = candidate
-            unresolved.discard(game_id)
-        # Do not retain large historical source bodies across versions.
-        payload = None
+            token, _ = specs_by_id[game_id][receipt_index]
+            if token not in grouped:
+                grouped[token] = []
+                token_order.append(token)
+            grouped[token].append(game_id)
+
+        for token in token_order:
+            wanted = set(grouped[token]).intersection(unresolved)
+            if not wanted:
+                continue
+            _, key, version = token
+            payload, proof = read_json(s3, bucket, key, version)
+            if payload is None or proof.get("sha256") != checksum_by_token[token]:
+                raise ValueError("original final receipt is missing or changed")
+            for game in payload.get("games") or []:
+                game_id = str(game.get("officialGamePk") or "")
+                if game_id not in wanted:
+                    continue
+                grade = grade_by_id[game_id]
+                try:
+                    candidate = {
+                        "home_score": game["teams"]["home"]["teamStats"]["batting"]["runs"],
+                        "away_score": game["teams"]["away"]["teamStats"]["batting"]["runs"],
+                        "home_id": str(game["teams"]["home"]["team"]["id"]),
+                        "away_id": str(game["teams"]["away"]["team"]["id"]),
+                        "completed_at": game["completedAtUtc"],
+                        "final_evidence": receipts_by_id[game_id],
+                    }
+                except KeyError as exc:
+                    raise ValueError("original final receipt lacks settled identity or score") from exc
+                if (candidate["home_score"] != grade.get("home_score")
+                        or candidate["away_score"] != grade.get("away_score")):
+                    raise ValueError("committed score differs from original final receipt")
+                verified[game_id] = candidate
+                unresolved.discard(game_id)
+            # Do not retain large historical source bodies across exact versions.
+            payload = None
         if not unresolved:
             break
     if unresolved:
@@ -192,7 +203,7 @@ def _contribution_summary(observations: list[dict[str, Any]]) -> list[dict[str, 
     return sorted(output, key=lambda row: row["group"])
 
 
-def _summary(observations: list[dict[str,Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+def _summary(observations: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     wins = sum(item["selected_won"] for item in observations)
     losses = len(observations) - wins
     baseline_loss_rate = losses / len(observations) if observations else None
