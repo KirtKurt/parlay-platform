@@ -169,6 +169,11 @@ def trace_trial(function):
     """Record unchanged forensic trials with deterministic candidate/fold/trial IDs."""
     @wraps(function)
     def wrapped(fit, validation, columns, params):
+        # Outside the explicitly scoped development run this decorator must be a
+        # transparent no-op, including for test/synthetic callers with sentinel
+        # arguments. Do not inspect or hash anything until tracing is active.
+        if _STATE.get() is None:
+            return function(fit, validation, columns, params)
         with trace_model_trial(
                 'forensic', fit, validation, columns,
                 trial=_known_trial(params),
