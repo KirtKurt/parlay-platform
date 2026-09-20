@@ -152,6 +152,103 @@ def test_proof_bound_statcast_replay_requires_exact_report_and_receipts(monkeypa
     assert evidence['provider_requests'] == 0
 
 
+def test_proof_bound_statcast_replay_pins_daily_key_to_input_proof(monkeypatch):
+    official = {
+        'bucket': 'retained', 'key': 'official.json', 'versionId': 'vo',
+        'sha256': 'b' * 64, 'complete_years': [2025, 2026],
+    }
+    pointer_receipt, artifact_receipt = _compact_statcast_receipts()
+    replay_receipt = {
+        'bucket': 'retained', 'key': 'sources/statcast-v2/2026-05-31.json',
+        'versionId': 'vs-old', 'sha256': 'c' * 64,
+    }
+    expected_report = {
+        'source': 'sources/statcast-v2/', 'provider_requests': 0,
+        'verified_outcome_dates': 1, 'verified_physical_dates': 1,
+        'retained_pitch_rows': 1,
+    }
+    proof = {
+        'official_history_source': official,
+        'historical_statcast_report': expected_report,
+        'source_receipts': [
+            dict(official), dict(pointer_receipt), dict(artifact_receipt),
+            dict(replay_receipt),
+        ],
+    }
+    bundle = {
+        'official_history_source': dict(official),
+        'source_receipts': [
+            dict(official), dict(pointer_receipt), dict(artifact_receipt),
+        ],
+    }
+    row = {'game_pk': '50', 'pitcher': '10', 'game_date': '2026-05-31'}
+    calls = []
+
+    class AdvancedS3:
+        def get_object(self, **kwargs):
+            calls.append(kwargs)
+            assert kwargs['VersionId'] == 'vs-old'
+            return {'VersionId': 'vs-old'}
+
+    monkeypatch.setattr(subject, 'load_existing', lambda cf, s3, bucket: bundle)
+
+    def replay(value, s3, bucket):
+        response = s3.get_object(
+            Bucket='retained', Key='sources/statcast-v2/2026-05-31.json')
+        assert response['VersionId'] == 'vs-old'
+        value['statcast'] = [row]
+        value['statcast_retained_dates'] = ['2026-05-31']
+        value['statcast_physical_dates'] = ['2026-05-31']
+        value['statcast_verified_games'] = ['50']
+        value['statcast_physical_games'] = ['50']
+        value['source_receipts'].append(dict(replay_receipt))
+        return dict(expected_report)
+
+    monkeypatch.setattr(subject, 'load_training_statcast', replay)
+    context, evidence = subject.proof_bound_statcast_context(
+        'cf', AdvancedS3(), 'retained', proof)
+    assert context['rows'] == [row]
+    assert calls == [{
+        'Bucket': 'retained', 'Key': 'sources/statcast-v2/2026-05-31.json',
+        'VersionId': 'vs-old',
+    }]
+    assert evidence['proof_report_sha256'] == evidence['replay_report_sha256']
+
+
+def test_proof_bound_statcast_replay_rejects_ambiguous_proof_key_versions(monkeypatch):
+    official = {
+        'bucket': 'retained', 'key': 'official.json', 'versionId': 'vo',
+        'sha256': 'b' * 64, 'complete_years': [2025, 2026],
+    }
+    pointer_receipt, artifact_receipt = _compact_statcast_receipts()
+    first = {
+        'bucket': 'retained', 'key': 'sources/statcast-v2/2026-05-31.json',
+        'versionId': 'vs-one', 'sha256': 'c' * 64,
+    }
+    second = {**first, 'versionId': 'vs-two', 'sha256': 'd' * 64}
+    proof = {
+        'official_history_source': official,
+        'historical_statcast_report': {'provider_requests': 0},
+        'source_receipts': [
+            dict(official), dict(pointer_receipt), dict(artifact_receipt),
+            first, second,
+        ],
+    }
+    bundle = {
+        'official_history_source': dict(official),
+        'source_receipts': [
+            dict(official), dict(pointer_receipt), dict(artifact_receipt),
+        ],
+    }
+    monkeypatch.setattr(subject, 'load_existing', lambda cf, s3, bucket: bundle)
+    monkeypatch.setattr(
+        subject, 'load_training_statcast',
+        lambda value, s3, bucket: s3.get_object(
+            Bucket='retained', Key='sources/statcast-v2/2026-05-31.json'))
+    with pytest.raises(ValueError, match='proof_key_version_ambiguous'):
+        subject.proof_bound_statcast_context('cf', object(), 'retained', proof)
+
+
 def test_proof_bound_statcast_replay_restores_advanced_official_history_from_proof(
         monkeypatch):
     exact_payload = {
