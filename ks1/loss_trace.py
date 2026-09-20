@@ -317,10 +317,14 @@ def publish(source: dict[str, Any], output: Path, *, s3, bucket: str) -> dict[st
     if existing is not None:
         if (existing.get("contract") != CONTRACT or existing.get("system") != "KS1"
                 or existing.get("ledger_as_of") != ledger.get("as_of")
+                or not existing.get("as_of")
+                or utc(existing["as_of"]) > utc(source.get("as_of"))
                 or any(existing.get(field) != 0 for field in (
                     "prediction_writes", "official_ledger_writes",
                     "model_ref_writes", "lock_writes"))):
-            raise ValueError("existing loss trace is not bound to the committed KS1 checkpoint")
+            raise ValueError(
+                "refuse to overwrite or reuse loss trace not bound to the committed KS1 checkpoint"
+            )
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(encode(existing))
         return {
