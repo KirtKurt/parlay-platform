@@ -25,6 +25,7 @@ from ks1.platt_inputs import dataset
 
 CONTRACT = "KS1-settled-loss-trace-v1"
 HOLDOUT_PATH = Path(__file__).with_name("qualification_holdout_20260914.json")
+FROZEN_GAME_IDS_SHA256 = "b13a31c7650e308b058f318648deb600edeeef4ebce2b053806cdc5b8b4fb87a"
 
 
 def require_main_workflow() -> None:
@@ -42,6 +43,8 @@ def holdout_ids(path: Path = HOLDOUT_PATH) -> set[str]:
     ids = [str(value) for value in payload.get("game_ids", [])]
     if len(ids) != 300 or len(set(ids)) != 300:
         raise ValueError("frozen qualification holdout must contain exactly 300 unique game IDs")
+    if __import__("hashlib").sha256(encode(ids)).hexdigest() != FROZEN_GAME_IDS_SHA256:
+        raise ValueError("frozen qualification holdout game identities changed")
     return set(ids)
 
 
@@ -198,8 +201,13 @@ def build(source: dict[str, Any], ledger: dict[str, Any], frozen_ids: set[str]) 
             raise ValueError("committed ledger row is not prospectively reproducible from capture")
         reproduced = admitted_by_id[game_id]
         if (reproduced.get("signature") != grade.get("signature")
-                or int(reproduced.get("home_win")) != int(grade.get("home_win"))):
-            raise ValueError("committed grade differs from prospectively reproduced observation")
+                or int(reproduced.get("home_win")) != int(grade.get("home_win"))
+                or reproduced.get("home_score") != grade.get("home_score")
+                or reproduced.get("away_score") != grade.get("away_score")
+                or reproduced.get("final_evidence") != grade.get("final_evidence")):
+            raise ValueError(
+                "committed grade or final evidence differs from prospectively reproduced observation"
+            )
         entry = locked.get(game_id)
         if entry is None:
             raise ValueError("committed grade missing immutable locked prediction row")
@@ -279,6 +287,7 @@ def build(source: dict[str, Any], ledger: dict[str, Any], frozen_ids: set[str]) 
         },
         "holdout_boundary": {
             "id_list_read_only_for_exclusion": True,
+            "manifest_game_ids_sha256": FROZEN_GAME_IDS_SHA256,
             "holdout_labels_read": 0,
             "holdout_predictions_scored": 0,
             "qualification_runs": 0,
