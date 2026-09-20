@@ -63,7 +63,7 @@ jobs:
       - name: Backfill timestamped pregame starters and compare on rolling holdout
         run: |
           remaining=$(python -m ks1.forensic_runtime --remaining-budget)
-          timeout --signal=TERM --kill-after=30s "${remaining}s" python -m ks1.retrain_recent --output /tmp/ks1-recent
+          timeout --signal=TERM --kill-after=30s "${remaining}s" python -m ks1.retrain_recent_attempt_proof --output /tmp/ks1-recent
       - name: Train forensic signals and existing KS1 features as one challenger
         run: |
           remaining=$(python -m ks1.forensic_runtime --remaining-budget)
@@ -74,7 +74,7 @@ jobs:
       - name: Develop explicit forensic derived features without consuming final holdout
         run: |
           remaining=$(python -m ks1.forensic_runtime --remaining-budget)
-          timeout --signal=TERM --kill-after=30s "${remaining}s" python -m ks1.forensic_derived_development \
+          timeout --signal=TERM --kill-after=30s "${remaining}s" python -m ks1.forensic_derived_development_attempt_proof \
             --input /tmp/ks1-recent/input_table.parquet \
             --proof /tmp/ks1-recent/input_proof.json \
             --output /tmp/ks1-forensic-derived
