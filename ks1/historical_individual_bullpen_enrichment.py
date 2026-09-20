@@ -66,6 +66,46 @@ def _source_identity(receipt):
     return bucket, key, version, sha256
 
 
+class _ProofBoundReads:
+    """Pin previously read S3 keys to the versions captured by the input proof.
+
+    Historical Statcast replay derives candidate keys from the official schedule. A
+    canonical daily key can advance between the table build and a later development
+    step, even though both run inside one workflow. Re-reading that key without its
+    proof version makes the strict report comparison fail for an unrelated concurrent
+    publication. Pin only keys already present in the proof; unknown keys retain their
+    normal missing/current behavior and are still rejected by the report and receipt
+    checks below if they contribute anything.
+    """
+
+    _AMBIGUOUS = object()
+
+    def __init__(self, s3, receipts):
+        self._s3 = s3
+        self._versions = {}
+        for candidate in receipts or []:
+            identity = _source_identity(candidate)
+            if identity is None:
+                continue
+            bucket, key, version, _ = identity
+            location = (bucket, key)
+            previous = self._versions.get(location)
+            if previous is None:
+                self._versions[location] = version
+            elif previous != version:
+                self._versions[location] = self._AMBIGUOUS
+
+    def get_object(self, **kwargs):
+        request = dict(kwargs)
+        if not request.get("VersionId"):
+            version = self._versions.get((request.get("Bucket"), request.get("Key")))
+            if version is self._AMBIGUOUS:
+                raise ValueError("individual_bullpen_proof_key_version_ambiguous")
+            if isinstance(version, str):
+                request["VersionId"] = version
+        return self._s3.get_object(**request)
+
+
 def _preloaded_statcast_identities(receipts):
     """Return the exact compact Statcast pointer/artifact identities read by load_existing."""
     pointer_key = RESEARCH + "statcast.json"
@@ -280,7 +320,8 @@ def proof_bound_statcast_context(cf, s3, bucket, proof):
         raise ValueError("individual_bullpen_statcast_preloaded_receipt_unbound")
 
     before = len(bundle.get("source_receipts", []))
-    replay_report = load_training_statcast(bundle, s3, bucket)
+    replay_report = load_training_statcast(
+        bundle, _ProofBoundReads(s3, proof.get("source_receipts", [])), bucket)
     if replay_report.get("provider_requests") != 0:
         raise ValueError("individual_bullpen_statcast_replay_provider_requests")
     if encode(replay_report) != encode(expected_report):
