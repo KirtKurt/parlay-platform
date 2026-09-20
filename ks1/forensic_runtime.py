@@ -11,6 +11,8 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from functools import wraps
 import argparse
+import hashlib
+import inspect
 import json
 import math
 import os
@@ -19,8 +21,63 @@ from pathlib import Path
 from time import perf_counter, time
 
 _STATE = ContextVar('ks1_forensic_runtime', default=None)
-PROGRESS_FILE = 'development_progress.json'
+# Reuse the existing wall-clock-only progress filename already excluded by
+# ks1.train.save_artifact(), so diagnostics remain in Actions artifacts without
+# changing checksum-derived experiment identity or S3 experiment contents.
+PROGRESS_FILE = 'progress.json'
 WORK_BUDGET_SECONDS = 290 * 60  # Reserve cleanup inside the current 300-minute job.
+
+
+def _digest(value):
+    payload = json.dumps(value, sort_keys=True, separators=(',', ':'),
+                         ensure_ascii=True, default=str).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _frame_identity(frame):
+    try:
+        if hasattr(frame, 'columns') and 'game_id' in frame.columns:
+            values = [str(value) for value in frame['game_id'].tolist()]
+        else:
+            values = [str(value) for value in frame.index.tolist()]
+    except Exception:
+        values = [f'rows:{len(frame)}']
+    return _digest(values)
+
+
+def _candidate_identity(columns):
+    return 'features:' + _digest([str(column) for column in columns])[:16]
+
+
+def _fold_identity(fit, validation):
+    return 'fold:' + _digest([_frame_identity(fit), _frame_identity(validation)])[:16]
+
+
+def _known_trial(params):
+    """Name an unchanged prespecified trial; hash only genuinely custom parameters."""
+    try:
+        from ks1.development import TRIALS
+        from ks1.train import PARAMS
+        current = dict(params)
+        for name, updates in TRIALS.items():
+            if current == {**PARAMS, **updates}:
+                return name
+    except Exception:
+        pass
+    return 'params:' + _digest(dict(params))[:16]
+
+
+def _caller_source():
+    """Return a source-location identifier without logging frame data."""
+    frame = inspect.currentframe()
+    try:
+        caller = frame.f_back.f_back if frame and frame.f_back else None
+        if caller is None:
+            return None
+        module = caller.f_globals.get('__name__', '<unknown>')
+        return f'{module}:{caller.f_code.co_name}:{caller.f_lineno}'
+    finally:
+        del frame
 
 
 def _record(state, stage, **details):
@@ -77,7 +134,8 @@ def trace_development_run(function):
 
 
 @contextmanager
-def trace_model_trial(phase, fit, validation, columns, *, recipe=None, trial=None):
+def trace_model_trial(phase, fit, validation, columns, *, recipe=None, trial=None,
+                      candidate=None, fold=None, source=None):
     """Trace an existing fit/predict/score block without selecting or changing it."""
     state = _STATE.get()
     if state is None:
@@ -86,9 +144,16 @@ def trace_model_trial(phase, fit, validation, columns, *, recipe=None, trial=Non
     state['trials_started'] += 1
     started = perf_counter()
     state['last_trial'] = {
-        'phase': phase, 'trial_number': state['trials_started'],
-        'fit_rows': len(fit), 'validation_rows': len(validation),
-        'feature_count': len(columns), 'recipe': recipe, 'trial': trial,
+        'phase': phase,
+        'trial_number': state['trials_started'],
+        'fit_rows': len(fit),
+        'validation_rows': len(validation),
+        'feature_count': len(columns),
+        'recipe': recipe,
+        'trial': trial,
+        'candidate': candidate or recipe or _candidate_identity(columns),
+        'fold': fold or _fold_identity(fit, validation),
+        'source': source,
     }
     _record(state, 'trial_started')
     try:
@@ -101,10 +166,15 @@ def trace_model_trial(phase, fit, validation, columns, *, recipe=None, trial=Non
 
 
 def trace_trial(function):
-    """Record unchanged forensic trials; baseline fits use the same scoped trace."""
+    """Record unchanged forensic trials with deterministic candidate/fold/trial IDs."""
     @wraps(function)
     def wrapped(fit, validation, columns, params):
-        with trace_model_trial('forensic', fit, validation, columns):
+        with trace_model_trial(
+                'forensic', fit, validation, columns,
+                trial=_known_trial(params),
+                candidate=_candidate_identity(columns),
+                fold=_fold_identity(fit, validation),
+                source=_caller_source()):
             return function(fit, validation, columns, params)
     return wrapped
 
