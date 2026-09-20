@@ -106,6 +106,7 @@ def test_publish_uses_latest_committed_checkpoint_and_readback(monkeypatch, tmp_
         'ledger': ledger, 'state': {'night_date': '2026-09-19', 'catchup_revision': 2}
     })
     monkeypatch.setattr(subject, 'holdout_ids', lambda: set())
+    monkeypatch.setattr(subject, 'read_json', lambda s3, bucket, key: (None, None))
     monkeypatch.setattr(subject, 'build', lambda source, ledger, frozen_ids: {
         'sample': {'analyzed_non_holdout_rows': 3}, 'authority_effect': 'none'
     })
@@ -120,6 +121,31 @@ def test_publish_uses_latest_committed_checkpoint_and_readback(monkeypatch, tmp_
     assert seen['key'].endswith('date=2026-09-19/catchup=000002/loss_trace.json')
     assert out['status'] == 'published'
     assert json.loads((tmp_path / 'loss_trace.json').read_text())['sample']['analyzed_non_holdout_rows'] == 3
+
+
+def test_publish_reuses_verified_existing_checkpoint_trace(monkeypatch, tmp_path):
+    source = _source()
+    ledger = _ledger(source)
+    existing = {
+        'contract': subject.CONTRACT, 'system': 'KS1', 'ledger_as_of': ledger['as_of'],
+        'sample': {'analyzed_non_holdout_rows': 3}, 'authority_effect': 'none',
+        'prediction_writes': 0, 'official_ledger_writes': 0,
+        'model_ref_writes': 0, 'lock_writes': 0,
+    }
+    proof = {'key': 'existing', 'sha256': 'a' * 64}
+    monkeypatch.setattr(subject, 'require_main_workflow', lambda: None)
+    monkeypatch.setattr(subject, 'latest_checkpoint', lambda *args: {
+        'ledger': ledger, 'state': {'night_date': '2026-09-19', 'catchup_revision': 2}
+    })
+    monkeypatch.setattr(subject, 'read_json', lambda *args: (existing, proof))
+    monkeypatch.setattr(subject, 'holdout_ids', lambda: pytest.fail('read holdout for existing trace'))
+    monkeypatch.setattr(subject, 'build', lambda *args: pytest.fail('rebuilt existing trace'))
+    monkeypatch.setattr(subject, 'commit_json', lambda *args: pytest.fail('rewrote existing trace'))
+    output = tmp_path / 'loss_trace.json'
+    out = subject.publish(source, output, s3=object(), bucket='bucket')
+    assert out['status'] == 'already_published'
+    assert out['proof'] == proof
+    assert json.loads(output.read_text()) == existing
 
 
 class IdentityOnly(dict):
@@ -296,7 +322,10 @@ def test_real_publication_is_write_once_and_only_touches_trace(monkeypatch, tmp_
     output = tmp_path / 'loss_trace.json'
     first = subject.publish(source, output, s3=store, bucket='test')
     second = subject.publish(source, output, s3=store, bucket='test')
-    assert first == second
+    assert first['status'] == 'published'
+    assert second['status'] == 'already_published'
+    assert first['key'] == second['key']
+    assert first['proof'] == second['proof']
     assert store.writes == [first['key']]
     assert first['key'].endswith('date=2026-09-19/catchup=000002/loss_trace.json')
     assert first['proof']['sha256'] == hashlib.sha256(output.read_bytes()).hexdigest()
@@ -313,7 +342,7 @@ def test_real_publication_is_write_once_and_only_touches_trace(monkeypatch, tmp_
 
 @pytest.mark.parametrize('status,expected_calls,success', [
     ('not_due_or_already_completed', 0, True),
-    ('no_new_final_grades', 0, True),
+    ('no_new_final_grades', 1, True),
     ('completed', 1, True),
     ('completed_catchup', 1, True),
     ('source_refresh_not_verified', 0, False),
