@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from ks1.calibration_store import checkpoint_prefix, commit_json, latest_checkpoint
+from ks1.calibration_store import checkpoint_prefix, commit_json, latest_checkpoint, read_json
 from ks1.features import ET, utc
 from ks1.forensic_consideration import evaluate
 from ks1.inventory import encode
@@ -305,10 +305,30 @@ def publish(source: dict[str, Any], output: Path, *, s3, bucket: str) -> dict[st
     if checkpoint is None:
         raise ValueError("loss trace requires a committed KS1 nightly checkpoint")
     ledger = checkpoint["ledger"]
-    payload = build(source, ledger, holdout_ids())
     state = checkpoint["state"]
     prefix = checkpoint_prefix(state["night_date"], int(state.get("catchup_revision", 0)))
     key = prefix + "loss_trace.json"
+
+    # A retry can arrive after the official checkpoint committed but before its
+    # derived trace did. Reuse a verified existing trace without rebuilding it
+    # from a later capture; otherwise recover the missing trace for this exact
+    # immutable checkpoint.
+    existing, existing_proof = read_json(s3, bucket, key)
+    if existing is not None:
+        if (existing.get("contract") != CONTRACT or existing.get("system") != "KS1"
+                or existing.get("ledger_as_of") != ledger.get("as_of")
+                or any(existing.get(field) != 0 for field in (
+                    "prediction_writes", "official_ledger_writes",
+                    "model_ref_writes", "lock_writes"))):
+            raise ValueError("existing loss trace is not bound to the committed KS1 checkpoint")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(encode(existing))
+        return {
+            "status": "already_published", "key": key, "proof": existing_proof,
+            "sample": existing["sample"], "authority_effect": existing["authority_effect"],
+        }
+
+    payload = build(source, ledger, holdout_ids())
     stored, proof = commit_json(s3, bucket, key, payload)
     if stored != payload:
         raise ValueError("loss trace AWS readback mismatch")
