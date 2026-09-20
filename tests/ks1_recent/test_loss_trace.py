@@ -64,11 +64,11 @@ def _verified(source, grades):
     locked = {entry['row']['game_id']: entry['row'] for entry in source['locked']}
     return {
         str(grade['game_id']): {
-            'home_score': grade['home_score'],
-            'away_score': grade['away_score'],
+            'home_score': source['finals'][str(grade['game_id'])]['home_score'],
+            'away_score': source['finals'][str(grade['game_id'])]['away_score'],
             'home_id': str(locked[str(grade['game_id'])]['home_id']),
             'away_id': str(locked[str(grade['game_id'])]['away_id']),
-            'final_evidence': grade['final_evidence'],
+            'final_evidence': source['final_sources'],
         }
         for grade in grades
     }
