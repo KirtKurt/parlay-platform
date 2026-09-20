@@ -159,7 +159,7 @@ jobs:
           import json, os
           for name in ('training', 'freeze', 'controller', 'health', 'status', 'picks'):
               meta = json.load(open('/tmp/kss1-' + name + '-meta.json'))
-              assert not meta.get('FunctionError'), (name, meta)
+              assert not meta.get('FunctionError'), (name, meta, json.load(open('/tmp/kss1-' + name + '.json')))
           training = json.load(open('/tmp/kss1-training.json'))
           assert training['ok'], training
           freeze = json.load(open('/tmp/kss1-freeze.json'))
@@ -197,6 +197,13 @@ jobs:
               raise
           print('verified_kss1_trained_12_rollout', proof)
           PY
+      - name: Retain KSS1 workflow readback evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soccer-kss1-deploy-readback-${{ github.run_id }}
+          path: /tmp/kss1-*.json
+          if-no-files-found: ignore
       - name: Assert historical backfill is deployed and scheduled
         run: |
           set -euo pipefail

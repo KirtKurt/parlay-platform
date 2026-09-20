@@ -1,11 +1,15 @@
 """Read-only evidence for the September 20 isolated soccer workflow failures."""
 import json
+import os
+import sys
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from time import monotonic
 
 import boto3
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 def main():
@@ -16,11 +20,13 @@ def main():
     stack = 'parlay-platform-soccer-auto'
     resources = cloud.list_stack_resources(StackName=stack)['StackResourceSummaries']
     report = {'read_only': True, 'functions': {}, 'tables': {}, 'api_log_reports': []}
+    api_environment = {}
     for logical in ('SoccerApiFunction', 'SoccerControllerFunction'):
         physical = next(r['PhysicalResourceId'] for r in resources if r['LogicalResourceId'] == logical)
         config = lam.get_function_configuration(FunctionName=physical)
         report['functions'][logical] = {k: config.get(k) for k in ('FunctionName', 'Timeout', 'MemorySize', 'CodeSha256', 'LastModified', 'State', 'LastUpdateStatus')}
         if logical == 'SoccerApiFunction':
+            api_environment = config['Environment']['Variables']
             # Only platform reports/timeouts, never application request bodies or secrets.
             for page in logs.get_paginator('filter_log_events').paginate(
                 logGroupName='/aws/lambda/' + physical,
@@ -53,8 +59,28 @@ def main():
                 break
             kwargs['ExclusiveStartKey'] = cursor
         report['tables'][logical] = {'rows': total, 'entities': dict(counts), 'truncated': bool(cursor), 'pages': pages, 'seconds': round(monotonic()-started, 3)}
+    if '--candidate-readback' in sys.argv:
+        # Run repository readers against existing data. No invokes, writes,
+        # model training, lock creation, or deployment occurs here.
+        os.environ.update(api_environment)
+        from soccer_auto.storage import SoccerStore
+        from soccer_auto.kss1_picks import recorded_picks
+        from soccer_auto.health import prediction_and_training_health
+        store = SoccerStore()
+        started = monotonic()
+        picks = recorded_picks(store, '2026-09-20', selection='12')
+        report['candidate_picks_seconds'] = round(monotonic() - started, 3)
+        report['candidate_picks'] = picks
+        started = monotonic()
+        report['candidate_health'] = prediction_and_training_health(store)
+        report['candidate_health_seconds'] = round(monotonic() - started, 3)
     Path('/tmp/soccer-workflow-diagnostic.json').write_text(json.dumps(report, indent=2, default=str) + '\n')
     print(json.dumps(report, sort_keys=True, default=str))
+    if '--candidate-readback' in sys.argv:
+        assert report['candidate_picks']['truncated'] is False
+        assert report['candidate_picks']['automatic_prediction_allowed'] is False
+        assert report['candidate_health']['proof_complete'] is True
+        assert report['candidate_health']['healthy'] is True
 
 
 if __name__ == '__main__':
