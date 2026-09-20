@@ -49,6 +49,8 @@ def pitcher_context(values):
     return {
         "quality": first("starter_context_quality"),
         "recent_form": first("starter_context_recent_form"),
+        # The official V8 game-log producer does not manufacture velocity.
+        # It remains available in KS1's separately named Statcast features.
         "velocity": first("starter_context_velocity"),
         "command": first("starter_context_command"),
         "expected_innings": first("starter_expected_innings_last5"),
@@ -136,7 +138,7 @@ def rate(numerator, denominator):
 
 def shrink(n, d, prior, strength):
     if prior is None:
-        return None
+        return None  # never learn a cold-start prior from future games
     return (n + strength * prior) / (d + strength)
 
 
@@ -259,6 +261,10 @@ def normalize(games):
             if full:
                 for player in team.get("players", {}).values():
                     stats = player.get("stats", {}).get("pitching", {})
+                    # A nonempty official pitching line is evidence of an
+                    # appearance even when BF is missing or zero. Retain it
+                    # for context so incomplete history cannot become a prior.
+                    # Keep legacy team/rolling feature membership unchanged.
                     if stats:
                         context_players.append({"id": str(player["person"]["id"]), "stats": stats})
                     if number(stats.get("battersFaced")) is not None and stats.get("battersFaced"):
@@ -268,6 +274,7 @@ def normalize(games):
                     if any(number(batting_stats.get(key)) is not None for key in BATTER_RESULTS):
                         batters.append({"id": str(player["person"]["id"]), "stats": batting_stats})
                 starter_total, _ = counts(starters, PITCH)
+                # WHIP needs full boxes, not compact starter summaries.
                 if starters and all(all(number(p.get(k)) is not None for k in ("outs", "hits")) for p in starters):
                     starter_total.update({k: sum(number(p[k]) for p in starters) for k in ("outs", "hits")})
                 for key in ("earnedRuns", "runs", "homeRuns", "hitBatsmen", "wins", "losses"):
@@ -319,6 +326,8 @@ class Features:
             self.statcast_by_batter_game.setdefault((str(row.get("batter")), game_id), []).append(row)
         self.cache = {}
         self.priors = {}
+        # Preserve the original row/player order while avoiding a full league
+        # scan for each of nine batters and each roster reliever in every game.
         self.batter_history = {}
         self.reliever_history = {}
         self.bullpen_priors = {}
@@ -333,7 +342,7 @@ class Features:
     def team_statcast_window_complete(self, target, window):
         """Require exact loaded-date proof for physical pitch measurements."""
         if self.statcast_physical_dates is None:
-            return self.statcast_complete
+            return self.statcast_complete  # Legacy callers without date proof.
         return all((target-timedelta(days=age)).isoformat() in self.statcast_physical_dates
                    for age in range(1, window+1))
 
@@ -472,10 +481,15 @@ class Features:
         """
         target = calendar_date.fromisoformat(game_date) if game_date else day(cutoff)
         roster = {str(value) for value in roster_ids}
+        # Apply the current, point-in-time roster identity after selecting the
+        # history.  A traded/claimed reliever's earlier appearances remain
+        # relevant even when they were recorded for another club.
         cutoff_at = utc(cutoff)
         completed = [r for r in self.rows if r["completed"] < cutoff_at
                      and r["day"] < target]
         eligible = [r for r in completed if r["day"].year == target.year]
+        # For a fixed target date, increasing cutoff can only add completed
+        # rows. Equal lengths therefore identify the same eligible population.
         prior_key = (target, len(eligible))
         if prior_key not in self.bullpen_priors:
             league_rows = [p["stats"] for r in eligible for p in r["players"]]
@@ -485,6 +499,8 @@ class Features:
         league = self.bullpen_priors[prior_key]
         indexed = [entry for pid in roster for entry in self.reliever_history.get(pid, ())
                    if entry[1]["completed"] < cutoff_at and entry[1]["day"] < target]
+        # The pooled sums must retain original accumulation order, including
+        # appearances before a trade and interleaved opposing-team records.
         appearances = [(r, stats) for _, r, stats in sorted(indexed, key=lambda entry: entry[0])]
         result = {"bullpen_context_roster_count": float(len(roster))}
         for window in (7, 15, 30):
@@ -494,6 +510,7 @@ class Features:
             for metric in ("era", "whip", "ra9", "wins", "losses", "fip",
                            "k_pct", "bb_pct", "k_bb_pct", "appearances"):
                 result[f"bullpen_context_{metric}_{window}d"] = box.get(metric)
+            game_ids = {r["game_id"] for r, _ in pairs}
             expected = (sum(number(stats.get("numberOfPitches")) for _, stats in pairs)
                         if pairs and all(number(stats.get("numberOfPitches")) is not None
                                          for _, stats in pairs) else None)
@@ -546,6 +563,9 @@ class Features:
                 p["id"] == pid and p["stats"] is stats for p in r["players"])]
             by_age = {age: [stats for r, stats in recent if (target-r["day"]).days == age]
                       for age in range(1, 8)}
+            # A retained prior appearance establishes the pitcher's identity.
+            # Complete history plus no use in the last seven days is positive
+            # evidence of rest, not an unknown workload state.
             known = bool(recent)
             usage1 = [s for s in by_age[1]]
             usage3 = [s for age in range(1, 4) for s in by_age[age]]
@@ -805,13 +825,21 @@ class Features:
         return profiles, features
 
     def at(self, cutoff, team_id, starter_id=None, *, game_date=None):
+        # Conservative same-day exclusion also prevents game-one results from
+        # leaking into a doubleheader unless original observations say otherwise.
         date = calendar_date.fromisoformat(game_date) if game_date else day(cutoff)
         completed = [r for r in self.rows if r["completed"] < utc(cutoff) and r["day"] < date]
         eligible = [r for r in completed if r["day"].year == date.year]
         prior_year = [r for r in completed if r["day"].year == date.year-1]
+        # Within one day the eligible set only grows with cutoff. Its length
+        # identifies that set without retaining millions of duplicate ID tuples.
         key = (date, len(eligible), str(team_id), starter_id)
         if key in self.cache:
             return self.cache[key]
+        # The accepted model learned history_games/rest from target-season
+        # history.  Prior-season rows are retained solely for explicit
+        # prior-year and cross-year rolling pitcher fields; they must not
+        # silently change an incumbent input at serving time.
         team = [r for r in eligible if r["team_id"] == str(team_id)]
         prior_key = (date, len(eligible))
         if prior_key not in self.priors:
@@ -824,6 +852,9 @@ class Features:
         prior_pitchers = [r["starters"] for r in prior_year]
         prior_league_pitch = {"kbb": counts(prior_pitchers, PITCH)[0],
                               "whip": counts(prior_pitchers, ("outs", "hits", "baseOnBalls"))[0]}
+        # The retained live Statcast contract proves the trailing 30 complete
+        # dates, not every game in the season. Match the league denominator to
+        # that proven source window before deriving xFIP.
         league_hr_fb = self.league_hr_fb(
             [r for r in eligible if r["day"] >= date-timedelta(days=30)])
         result = {"rest_days": (date-max(r["day"] for r in team)).days-1 if team else None,
@@ -862,6 +893,9 @@ class Features:
         last_three_pairs = sorted(starts, key=lambda item: item[0], reverse=True)[:3]
         last_three_complete = len(last_three_pairs) == 3
         last_three = [stats for _, _, stats in last_three_pairs] if last_three_complete else []
+        # A pitcher's season debut can occur after other current-season games.
+        # Select the shrinkage baseline from the starts themselves, not the
+        # league-wide current-season history.
         prior_only = (last_three_complete and
                       all(start.year == date.year-1 for start, _, _ in last_three_pairs))
         last_three_league = prior_league_pitch if prior_only else league_pitch
@@ -888,7 +922,7 @@ class Features:
                           if self.prior_statcast_year == date.year-1 else None)
         prior_statcast = dict(retained_prior) if retained_prior is not None else self.statcast(
             starter_id, prior_ids, prior_expected)
-        prior_statcast["xfip"] = None
+        prior_statcast["xfip"] = None  # current-year league HR/FB is not a prior-year constant
         for name, value in prior_statcast.items():
             result[f"starter_{name}_prior_year"] = value
         current_30 = {name: result.get(f"starter_{name}_30d") for name in STATCAST_METRIC_NAMES}
