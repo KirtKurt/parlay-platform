@@ -2,14 +2,15 @@
 
 Unmatched/ambiguous BBS events continue; official games without BBS go to exclusions (`missing_bbs_identity`). Duplicate BBS-to-one-game, schema change, and truncation stay hard errors.
 
-Status 2026-09-19 18:02 EDT / 2026-09-19 18:02 UTC:
+Status 2026-09-20 01:04 EDT / 2026-09-20 05:04 UTC:
 - Isolate-skip already on main `ks1/daily.py` (`isolate_unmatched=True`). Tests: `tests/ks1_phase5/test_bbs_identity_isolation.py`.
-- PR 713 draft do-not-merge. Branch notes only; daily.py already restored from main.
-- Latest schedule: 35459856767 IN_PROGRESS started 18:01:14Z. Prior schedule 35448691942 SUCCESS 14:25-14:31Z (~5m45s). Last completed ingest 35457562305 dispatch SUCCESS 17:16-17:24Z.
-- Gap from last schedule attempt 14:25Z to next 18:01Z is cron cadence, not a >70m missed attempt after last start. HEALTH=OK. Watchdog not started. Did not dispatch mlb-research-ingestion.yml.
-- Failed schedule 35425130291 05:53Z: abort in `ks1.daily --publish` (exit 134), not unmatched BBS. No isolate patch needed this hour.
-- PR 710 open ready; SCHEMA/publish path adds p_lgb, pick_status, selection_reason. PR 711 draft shadow-only. PR 712 merged; watchdog not activated.
-- Daily 35457562305: 15 rows, 2 confirmed / 13 projected. DET@CWS confirmed sit. PHI@NYM and NYY@ARI projected sits.
-- Nightly 35457562305: official Brier 0.2354 n=110 new_grades=0 status=no_new_final_grades locked_rows=110.
+- PR 713 draft do-not-merge. Branch notes only.
+- Latest schedule: 35480664483 SUCCESS 01:09:44Z-01:22:39Z (~13m). Artifacts ks1-daily-35480664483, ks1-nightly-35480664483.
+- Latest push: 35486159481 SUCCESS 03:16:45Z-03:23:40Z. Artifacts ks1-daily-35486159481, ks1-nightly-35486159481.
+- Now ~235m after last schedule start (01:09Z). HEALTH=CRON_GAP. Watchdog not started. Did not dispatch mlb-research-ingestion.yml. Did not activate PR 712 watchdog.
+- No current BBS slate-kill. No isolate patch this hour.
+- PR 710 open ready; SCHEMA/publish adds p_lgb, pick_status, selection_reason. PR 711 draft shadow-only, not promoted. PR 712 merged; watchdog not activated.
+- Daily artifact 35486159481: date=2026-09-19 predictions.parquet 15 rows, 15 confirmed / 0 projected. No 2026-09-20 card in artifact. BBS exclusions []. NYY/NYM/CWS sit rule unchanged (Sep 19 card already locked/final).
+- Nightly 35486159481: official Brier 0.2362 n=121 new_grades=1 status=completed_catchup locked_rows=125 excluded no_bound_final=4. Calibration deferred.
 
 Do not merge without Kurt approval. Do not rewrite p_home, locks, or ledgers.
