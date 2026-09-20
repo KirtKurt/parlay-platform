@@ -154,7 +154,7 @@ jobs:
           api_function=$(aws cloudformation describe-stack-resource --stack-name parlay-platform-soccer-auto --logical-resource-id SoccerApiFunction --query 'StackResourceDetail.PhysicalResourceId' --output text)
           aws lambda invoke --function-name "$api_function" --cli-read-timeout 120 --cli-binary-format raw-in-base64-out --payload '{"path":"/v1/soccer-auto/status"}' /tmp/kss1-health.json > /tmp/kss1-health-meta.json
           aws lambda invoke --function-name "$api_function" --cli-read-timeout 120 --cli-binary-format raw-in-base64-out --payload '{"path":"/v1/soccer-auto/kss1"}' /tmp/kss1-status.json > /tmp/kss1-status-meta.json
-          aws lambda invoke --function-name "$api_function" --cli-read-timeout 120 --cli-binary-format raw-in-base64-out --payload '{"path":"/v1/soccer-auto/kss1/picks","queryStringParameters":{"selection":"12"}}' /tmp/kss1-picks.json > /tmp/kss1-picks-meta.json
+          aws lambda invoke --function-name "$api_function" --cli-read-timeout 120 --cli-binary-format raw-in-base64-out --payload '{"path":"/v1/soccer-auto/kss1/picks","queryStringParameters":{"selection":"12","context":"current"}}' /tmp/kss1-picks.json > /tmp/kss1-picks-meta.json
           python - <<'PY'
           import json, os
           for name in ('training', 'freeze', 'controller', 'health', 'status', 'picks'):
@@ -184,6 +184,7 @@ jobs:
           assert bodies['status']['training_context'] is not None
           assert bodies['picks']['selection'] == '12'
           assert bodies['picks']['trained_only'] is True
+          assert bodies['picks']['context'] == {key: bodies['status']['training_context'].get(key) for key in ('model_digest', 'context_as_of', 'artifact_uri')}
           summary = {'training': training['goals_training'], 'freeze': freeze, 'health': health, 'status': bodies['status'], 'picks': bodies['picks']}
           print(json.dumps(summary, sort_keys=True))
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:

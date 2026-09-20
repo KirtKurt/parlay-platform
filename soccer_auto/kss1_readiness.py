@@ -25,6 +25,10 @@ def verify_rollout(training, status, picks):
             "GOALS_MODEL_READBACK_MISMATCH")
     require(training.get("artifact_uri") == context.get("artifact_uri"),
             "GOALS_CONTEXT_READBACK_MISMATCH")
+    if "context" in picks:
+        require(picks["context"] == {key: context.get(key) for key in
+                                    ("model_digest", "context_as_of", "artifact_uri")},
+                "GOALS_PICKS_CONTEXT_READBACK_MISMATCH")
     require(context.get("candidate_passed_retrospective") is True,
             "GOALS_CANDIDATE_NOT_QUALIFIED")
     for value in (training, status, context, picks):
@@ -54,6 +58,9 @@ def verify_rollout(training, status, picks):
         require(picks.get("count") == len(rows), "GOALS_PICK_COUNT_MISMATCH")
         events = set()
         for row in rows:
+            if "context" in picks:
+                require(row.get("goals_context_as_of") == context.get("context_as_of"),
+                        "GOALS_PICK_CONTEXT_MISMATCH")
             require(row.get("model_digest") == model and row.get("model_state") == "FITTED_SHADOW",
                     "GOALS_PICK_MODEL_MISMATCH")
             require(row.get("event_key") and row["event_key"] not in events,

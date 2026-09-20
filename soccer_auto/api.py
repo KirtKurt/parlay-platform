@@ -1147,7 +1147,13 @@ def api_handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
         if path == "/v1/soccer-auto/kss1/picks":
             from .kss1_picks import recorded_picks
             try:
-                return _response(200, recorded_picks(store, params.get("date"), selection=params.get("selection"), trained_only=params.get("trained_only", "true") != "false"))
+                read_context = None
+                if params.get("context") is not None:
+                    if params["context"] != "current":
+                        raise ValueError("context must be current when supplied")
+                    from .kss1_training_runtime import goals_status
+                    read_context = goals_status(store).get("training_context") or {}
+                return _response(200, recorded_picks(store, params.get("date"), selection=params.get("selection"), trained_only=params.get("trained_only", "true") != "false", context=read_context))
             except ValueError as exc:
                 return _response(400, {"ok": False, "error": str(exc)})
         if path == "/v1/soccer-auto/kss1":
