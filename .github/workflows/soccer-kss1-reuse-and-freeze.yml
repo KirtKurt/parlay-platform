@@ -7,7 +7,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: soccer-kss1-reuse-freeze
+  # Both workflows publish the same shadow-context pointer. Serialize the
+  # entire train/freeze/readback transaction with isolated deployment.
+  group: soccer-auto-deploy
   cancel-in-progress: false
 
 jobs:
@@ -50,7 +52,7 @@ jobs:
           aws lambda invoke --function-name "$freeze_function" --cli-read-timeout 920 --cli-binary-format raw-in-base64-out --payload '{}' /tmp/kss1-freeze.json > /tmp/kss1-freeze-meta.json
           api_function=$(aws cloudformation describe-stack-resource --stack-name parlay-platform-soccer-auto --logical-resource-id SoccerApiFunction --query 'StackResourceDetail.PhysicalResourceId' --output text)
           aws lambda invoke --function-name "$api_function" --cli-read-timeout 120 --cli-binary-format raw-in-base64-out --payload '{"path":"/v1/soccer-auto/kss1"}' /tmp/kss1-status.json > /tmp/kss1-status-meta.json
-          aws lambda invoke --function-name "$api_function" --cli-read-timeout 120 --cli-binary-format raw-in-base64-out --payload '{"path":"/v1/soccer-auto/kss1/picks","queryStringParameters":{"selection":"12"}}' /tmp/kss1-picks.json > /tmp/kss1-picks-meta.json
+          aws lambda invoke --function-name "$api_function" --cli-read-timeout 120 --cli-binary-format raw-in-base64-out --payload '{"path":"/v1/soccer-auto/kss1/picks","queryStringParameters":{"selection":"12","context":"current"}}' /tmp/kss1-picks.json > /tmp/kss1-picks-meta.json
           python - <<'PY'
           import json
           for name in ('training', 'freeze', 'status', 'picks'):
@@ -74,6 +76,9 @@ jobs:
           assert freeze.get('ok') is True, freeze
           assert status.get('automatic_prediction_allowed') is False
           assert picks.get('trained_only') is True
+          assert picks['context'] == {key: status['training_context'].get(key) for key in ('model_digest', 'context_as_of', 'artifact_uri')}
+          from soccer_auto.kss1_readiness import verify_rollout
+          print('verified_kss1_trained_12_rollout', verify_rollout(training['goals_training'], status, picks))
           PY
       - name: Retain KSS1 workflow readback evidence
         if: always()
