@@ -200,11 +200,13 @@ def build(source: dict[str, Any], ledger: dict[str, Any], frozen_ids: set[str]) 
         if not game_id or game_id not in admitted_by_id:
             raise ValueError("committed ledger row is not prospectively reproducible from capture")
         reproduced = admitted_by_id[game_id]
+        final = (trace_source.get("finals") or {}).get(game_id)
         if (reproduced.get("signature") != grade.get("signature")
                 or int(reproduced.get("home_win")) != int(grade.get("home_win"))
-                or reproduced.get("home_score") != grade.get("home_score")
-                or reproduced.get("away_score") != grade.get("away_score")
-                or reproduced.get("final_evidence") != grade.get("final_evidence")):
+                or not isinstance(final, dict)
+                or final.get("home_score") != grade.get("home_score")
+                or final.get("away_score") != grade.get("away_score")
+                or trace_source.get("final_sources") != grade.get("final_evidence")):
             raise ValueError(
                 "committed grade or final evidence differs from prospectively reproduced observation"
             )
@@ -238,7 +240,12 @@ def build(source: dict[str, Any], ledger: dict[str, Any], frozen_ids: set[str]) 
             if isinstance(influence, (int, float)) or isinstance(score, (int, float)):
                 contribution_groups[str(name)] = {
                     "decision_influence_pct": float(influence) if isinstance(influence, (int, float)) else None,
-                    "signal_score": float(score) if isinstance(score, (int, float)) else None,
+                    # Retained SHAP scores are home-log-odds oriented. Orient
+                    # them to the selected side before comparing wins and losses.
+                    "signal_score": (
+                        float(score) * (1.0 if selected_home else -1.0)
+                        if isinstance(score, (int, float)) else None
+                    ),
                 }
         observations.append({
             "game_id": game_id,
@@ -263,8 +270,24 @@ def build(source: dict[str, Any], ledger: dict[str, Any], frozen_ids: set[str]) 
     observations.sort(key=lambda row: (str(row.get("locked_at") or ""), row["game_id"]))
     wins = sum(item["selected_won"] for item in observations)
     losses = len(observations) - wins
-    flag_summary, pair_summary, severity_summary = _summary(observations)
-    contribution_summary = _contribution_summary(observations)
+    model_summaries = []
+    for version in sorted({str(row["raw_model_version"]) for row in observations}):
+        version_rows = [row for row in observations
+                        if str(row["raw_model_version"]) == version]
+        version_wins = sum(row["selected_won"] for row in version_rows)
+        flag_summary, pair_summary, severity_summary = _summary(version_rows)
+        model_summaries.append({
+            "raw_model_version": version,
+            "sample": {
+                "rows": len(version_rows),
+                "wins": version_wins,
+                "losses": len(version_rows) - version_wins,
+            },
+            "flag_summary": flag_summary,
+            "pair_summary": pair_summary,
+            "severity_summary": severity_summary,
+            "contribution_summary": _contribution_summary(version_rows),
+        })
     return {
         "contract": CONTRACT,
         "system": "KS1",
@@ -292,10 +315,9 @@ def build(source: dict[str, Any], ledger: dict[str, Any], frozen_ids: set[str]) 
             "holdout_predictions_scored": 0,
             "qualification_runs": 0,
         },
-        "flag_summary": flag_summary,
-        "pair_summary": pair_summary,
-        "severity_summary": severity_summary,
-        "contribution_summary": contribution_summary,
+        "summary_scope": "per_raw_model_version_only",
+        "signal_score_orientation": "selected_side_raw_log_odds",
+        "model_summaries": model_summaries,
         "observations": observations,
         "admission": admission,
         "authority_effect": "development_diagnostic_only_no_prediction_calibration_model_ref_lock_or_serving_effect",
