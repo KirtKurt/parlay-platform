@@ -281,13 +281,10 @@ def main():
         as_of = datetime.now(timezone.utc).isoformat()
         checkpoint = latest_checkpoint(s3, bucket, as_of)
         # A completed nightly fit does not imply every locked game has a final.
-        # Inspect refreshed evidence on every eligible tick; execute decides
-        # between the nightly fit, a grading-only catch-up, and a no-write noop.
-        if due_date(as_of) is None:
-            args.output.mkdir(parents=True, exist_ok=True)
-            report = {'status': 'not_due_or_already_completed', 'published': False, 'as_of': as_of}
-            (args.output/'report.json').write_bytes(encode(report))
-            print(json.dumps(report)); return
+        # Capture freshly ingested evidence on every hourly tick, including the
+        # pre-02:00 no-op window, so a missing derived trace for the latest
+        # immutable checkpoint can be recovered before the nightly rollover.
+        # execute() still owns the write/no-write decision.
         reader = Reader(s3, bucket)
         prior = reader.pointer(reader.read(RESEARCH+'prior-games.json')['artifact'])
         try:
@@ -304,6 +301,11 @@ def main():
         args.output.mkdir(parents=True, exist_ok=True)
         (args.output/'capture.json').write_bytes(encode(source))
         report = execute(source, args.output, s3=s3, bucket=bucket, checkpoint=checkpoint)
+        report_path = args.output/'report.json'
+        if not report_path.exists():
+            # The pre-02:00 path is a no-write grading decision, but downstream
+            # idempotent trace recovery still requires its explicit status.
+            report_path.write_bytes(encode(report))
     else:
         if not args.inputs:
             parser.error('--inputs is required without --publish')

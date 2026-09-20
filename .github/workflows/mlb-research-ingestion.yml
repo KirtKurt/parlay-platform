@@ -57,6 +57,28 @@ jobs:
         env:
           SOURCES_NOT_BEFORE: ${{ steps.research.outputs.started_at }}
         run: python -m ks1.nightly --sources-not-before "$SOURCES_NOT_BEFORE" --output /tmp/ks1-nightly --publish
+      - name: Trace settled KS1 misses against immutable pregame signals
+        if: ${{ !cancelled() && steps.nightly.outcome == 'success' }}
+        run: |
+          STATUS=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('/tmp/ks1-nightly/report.json')
+          print(json.loads(path.read_text()).get('status') if path.exists() else 'missing_report')
+          PY
+          )
+          case "$STATUS" in
+            not_due_or_already_completed|no_new_final_grades|completed|completed_catchup) ;;
+            *)
+              echo "Unexpected KS1 nightly status: $STATUS" >&2
+              exit 1
+              ;;
+          esac
+          test -s /tmp/ks1-nightly/capture.json
+          python -m ks1.loss_trace \
+            --inputs /tmp/ks1-nightly/capture.json \
+            --output /tmp/ks1-nightly/loss_trace.json \
+            --publish
       - uses: actions/upload-artifact@v4
         if: always()
         with:
