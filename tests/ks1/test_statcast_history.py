@@ -33,6 +33,7 @@ def fixture():
     source['teams']['away']['players'] = deepcopy(source['teams']['home']['players'])
     for player in source['teams']['away']['players'].values():
         player['person']['id'] += 100
+    source['teams']['away']['players']['151']['stats']['pitching']['gamesStarted'] = 1
     rows = []
     for pitcher, base in ((151, 200), (251, 100)):
         for batter in range(base+1, base+10):
