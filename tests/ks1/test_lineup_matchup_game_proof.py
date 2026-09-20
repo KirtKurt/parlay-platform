@@ -82,6 +82,25 @@ def test_rowless_unverified_official_starter_appearance_remains_fail_closed():
     assert values['lineup_pitch_type_matchup_whiff_pct_30d'] is None
 
 
+def test_unverified_row_bearing_relief_appearance_remains_fail_closed():
+    games, rows = two_complete_games()
+    games[0]['teams']['away']['players']['151']['stats']['pitching']['gamesStarted'] = 0
+    for player in games[0]['teams']['home']['players'].values():
+        player['stats']['batting'] = {}
+    subject = Features(
+        games,
+        rows,
+        statcast_complete=False,
+        statcast_retained_dates=[],
+        statcast_physical_dates=[],
+        statcast_verified_games=['1'],
+        statcast_physical_games=['1'],
+    )
+    values = matchup_values(subject)
+    assert values['lineup_pitch_type_matchup_xwoba_30d'] is None
+    assert values['lineup_pitch_type_matchup_whiff_pct_30d'] is None
+
+
 def test_legacy_complete_archive_semantics_remain_available_without_receipt_sets():
     games, rows = two_complete_games()
     values = matchup_values(Features(games, rows, statcast_complete=True))

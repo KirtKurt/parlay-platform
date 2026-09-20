@@ -664,12 +664,15 @@ class Features:
         recent_game_ids = {r["game_id"] for r in completed
                            if r["day"] >= target-timedelta(days=30)}
         ids = [str(value) for value in lineup_ids]
-        starter_game_ids = {
+        official_starter_game_ids = {
             row["game_id"] for row in completed
             if row["game_id"] in recent_game_ids
             and any(player["id"] == str(opposing_starter_id)
                     and number(player["stats"].get("gamesStarted")) == 1
                     for player in row["context_players"])}
+        starter_game_ids = official_starter_game_ids | {
+            game_id for pitcher_id, game_id in self.statcast_by_pitcher_game
+            if pitcher_id == str(opposing_starter_id) and game_id in recent_game_ids}
         starter_physical_complete = self.statcast_games_complete(starter_game_ids)
         starter_rows = [row for game_id in self.statcast_by_pitcher_game
                         if game_id[0] == str(opposing_starter_id)
