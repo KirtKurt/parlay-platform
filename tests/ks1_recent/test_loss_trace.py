@@ -21,6 +21,7 @@ def _source():
         }
         rows.append({'evidence': evidence, 'row': {
             'game_id': gid, 'date': '2026-09-18', 'model_version': 'M', 'p_home': p_home,
+            'home_id': '10', 'away_id': '20',
             'starter_profile_json': '{}', 'lineup_bullpen_profile_json': '{}',
             'signal_contributions_json': json.dumps({'groups': {
                 'starter': {'decision_influence_pct': 70 + int(gid), 'signal_score': .1 * int(gid)}
@@ -59,6 +60,27 @@ def _ledger(source):
     return {'system': 'KS1', 'as_of': source['as_of'], 'rows': rows}
 
 
+def _verified(source, grades):
+    locked = {entry['row']['game_id']: entry['row'] for entry in source['locked']}
+    return {
+        str(grade['game_id']): {
+            'home_score': grade['home_score'],
+            'away_score': grade['away_score'],
+            'home_id': str(locked[str(grade['game_id'])]['home_id']),
+            'away_id': str(locked[str(grade['game_id'])]['away_id']),
+            'final_evidence': grade['final_evidence'],
+        }
+        for grade in grades
+    }
+
+
+def _build(source, ledger, frozen):
+    return subject.build(
+        source, ledger, frozen,
+        lambda grades: _verified(source, grades),
+    )
+
+
 def _patch(monkeypatch, source):
     admitted = []
     wins = {'1': 1, '2': 0, '3': 1}
@@ -77,11 +99,39 @@ def _patch(monkeypatch, source):
     })
 
 
+def test_verified_final_receipts_reads_the_grade_version(monkeypatch):
+    grade = {
+        'game_id': '1', 'home_score': 2, 'away_score': 1,
+        'final_evidence': [{
+            'bucket': 'b', 'key': 'prior.json', 'versionId': 'v1',
+            'sha256': 'a' * 64,
+        }],
+    }
+    payload = {'games': [{
+        'officialGamePk': 1, 'completedAtUtc': '2026-09-18T23:00:00+00:00',
+        'teams': {
+            'home': {'team': {'id': 10}, 'teamStats': {'batting': {'runs': 2}}},
+            'away': {'team': {'id': 20}, 'teamStats': {'batting': {'runs': 1}}},
+        },
+    }]}
+    seen = {}
+    def read_json(s3, bucket, key, version):
+        seen['args'] = (bucket, key, version)
+        return payload, {'sha256': 'a' * 64}
+    monkeypatch.setattr(subject, 'read_json', read_json)
+    out = subject.verified_final_receipts(object(), 'b', [grade])
+    assert seen['args'] == ('b', 'prior.json', 'v1')
+    assert out['1']['home_id'] == '10' and out['1']['away_id'] == '20'
+    grade['home_score'] = 9
+    with pytest.raises(ValueError, match='score differs'):
+        subject.verified_final_receipts(object(), 'b', [grade])
+
+
 def test_build_excludes_frozen_holdout_and_summarizes_patterns(monkeypatch):
     source = _source()
     ledger = _ledger(source)
     _patch(monkeypatch, source)
-    out = subject.build(source, ledger, {'3'})
+    out = _build(source, ledger, {'3'})
     assert out['sample']['committed_ledger_rows'] == 3
     assert out['sample']['frozen_holdout_ids_excluded'] == 1
     assert out['sample']['analyzed_non_holdout_rows'] == 2
@@ -104,7 +154,7 @@ def test_selected_side_score_orientation_and_model_stratification(monkeypatch):
     source['locked'][2]['row']['model_version'] = 'M2'
     ledger['rows'][2]['raw_model_version'] = 'M2'
     _patch(monkeypatch, source)
-    out = subject.build(source, ledger, set())
+    out = _build(source, ledger, set())
     assert [row['raw_model_version'] for row in out['model_summaries']] == ['M', 'M2']
     observations = {row['game_id']: row for row in out['observations']}
     assert observations['1']['contribution_groups']['starter']['signal_score'] == pytest.approx(.1)
@@ -117,7 +167,7 @@ def test_build_rejects_lock_evidence_drift(monkeypatch):
     _patch(monkeypatch, source)
     source['locked'][0]['evidence'] = dict(source['locked'][0]['evidence'], version_id='advanced')
     with pytest.raises(ValueError, match='committed lock evidence'):
-        subject.build(source, ledger, set())
+        _build(source, ledger, set())
 
 
 def test_holdout_id_contract_is_exactly_300_unique(monkeypatch, tmp_path):
@@ -143,7 +193,7 @@ def test_publish_uses_latest_committed_checkpoint_and_readback(monkeypatch, tmp_
     })
     monkeypatch.setattr(subject, 'holdout_ids', lambda: set())
     monkeypatch.setattr(subject, 'read_json', lambda s3, bucket, key: (None, None))
-    monkeypatch.setattr(subject, 'build', lambda source, ledger, frozen_ids: {
+    monkeypatch.setattr(subject, 'build', lambda source, ledger, frozen_ids, verify_finals: {
         'sample': {'analyzed_non_holdout_rows': 3}, 'authority_effect': 'none'
     })
     seen = {}
@@ -245,7 +295,7 @@ def test_holdout_is_removed_before_real_admission_and_diagnostics(monkeypatch):
         assert 'committed_ledger' not in captured
         return real_dataset(captured, **kwargs)
     monkeypatch.setattr(subject, 'dataset', admitted)
-    out = subject.build(source, ledger, {'1'})
+    out = _build(source, ledger, {'1'})
     assert [row['game_id'] for row in out['observations']] == ['0', '2']
     assert out['sample']['prospectively_reproduced_rows'] == 2
     assert out['sample']['wins'] == out['sample']['losses'] == 1
@@ -259,7 +309,7 @@ def test_holdout_only_sample_does_not_require_final_or_prediction(monkeypatch):
     source['locked'] = []
     source['finals'] = {}
     monkeypatch.setattr(subject, 'evaluate', lambda row: pytest.fail('evaluated a holdout'))
-    out = subject.build(source, ledger, frozen)
+    out = _build(source, ledger, frozen)
     assert out['observations'] == []
     assert out['sample']['frozen_holdout_ids_excluded'] == 3
     assert out['sample']['prospectively_reproduced_rows'] == 0
@@ -270,7 +320,7 @@ def test_expired_finals_are_counted_outside_supported_horizon():
     source['as_of'] = '2027-01-01T07:00:00+00:00'
     source['finals'] = {}
     before = deepcopy((source, ledger))
-    out = subject.build(source, ledger, {'1'})
+    out = _build(source, ledger, {'1'})
     assert out['sample']['outside_final_horizon_rows'] == 2
     assert out['sample']['frozen_holdout_ids_excluded'] == 1
     assert out['sample']['analyzed_non_holdout_rows'] == 0
@@ -283,7 +333,7 @@ def test_missing_final_within_supported_horizon_still_fails():
     source, ledger = _real_source_and_ledger()
     del source['finals']['0']
     with pytest.raises(ValueError, match='not prospectively reproducible'):
-        subject.build(source, ledger, set())
+        _build(source, ledger, set())
 
 
 @pytest.mark.parametrize('as_of,start_date,expired', [
@@ -293,7 +343,7 @@ def test_missing_final_within_supported_horizon_still_fails():
 def test_final_horizon_rolls_at_eastern_new_year(as_of, start_date, expired):
     source, ledger = _real_source_and_ledger()
     source['as_of'] = as_of
-    out = subject.build(source, ledger, set())
+    out = _build(source, ledger, set())
     assert out['reproducibility_scope']['finals_start_date_et'] == start_date
     assert out['sample']['outside_final_horizon_rows'] == expired
     assert out['sample']['analyzed_non_holdout_rows'] == 3 - expired
@@ -322,7 +372,7 @@ def test_supported_games_still_trace_after_old_finals_expire():
     source['finals'] = recent['finals']
     source['as_of'] = '2027-01-01T07:00:00+00:00'
     before = deepcopy((source, ledger))
-    out = subject.build(source, ledger, set())
+    out = _build(source, ledger, set())
     assert out['sample']['outside_final_horizon_rows'] == 3
     assert [row['game_id'] for row in out['observations']] == ['recent']
     assert (source, ledger) == before
@@ -338,14 +388,14 @@ def test_non_holdout_grade_drift_still_fails(field, value):
     source, ledger = _real_source_and_ledger()
     ledger['rows'][0][field] = value
     with pytest.raises(ValueError, match='committed'):
-        subject.build(source, ledger, set())
+        _build(source, ledger, set())
 
 
 def test_duplicate_non_holdout_ledger_id_fails():
     source, ledger = _real_source_and_ledger()
     ledger['rows'].append(deepcopy(ledger['rows'][0]))
     with pytest.raises(ValueError, match='duplicate.*ledger'):
-        subject.build(source, ledger, set())
+        _build(source, ledger, set())
 
 
 def test_real_publication_is_write_once_and_only_touches_trace(monkeypatch, tmp_path):
@@ -370,6 +420,10 @@ def test_real_publication_is_write_once_and_only_touches_trace(monkeypatch, tmp_
     source, ledger = _real_source_and_ledger()
     before = deepcopy((source, ledger))
     monkeypatch.setattr(subject, 'require_main_workflow', lambda: None)
+    monkeypatch.setattr(
+        subject, 'verified_final_receipts',
+        lambda s3, bucket, grades: _verified(source, grades),
+    )
     monkeypatch.setattr(subject, 'holdout_ids', lambda: {'1'})
     monkeypatch.setattr(subject, 'latest_checkpoint', lambda *args: {
         'ledger': ledger, 'state': {'night_date': '2026-09-19', 'catchup_revision': 2},
