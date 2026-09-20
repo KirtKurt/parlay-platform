@@ -31,6 +31,21 @@ class VersionedS3:
                 "Metadata": {"sha256": hashlib.sha256(body).hexdigest()}}
 
 
+class NoSuchKey(ClientError):
+    pass
+
+
+class ModeledMissingS3(VersionedS3):
+    class exceptions:
+        @staticmethod
+        def from_code(code):
+            return NoSuchKey if code == "NoSuchKey" else ClientError
+
+    def get_object(self, Bucket, Key, VersionId=None):
+        response = {"Error": {"Code": "NoSuchKey", "Message": "missing"}}
+        raise NoSuchKey(response, "GetObject")
+
+
 def test_successful_rejected_read_is_frozen_without_becoming_admitted_receipt():
     bundle, payload, key = fixture()
     payload["rows"].pop()
@@ -62,9 +77,22 @@ def test_historical_absence_stays_absent_even_if_key_is_later_created():
     with pytest.raises(ClientError):
         Reader(recorder, "b").read("missing")
     attempts = recorder.frozen_attempts()
-    assert attempts == [{"bucket": "b", "key": "missing", "state": "absent"}]
+    assert attempts == [{"bucket": "b", "key": "missing", "state": "absent",
+                         "errorType": "ClientError", "errorCode": "NoSuchKey"}]
     s3.put("b", "missing", "v1", {"now": "present"})
     with pytest.raises(ClientError):
+        Reader(ProofBoundS3(s3, attempts), "b").read("missing")
+
+
+def test_modeled_missing_read_replays_the_exact_exception_class():
+    s3 = ModeledMissingS3()
+    recorder = RecordingS3(s3)
+    with pytest.raises(NoSuchKey):
+        Reader(recorder, "b").read("missing")
+    attempts = recorder.frozen_attempts()
+    assert attempts == [{"bucket": "b", "key": "missing", "state": "absent",
+                         "errorType": "NoSuchKey", "errorCode": "NoSuchKey"}]
+    with pytest.raises(NoSuchKey):
         Reader(ProofBoundS3(s3, attempts), "b").read("missing")
 
 
