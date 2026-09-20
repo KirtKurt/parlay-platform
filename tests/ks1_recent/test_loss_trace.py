@@ -147,6 +147,9 @@ def test_publish_reuses_verified_existing_checkpoint_trace(monkeypatch, tmp_path
     assert out['status'] == 'already_published'
     assert out['proof'] == proof
     assert json.loads(output.read_text()) == existing
+    source['as_of'] = '2026-09-19T04:59:59+00:00'
+    with pytest.raises(ValueError, match='refuse to overwrite or reuse'):
+        subject.publish(source, output, s3=object(), bucket='bucket')
 
 
 class IdentityOnly(dict):
