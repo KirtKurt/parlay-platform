@@ -66,11 +66,7 @@ jobs:
           PY
           )
           case "$STATUS" in
-            not_due_or_already_completed)
-              echo "No committed KS1 checkpoint is due for this execution."
-              exit 0
-              ;;
-            no_new_final_grades|completed|completed_catchup) ;;
+            not_due_or_already_completed|no_new_final_grades|completed|completed_catchup) ;;
             *)
               echo "Unexpected KS1 nightly status: $STATUS" >&2
               exit 1
