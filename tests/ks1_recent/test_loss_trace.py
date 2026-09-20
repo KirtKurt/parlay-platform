@@ -27,7 +27,19 @@ def _source():
             }}),
             '_flags': [{'code': 'A' if gid != '2' else 'B', 'strength': 'medium'}],
         }})
-    return {'system': 'KS1', 'as_of': '2026-09-19T05:00:00+00:00', 'locked': rows}
+    wins = {'1': 1, '2': 0, '3': 1}
+    finals = {}
+    for gid in wins:
+        home_score, away_score = ((2, 1) if wins[gid] else (1, 2))
+        finals[gid] = {
+            'home_score': home_score, 'away_score': away_score,
+            'completed_at': '2026-09-18T23:00:00+00:00',
+        }
+    return {
+        'system': 'KS1', 'as_of': '2026-09-19T05:00:00+00:00',
+        'locked': rows, 'finals': finals,
+        'final_sources': [{'sha256': 'f' * 64}],
+    }
 
 
 def _ledger(source):
@@ -36,11 +48,11 @@ def _ledger(source):
     for entry in source['locked']:
         row = entry['row']
         gid = row['game_id']
-        home_score, away_score = ((2, 1) if wins[gid] else (1, 2))
+        final = source['finals'][gid]
         rows.append({
             'game_id': gid, 'signature': f's{gid}', 'home_win': wins[gid],
-            'home_score': home_score, 'away_score': away_score,
-            'final_evidence': [{'sha256': gid * 64}],
+            'home_score': final['home_score'], 'away_score': final['away_score'],
+            'final_evidence': source['final_sources'],
             'locked_at': '2026-09-18T19:50:00+00:00', 'raw_model_version': 'M',
             'p_home': row['p_home'], 'lock_evidence': entry['evidence'],
         })
@@ -52,10 +64,7 @@ def _patch(monkeypatch, source):
     wins = {'1': 1, '2': 0, '3': 1}
     for entry in source['locked']:
         gid = entry['row']['game_id']
-        home_score, away_score = ((2, 1) if wins[gid] else (1, 2))
-        admitted.append({'game_id': gid, 'signature': f's{gid}', 'home_win': wins[gid],
-                         'home_score': home_score, 'away_score': away_score,
-                         'final_evidence': [{'sha256': gid * 64}]})
+        admitted.append({'game_id': gid, 'signature': f's{gid}', 'home_win': wins[gid]})
     def admitted_subset(source, include_predecessors):
         ids = {entry['row']['game_id'] for entry in source['locked']}
         rows = [row for row in admitted if row['game_id'] in ids]
@@ -78,12 +87,28 @@ def test_build_excludes_frozen_holdout_and_summarizes_patterns(monkeypatch):
     assert out['sample']['analyzed_non_holdout_rows'] == 2
     assert out['holdout_boundary']['holdout_labels_read'] == 0
     assert out['holdout_boundary']['holdout_predictions_scored'] == 0
-    assert {row['pattern'] for row in out['flag_summary']} == {'A', 'B'}
-    starter = next(row for row in out['contribution_summary'] if row['group'] == 'starter')
+    assert out['summary_scope'] == 'per_raw_model_version_only'
+    assert [summary['raw_model_version'] for summary in out['model_summaries']] == ['M']
+    summary = out['model_summaries'][0]
+    assert {row['pattern'] for row in summary['flag_summary']} == {'A', 'B'}
+    starter = next(row for row in summary['contribution_summary'] if row['group'] == 'starter')
     assert starter['win_rows'] == 1 and starter['loss_rows'] == 1
     assert out['prediction_writes'] == out['official_ledger_writes'] == 0
     assert out['model_ref_writes'] == out['lock_writes'] == 0
     assert out['trained_lightgbm'] is False
+
+
+def test_selected_side_score_orientation_and_model_stratification(monkeypatch):
+    source = _source()
+    ledger = _ledger(source)
+    source['locked'][2]['row']['model_version'] = 'M2'
+    ledger['rows'][2]['raw_model_version'] = 'M2'
+    _patch(monkeypatch, source)
+    out = subject.build(source, ledger, set())
+    assert [row['raw_model_version'] for row in out['model_summaries']] == ['M', 'M2']
+    observations = {row['game_id']: row for row in out['observations']}
+    assert observations['1']['contribution_groups']['starter']['signal_score'] == pytest.approx(.1)
+    assert observations['3']['contribution_groups']['starter']['signal_score'] == pytest.approx(-.3)
 
 
 def test_build_rejects_lock_evidence_drift(monkeypatch):
@@ -190,7 +215,14 @@ def _real_source_and_ledger():
         }
     admitted, _ = subject.dataset(captured, include_predecessors=True)
     ledger = {'system': 'KS1', 'as_of': captured['as_of'], 'rows': [
-        dict(grade, p_home=entry['row']['p_home'], lock_evidence=entry['evidence'])
+        dict(
+            grade,
+            p_home=entry['row']['p_home'],
+            lock_evidence=entry['evidence'],
+            home_score=captured['finals'][grade['game_id']]['home_score'],
+            away_score=captured['finals'][grade['game_id']]['away_score'],
+            final_evidence=captured['final_sources'],
+        )
         for grade, entry in zip(admitted, captured['locked'])
     ]}
     return captured, ledger
@@ -278,7 +310,14 @@ def test_supported_games_still_trace_after_old_finals_expire():
     entry['evidence']['stored_at'] = entry['evidence']['stored_at'].replace('2025-', '2026-')
     recent['finals'] = {'recent': dict(source['finals']['0'], completed_at='2026-01-01T23:00:00+00:00')}
     admitted, _ = subject.dataset(recent, include_predecessors=True)
-    ledger['rows'].append(dict(admitted[0], p_home=entry['row']['p_home'], lock_evidence=entry['evidence']))
+    ledger['rows'].append(dict(
+        admitted[0],
+        p_home=entry['row']['p_home'],
+        lock_evidence=entry['evidence'],
+        home_score=recent['finals']['recent']['home_score'],
+        away_score=recent['finals']['recent']['away_score'],
+        final_evidence=recent['final_sources'],
+    ))
     source['locked'].append(entry)
     source['finals'] = recent['finals']
     source['as_of'] = '2027-01-01T07:00:00+00:00'
