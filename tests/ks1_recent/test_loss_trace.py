@@ -36,8 +36,11 @@ def _ledger(source):
     for entry in source['locked']:
         row = entry['row']
         gid = row['game_id']
+        home_score, away_score = ((2, 1) if wins[gid] else (1, 2))
         rows.append({
             'game_id': gid, 'signature': f's{gid}', 'home_win': wins[gid],
+            'home_score': home_score, 'away_score': away_score,
+            'final_evidence': [{'sha256': gid * 64}],
             'locked_at': '2026-09-18T19:50:00+00:00', 'raw_model_version': 'M',
             'p_home': row['p_home'], 'lock_evidence': entry['evidence'],
         })
@@ -49,7 +52,10 @@ def _patch(monkeypatch, source):
     wins = {'1': 1, '2': 0, '3': 1}
     for entry in source['locked']:
         gid = entry['row']['game_id']
-        admitted.append({'game_id': gid, 'signature': f's{gid}', 'home_win': wins[gid]})
+        home_score, away_score = ((2, 1) if wins[gid] else (1, 2))
+        admitted.append({'game_id': gid, 'signature': f's{gid}', 'home_win': wins[gid],
+                         'home_score': home_score, 'away_score': away_score,
+                         'final_evidence': [{'sha256': gid * 64}]})
     def admitted_subset(source, include_predecessors):
         ids = {entry['row']['game_id'] for entry in source['locked']}
         rows = [row for row in admitted if row['game_id'] in ids]
@@ -89,12 +95,17 @@ def test_build_rejects_lock_evidence_drift(monkeypatch):
         subject.build(source, ledger, set())
 
 
-def test_holdout_id_contract_is_exactly_300_unique(tmp_path):
+def test_holdout_id_contract_is_exactly_300_unique(monkeypatch, tmp_path):
     path = tmp_path / 'holdout.json'
-    path.write_text(json.dumps({'game_ids': [str(i) for i in range(300)]}))
+    ids = [str(i) for i in range(300)]
+    monkeypatch.setattr(subject, 'FROZEN_GAME_IDS_SHA256', hashlib.sha256(subject.encode(ids)).hexdigest())
+    path.write_text(json.dumps({'game_ids': ids}))
     assert len(subject.holdout_ids(path)) == 300
     path.write_text(json.dumps({'game_ids': ['x'] * 300}))
     with pytest.raises(ValueError, match='300 unique'):
+        subject.holdout_ids(path)
+    path.write_text(json.dumps({'game_ids': list(reversed(ids))}))
+    with pytest.raises(ValueError, match='game identities changed'):
         subject.holdout_ids(path)
 
 
@@ -281,6 +292,8 @@ def test_supported_games_still_trace_after_old_finals_expire():
 @pytest.mark.parametrize('field,value', [
     ('signature', 'changed'), ('home_win', 1), ('p_home', .7),
     ('raw_model_version', 'changed'), ('lock_evidence', {'version_id': 'changed'}),
+    ('home_score', 99), ('away_score', 99),
+    ('final_evidence', [{'sha256': 'changed'}]),
 ])
 def test_non_holdout_grade_drift_still_fails(field, value):
     source, ledger = _real_source_and_ledger()
@@ -348,7 +361,7 @@ def test_real_publication_is_write_once_and_only_touches_trace(monkeypatch, tmp_
 
 
 @pytest.mark.parametrize('status,expected_calls,success', [
-    ('not_due_or_already_completed', 0, True),
+    ('not_due_or_already_completed', 1, True),
     ('no_new_final_grades', 1, True),
     ('completed', 1, True),
     ('completed_catchup', 1, True),
@@ -360,7 +373,8 @@ def test_workflow_trace_runs_only_for_completed_checkpoint(tmp_path, status, exp
     workflow = Path('.github/workflows/mlb-research-ingestion.yml').read_text()
     step = workflow.split('      - name: Trace settled KS1', 1)[1].split('      - uses:', 1)[0]
     # Run the actual workflow shell with a publication spy and isolated files.
-    # Two no-new-final invocations with different capture bytes must stay no-write.
+    # Every valid status attempts idempotent recovery of the latest checkpoint;
+    # publication itself decides whether verified trace bytes already exist.
     script = dedent(step.split('        run: |\n', 1)[1]).replace('/tmp/ks1-nightly', str(tmp_path))
     script = script.replace('python -m ks1.loss_trace', 'record_publish')
     calls = tmp_path / 'publish_calls'
