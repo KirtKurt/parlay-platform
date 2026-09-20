@@ -15,6 +15,7 @@ from itertools import combinations
 import json
 import os
 from pathlib import Path
+import re
 from typing import Any
 
 from ks1.calibration_store import checkpoint_prefix, commit_json, latest_checkpoint, read_json
@@ -71,6 +72,60 @@ def _object(value: Any) -> dict[str, Any]:
     except (TypeError, ValueError, json.JSONDecodeError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def verified_final_receipts(s3, bucket: str, grades: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Read each grade's original immutable provider receipt and bind its final."""
+    cache: dict[tuple[str, str, str], tuple[dict[str, Any], dict[str, Any]]] = {}
+    verified: dict[str, dict[str, Any]] = {}
+    for grade in grades:
+        game_id = str(grade["game_id"])
+        receipts = grade.get("final_evidence")
+        if not isinstance(receipts, list) or not receipts:
+            raise ValueError("committed grade missing original final evidence")
+        match = None
+        for receipt in receipts:
+            if not isinstance(receipt, dict) or receipt.get("bucket") != bucket:
+                raise ValueError("final receipt escaped the KS1 artifact bucket")
+            key = receipt.get("key")
+            version = receipt.get("version_id") or receipt.get("versionId")
+            sha = receipt.get("sha256")
+            if (not isinstance(key, str) or not key
+                    or not isinstance(version, str) or not version
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(sha or ""))):
+                raise ValueError("invalid immutable final receipt")
+            token = (bucket, key, version)
+            if token not in cache:
+                payload, proof = read_json(s3, bucket, key, version)
+                if payload is None or proof.get("sha256") != sha:
+                    raise ValueError("original final receipt is missing or changed")
+                cache[token] = (payload, proof)
+            payload, _ = cache[token]
+            for game in payload.get("games") or []:
+                if str(game.get("officialGamePk") or "") != game_id:
+                    continue
+                try:
+                    candidate = {
+                        "home_score": game["teams"]["home"]["teamStats"]["batting"]["runs"],
+                        "away_score": game["teams"]["away"]["teamStats"]["batting"]["runs"],
+                        "home_id": str(game["teams"]["home"]["team"]["id"]),
+                        "away_id": str(game["teams"]["away"]["team"]["id"]),
+                        "completed_at": game["completedAtUtc"],
+                        "final_evidence": receipts,
+                    }
+                except KeyError as exc:
+                    raise ValueError("original final receipt lacks settled identity or score") from exc
+                if (candidate["home_score"] != grade.get("home_score")
+                        or candidate["away_score"] != grade.get("away_score")):
+                    raise ValueError("committed score differs from original final receipt")
+                match = candidate
+                break
+            if match is not None:
+                break
+        if match is None:
+            raise ValueError("grade is absent from its original final receipt")
+        verified[game_id] = match
+    return verified
 
 
 def _contribution_summary(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -146,7 +201,7 @@ def _summary(observations: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], 
     return flags, pairs, severities
 
 
-def build(source: dict[str, Any], ledger: dict[str, Any], frozen_ids: set[str]) -> dict[str, Any]:
+def build(source: dict[str, Any], ledger: dict[str, Any], frozen_ids: set[str], verify_finals) -> dict[str, Any]:
     if source.get("system") != "KS1" or source.get("errors"):
         raise ValueError("invalid KS1 source capture for loss tracing")
     if ledger.get("system") != "KS1":
@@ -174,7 +229,11 @@ def build(source: dict[str, Any], ledger: dict[str, Any], frozen_ids: set[str]) 
             outside_horizon += 1
             continue
         grades.append(grade)
-    trace_ids = {str(grade['game_id']) for grade in grades}
+    original_finals = verify_finals(grades)
+    expected_grade_ids = {str(grade["game_id"]) for grade in grades}
+    if set(original_finals) != expected_grade_ids:
+        raise ValueError("original final receipt verification coverage mismatch")
+    trace_ids = expected_grade_ids
     first_seen = (source.get('platt_model') or {}).get('label_first_seen', {})
     trace_source = {
         'system': 'KS1', 'as_of': source['as_of'],
@@ -200,15 +259,14 @@ def build(source: dict[str, Any], ledger: dict[str, Any], frozen_ids: set[str]) 
         if not game_id or game_id not in admitted_by_id:
             raise ValueError("committed ledger row is not prospectively reproducible from capture")
         reproduced = admitted_by_id[game_id]
-        final = (trace_source.get("finals") or {}).get(game_id)
+        original_final = original_finals[game_id]
         if (reproduced.get("signature") != grade.get("signature")
                 or int(reproduced.get("home_win")) != int(grade.get("home_win"))
-                or not isinstance(final, dict)
-                or final.get("home_score") != grade.get("home_score")
-                or final.get("away_score") != grade.get("away_score")
-                or trace_source.get("final_sources") != grade.get("final_evidence")):
+                or original_final.get("home_score") != grade.get("home_score")
+                or original_final.get("away_score") != grade.get("away_score")
+                or original_final.get("final_evidence") != grade.get("final_evidence")):
             raise ValueError(
-                "committed grade or final evidence differs from prospectively reproduced observation"
+                "committed grade differs from its prospectively reproduced outcome or original final receipt"
             )
         entry = locked.get(game_id)
         if entry is None:
@@ -216,6 +274,9 @@ def build(source: dict[str, Any], ledger: dict[str, Any], frozen_ids: set[str]) 
         if entry.get("evidence") != grade.get("lock_evidence"):
             raise ValueError("loss trace row is not bound to the committed lock evidence")
         row = entry["row"]
+        if (str(original_final.get("home_id")) != str(row.get("home_id"))
+                or str(original_final.get("away_id")) != str(row.get("away_id"))):
+            raise ValueError("original final receipt differs from locked team identity")
         if (str(row.get("model_version")) != str(grade.get("raw_model_version"))
                 or float(row.get("p_home")) != float(grade.get("p_home"))):
             raise ValueError("loss trace row differs from committed model/probability")
@@ -265,6 +326,7 @@ def build(source: dict[str, Any], ledger: dict[str, Any], frozen_ids: set[str]) 
                 "signal_contributions": has_contributions,
             },
             "lock_evidence": grade.get("lock_evidence"),
+            "final_evidence": grade.get("final_evidence"),
         })
 
     observations.sort(key=lambda row: (str(row.get("locked_at") or ""), row["game_id"]))
@@ -363,7 +425,11 @@ def publish(source: dict[str, Any], output: Path, *, s3, bucket: str) -> dict[st
             "sample": existing["sample"], "authority_effect": existing["authority_effect"],
         }
 
-    payload = build(source, ledger, holdout_ids())
+    frozen = holdout_ids()
+    payload = build(
+        source, ledger, frozen,
+        lambda grades: verified_final_receipts(s3, bucket, grades),
+    )
     stored, proof = commit_json(s3, bucket, key, payload)
     if stored != payload:
         raise ValueError("loss trace AWS readback mismatch")
