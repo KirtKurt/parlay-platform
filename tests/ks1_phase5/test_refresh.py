@@ -679,3 +679,30 @@ def test_scratch_overwrites_same_date_object_and_preserves_other_date(capture, m
     report['source_capture']['verification_only'] = True
     with pytest.raises(ValueError, match='synthetic'):
         daily.publish(store, 'test', current, report, out)
+
+
+def test_cli_native_teardown_bypass_is_workflow_opt_in(monkeypatch):
+    calls, exits = [], []
+    monkeypatch.setattr(daily, 'main', lambda: calls.append('main'))
+    monkeypatch.setattr(daily.os, '_exit', lambda code: exits.append(code))
+
+    daily.run_cli()
+    assert calls == ['main']
+    assert exits == []
+
+    monkeypatch.setenv('KS1_BYPASS_NATIVE_TEARDOWN_ON_SUCCESS', 'true')
+    daily.run_cli()
+    assert calls == ['main', 'main']
+    assert exits == [0]
+
+
+def test_cli_native_teardown_bypass_never_masks_main_failure(monkeypatch):
+    monkeypatch.setenv('KS1_BYPASS_NATIVE_TEARDOWN_ON_SUCCESS', 'true')
+    monkeypatch.setattr(daily.os, '_exit', lambda _code: pytest.fail('must not exit cleanly'))
+
+    def fail():
+        raise RuntimeError('publication failed')
+
+    monkeypatch.setattr(daily, 'main', fail)
+    with pytest.raises(RuntimeError, match='publication failed'):
+        daily.run_cli()
