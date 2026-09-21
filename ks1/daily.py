@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import statistics
+import sys
 
 import lightgbm as lgb
 import numpy as np
@@ -887,5 +888,21 @@ def main():
         print(json.dumps(proof, indent=2))
 
 
-if __name__ == '__main__':
+def run_cli():
+    """Run the CLI and optionally skip unstable native-library finalizers.
+
+    The hosted publication process has intermittently aborted in C++ teardown
+    after ``main`` completed every synchronous AWS readback and wrote the final
+    publication proof.  The workflow-only opt-in exits immediately *after* a
+    successful return, so Python exceptions and incomplete publications still
+    fail normally while already-closed artifacts are left intact.
+    """
     main()
+    if os.environ.get('KS1_BYPASS_NATIVE_TEARDOWN_ON_SUCCESS') == 'true':
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
+
+
+if __name__ == '__main__':
+    run_cli()
