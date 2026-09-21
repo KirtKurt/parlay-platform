@@ -94,6 +94,10 @@ jobs:
         env:
           BBS_API_KEY: ${{ secrets.BBS_API_KEY }}
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          # daily.py has twice completed publication/readback/proof, then
+          # intermittently aborted inside native-library interpreter teardown.
+          # This opt-in is reached only after main returns successfully.
+          KS1_BYPASS_NATIVE_TEARDOWN_ON_SUCCESS: 'true'
         run: |
           python -m ks1.live_inputs --output /tmp/ks1-daily-inputs
           python -m ks1.platt --inputs /tmp/ks1-daily-inputs/calibration_inputs.json --output /tmp/ks1-calibration
