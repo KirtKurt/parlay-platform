@@ -1,6 +1,7 @@
 import copy
 import csv
 import json
+import math
 
 import pytest
 
@@ -8,25 +9,32 @@ from ks1.forensic_consideration import build, evaluate
 from ks1.reporting_evidence import report_evidence
 
 
+RAW_SCORE = .24
+P_RAW = .5 * (1 + math.tanh(RAW_SCORE / 2))
+
+
 def fixture():
     return {
         "date": "2026-09-22", "game_id": "822840", "model_version": "KS1-test",
-        "p_home": "0.5562936261487743", "market_home_prob": ".5359",
+        "p_home": "0.5562936261487743", "p_raw": str(P_RAW), "market_home_prob": ".5359",
         "home_team": "Texas Rangers", "away_team": "New York Mets",
         "home_starter_id": "669022", "home_starter_name": "MacKenzie Gore",
         "away_starter_id": "640455", "away_starter_name": "Sean Manaea",
         "as_of": "2026-09-22T15:33:51Z", "commence_time": "2026-09-23T00:05:00Z",
         "calibration_method": "temperature", "odds_event_id": "g1",
         "starter_profile_json": json.dumps({"sides": {
-            "home": {"starter_id": 669022, "metrics": {
+            "home": {"starter_id": 669022, "context_basis": "current_season_pitcher", "metrics": {
                 "era_7d": 6.75, "era_30d": 3.0, "outs_7d": 12, "bf_7d": 16,
                 "appearances_7d": 1, "whip_7d": 1.4, "k_bb_pct_7d": 13.5}},
-            "away": {"starter_id": 640455, "metrics": {
+            "away": {"starter_id": 640455, "context_basis": "prior_year_pitcher", "metrics": {
                 "era_7d": 3.375, "era_30d": 7.06, "outs_7d": 16, "bf_7d": 19,
                 "appearances_7d": 1}},
         }}),
         "signal_contributions_json": json.dumps({
-            "additivity_verified": True, "scale": "raw_log_odds_SHAP", "top_features": [
+            "additivity_verified": True, "scale": "raw_log_odds_SHAP",
+            "bias": .10, "raw_score": RAW_SCORE,
+            "groups": {"starter": {"signal_score": .14}},
+            "top_features": [
                 {"feature": "home_team_starter_bb_pct_7d", "score": .0961},
                 {"feature": "away_starter_whip_prior_year", "score": -.04},
                 {"feature": "home_offense_iso_7d", "score": -.06},
@@ -86,6 +94,17 @@ def test_unverified_attribution_never_claims_consumption(proof):
     assert item["direction"] == "UNVERIFIED"
 
 
+@pytest.mark.parametrize("field,value", [("raw_score", .5), ("bias", .11)])
+def test_attribution_must_bind_to_retained_raw_probability(field, value):
+    row = fixture()
+    proof = json.loads(row["signal_contributions_json"])
+    proof[field] = value
+    row["signal_contributions_json"] = json.dumps(proof)
+    item = report_evidence(row, evaluate(row))["contributions"][1]
+    assert item["consumption"] == "CONSUMPTION UNKNOWN"
+    assert item["direction"] == "UNVERIFIED"
+
+
 @pytest.mark.parametrize("observed,status", [("640455", "mismatch"), (None, "unavailable"), ("nan", "unavailable")])
 def test_stale_or_absent_pitcher_join_is_not_a_named_fact(observed, status):
     row = fixture()
@@ -96,6 +115,18 @@ def test_stale_or_absent_pitcher_join_is_not_a_named_fact(observed, status):
     assert result["starters"]["home"]["subject"]["identity_status"] == status
     assert result["starters"]["home"]["windows"]["7d"]["era"] is None
     assert result["flags"][0]["usable_as_named_pitcher_fact"] is False
+
+
+def test_unverified_individual_contribution_suppresses_pitcher_name_and_id():
+    row = fixture()
+    profile = json.loads(row["starter_profile_json"])
+    profile["sides"]["away"]["starter_id"] = "123456"
+    row["starter_profile_json"] = json.dumps(profile)
+    individual = report_evidence(row, evaluate(row))["contributions"][1]
+    assert individual["subject_population"] == "individual_starter"
+    assert individual["identity_status"] == "mismatch"
+    assert individual["starter_id"] is None
+    assert individual["starter_name"] is None
 
 
 @pytest.mark.parametrize("apps,outs,era,state", [
@@ -117,6 +148,36 @@ def test_raw_zero_and_no_appearance_are_distinct_from_shrunk_priors(apps, outs, 
     assert result["15d"]["state"] == "UNAVAILABLE"
 
 
+def test_raw_k_minus_bb_is_derived_only_from_exact_retained_counts():
+    row = fixture()
+    profile = json.loads(row["starter_profile_json"])
+    profile["sides"]["home"]["metrics"].update(strikeouts_7d=8, walks_7d=2, bf_7d=16)
+    row["starter_profile_json"] = json.dumps(profile)
+    window = report_evidence(row, evaluate(row))["starters"]["home"]["windows"]["7d"]
+    assert window["k_minus_bb_pct_shrunk_model_estimate"] == 13.5
+    assert window["raw_k_minus_bb_pct"] == 37.5
+    assert "raw_k_minus_bb_pct_not_retained" not in window["gaps"]
+
+
+def test_pitcher_context_population_respects_retained_basis():
+    row = fixture()
+    proof = json.loads(row["signal_contributions_json"])
+    proof["top_features"] = [{"feature": "home_pitcher_context_quality", "score": .1}]
+    row["signal_contributions_json"] = json.dumps(proof)
+    item = report_evidence(row, evaluate(row))["contributions"][0]
+    assert item["subject_population"] == "individual_starter_context"
+    assert item["context_basis"] == "current_season_pitcher"
+    assert item["starter_name"] == "MacKenzie Gore"
+
+    profile = json.loads(row["starter_profile_json"])
+    profile["sides"]["home"]["context_basis"] = "current_season_league_prior"
+    row["starter_profile_json"] = json.dumps(profile)
+    prior = report_evidence(row, evaluate(row))["contributions"][0]
+    assert prior["subject_population"] == "league_prior_pitcher_context"
+    assert prior["starter_id"] is None
+    assert prior["starter_name"] is None
+
+
 def test_doubleheader_books_match_event_id_not_identical_teams():
     row = fixture()
     quotes = [odds(row, event_id="g1", price=-133), odds(row, event_id="g2", price=-190)]
@@ -125,6 +186,14 @@ def test_doubleheader_books_match_event_id_not_identical_teams():
     assert books["fanduel"]["status"] == "UNAVAILABLE"
     row["odds_event_id"] = "missing"
     assert report_evidence(row, evaluate(row), quotes)["moneylines"]["status"] == "EVENT_MISSING_OR_AMBIGUOUS"
+
+
+def test_stale_book_quote_is_not_presented_as_prediction_evidence():
+    row = fixture()
+    quote = odds(row, timestamp="2026-09-22T15:00:00Z")
+    book = report_evidence(row, evaluate(row), [quote])["moneylines"]["books"]["draftkings"]
+    assert book["status"] == "UNAVAILABLE"
+    assert book["price"] is None
 
 
 def test_post_lock_cache_is_never_used_as_pregame_moneyline():

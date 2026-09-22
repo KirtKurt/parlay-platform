@@ -13,6 +13,8 @@ BOOKS = ("draftkings", "fanduel", "betmgm", "williamhill_us", "fanatics", "betri
 
 
 def number(value):
+    if isinstance(value, bool):
+        return None
     try:
         result = float(value)
         return result if math.isfinite(result) else None
@@ -55,7 +57,8 @@ def starter_windows(row, side, profile):
     windows = {}
     for window in ("7d", "15d", "30d"):
         values = {key: number(metrics.get(key + "_" + window)) for key in
-                  ("era", "outs", "appearances", "bf", "fip", "xfip", "whip", "k_bb_pct", "xwoba")}
+                  ("era", "outs", "appearances", "bf", "fip", "xfip", "whip",
+                   "k_bb_pct", "xwoba", "strikeouts", "walks")}
         if subject["identity_status"] != "verified":
             state = "IDENTITY_UNVERIFIED"
             values = dict.fromkeys(values)
@@ -67,6 +70,13 @@ def starter_windows(row, side, profile):
             state = "OBSERVED_RESULTS"
         else:
             state = "UNAVAILABLE"
+        raw_kbb = (100 * (values["strikeouts"] - values["walks"]) / values["bf"]
+                   if all(values[key] is not None for key in ("strikeouts", "walks", "bf"))
+                   and values["bf"] > 0 else None)
+        gaps = ["raw_whip_not_retained",
+                "earned_runs_not_retained_do_not_reverse_engineer_from_rounded_era"]
+        if raw_kbb is None:
+            gaps.insert(1, "raw_k_minus_bb_pct_not_retained")
         windows[window] = {
             "state": state, "era": values["era"], "outs": values["outs"],
             "appearances": values["appearances"], "batters_faced": values["bf"],
@@ -74,35 +84,74 @@ def starter_windows(row, side, profile):
             # These serving fields are league-prior estimates, even with no appearances.
             "whip_shrunk_model_estimate": values["whip"],
             "k_minus_bb_pct_shrunk_model_estimate": values["k_bb_pct"],
-            "raw_whip": None, "raw_k_minus_bb_pct": None,
-            "earned_runs": None,
-            "gaps": ["raw_whip_not_retained", "raw_k_minus_bb_pct_not_retained",
-                     "earned_runs_not_retained_do_not_reverse_engineer_from_rounded_era"],
+            "raw_whip": None, "raw_k_minus_bb_pct": raw_kbb,
+            "earned_runs": None, "gaps": gaps,
         }
     return {"subject": subject, "windows": windows,
+            "context_basis": profile.get("context_basis", "unavailable"),
             "consumption": "CONSUMPTION UNKNOWN; inspect per-pick attribution",
-            "metric_semantics": "WHIP and K-BB% are shrunk estimates, not raw rolling rates"}
+            "metric_semantics": ("WHIP and serving K-BB% are shrunk estimates; raw K-BB% is "
+                                 "reported only when exact retained K, BB and BF counts permit it")}
 
 
-def contributions(row, selected):
+def attribution_verified(row, proof):
+    """Mirror settled_loss_patterns.attribution binding, but fail closed for reporting."""
+    if proof.get("additivity_verified") is not True or proof.get("scale") != "raw_log_odds_SHAP":
+        return False
+    groups = proof.get("groups")
+    if not isinstance(groups, dict) or not groups:
+        return False
+    bias, raw_score, p_raw = (number(proof.get("bias")), number(proof.get("raw_score")),
+                              number(row.get("p_raw")))
+    scores = [number(group.get("signal_score")) if isinstance(group, dict) else None
+              for group in groups.values()]
+    if bias is None or raw_score is None or p_raw is None or any(score is None for score in scores):
+        return False
+    total = bias + sum(scores)
+    expected = .5 * (1 + math.tanh(raw_score / 2))
+    return (math.isclose(total, raw_score, rel_tol=1e-8, abs_tol=1e-8)
+            and math.isclose(p_raw, expected, rel_tol=1e-8, abs_tol=1e-8))
+
+
+def contribution_population(name, side, starters):
+    if "_team_starter_" in name:
+        return "team_starter_history"
+    if "_pitcher_context_" in name and side:
+        basis = starters[side]["context_basis"]
+        if basis in ("current_season_pitcher", "prior_year_pitcher"):
+            return "individual_starter_context"
+        if basis in ("current_season_league_prior", "prior_year_league_prior"):
+            return "league_prior_pitcher_context"
+        return "pitcher_context_unverified"
+    if "_starter_" in name:
+        return "individual_starter"
+    if "_offense_" in name:
+        return "team_offense"
+    if re.search(r"_bullpen_(pitches|outs)_", name):
+        return "team_bullpen_workload"
+    return "market" if name.startswith("market_") else "other_context"
+
+
+def contributions(row, selected, starters):
     proof = object_value(row.get("signal_contributions_json"))
-    verified = proof.get("additivity_verified") is True and proof.get("scale") == "raw_log_odds_SHAP"
+    verified = attribution_verified(row, proof)
     result = []
     for entry in proof.get("top_features", []):
         name, score = entry.get("feature", ""), number(entry.get("score"))
         side = next((s for s in ("home", "away") if name.startswith(s + "_")), None)
-        population = ("team_starter_history" if "_team_starter_" in name
-                      else "individual_starter" if "_starter_" in name
-                      else "team_offense" if "_offense_" in name
-                      else "team_bullpen_workload" if re.search(r"_bullpen_(pitches|outs)_", name)
-                      else "market" if name.startswith("market_") else "other_context")
+        population = contribution_population(name, side, starters)
+        identity_status = (starters[side]["subject"]["identity_status"] if side else None)
+        named_starter = (side is not None and identity_status == "verified"
+                         and population in ("individual_starter", "individual_starter_context"))
         oriented = score * (1 if selected == "home" else -1) if score is not None else None
         observed = verified and score is not None and score != 0
         result.append({"feature": name, "subject_side": side,
                        "subject_team": row.get(side + "_team") if side else None,
                        "subject_population": population,
-                       "starter_id": row.get(side + "_starter_id") if side and population == "individual_starter" else None,
-                       "starter_name": row.get(side + "_starter_name") if side and population == "individual_starter" else None,
+                       "context_basis": starters[side]["context_basis"] if side and "_pitcher_context_" in name else None,
+                       "identity_status": identity_status if named_starter or population.startswith("pitcher_context") else None,
+                       "starter_id": row.get(side + "_starter_id") if named_starter else None,
+                       "starter_name": row.get(side + "_starter_name") if named_starter else None,
                        "score_toward_home": score, "score_toward_selected": oriented,
                        "direction": ("SUPPORT" if oriented > 0 else "OPPOSITION") if observed else "UNVERIFIED",
                        "consumption": "ACTUALLY CONSUMED BY ACTIVE MODEL" if observed else "CONSUMPTION UNKNOWN",
@@ -142,7 +191,9 @@ def selected_moneylines(row, selected, odds_rows):
         quote_time = instant(timestamp)
         outcomes = [o for o in market.get("outcomes", []) if o.get("name") == row.get(selected + "_team")]
         price = number(outcomes[0].get("price")) if len(outcomes) == 1 else None
-        if quote_time and quote_time <= receipt and price is not None and abs(price) >= 100:
+        age = (latest - quote_time).total_seconds() if quote_time else None
+        if (quote_time and quote_time <= receipt and age is not None and 0 <= age <= 900
+                and price is not None and abs(price) >= 100):
             missing[book] = {"status": "RETAINED_PRE_PREDICTION_QUOTE", "price": price,
                              "odds_timestamp": timestamp, "cache_as_of": entry.get("as_of")}
     return {"status": "EXACT_EVENT_MATCH", "event_id": event_id, "books": missing}
@@ -171,6 +222,6 @@ def report_evidence(row, detector, odds_rows=()):
             "prediction_as_of": row.get("as_of"), "selected_side": selected,
             "selected_team": row.get(selected + "_team"), "win_probability": p_selected,
             "loss_probability": 1 - p_selected, "calibration_method": row.get("calibration_method"),
-            "starters": starters, "contributions": contributions(row, selected), "flags": flags,
+            "starters": starters, "contributions": contributions(row, selected, starters), "flags": flags,
             "moneylines": selected_moneylines(row, selected, odds_rows),
             "authority": "reporting_only; publication/readback and immutable lock proof required separately"}
