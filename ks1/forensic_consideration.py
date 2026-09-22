@@ -148,6 +148,21 @@ def build(predictions_csv):
     with path.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     results = [evaluate(row) for row in rows]
+    # Add a reporting view without changing detector decisions or frozen rows.
+    # In particular, flag.side is a direction, not the observed pitcher's side.
+    from ks1.reporting_evidence import report_evidence
+    odds_path = path.parent / "odds_cache.parquet"
+    odds_rows, odds_error = [], None
+    if odds_path.exists():
+        try:
+            import pyarrow.parquet as pq
+            odds_rows = pq.read_table(odds_path).to_pylist()
+        except (ImportError, OSError, ValueError) as exc:
+            odds_error = type(exc).__name__
+    for row, result in zip(rows, results):
+        result["reporting_evidence"] = report_evidence(row, result, odds_rows)
+        if odds_error:
+            result["reporting_evidence"]["moneylines"]["cache_read_error"] = odds_error
     return {
         "contract": CONTRACT,
         "source": str(path),
