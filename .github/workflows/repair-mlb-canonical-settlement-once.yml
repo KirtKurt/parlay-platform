@@ -1,0 +1,299 @@
+name: Repair MLB Canonical Settlement Once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-canonical-settlement-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-mlb-canonical-settlement-once
+  cancel-in-progress: false
+
+jobs:
+  repair-and-prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate canonical settlement contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet pytest boto3
+          python -m py_compile hello_world/mlb_results_scheduler.py hello_world/mlb_canonical_final_labels_v1.py hello_world/mlb_ml_aws_training_v1_compat.py
+          python -m pytest -q \
+            tests/unit/test_mlb_canonical_final_labels_v1.py \
+            tests/unit/test_mlb_trainer_table_wiring.py
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Invoke authoritative settlement and trainer
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+          from datetime import datetime, timezone
+          from decimal import Decimal
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          import boto3
+          from boto3.dynamodb.conditions import Key
+
+          REGION = os.environ['AWS_REGION_VALUE']
+          STACK = 'parlay-platform-dev'
+          REPAIR_DATE = '2026-07-29'
+          ET = ZoneInfo('America/New_York')
+          current_date = datetime.now(timezone.utc).astimezone(ET).date().isoformat()
+
+          cf = boto3.client('cloudformation', region_name=REGION)
+          lam = boto3.client('lambda', region_name=REGION)
+          ddb = boto3.resource('dynamodb', region_name=REGION)
+
+          def physical(logical_id: str) -> str:
+              return cf.describe_stack_resource(
+                  StackName=STACK,
+                  LogicalResourceId=logical_id,
+              )['StackResourceDetail']['PhysicalResourceId']
+
+          results_fn = physical('MLBResultsSchedulerFunction')
+          trainer_fn = physical('MLBMLTrainingFunction')
+          snapshots_name = physical('SnapshotsTable')
+          outcomes_name = physical('OutcomesTable')
+          snapshots = ddb.Table(snapshots_name)
+          outcomes = ddb.Table(outcomes_name)
+
+          def plain(value):
+              if isinstance(value, Decimal):
+                  return int(value) if value == value.to_integral_value() else float(value)
+              if isinstance(value, dict):
+                  return {str(k): plain(v) for k, v in value.items()}
+              if isinstance(value, list):
+                  return [plain(v) for v in value]
+              return value
+
+          def query_all(table, pk: str, sk_prefix: str | None = None):
+              expr = Key('PK').eq(pk)
+              if sk_prefix:
+                  expr = expr & Key('SK').begins_with(sk_prefix)
+              rows = []
+              kwargs = {'KeyConditionExpression': expr, 'ConsistentRead': True}
+              while True:
+                  page = table.query(**kwargs)
+                  rows.extend(page.get('Items') or [])
+                  cursor = page.get('LastEvaluatedKey')
+                  if not cursor:
+                      return rows
+                  kwargs['ExclusiveStartKey'] = cursor
+
+          def invoke(function_name: str, payload: dict):
+              response = lam.invoke(
+                  FunctionName=function_name,
+                  InvocationType='RequestResponse',
+                  Payload=json.dumps(payload).encode('utf-8'),
+              )
+              raw = response['Payload'].read().decode('utf-8', 'replace')
+              try:
+                  body = json.loads(raw or '{}')
+              except Exception:
+                  body = {'rawPayload': raw[:8000]}
+              return {
+                  'functionError': response.get('FunctionError'),
+                  'statusCode': response.get('StatusCode'),
+                  'payload': body,
+              }
+
+          def unwrap(result: dict):
+              payload = result.get('payload') or {}
+              if isinstance(payload, dict) and isinstance(payload.get('body'), str):
+                  try:
+                      return json.loads(payload['body'])
+                  except Exception:
+                      return payload
+              return payload
+
+          def official_schedule(date_value: str):
+              query = urllib.parse.urlencode({
+                  'sportId': '1',
+                  'startDate': date_value,
+                  'endDate': date_value,
+                  'hydrate': 'linescore',
+              })
+              request = urllib.request.Request(
+                  f'https://statsapi.mlb.com/api/v1/schedule?{query}',
+                  headers={'accept': 'application/json', 'user-agent': 'inqsi-mlb-repair-proof/1.0'},
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  payload = json.loads(response.read().decode('utf-8'))
+              games = [g for d in payload.get('dates') or [] for g in d.get('games') or []]
+              finals = [g for g in games if str((g.get('status') or {}).get('abstractGameState') or '').upper() == 'FINAL']
+              return {
+                  'officialGameCount': len(games),
+                  'officialFinalCount': len(finals),
+                  'allFinal': bool(games and len(games) == len(finals)),
+                  'officialGamePks': sorted(str(g.get('gamePk')) for g in games),
+              }
+
+          before_labels = query_all(outcomes, f'MLB_CANONICAL_FINAL_LABEL#{REPAIR_DATE}', 'GAME_PK#')
+          settlement_invoke = invoke(results_fn, {
+              'sport': 'mlb',
+              'slate_date_et': REPAIR_DATE,
+              'fetch_scores': True,
+              'store': True,
+              'run': 'automation_canonical_settlement_repair',
+          })
+          settlement = unwrap(settlement_invoke)
+          after_labels = query_all(outcomes, f'MLB_CANONICAL_FINAL_LABEL#{REPAIR_DATE}', 'GAME_PK#')
+          trainer_invoke = invoke(trainer_fn, {
+              'sport': 'mlb',
+              'mode': 'scheduled',
+              'run': 'automation_post_settlement_training_recheck',
+          })
+          trainer = unwrap(trainer_invoke)
+
+          current_pulls = query_all(snapshots, f'PULLS#mlb#{current_date}')
+          canonical_pull_rows = [r for r in current_pulls if str(r.get('SK') or '').startswith('PULL#SLOT#')]
+          slots = [str(r.get('SK') or '')[len('PULL#SLOT#'):] for r in canonical_pull_rows]
+          duplicate_slots = sorted({slot for slot in slots if slots.count(slot) > 1})
+          latest_pull = max(slots) if slots else None
+
+          repair_locks = query_all(snapshots, f'GAME_WINNERS#mlb#{REPAIR_DATE}', 'LOCKED#GAME#')
+          current_locks = query_all(snapshots, f'GAME_WINNERS#mlb#{current_date}', 'LOCKED#GAME#')
+
+          def lock_metrics(rows):
+              unique = {}
+              valid_frozen = 0
+              learning_eligible = 0
+              tminus45 = 0
+              for item in rows:
+                  data = item.get('data') if isinstance(item.get('data'), dict) else {}
+                  sk = str(item.get('SK') or '')
+                  identity = str(
+                      data.get('officialGamePk')
+                      or (data.get('canonicalLockAuthority') or {}).get('officialGamePk')
+                      or sk
+                  )
+                  unique[identity] = item
+                  frozen = data.get('frozenFeatureVector') or {}
+                  if isinstance(frozen, dict) and frozen.get('fingerprint'):
+                      valid_frozen += 1
+                  authority = data.get('canonicalLockAuthority') or {}
+                  if authority.get('learningEligible') is True and data.get('trainingEligible') is True:
+                      learning_eligible += 1
+                  if 'TMINUS45' in sk or data.get('tMinusMinutes') == 45 or data.get('lockMinutesBeforeStart') == 45:
+                      tminus45 += 1
+              return {
+                  'rawLockRows': len(rows),
+                  'uniqueLockCount': len(unique),
+                  'frozenVectorFingerprintCount': valid_frozen,
+                  'learningEligibleCount': learning_eligible,
+                  'explicitTMinus45Count': tminus45,
+              }
+
+          schedule_current = official_schedule(current_date)
+          schedule_repair = official_schedule(REPAIR_DATE)
+          trainer_milestones = trainer.get('milestones') if isinstance(trainer, dict) else {}
+          trainer_counts = (trainer_milestones or {}).get('counts') or {}
+
+          report = {
+              'proofType': 'MLB_PRODUCTION_LEARNING_REPAIR_AND_STATUS',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'stackStatus': cf.describe_stacks(StackName=STACK)['Stacks'][0].get('StackStatus'),
+              'currentSlateDateEt': current_date,
+              'collection': {
+                  'rawPullCount': len(current_pulls),
+                  'canonicalPullCount': len(canonical_pull_rows),
+                  'duplicateCanonicalSlotCount': len(duplicate_slots),
+                  'duplicateCanonicalSlots': duplicate_slots,
+                  'latestCanonicalPullAt': latest_pull,
+                  'officialSchedule': schedule_current,
+              },
+              'locks': {
+                  'currentSlate': lock_metrics(current_locks),
+                  'repairSlate': lock_metrics(repair_locks),
+                  'currentOfficialGameCount': schedule_current['officialGameCount'],
+                  'repairOfficialGameCount': schedule_repair['officialGameCount'],
+              },
+              'settlement': {
+                  'repairSlateDateEt': REPAIR_DATE,
+                  'officialSchedule': schedule_repair,
+                  'labelsBefore': len(before_labels),
+                  'labelsAfter': len(after_labels),
+                  'invoke': settlement_invoke,
+                  'result': settlement,
+              },
+              'training': {
+                  'invoke': trainer_invoke,
+                  'result': trainer,
+                  'acceptedRowCount': trainer.get('acceptedRowCount') if isinstance(trainer, dict) else None,
+                  'partitionCounts': trainer.get('partitionCounts') if isinstance(trainer, dict) else None,
+                  'milestoneCounts': trainer_counts,
+                  'modelTrained': trainer.get('modelTrained') if isinstance(trainer, dict) else None,
+                  'championChanged': trainer.get('championChanged') if isinstance(trainer, dict) else None,
+                  'liveInferenceAuthority': trainer.get('liveInferenceAuthority') if isinstance(trainer, dict) else None,
+                  'automaticPromotionEnabled': trainer.get('automaticPromotionEnabled') if isinstance(trainer, dict) else None,
+                  'status': trainer.get('status') if isinstance(trainer, dict) else None,
+                  'version': trainer.get('version') if isinstance(trainer, dict) else None,
+              },
+              'secretExposed': False,
+          }
+          Path('runtime_reports/mlb_production_learning_repair_latest.json').write_text(
+              json.dumps(plain(report), indent=2, sort_keys=True, default=str) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(plain(report), indent=2, sort_keys=True, default=str))
+
+          settlement_ok = (
+              settlement_invoke.get('functionError') is None
+              and isinstance(settlement, dict)
+              and settlement.get('ok') is True
+              and len(after_labels) > 0
+          )
+          trainer_healthy = (
+              trainer_invoke.get('functionError') is None
+              and isinstance(trainer, dict)
+              and trainer.get('ok') is True
+          )
+          if not settlement_ok:
+              raise SystemExit('Authoritative MLB settlement did not succeed')
+          if not trainer_healthy:
+              raise SystemExit('MLB trainer did not return a healthy fail-closed or advancing state')
+          PY
+
+      - name: Publish redacted runtime proof
+        if: always()
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          test -f runtime_reports/mlb_production_learning_repair_latest.json || exit 0
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add runtime_reports/mlb_production_learning_repair_latest.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'Publish MLB production learning repair proof'
+          git push origin HEAD:"$HEAD_BRANCH"
