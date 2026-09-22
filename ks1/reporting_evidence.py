@@ -205,7 +205,7 @@ def selected_moneylines(row, selected, odds_rows):
         return {"status": "EVENT_IDENTITY_MISMATCH", "books": missing}
     row_time, start = instant(row.get("as_of")), instant(row.get("commence_time"))
     event_start, receipt = instant(event.get("commence_time")), instant(entry.get("as_of"))
-    if not all((row_time, start, event_start, receipt)) or abs(event_start - start) > timedelta(minutes=5):
+    if not all((row_time, start, event_start, receipt)) or abs(event_start - start) > timedelta(seconds=90):
         return {"status": "EVENT_TIME_UNVERIFIED", "books": missing}
     latest = min(row_time, start - timedelta(minutes=10))
     if receipt > latest:
@@ -231,11 +231,14 @@ def selected_moneylines(row, selected, odds_rows):
         away = [o for o in values if team_key(o.get("name")) in allowed["away"]]
         if len(home) != 1 or len(away) != 1 or home[0] is away[0]:
             continue
+        home_price, away_price = number(home[0].get("price")), number(away[0].get("price"))
+        if (home_price is None or away_price is None
+                or abs(home_price) < 100 or abs(away_price) < 100):
+            continue
         selected_outcome = home[0] if selected == "home" else away[0]
-        price = number(selected_outcome.get("price"))
+        price = home_price if selected == "home" else away_price
         age = (latest - quote_time).total_seconds() if quote_time else None
-        if (quote_time and quote_time <= receipt and age is not None and 0 <= age <= 900
-                and price is not None and abs(price) >= 100):
+        if quote_time and quote_time <= receipt and age is not None and 0 <= age <= 900:
             missing[book] = {"status": "RETAINED_PRE_PREDICTION_QUOTE", "price": price,
                              "odds_timestamp": timestamp, "cache_as_of": entry.get("as_of")}
     return {"status": "EXACT_EVENT_MATCH", "event_id": event_id, "books": missing}
