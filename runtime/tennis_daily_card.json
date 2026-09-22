@@ -3,13 +3,13 @@
   "coverage_failure_count": 0,
   "coverage_failures": [],
   "coverage_status_counts": {
-    "PREDICTED_T10_COMPLIANT": 2,
-    "T10_CLOSED": 5
+    "PREDICTED_T10_COMPLIANT": 1,
+    "T10_CLOSED": 6
   },
   "date_et": "2026-09-21",
   "evaluated_match_count": 7,
   "full_slate_evaluated": true,
-  "generated_at": "2026-09-22T02:52:19.352764+00:00",
+  "generated_at": "2026-09-22T03:02:23.299456+00:00",
   "inventory_match_count": 7,
   "malformed_coverage_rows": [],
   "malformed_prediction_timestamps": 0,
@@ -216,45 +216,6 @@
       "t10_schedule_source": "LIVE"
     },
     {
-      "band": "STRONG",
-      "bookmaker_count": 68,
-      "commence_time": "2026-09-21T23:00:00-04:00",
-      "commence_time_utc": "2026-09-22T03:00:00+00:00",
-      "coverage_updated_at": "2026-09-22T02:46:21.927529+00:00",
-      "display_commence_time_utc": "2026-09-22T03:00:00+00:00",
-      "evaluated_regions": [
-        "us",
-        "us2",
-        "uk",
-        "eu",
-        "au",
-        "fr",
-        "se",
-        "us_ex"
-      ],
-      "evaluation_reason": "",
-      "evaluation_status": "PREDICTED_T10_COMPLIANT",
-      "event_id": "80b14dcee4510e7bdc94014121046ba9",
-      "model_version": 527,
-      "non_h2h_provider_regions": [
-        "us_dfs"
-      ],
-      "opponent": "Oleksandra Oliynykova",
-      "pick": "Oleksandra Oliynykova",
-      "player": "Vivian Wolff",
-      "prediction_cutoff_minutes": 10,
-      "prediction_timestamp": "2026-09-22T02:46:21.978336+00:00",
-      "probability": 0.675681,
-      "probability_pct": 67.57,
-      "regions_complete": true,
-      "schedule_start_consistent": true,
-      "sport_key": "tennis_wta_singapore_open",
-      "t10_commence_time_utc": "2026-09-22T03:00:00+00:00",
-      "t10_compliant": true,
-      "t10_cutoff_utc": "2026-09-22T02:50:00+00:00",
-      "t10_schedule_source": "LIVE"
-    },
-    {
       "band": "WATCH",
       "bookmaker_count": 41,
       "commence_time": "2026-09-21T23:00:00-04:00",
@@ -292,6 +253,45 @@
       "t10_compliant": true,
       "t10_cutoff_utc": "2026-09-22T02:50:00+00:00",
       "t10_schedule_source": "LIVE"
+    },
+    {
+      "band": "STRONG",
+      "bookmaker_count": 67,
+      "commence_time": "2026-09-21T23:05:00-04:00",
+      "commence_time_utc": "2026-09-22T03:05:00+00:00",
+      "coverage_updated_at": "2026-09-22T03:01:22.852769+00:00",
+      "display_commence_time_utc": "2026-09-22T03:05:00+00:00",
+      "evaluated_regions": [
+        "us",
+        "us2",
+        "uk",
+        "eu",
+        "au",
+        "fr",
+        "se",
+        "us_ex"
+      ],
+      "evaluation_reason": "prediction window closed; immutable T-10 rule preserved",
+      "evaluation_status": "T10_CLOSED",
+      "event_id": "80b14dcee4510e7bdc94014121046ba9",
+      "model_version": 527,
+      "non_h2h_provider_regions": [
+        "us_dfs"
+      ],
+      "opponent": "Oleksandra Oliynykova",
+      "pick": "Oleksandra Oliynykova",
+      "player": "Vivian Wolff",
+      "prediction_cutoff_minutes": 10,
+      "prediction_timestamp": "2026-09-22T02:46:21.978336+00:00",
+      "probability": 0.675681,
+      "probability_pct": 67.57,
+      "regions_complete": true,
+      "schedule_start_consistent": false,
+      "sport_key": "tennis_wta_singapore_open",
+      "t10_commence_time_utc": "2026-09-22T03:00:00+00:00",
+      "t10_compliant": true,
+      "t10_cutoff_utc": "2026-09-22T02:50:00+00:00",
+      "t10_schedule_source": "LIVE"
     }
   ],
   "prediction_count": 7,
@@ -306,7 +306,7 @@
     "se",
     "us_ex"
   ],
-  "schedule_start_conflict_count": 5,
+  "schedule_start_conflict_count": 6,
   "service": "tennis-daily-card",
   "source": "inqis_tennis_learning all-match COVERAGE ledger plus latest model prediction at or before T-10",
   "timing_violation_records_ignored": 0,
