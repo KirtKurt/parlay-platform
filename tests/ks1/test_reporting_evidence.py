@@ -48,7 +48,8 @@ def odds(row, *, event_id="g1", price=-133, timestamp="2026-09-22T15:30:00Z"):
         "home_team": row["home_team"], "away_team": row["away_team"],
         "bookmakers": [{"key": "draftkings", "last_update": timestamp,
                         "markets": [{"key": "h2h", "last_update": timestamp,
-                                     "outcomes": [{"name": row["home_team"], "price": price}]}]}],
+                                     "outcomes": [{"name": row["home_team"], "price": price},
+                                                  {"name": row["away_team"], "price": 120}]}]}],
     })}
 
 
@@ -58,7 +59,7 @@ def test_gore_deterioration_belongs_to_texas_not_the_benefiting_mets():
     diagnostic = evaluate(row)
     result = report_evidence(row, diagnostic)
     flag = next(f for f in result["flags"] if f["code"] == "SELECTED_STARTER_RECENT_DETERIORATION")
-    assert flag["side"] == "away"  # Existing diagnostic direction stays unchanged.
+    assert flag["side"] == "away"
     assert flag["observation_subject"]["team"] == "Texas Rangers"
     assert flag["observation_subject"]["starter_id"] == "669022"
     assert flag["observation_subject"]["starter_name"] == "MacKenzie Gore"
@@ -205,6 +206,30 @@ def test_doubleheader_books_match_event_id_not_identical_teams():
     assert books["fanduel"]["status"] == "UNAVAILABLE"
     row["odds_event_id"] = "missing"
     assert report_evidence(row, evaluate(row), quotes)["moneylines"]["status"] == "EVENT_MISSING_OR_AMBIGUOUS"
+
+
+def test_retained_serving_crosswalk_allows_id_backed_official_alias():
+    row = fixture()
+    row.update(home_team="Athletics", home_id="133", away_id="121", odds_match_confidence="1.0")
+    quote = odds(row)
+    payload = json.loads(quote["payload_json"])
+    payload["home_team"] = "Oakland Athletics"
+    payload["bookmakers"][0]["markets"][0]["outcomes"][0]["name"] = "Oakland Athletics"
+    quote["payload_json"] = json.dumps(payload)
+    book = report_evidence(row, evaluate(row), [quote])["moneylines"]["books"]["draftkings"]
+    assert book["status"] == "RETAINED_PRE_PREDICTION_QUOTE"
+    assert book["price"] == -133
+
+
+def test_alias_difference_without_retained_crosswalk_proof_fails_closed():
+    row = fixture()
+    row["home_team"] = "Athletics"
+    quote = odds(row)
+    payload = json.loads(quote["payload_json"])
+    payload["home_team"] = "Oakland Athletics"
+    payload["bookmakers"][0]["markets"][0]["outcomes"][0]["name"] = "Oakland Athletics"
+    quote["payload_json"] = json.dumps(payload)
+    assert report_evidence(row, evaluate(row), [quote])["moneylines"]["status"] == "EVENT_IDENTITY_MISMATCH"
 
 
 def test_stale_book_quote_is_not_presented_as_prediction_evidence():

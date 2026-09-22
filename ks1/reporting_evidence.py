@@ -45,6 +45,29 @@ def team_key(name):
     return re.sub(r"[^a-z0-9]", "", str(name).lower())
 
 
+def stable_team_id(value):
+    text = str(value)
+    return text if re.fullmatch(r"[1-9][0-9]*", text) else None
+
+
+def event_identity_matches(row, event):
+    """Honor serving's retained ID-backed alias decision without inventing fuzzy aliases.
+
+    Exact normalized names are independently checkable. A different official/provider alias is
+    accepted only when the retained prediction records an exact serving crosswalk match
+    (`odds_match_confidence == 1.0`) for two distinct official team IDs. Exact event ID and
+    immutable sidecar/readback proof are still required separately by the caller/report contract.
+    """
+    if str(event.get("id")) != str(row.get("odds_event_id")):
+        return False
+    if all(team_key(event.get(side + "_team")) == team_key(row.get(side + "_team"))
+           for side in ("home", "away")):
+        return True
+    home_id, away_id = stable_team_id(row.get("home_id")), stable_team_id(row.get("away_id"))
+    return (home_id is not None and away_id is not None and home_id != away_id
+            and number(row.get("odds_match_confidence")) == 1.0)
+
+
 def identity(row, side, profile):
     expected, observed = row.get(side + "_starter_id"), profile.get("starter_id")
     valid = (re.fullmatch(r"[1-9][0-9]*", str(expected)) is not None
@@ -86,7 +109,6 @@ def starter_windows(row, side, profile):
             "state": state, "era": values["era"], "outs": values["outs"],
             "appearances": values["appearances"], "batters_faced": values["bf"],
             "fip": values["fip"], "xfip": values["xfip"], "xwoba": values["xwoba"],
-            # These serving fields are league-prior estimates, even with no appearances.
             "whip_shrunk_model_estimate": values["whip"],
             "k_minus_bb_pct_shrunk_model_estimate": values["k_bb_pct"],
             "raw_whip": None, "raw_k_minus_bb_pct": raw_kbb,
@@ -152,9 +174,6 @@ def contributions(row, selected, starters):
                          and population in ("individual_starter", "individual_starter_context"))
         oriented = score * (1 if selected == "home" else -1) if score is not None else None
         direction_verified = group_proof_verified and score is not None and score != 0
-        # The retained schema binds group totals to p_raw, but it does not independently bind
-        # each top_features entry to those totals. Preserve direction as retained evidence while
-        # failing closed on feature-level consumption claims.
         feature_consumption_verified = False
         result.append({"feature": name, "subject_side": side,
                        "subject_team": row.get(side + "_team") if side else None,
@@ -182,9 +201,7 @@ def selected_moneylines(row, selected, odds_rows):
         return {"status": "EVENT_MISSING_OR_AMBIGUOUS", "books": missing}
     entry = matches[0]
     event = object_value(entry.get("payload_json"))
-    if (str(event.get("id")) != str(event_id)
-            or any(team_key(event.get(s + "_team")) != team_key(row.get(s + "_team"))
-                   for s in ("home", "away"))):
+    if not event_identity_matches(row, event):
         return {"status": "EVENT_IDENTITY_MISMATCH", "books": missing}
     row_time, start = instant(row.get("as_of")), instant(row.get("commence_time"))
     event_start, receipt = instant(event.get("commence_time")), instant(entry.get("as_of"))
@@ -194,6 +211,7 @@ def selected_moneylines(row, selected, odds_rows):
     if receipt > latest:
         return {"status": "CACHE_AFTER_PREDICTION_OR_CUTOFF", "books": missing,
                 "cache_as_of": entry.get("as_of"), "latest_eligible": latest.isoformat()}
+    provider_names = {side: event.get(side + "_team") for side in ("home", "away")}
     for book in BOOKS:
         books = [b for b in event.get("bookmakers", []) if b.get("key") == book]
         if len(books) != 1:
@@ -207,9 +225,11 @@ def selected_moneylines(row, selected, odds_rows):
         values = market.get("outcomes", [])
         if len(values) != 2:
             continue
-        home = [o for o in values if team_key(o.get("name")) == team_key(row.get("home_team"))]
-        away = [o for o in values if team_key(o.get("name")) == team_key(row.get("away_team"))]
-        if len(home) != 1 or len(away) != 1:
+        allowed = {side: {team_key(provider_names[side]), team_key(row.get(side + "_team"))}
+                   for side in ("home", "away")}
+        home = [o for o in values if team_key(o.get("name")) in allowed["home"]]
+        away = [o for o in values if team_key(o.get("name")) in allowed["away"]]
+        if len(home) != 1 or len(away) != 1 or home[0] is away[0]:
             continue
         selected_outcome = home[0] if selected == "home" else away[0]
         price = number(selected_outcome.get("price"))
