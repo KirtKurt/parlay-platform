@@ -40,6 +40,11 @@ def object_value(value):
         return {}
 
 
+def team_key(name):
+    """Match the serving crosswalk's punctuation/case normalization, without fuzzy guesses."""
+    return re.sub(r"[^a-z0-9]", "", str(name).lower())
+
+
 def identity(row, side, profile):
     expected, observed = row.get(side + "_starter_id"), profile.get("starter_id")
     valid = (re.fullmatch(r"[1-9][0-9]*", str(expected)) is not None
@@ -134,7 +139,7 @@ def contribution_population(name, side, starters):
 
 def contributions(row, selected, starters):
     proof = object_value(row.get("signal_contributions_json"))
-    verified = attribution_verified(row, proof)
+    group_proof_verified = attribution_verified(row, proof)
     result = []
     for entry in proof.get("top_features", []):
         name, score = entry.get("feature", ""), number(entry.get("score"))
@@ -146,7 +151,11 @@ def contributions(row, selected, starters):
         named_starter = (side is not None and identity_status == "verified"
                          and population in ("individual_starter", "individual_starter_context"))
         oriented = score * (1 if selected == "home" else -1) if score is not None else None
-        observed = verified and score is not None and score != 0
+        direction_verified = group_proof_verified and score is not None and score != 0
+        # The retained schema binds group totals to p_raw, but it does not independently bind
+        # each top_features entry to those totals. Preserve direction as retained evidence while
+        # failing closed on feature-level consumption claims.
+        feature_consumption_verified = False
         result.append({"feature": name, "subject_side": side,
                        "subject_team": row.get(side + "_team") if side else None,
                        "subject_population": population,
@@ -155,8 +164,11 @@ def contributions(row, selected, starters):
                        "starter_id": row.get(side + "_starter_id") if named_starter else None,
                        "starter_name": row.get(side + "_starter_name") if named_starter else None,
                        "score_toward_home": score, "score_toward_selected": oriented,
-                       "direction": ("SUPPORT" if oriented > 0 else "OPPOSITION") if observed else "UNVERIFIED",
-                       "consumption": "ACTUALLY CONSUMED BY ACTIVE MODEL" if observed else "CONSUMPTION UNKNOWN",
+                       "direction": ("SUPPORT" if oriented > 0 else "OPPOSITION") if direction_verified else "UNVERIFIED",
+                       "consumption": ("ACTUALLY CONSUMED BY ACTIVE MODEL" if feature_consumption_verified
+                                       else "CONSUMPTION UNKNOWN"),
+                       "consumption_evidence": ("FEATURE_LEVEL_BINDING_VERIFIED" if feature_consumption_verified
+                                                else "GROUP_PROOF_ONLY_TOP_FEATURE_UNBOUND"),
                        "interpretation": "SHAP contribution, not causal effect"})
     return result
 
@@ -171,7 +183,8 @@ def selected_moneylines(row, selected, odds_rows):
     entry = matches[0]
     event = object_value(entry.get("payload_json"))
     if (str(event.get("id")) != str(event_id)
-            or any(event.get(s + "_team") != row.get(s + "_team") for s in ("home", "away"))):
+            or any(team_key(event.get(s + "_team")) != team_key(row.get(s + "_team"))
+                   for s in ("home", "away"))):
         return {"status": "EVENT_IDENTITY_MISMATCH", "books": missing}
     row_time, start = instant(row.get("as_of")), instant(row.get("commence_time"))
     event_start, receipt = instant(event.get("commence_time")), instant(entry.get("as_of"))
@@ -191,7 +204,8 @@ def selected_moneylines(row, selected, odds_rows):
         market = markets[0]
         timestamp = market.get("last_update") or books[0].get("last_update")
         quote_time = instant(timestamp)
-        outcomes = [o for o in market.get("outcomes", []) if o.get("name") == row.get(selected + "_team")]
+        outcomes = [o for o in market.get("outcomes", [])
+                    if team_key(o.get("name")) == team_key(row.get(selected + "_team"))]
         price = number(outcomes[0].get("price")) if len(outcomes) == 1 else None
         age = (latest - quote_time).total_seconds() if quote_time else None
         if (quote_time and quote_time <= receipt and age is not None and 0 <= age <= 900
