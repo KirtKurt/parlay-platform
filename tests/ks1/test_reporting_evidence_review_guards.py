@@ -30,13 +30,17 @@ def row():
     }
 
 
-def quote(record, home="St Louis Cardinals", away="new york mets", outcome="ST LOUIS CARDINALS"):
+def quote(record, home="St Louis Cardinals", away="new york mets",
+          home_outcome="ST LOUIS CARDINALS", away_outcome="New York Mets"):
+    outcomes = [{"name": home_outcome, "price": -133}]
+    if away_outcome is not None:
+        outcomes.append({"name": away_outcome, "price": 120})
     return {"event_id": "g1", "as_of": "2026-09-22T15:31:00Z", "payload_json": json.dumps({
         "id": "g1", "commence_time": record["commence_time"],
         "home_team": home, "away_team": away,
         "bookmakers": [{"key": "draftkings", "last_update": "2026-09-22T15:30:00Z",
                         "markets": [{"key": "h2h", "last_update": "2026-09-22T15:30:00Z",
-                                     "outcomes": [{"name": outcome, "price": -133}]}]}],
+                                     "outcomes": outcomes}]}],
     })}
 
 
@@ -59,4 +63,20 @@ def test_odds_identity_still_fails_closed_for_a_different_team():
     record = row()
     money = report_evidence(record, {"flags": []}, [quote(record, home="Chicago Cubs")])["moneylines"]
     assert money["status"] == "EVENT_IDENTITY_MISMATCH"
+    assert money["books"]["draftkings"]["price"] is None
+
+
+def test_moneyline_requires_both_serving_h2h_sides():
+    record = row()
+    money = report_evidence(
+        record, {"flags": []}, [quote(record, away_outcome="Philadelphia Phillies")]
+    )["moneylines"]
+    assert money["status"] == "EXACT_EVENT_MATCH"
+    assert money["books"]["draftkings"]["price"] is None
+
+
+def test_moneyline_rejects_single_outcome_h2h_market():
+    record = row()
+    money = report_evidence(record, {"flags": []}, [quote(record, away_outcome=None)])["moneylines"]
+    assert money["status"] == "EXACT_EVENT_MATCH"
     assert money["books"]["draftkings"]["price"] is None

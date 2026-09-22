@@ -204,9 +204,15 @@ def selected_moneylines(row, selected, odds_rows):
         market = markets[0]
         timestamp = market.get("last_update") or books[0].get("last_update")
         quote_time = instant(timestamp)
-        outcomes = [o for o in market.get("outcomes", [])
-                    if team_key(o.get("name")) == team_key(row.get(selected + "_team"))]
-        price = number(outcomes[0].get("price")) if len(outcomes) == 1 else None
+        values = market.get("outcomes", [])
+        if len(values) != 2:
+            continue
+        home = [o for o in values if team_key(o.get("name")) == team_key(row.get("home_team"))]
+        away = [o for o in values if team_key(o.get("name")) == team_key(row.get("away_team"))]
+        if len(home) != 1 or len(away) != 1:
+            continue
+        selected_outcome = home[0] if selected == "home" else away[0]
+        price = number(selected_outcome.get("price"))
         age = (latest - quote_time).total_seconds() if quote_time else None
         if (quote_time and quote_time <= receipt and age is not None and 0 <= age <= 900
                 and price is not None and abs(price) >= 100):
