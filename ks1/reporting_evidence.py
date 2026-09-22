@@ -141,6 +141,8 @@ def contributions(row, selected, starters):
         side = next((s for s in ("home", "away") if name.startswith(s + "_")), None)
         population = contribution_population(name, side, starters)
         identity_status = (starters[side]["subject"]["identity_status"] if side else None)
+        pitcher_subject = population in ("individual_starter", "individual_starter_context",
+                                         "league_prior_pitcher_context", "pitcher_context_unverified")
         named_starter = (side is not None and identity_status == "verified"
                          and population in ("individual_starter", "individual_starter_context"))
         oriented = score * (1 if selected == "home" else -1) if score is not None else None
@@ -149,7 +151,7 @@ def contributions(row, selected, starters):
                        "subject_team": row.get(side + "_team") if side else None,
                        "subject_population": population,
                        "context_basis": starters[side]["context_basis"] if side and "_pitcher_context_" in name else None,
-                       "identity_status": identity_status if named_starter or population.startswith("pitcher_context") else None,
+                       "identity_status": identity_status if pitcher_subject else None,
                        "starter_id": row.get(side + "_starter_id") if named_starter else None,
                        "starter_name": row.get(side + "_starter_name") if named_starter else None,
                        "score_toward_home": score, "score_toward_selected": oriented,

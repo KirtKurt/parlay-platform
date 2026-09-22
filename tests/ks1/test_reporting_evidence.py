@@ -117,16 +117,35 @@ def test_stale_or_absent_pitcher_join_is_not_a_named_fact(observed, status):
     assert result["flags"][0]["usable_as_named_pitcher_fact"] is False
 
 
-def test_unverified_individual_contribution_suppresses_pitcher_name_and_id():
+@pytest.mark.parametrize("observed,status", [("123456", "mismatch"), (None, "unavailable")])
+@pytest.mark.parametrize("feature,basis,population", [
+    ("away_starter_whip_prior_year", "prior_year_pitcher", "individual_starter"),
+    ("away_pitcher_context_quality", "prior_year_pitcher", "individual_starter_context"),
+    ("away_pitcher_context_quality", "prior_year_league_prior", "league_prior_pitcher_context"),
+    ("away_pitcher_context_quality", "unavailable", "pitcher_context_unverified"),
+])
+def test_unverified_individual_contribution_suppresses_pitcher_name_and_id(observed, status, feature, basis, population):
     row = fixture()
     profile = json.loads(row["starter_profile_json"])
-    profile["sides"]["away"]["starter_id"] = "123456"
+    profile["sides"]["away"].update(starter_id=observed, context_basis=basis)
     row["starter_profile_json"] = json.dumps(profile)
+    proof = json.loads(row["signal_contributions_json"])
+    proof["top_features"][1]["feature"] = feature
+    row["signal_contributions_json"] = json.dumps(proof)
     individual = report_evidence(row, evaluate(row))["contributions"][1]
-    assert individual["subject_population"] == "individual_starter"
-    assert individual["identity_status"] == "mismatch"
+    assert individual["subject_population"] == population
+    assert individual["identity_status"] == status
     assert individual["starter_id"] is None
     assert individual["starter_name"] is None
+
+
+def test_team_rotation_contributions_do_not_claim_an_individual_identity_status():
+    row = fixture()
+    team = report_evidence(row, evaluate(row))["contributions"][0]
+    assert team["subject_population"] == "team_starter_history"
+    assert team["identity_status"] is None
+    assert team["starter_id"] is None
+    assert team["starter_name"] is None
 
 
 @pytest.mark.parametrize("apps,outs,era,state", [
