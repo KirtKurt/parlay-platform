@@ -2,16 +2,17 @@
 
 Unmatched/ambiguous BBS events continue; official games without BBS go to exclusions (`missing_bbs_identity`). Duplicate BBS-to-one-game, schema change, and truncation stay hard errors.
 
-Status 2026-09-22 17:16 EDT / 2026-09-22 21:16 UTC:
+Status 2026-09-22 21:11 EDT / 2026-09-23 01:11 UTC operator cycle recorded at 2026-09-23 05:11 UTC:
 - Isolate-skip already on main `ks1/daily.py` (`isolate_unmatched`). Tests: `tests/ks1_phase5/test_bbs_identity_isolation.py`.
 - This branch `ks1/daily.py` is placeholder only. Do not merge this branch; do not patch main; do not copy this placeholder over main.
-- Latest schedule: 35764874408 SUCCESS 18:05:17Z-18:15:18Z (~10.0m). Artifacts ks1-daily / ks1-nightly / ks1-loss-patterns / mlb-research-ingestion.
-- Cron is `17 * * * *`. No schedule tick after 18:05 (~191m). HEALTH=CRON_GAP. Dispatch still green: 35778038795 20:05Z, 35784556615 21:06:26Z-21:14:04Z (~7.6m). Watchdog not started. PR 712 watchdog not activated. Did not dispatch mlb-research-ingestion.yml.
-- Latest completed attempt: 35784556615 SUCCESS workflow_dispatch. Artifacts ks1-daily-35784556615, ks1-nightly-35784556615, ks1-loss-patterns-35784556615-1.
+- Latest schedule: 35802580507 SUCCESS 00:33:25Z-00:42:33Z (~9.1m). Latest attempt: 35818873869 SUCCESS workflow_dispatch 04:34:19Z-04:42:58Z (~8.6m). Artifacts: ks1-daily-35818873869, ks1-nightly-35818873869, ks1-loss-patterns-35818873869-1, mlb-research-ingestion-35818873869.
+- Prior same-day attempts all SUCCESS: 35814846250 03:34Z, 35810860279 02:33Z, 35806772148 01:33Z, 35801620711 00:20Z. No failed ingest this window. HEALTH=OK (last attempt ~37m before 05:11Z). Watchdog not started. PR 712 watchdog not activated. Did not dispatch mlb-research-ingestion.yml.
+- Isolate applied on this slate: exclusions=[824710 missing_bbs_identity, 823086 missing_bbs_identity]; bbs_identity_exclusions=[253b8302 unmatched vs 824710, cb1aa5db unmatched vs 823086]. Slate continued (14 scored / 16 official).
 - Did not promote 2stackMLB. Did not rewrite p_home/locks/ledgers.
 - PR 710 open ready; SCHEMA/publish adds p_lgb, pick_status, selection_reason. PR 711 draft shadow-only. PR 712 closed/merged; watchdog not activated. PR 713 draft isolate notes only.
-- Daily 35784556615 date=2026-09-22: 15 rows, 9 confirmed / 6 projected (5 projected + 1 projected_missing_starter). Sits: NYY 823543 confirmed + 823494 projected, NYM 822840, CWS 824061. exclusions=[824785 not_scheduled_before_T10 / Postponed]; bbs_identity_exclusions=[]. projected_missing_starter: SD@LAD 823897.
-- Nightly 35784556615: official Brier 0.23357 n=144 new_grades=0 locked_rows=144 ledger_rows=144. ACCURACY=UNAVAILABLE for new grades (n=0). calibration_status=deferred_to_next_nightly. status=no_new_final_grades. admission excluded=[].
-- 2stack research stays on PR 711 only (isolate already on main). No official train.
+- Daily 35818873869 date=2026-09-23: 14 rows, 0 confirmed / 14 projected (11 projected + 3 projected_missing_starter). Sits: NYY 823492, NYM 822841 projected_missing_starter, CWS 824060. Missing starters also TOR@BAL 824785 and 824784.
+- Nightly 35818873869: status=not_due_or_already_completed published=false. ACCURACY=UNAVAILABLE.
+- Research ingest PARTIAL: Statcast COVERAGE_MISMATCH 2026-09-22 expected 12 observed 0; original_settlement MISSING_T10_SNAPSHOTS on 2026-09-10/11. productionAuthorityChanged=false.
+- 2stack research stays on PR 711 only (isolate already on main). No official train. No walk-forward/attach this hour.
 
 Do not merge without Kurt approval. Do not rewrite p_home, locks, or ledgers.
