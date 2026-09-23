@@ -456,3 +456,28 @@ def test_no_lease_cannot_refresh_either_status():
     with pytest.raises(training.TrainingContractError):
         service.run()
     assert not events and not repo.data and not store.statuses
+
+
+@pytest.mark.parametrize("mutation", ["changed", "missing", "empty"])
+def test_successor_model_bytes_are_required_by_deployment_identity(tmp_path, monkeypatch, mutation):
+    import mlb_ml_aws_training_v1_compat as compat
+    from pathlib import Path
+
+    source_root = Path(compat.__file__).parent
+    for name in compat._IDENTITY_SOURCE_FILES:
+        (tmp_path / name).write_bytes((source_root / name).read_bytes())
+    monkeypatch.setattr(compat, "__file__", str(tmp_path / "mlb_ml_aws_training_v1_compat.py"))
+    config = trainer_fixtures.config()
+    original = compat.mlb_deployment_identity(config)
+    target = tmp_path / "mlb_successor_model_v2.py"
+    assert target.is_file()
+    if mutation == "changed":
+        target.write_bytes(target.read_bytes() + b"\n# model-only deployment change\n")
+        assert compat.mlb_deployment_identity(config) != original
+    else:
+        if mutation == "missing":
+            target.unlink()
+        else:
+            target.write_bytes(b"")
+        with pytest.raises(RuntimeError, match="mlb_identity_source_" + mutation):
+            compat.mlb_deployment_identity(config)

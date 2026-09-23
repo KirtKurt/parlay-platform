@@ -44,6 +44,7 @@ _IDENTITY_SOURCE_FILES = (
     "mlb_r7_source_honest_training_repair.py",
     "mlb_r7_historical_walkforward_bridge.py",
     "mlb_successor_runtime_v1.py",
+    "mlb_successor_model_v2.py",
 )
 
 

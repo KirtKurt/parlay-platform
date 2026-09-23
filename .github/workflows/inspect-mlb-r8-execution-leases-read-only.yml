@@ -588,6 +588,71 @@ jobs:
           PY
           test -s "$report_path"
 
+      - name: Read recent trainer runtime reports
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          python - <<'PYCODE'
+          import json
+          import os
+          import re
+          import subprocess
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+
+          def read_json(command):
+              result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+              if result.returncode:
+                  raise RuntimeError("read_only_runtime_report_unavailable")
+              return json.loads(result.stdout)
+
+          def summarize(events):
+              reports = []
+              pattern = re.compile(r"REPORT RequestId: ([0-9a-fA-F-]{36})\s+Duration: ([0-9.]+) ms")
+              for event in events:
+                  message = str(event.get("message") or "")
+                  match = pattern.search(message)
+                  if not match:
+                      continue
+                  status = re.search(r"\bStatus: (success|error|timeout)\b", message)
+                  reports.append({
+                      "timestamp": int(event["timestamp"]),
+                      "requestId": match.group(1),
+                      "durationMs": float(match.group(2)),
+                      "status": status.group(1) if status else "not_reported",
+                  })
+              return reports
+
+          region = os.environ["AWS_REGION_VALUE"]
+          stack = read_json(["aws", "cloudformation", "describe-stacks", "--stack-name",
+              "parlay-platform-dev", "--region", region, "--output", "json"])
+          arn = next(x["OutputValue"] for x in stack["Stacks"][0]["Outputs"]
+              if x["OutputKey"] == "MLBMLTrainingFunctionArn")
+          match = re.fullmatch(r"arn:aws[a-zA-Z-]*:lambda:[^:]+:\d{12}:function:([A-Za-z0-9_-]{1,64})", arn)
+          if not match:
+              raise RuntimeError("trainer_log_group_unavailable")
+          now = datetime.now(timezone.utc)
+          start = now - timedelta(hours=24)
+          response = read_json(["aws", "logs", "filter-log-events", "--log-group-name",
+              "/aws/lambda/" + match.group(1), "--start-time", str(int(start.timestamp()*1000)),
+              "--end-time", str(int(now.timestamp()*1000)), "--filter-pattern", '"REPORT RequestId:"',
+              "--limit", "1000", "--no-paginate", "--region", region, "--output", "json"])
+          reports = summarize(response.get("events", []))
+          summary = {
+              "windowStartUtc": start.isoformat(), "windowEndUtc": now.isoformat(),
+              "complete": not bool(response.get("nextToken")),
+              "runtimeReportCount": len(reports),
+              "maximumDurationMs": max((x["durationMs"] for x in reports), default=None),
+              "longOrFailedInvocations": [x for x in reports
+                  if x["durationMs"] >= 60000 or x["status"] in {"error", "timeout"}],
+          }
+          path = Path("/tmp/mlb-r8-execution-lease-readonly.json")
+          report = json.loads(path.read_text())
+          report["recentRuntimeReports"] = summary
+          path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          PYCODE
+
       - name: Upload sanitized MLB R8 execution lease report only
         uses: actions/upload-artifact@v4
         with:

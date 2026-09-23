@@ -81,7 +81,7 @@ def test_workflow_reads_only_three_exact_keys_with_an_explicit_projection() -> N
     assert source.count("aws cloudformation describe-stacks") == 1
     assert source.count('"lambda",\n                  "invoke"') == 1
     assert source.count('"logs",\n                      "filter-log-events"') == 1
-    assert '"--filter-pattern"' not in source
+    assert '"--filter-pattern"' not in _diagnostic_step()["run"]
     assert '"--limit",\n                      "1000"' in source
     assert 'event["stream"] == start_event["stream"]' in source
     assert "CLOUDWATCH_RUN_BOUNDARY_NOT_FOUND" in source
@@ -533,3 +533,23 @@ def test_cloudwatch_missing_end_boundary_is_a_stable_non_raw_blocker(
     assert result is None
     assert blocker == "CLOUDWATCH_RUN_BOUNDARY_NOT_FOUND"
     assert not raw_path.exists()
+
+
+def test_recent_runtime_reports_emit_only_allowlisted_fields():
+    step = next(s for s in _document()["jobs"]["inspect"]["steps"]
+                if s.get("name") == "Read recent trainer runtime reports")
+    program = step["run"].split("python - <<'PYCODE'\n", 1)[1].rsplit("\nPYCODE", 1)[0]
+    definitions = program.split('region = os.environ', 1)[0]
+    namespace = {}
+    exec(compile(definitions, str(WORKFLOW), "exec"), namespace)
+    request_id = "12345678-1234-1234-1234-123456789abc"
+    rows = namespace["summarize"]([
+        {"timestamp": 100, "message": f"REPORT RequestId: {request_id}\tDuration: 900000.00 ms\tStatus: timeout\tprivate payload"},
+        {"timestamp": 101, "message": "sensitive exception body"},
+    ])
+    assert rows == [{"timestamp": 100, "requestId": request_id,
+                     "durationMs": 900000.0, "status": "timeout"}]
+    assert 'timedelta(hours=24)' in program
+    assert '"--no-paginate"' in program
+    assert '"complete": not bool(response.get("nextToken"))' in program
+    assert 'capture_output=True' in program
