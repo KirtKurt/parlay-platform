@@ -13,13 +13,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
+      - name: Verify immutable dispatch revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/main'
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          actual_sha=$(git rev-parse --verify HEAD)
+          test "$actual_sha" = "$GITHUB_SHA"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Install test runtime
         run: python -m pip install --quiet "pytest>=8,<9" boto3
-      - name: Revalidate current main before repair
+      - name: Revalidate dispatched revision before repair
         run: python -m pytest -q inqsi-arb/tests
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -29,9 +37,9 @@ jobs:
       - uses: aws-actions/setup-sam@v2
       - name: Stamp clean Python release identity
         run: python inqsi-arb/ops/release_proof.py stamp
-      - name: Build current main
+      - name: Build dispatched revision
         run: sam build --no-cached --template-file inqsi-arb/template.yaml
-      - name: Redeploy current main once
+      - name: Redeploy dispatched revision once
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
         run: |
