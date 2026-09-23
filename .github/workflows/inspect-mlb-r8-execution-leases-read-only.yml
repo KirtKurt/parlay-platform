@@ -601,7 +601,7 @@ jobs:
           from pathlib import Path
 
           def read_json(command):
-              result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+              result = subprocess.run(command, capture_output=True, text=True, timeout=10)
               if result.returncode:
                   raise RuntimeError("read_only_runtime_report_unavailable")
               return json.loads(result.stdout)
@@ -623,6 +623,20 @@ jobs:
                   })
               return reports
 
+          def collect_reports(command):
+              events, token = {}, None
+              for _ in range(20):
+                  page = read_json(command + (["--next-token", token] if token else []))
+                  for event in page.get("events", []):
+                      events[event["eventId"]] = event
+                  next_token = page.get("nextToken")
+                  if not next_token:
+                      return list(events.values()), True
+                  if next_token == token:
+                      break
+                  token = next_token
+              return list(events.values()), False
+
           region = os.environ["AWS_REGION_VALUE"]
           stack = read_json(["aws", "cloudformation", "describe-stacks", "--stack-name",
               "parlay-platform-dev", "--region", region, "--output", "json"])
@@ -633,14 +647,14 @@ jobs:
               raise RuntimeError("trainer_log_group_unavailable")
           now = datetime.now(timezone.utc)
           start = now - timedelta(hours=24)
-          response = read_json(["aws", "logs", "filter-log-events", "--log-group-name",
+          events, complete = collect_reports(["aws", "logs", "filter-log-events", "--log-group-name",
               "/aws/lambda/" + match.group(1), "--start-time", str(int(start.timestamp()*1000)),
               "--end-time", str(int(now.timestamp()*1000)), "--filter-pattern", '"REPORT RequestId:"',
               "--limit", "1000", "--no-paginate", "--region", region, "--output", "json"])
-          reports = summarize(response.get("events", []))
+          reports = summarize(events)
           summary = {
               "windowStartUtc": start.isoformat(), "windowEndUtc": now.isoformat(),
-              "complete": not bool(response.get("nextToken")),
+              "complete": complete,
               "runtimeReportCount": len(reports),
               "maximumDurationMs": max((x["durationMs"] for x in reports), default=None),
               "longOrFailedInvocations": [x for x in reports

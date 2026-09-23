@@ -551,5 +551,16 @@ def test_recent_runtime_reports_emit_only_allowlisted_fields():
                      "durationMs": 900000.0, "status": "timeout"}]
     assert 'timedelta(hours=24)' in program
     assert '"--no-paginate"' in program
-    assert '"complete": not bool(response.get("nextToken"))' in program
+    assert '"complete": complete' in program
+    pages = iter([{"events": [], "nextToken": "page2"},
+                  {"events": [{"eventId": "report", "message": "REPORT"}]}])
+    calls = []
+    def read(command):
+        calls.append(command)
+        return next(pages)
+    namespace["read_json"] = read
+    assert namespace["collect_reports"](["read"]) == ([{"eventId": "report", "message": "REPORT"}], True)
+    assert calls == [["read"], ["read", "--next-token", "page2"]]
+    namespace["read_json"] = lambda command: {"events": [], "nextToken": "stalled"}
+    assert namespace["collect_reports"](["read"]) == ([], False)
     assert 'capture_output=True' in program
