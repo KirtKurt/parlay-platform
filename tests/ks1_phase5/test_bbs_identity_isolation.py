@@ -47,3 +47,17 @@ def test_extra_unmatched_event_leaves_matched_predictions_byte_identical(capture
     crosswalk = json.loads((out/'crosswalk.json').read_bytes())
     assert crosswalk['bbs_identity_exclusions'] == report['bbs_identity_exclusions']
     assert not any(row['bbs_id'] == 'unknown-home' for row in crosswalk['teams'])
+
+
+def test_official_game_without_bbs_is_exclusion_not_slate_fail(capture):
+    folder, output, calls, _ = capture
+    first, _, out = daily.predict(folder, output)
+    events = json.loads((folder/'bbs.json').read_bytes())['payload']['data']
+    assert len(events) >= 2
+    replace_bbs(folder, events[:1])
+    second, report, out = daily.predict(folder, output)
+    missing = [e for e in report['exclusions'] if e.get('reason') == 'missing_bbs_identity']
+    assert missing, report['exclusions']
+    assert report['bbs_matched_games'] == 1
+    assert len(second) == 1
+    assert not any('ambiguous or unmatched BBS' in str(e) for e in report.get('exclusions', []))
