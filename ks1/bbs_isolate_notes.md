@@ -2,11 +2,12 @@
 
 Unmatched/ambiguous BBS events continue; official games without BBS go to exclusions (`missing_bbs_identity`). Duplicate BBS-to-one-game, schema change, and truncation stay hard errors.
 
-Status 2026-09-25 04:05 EDT / 2026-09-25 08:05 UTC operator cycle:
+Status 2026-09-25 05:02 EDT / 2026-09-25 09:02 UTC operator cycle:
 - Isolate-skip already on main `ks1/daily.py` (`isolate_unmatched=True`). Tests: `tests/ks1_phase5/test_bbs_identity_isolation.py`.
 - This branch `ks1/daily.py` remains placeholder only. Do not merge this branch; do not patch main; do not copy this placeholder over main.
 - Latest main ingest 36109575938 SUCCESS schedule 07:48:54Z-07:58:49Z (~9.9m) run 755. Artifacts: ks1-daily-36109575938, ks1-nightly-36109575938, ks1-loss-patterns-36109575938-1, mlb-research-ingestion-36109575938.
-- Prior schedule 36082319345 SUCCESS 01:30:32Z-01:51:00Z (~20.5m) run 748. Age since last schedule start ~17m. HEALTH=OK. Watchdog not started. PR 712 watchdog not activated. Did not dispatch mlb-research-ingestion.yml.
+- Prior schedule 36082319345 SUCCESS 01:30:32Z-01:51:00Z (~20.5m) run 748.
+- Age since last schedule start ~74m. HEALTH=CRON_GAP. Watchdog not started. PR 712 watchdog not activated. Did not dispatch mlb-research-ingestion.yml.
 - No failed ingest this window. No isolate code change required.
 - Did not promote 2stackMLB. Did not rewrite p_home/locks/ledgers.
 - PR 710 open ready; SCHEMA/publish adds p_lgb, pick_status, selection_reason. PR 711 draft shadow-only. PR 712 merged closed; watchdog not activated. PR 713 draft isolate notes only (dirty vs main).
