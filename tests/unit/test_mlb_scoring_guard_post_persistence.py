@@ -111,14 +111,14 @@ def _source_context() -> dict:
     return context
 
 
-def _live_prediction() -> dict:
+def _live_prediction(*, commence: str = COMMENCE) -> dict:
     row = {
         "officialGamePk": "1001",
         "gameId": "provider-a",
         "gameIdentity": "provider-a",
         "homeTeam": "Home Club",
         "awayTeam": "Away Club",
-        "commenceTime": COMMENCE,
+        "commenceTime": commence,
         "predictedWinner": "Home Club",
         "predictedSide": "home",
         "score": 61.2,
@@ -320,3 +320,29 @@ def test_missing_canonical_lock_authority_remains_fail_closed() -> None:
     assert game["fundamentalsState"] == "NOT_ACTIVE"
     assert game["fundamentalsPostPersistenceProofValid"] is False
     assert game["fundamentalsPostPersistenceErrors"]
+
+
+def test_future_cutoff_without_recorded_lock_is_pending_and_still_fail_closed() -> None:
+    live = _live_prediction(commence="2026-07-22T20:05:00+00:00")
+    live["data"].pop("lockedCardAudit", None)
+    proof = _proof(live)
+    report = _report()
+    report["games"][0]["commenceTime"] = "2026-07-22T20:05:00+00:00"
+
+    result = SUBJECT.enhance_report(
+        report,
+        prediction_items=[live],
+        pregame_snapshot_items=[proof],
+        observed_at=datetime(2026, 7, 22, 18, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["summary"]["fundamentalsPostPersistenceProofInvalidCount"] == 0
+    assert result["summary"]["fundamentalsPostPersistencePendingRecordedLockCount"] == 1
+    assert result["summary"]["fundamentalsPostPersistenceShadowEvaluatedCount"] == 0
+    game = result["games"][0]
+    assert game["fundamentalsPostPersistenceProofValid"] is True
+    assert game["fundamentalsPostPersistencePendingRecordedLock"] is True
+    assert game["fundamentalsPostPersistenceScheduledCutoffUtc"] == (
+        "2026-07-22T19:20:00Z"
+    )
+    assert result["postPersistenceShadowDiagnostic"]["ok"] is True

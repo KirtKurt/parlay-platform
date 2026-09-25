@@ -39,18 +39,48 @@ lock_authority.install(shadow_contract)
 
 
 PROOF_TYPE = "MLB_SCORING_GUARD_POST_PERSISTENCE_SHADOW_READ_ONLY_PROOF"
-PROOF_VERSION = "MLB-SCORING-GUARD-POST-PERSISTENCE-SHADOW-v1"
+PROOF_VERSION = "MLB-SCORING-GUARD-POST-PERSISTENCE-SHADOW-v2-precutoff-pending-lock"
 PREGAME_RECORD_TYPE = "mlb_immutable_prelock_prediction_snapshot"
 PREGAME_SNAPSHOT_VERSION = (
     "MLB-PREGAME-PREDICTION-SNAPSHOT-v3-user-visible-platform-prelock"
 )
 PERSISTENCE_PROOF_TYPE = "DDB_LIVE_PREDICTION_PUT_SUCCESS_ACK-v1"
+PREGAME_CUTOFF_MINUTES = 45
 PAYLOAD_FINGERPRINT_VERSION = history_contract.CANONICAL_PAYLOAD_FINGERPRINT_VERSION
 
 
 def _prediction_data(item: Mapping[str, Any]) -> Dict[str, Any]:
     value = item.get("data")
     return copy.deepcopy(dict(value)) if isinstance(value, Mapping) else {}
+
+
+def _pregame_cutoff(row: Mapping[str, Any]) -> Optional[datetime]:
+    commence = base._parse_dt(
+        row.get("commenceTime") or row.get("commence_time")
+    )
+    return (
+        commence - timedelta(minutes=PREGAME_CUTOFF_MINUTES)
+        if commence
+        else None
+    )
+
+
+def _awaiting_recorded_lock(
+    row: Mapping[str, Any], *, observed_at: datetime
+) -> Tuple[bool, Optional[str]]:
+    """Recognize a still-future canonical lock without treating its schedule as proof.
+
+    The immutable proof is captured at T-45, before the canonical per-game
+    lock exists. While the scheduled cutoff is still in the future, a missing
+    lock is a pending readback state. Once the cutoff passes, the same missing
+    lock remains blocked and cannot be promoted to evidence.
+    """
+    if shadow_contract._lock_at(row) not in (None, ""):
+        return False, None
+    cutoff = _pregame_cutoff(row)
+    if cutoff is None or observed_at >= cutoff:
+        return False, cutoff.isoformat().replace("+00:00", "Z") if cutoff else None
+    return True, cutoff.isoformat().replace("+00:00", "Z")
 
 
 def _proof_candidates(
@@ -170,6 +200,19 @@ def _diagnostic_shadow(
     if shadow.get("canInfluenceLivePick") is not False:
         attestation_errors.append("post_persistence_shadow_can_influence_live_pick")
     if attestation_errors:
+        pending_lock, cutoff = _awaiting_recorded_lock(
+            row, observed_at=observed_at
+        )
+        if pending_lock and attestation_errors == [
+            "shadow_current_snapshot_provenance_invalid"
+        ]:
+            # The persisted T-45 snapshot is valid, but its canonical lock is
+            # intentionally not yet recorded. Keep the evidence pending and
+            # fail closed; never substitute the scheduled cutoff as a lock.
+            shadow["pendingRecordedLock"] = True
+            shadow["scheduledCutoffUtc"] = cutoff
+            shadow["validationErrors"] = []
+            return None, shadow, []
         return None, shadow, sorted(set(attestation_errors))
 
     details = base._fundamentals_details({"data": row})
@@ -192,6 +235,7 @@ def enhance_report(
     proof_invalid_count = 0
     shadow_evaluated_count = 0
     shadow_not_evaluated_count = 0
+    pending_recorded_lock_count = 0
     invalid_proofs: Dict[str, List[str]] = {}
 
     for game in games:
@@ -225,6 +269,12 @@ def enhance_report(
         game["fundamentalsPostPersistenceErrors"] = []
         if not details or not shadow:
             shadow_not_evaluated_count += 1
+            if shadow and shadow.get("pendingRecordedLock") is True:
+                pending_recorded_lock_count += 1
+                game["fundamentalsPostPersistencePendingRecordedLock"] = True
+                game["fundamentalsPostPersistenceScheduledCutoffUtc"] = shadow.get(
+                    "scheduledCutoffUtc"
+                )
             continue
         if details.get("shadowEvaluated") is not True:
             shadow_not_evaluated_count += 1
@@ -294,6 +344,9 @@ def enhance_report(
     summary["fundamentalsPostPersistenceShadowNotEvaluatedCount"] = (
         shadow_not_evaluated_count
     )
+    summary["fundamentalsPostPersistencePendingRecordedLockCount"] = (
+        pending_recorded_lock_count
+    )
 
     out["summary"] = summary
     out["games"] = games
@@ -309,6 +362,7 @@ def enhance_report(
         "invalidProofCount": proof_invalid_count,
         "shadowEvaluatedCount": shadow_evaluated_count,
         "shadowNotEvaluatedCount": shadow_not_evaluated_count,
+        "pendingRecordedLockCount": pending_recorded_lock_count,
         "invalidProofs": invalid_proofs,
     }
     out["postPersistenceShadowProofVersion"] = PROOF_VERSION
