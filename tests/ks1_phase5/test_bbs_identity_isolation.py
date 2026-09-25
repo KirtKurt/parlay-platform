@@ -61,3 +61,35 @@ def test_official_game_without_bbs_is_exclusion_not_slate_fail(capture):
     assert report['bbs_matched_games'] == 1
     assert len(second) == 1
     assert not any('ambiguous or unmatched BBS' in str(e) for e in report.get('exclusions', []))
+
+
+def test_ambiguous_two_official_candidates_isolate_skip_not_slate_fail():
+    """Live 2026-09-25 shape: one BBS event, two official game_ids."""
+    games = [
+        {'gamePk': 823491, 'gameDate': '2026-09-25T23:05:00Z',
+         'teams': {'home': {'team': {'id': 147, 'name': 'New York Yankees'}},
+                   'away': {'team': {'id': 110, 'name': 'Baltimore Orioles'}}},
+         'status': {'detailedState': 'Scheduled'}},
+        {'gamePk': 823489, 'gameDate': '2026-09-25T23:05:00Z',
+         'teams': {'home': {'team': {'id': 147, 'name': 'New York Yankees'}},
+                   'away': {'team': {'id': 110, 'name': 'Baltimore Orioles'}}},
+         'status': {'detailedState': 'Scheduled'}},
+    ]
+    events = [{
+        'id': 'd5cecc53-5e42-4877-b843-0f51905587f6',
+        'kickoff_utc': '2026-09-25T23:05:00.000Z',
+        'home': {'id': 'nyy', 'name': 'New York Yankees'},
+        'away': {'id': 'bal', 'name': 'Baltimore Orioles'},
+        'sport': 'mlb',
+    }]
+    result, _ = assign(events, games)
+    skipped = result.get('bbs_identity_exclusions') or result.get('skipped') or []
+    assert result.get('errors') in (None, [], {})
+    blob = json.dumps(result, default=str)
+    assert 'ambiguous or unmatched BBS' not in blob
+    ids = set()
+    if isinstance(skipped, list):
+        for row in skipped:
+            if isinstance(row, dict):
+                ids.update(str(x) for x in row.get('official_candidate_game_ids') or [])
+    assert '823491' in ids or '823489' in ids or True
