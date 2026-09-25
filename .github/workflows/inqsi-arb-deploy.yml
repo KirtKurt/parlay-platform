@@ -196,7 +196,9 @@ jobs:
           assert report['n_arbs'] == 0 and report['n_detected_unverified'] == 1, report
           assert report['n_exchange_pending'] == 1 and report['jurisdiction'] == 'ny', report
           held=report['detected_unverified'][0]
-          assert held['validation']['settlement_reason'] == 'UNREVIEWED_OR_MISSING_RULE', held
+          assert held['validation']['settlement_reason'] == 'EVENT_OR_MARKET_SCOPE_UNREVIEWED', held
+          assert held['arb'] is False and held['validation']['rules_compatible'] is False, held
+          assert report['places_bets'] is False, report
           assert held['validation']['missing_books'] == ['ci-unreviewed-a','ci-unreviewed-b'], held
           assert len(held['legs']) == 2, held
           assert report['exchange_pending'][0]['validation']['qualification_reason'] == 'EXCHANGE_LAY_REQUIRES_BACK_LAY_ENGINE', report

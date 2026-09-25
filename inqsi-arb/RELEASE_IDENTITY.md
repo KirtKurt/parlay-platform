@@ -39,8 +39,14 @@ promotion inspect the release identity receipt and existing live smoke tests;
 do not treat a green build as a deployed-version proof. Restamp any reviewed
 rollback revision using that rollback run's identity before SAM build; do not
 reuse an old run's receipt or manually insert an expected SHA. The bounded repair
-workflow also stamps its actual checked-out main revision, not a possibly older
-dispatch-event SHA. Repository/environment protections still apply.
+workflow accepts only dispatches on `refs/heads/main` and checks out the immutable
+`${{ github.sha }}` captured for that dispatch. Before tests or AWS credentials,
+it requires a valid full SHA, a successful Git read, and exact checkout equality
+with `GITHUB_SHA`. Advancing main cannot change the revision tested, stamped, or
+built by that run; branch and tag dispatches fail before deployment. Existing
+repository/environment protections and deployment policy still apply. Merging
+changes under `inqsi-arb/**` can trigger the existing main-push deployment workflow;
+PR test/build success alone is not a live deployment receipt.
 
 This increment changes no Codex runner, credentials, permissions, agent schedule,
 price authority, settlement gates, or unrelated prediction services. It does not
