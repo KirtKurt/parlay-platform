@@ -2,6 +2,7 @@
 import io
 import sys
 from email.message import Message
+from http.client import IncompleteRead, RemoteDisconnected
 from pathlib import Path
 from urllib.request import HTTPSHandler, ProxyHandler, build_opener
 from urllib.response import addinfourl
@@ -20,14 +21,20 @@ def transport(monkeypatch):
     calls = []
     responses = []
 
-    def install(code, location=None, body=b'{"data": []}'):
+    def install(code, location=None, body=b'{"data": []}', read_error=None):
+        class ResponseBody(io.BytesIO):
+            def read(self, *args, **kwargs):
+                if read_error is not None:
+                    raise read_error
+                return super().read(*args, **kwargs)
+
         class OfflineHTTPS(HTTPSHandler):
             def https_open(self, request):
                 calls.append(request)
                 headers = Message()
                 if location is not None:
                     headers["Location"] = location
-                response = addinfourl(io.BytesIO(body), headers, request.full_url, code)
+                response = addinfourl(ResponseBody(body), headers, request.full_url, code)
                 response.msg = "offline fixture"
                 responses.append(response)
                 return response
@@ -40,6 +47,48 @@ def transport(monkeypatch):
         )
 
     return install, calls, responses
+
+
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+@pytest.mark.parametrize("code", [200, 401, 403, 404, 429, 500])
+@pytest.mark.parametrize("read_error", [
+    IncompleteRead(b'{"data": [{"id": "partial"}', 100),
+    ConnectionResetError("offline-test-token"),
+    TimeoutError("offline-test-token"),
+    RemoteDisconnected("offline-test-token"),
+])
+def test_interrupted_body_read_fails_closed(transport, operation, code, read_error):
+    install, calls, responses = transport
+    install(code, read_error=read_error)
+
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_REQUEST_FAILED"
+    assert len(calls) == 1
+    assert responses[0].closed
+    assert "offline-test-token" not in str(result)
+    assert "partial" not in str(result)
+    if operation == "health":
+        assert result["sports_count"] is None
+    else:
+        assert result[operation] == []
+
+
+@pytest.mark.parametrize("code", [401, 403, 404, 429, 500])
+def test_complete_http_error_body_is_closed(transport, code):
+    install, _, responses = transport
+    install(code, body=b'{"error": "unavailable"}')
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is False
+    assert result["events"] == []
+    assert result["reason"] == (
+        "BBD_MATCH_ENDPOINT_UNAVAILABLE_OR_UNENTITLED"
+        if code in {401, 403, 404} else f"BBD_HTTP_{code}"
+    )
+    assert responses[0].closed
 
 
 @pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
