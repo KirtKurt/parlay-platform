@@ -260,7 +260,10 @@ def test_store_rejects_missing_or_malformed_authoritative_cutoff():
         "commence_time",
     ):
         missing.pop(field, None)
-    missing.pop("perGameCanonicalLock", None)
+    per_game = missing.get("perGameCanonicalLock")
+    if isinstance(per_game, dict):
+        per_game.pop("lockAtUtc", None)
+        per_game.pop("lock_at_utc", None)
 
     previous_table = engine.history.PULLS
     previous_now = engine._now
