@@ -12,6 +12,18 @@ def row():
         "commence_time": "2026-09-23T00:05:00Z",
         "home_team": "Texas Rangers",
         "away_team": "New York Mets",
+        "home_id": "140",
+        "away_id": "121",
+        "odds_identity_proof_json": json.dumps({
+            "contract": "KS1-odds-identity-proof-v1",
+            "event_id": "g1",
+            "home_id": "140",
+            "away_id": "121",
+            "aliases": {
+                "texasrangers": "140",
+                "newyorkmets": "121",
+            },
+        }),
     }
 
 
