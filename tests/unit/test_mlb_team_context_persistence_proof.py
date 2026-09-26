@@ -479,6 +479,7 @@ def test_new_snapshot_retains_observations_through_game_writer(monkeypatch, stat
     monkeypatch.setattr(engine, '_public_prelock_markers', lambda row: {})
     monkeypatch.setattr(engine, '_pregame_snapshot_item', lambda row, **kwargs: {})
     monkeypatch.setattr(engine, '_put_pregame_snapshot', lambda item: {})
+    monkeypatch.setattr(engine, '_now', lambda: '2026-09-11T19:14:59+00:00')
     assert engine._store_prediction(row)['ok'] is True
     persisted_sample = table.items[0]['data']['passiveTeamContext']['confirmed_lineups']['home_lineup_season_batting'][0]
     assert set(SUBJECT.BATTING_FIELDS) <= persisted_sample.keys()

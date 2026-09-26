@@ -214,6 +214,7 @@ def test_pregame_persistence_time_is_sampled_after_successful_live_put(monkeypat
 
     assert result["ok"] is True
     assert events == [
+        ("clock", "after-live-write"),
         ("put", "mlb_single_game_moneyline_prediction"),
         ("clock", "after-live-write"),
         ("put", engine.PREGAME_SNAPSHOT_RECORD_TYPE),
@@ -222,6 +223,68 @@ def test_pregame_persistence_time_is_sampled_after_successful_live_put(monkeypat
     assert snapshot["prediction_persisted_at_utc"] == "2026-07-16T22:14:59+00:00"
     assert snapshot["prediction_persistence_proof_type"] == engine.PREGAME_PERSISTENCE_PROOF_TYPE
 
+
+
+def test_post_cutoff_candidate_is_rejected_before_live_write(monkeypatch):
+    import mlb_game_winner_engine as engine
+
+    writes = []
+
+    class Table:
+        def put_item(self, **kwargs):
+            writes.append(kwargs)
+
+    monkeypatch.setattr(engine.history, "PULLS", Table())
+    monkeypatch.setattr(
+        engine,
+        "_now",
+        lambda: "2026-07-16T22:15:01+00:00",
+    )
+
+    result = engine._store_prediction(_user_visible_prelock(engine, {
+        "slate_date": "2026-07-16",
+        "gameId": "late-game",
+        "gameIdentity": "late-game",
+        "commenceTime": "2026-07-16T23:00:00+00:00",
+        "predictedWinner": "Home",
+        "predictedSide": "home",
+        "createdAt": "2026-07-16T22:14:58+00:00",
+    }))
+
+    assert result["ok"] is False
+    assert result["stored"] is False
+    assert result["error"] == "MLB_PREGAME_PERSISTENCE_AFTER_TMINUS45_CUTOFF"
+    assert result["productionAuthorityChanged"] is False
+    assert writes == []
+
+
+def test_pregame_proof_binds_exact_acknowledged_live_key():
+    import mlb_game_winner_engine as engine
+
+    row = _user_visible_prelock(engine, {
+        "slate_date": "2026-07-16",
+        "gameId": "identity-in-row",
+        "gameIdentity": "identity-in-row",
+        "commenceTime": "2026-07-16T23:00:00+00:00",
+        "predictedWinner": "Home",
+        "predictedSide": "home",
+        "createdAt": "2026-07-16T22:14:58+00:00",
+    })
+    proof = engine._pregame_snapshot_item(
+        row,
+        persisted_at="2026-07-16T22:14:59+00:00",
+        live_prediction_item={
+            "PK": "GAME_WINNERS#mlb#2026-07-16",
+            "SK": "GAME#canonical-start#canonical-identity",
+        },
+    )
+
+    assert proof["prediction_persistence_write_pk"] == (
+        "GAME_WINNERS#mlb#2026-07-16"
+    )
+    assert proof["prediction_persistence_write_sk"] == (
+        "GAME#canonical-start#canonical-identity"
+    )
 
 def test_raw_engine_row_cannot_create_authoritative_pregame_snapshot(monkeypatch):
     import mlb_game_winner_engine as engine
