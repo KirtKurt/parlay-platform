@@ -159,3 +159,57 @@ def test_events_preserve_bbd_identity_and_no_prices(monkeypatch):
     assert row["source"] == "big_balls_data"
     assert "price" not in row
     assert result["request_id"] == "req-1"
+
+
+@pytest.mark.parametrize("identity", [
+    {}, {"id": None}, {"id": True}, {"id": False}, {"id": 1.5},
+    {"id": {}}, {"id": []}, {"id": ""}, {"id": " "},
+    {"id": " one"}, {"id": "one "}, {"id": "one\nother"},
+    {"id": "one\x00other"}, {"id": "one\x7fother"},
+    {"id": "one", "match_id": "two"},
+    {"match_id": "one", "event_id": "two"},
+    {"id": "one", "event_id": "two"},
+    {"id": None, "match_id": "one"},
+    {"id": "one", "event_id": None},
+    {"id": 0, "match_id": "one"},
+    {"id": "01", "event_id": 1},
+])
+@pytest.mark.parametrize("invalid_first", [True, False])
+def test_invalid_event_identity_discards_entire_collection(monkeypatch, identity, invalid_first):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    rows = [identity, {"id": "valid"}]
+    if not invalid_first:
+        rows.reverse()
+    monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (200, {}, {"data": rows}))
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_EVENT_ID_INVALID"
+    assert result["events"] == []
+
+
+@pytest.mark.parametrize("field", ["id", "match_id", "event_id"])
+@pytest.mark.parametrize("value", [0, 123, "0", "00123", "event-123"])
+def test_event_identity_aliases_preserve_opaque_values(monkeypatch, field, value):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    row = {field: value}
+    monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (200, {}, [row]))
+
+    result = bbd_provider.events()
+
+    assert result["ok"] is True
+    assert result["events"][0]["bbd_event_id"] == str(value)
+    assert result["events"][0]["raw"] == row
+
+
+def test_agreeing_event_identity_aliases_are_valid(monkeypatch):
+    monkeypatch.setenv("ARB_BBD_ENABLED", "true")
+    monkeypatch.setenv("BBD_API_KEY", "test")
+    row = {"id": 0, "match_id": "0", "event_id": 0}
+    monkeypatch.setattr(bbd_provider, "_request", lambda *args, **kwargs: (200, {}, [row]))
+    result = bbd_provider.events()
+    assert result["ok"] is True
+    assert result["events"][0]["bbd_event_id"] == "0"
