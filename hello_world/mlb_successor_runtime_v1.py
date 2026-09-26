@@ -93,6 +93,57 @@ def frozen_candidate(repo):
     return frozen
 
 
+def refresh_development_status(repo, accepted_rows, now, deployment, continuity):
+    """Observe readiness during an R8 wait, writing only STATUS#TRAINING.
+
+    The caller holds the existing training lease and supplies its admitted
+    rows. Even candidate-ready rows or an existing frozen model cannot authorize
+    fitting, artifact writes, protocol creation, or qualification on this path.
+    """
+    if not isinstance(continuity, dict) or continuity.get("ok") is True:
+        raise ValueError("blocked canonical continuity required for status-only refresh")
+    if now.utcoffset() is None:
+        raise ValueError("timezone-aware status timestamp required")
+    protocol = repo.get("PROTOCOL")
+    if protocol is not None:
+        if model.fingerprint(protocol["protocol"]) != model.fingerprint(model.PROTOCOL):
+            raise ValueError("persisted successor protocol mismatch")
+    frozen = frozen_candidate(repo)
+    rows, rejected = [], Counter()
+    for row in accepted_rows:
+        try:
+            rows.append(model.record(row, labeled=True))
+        except (ValueError, TypeError, KeyError) as exc:
+            rejected[str(exc)] += 1
+    readiness = model.development(rows, readiness_only=True)
+    report = {
+        **readiness,
+        "ok": True,
+        "version": VERSION,
+        "experimentId": model.EXPERIMENT_ID,
+        "updatedAtUtc": now.isoformat(),
+        "deploymentIdentity": copy.deepcopy(deployment),
+        "acceptedDevelopmentRows": len(rows),
+        "rejectedRows": dict(rejected),
+        "status": "WAITING_FOR_CANONICAL_SLATE_CONTINUITY",
+        "statusOnly": True,
+        "trainingReady": False,
+        "inputSetComplete": False,
+        "modelFitAttempted": False,
+        "qualificationEvaluated": False,
+        "productionAuthorityChanged": False,
+        "automaticPromotionEnabled": False,
+        "protocolPersisted": protocol is not None,
+        "artifactDigest": (frozen or {}).get("artifactDigest"),
+        "canonicalSlateContinuity": copy.deepcopy(continuity),
+        "blockers": sorted(set(readiness.get("blockers", []) + [
+            "CANONICAL_SLATE_CONTINUITY_BLOCKED"
+        ])),
+    }
+    repo.status("TRAINING", report)
+    return report
+
+
 def develop(repo, accepted_rows, now, deployment, artifact_store):
     protocol = repo.get("PROTOCOL")
     if protocol is None:
