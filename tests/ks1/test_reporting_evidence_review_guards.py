@@ -11,10 +11,21 @@ def row():
         "date": "2026-09-22", "game_id": "1", "model_version": "KS1-test",
         "p_home": "0.56", "p_raw": str(p_raw),
         "home_team": "St. Louis Cardinals", "away_team": "New York Mets",
+        "home_id": "138", "away_id": "121",
         "home_starter_id": "1", "home_starter_name": "Home Starter",
         "away_starter_id": "2", "away_starter_name": "Away Starter",
         "as_of": "2026-09-22T15:33:51Z", "commence_time": "2026-09-23T00:05:00Z",
         "odds_event_id": "g1",
+        "odds_identity_proof_json": json.dumps({
+            "contract": "KS1-odds-identity-proof-v1",
+            "event_id": "g1",
+            "home_id": "138",
+            "away_id": "121",
+            "aliases": {
+                "stlouiscardinals": "138",
+                "newyorkmets": "121",
+            },
+        }),
         "starter_profile_json": json.dumps({"sides": {
             "home": {"starter_id": 1, "context_basis": "current_season_pitcher", "metrics": {}},
             "away": {"starter_id": 2, "context_basis": "prior_year_pitcher", "metrics": {}},
