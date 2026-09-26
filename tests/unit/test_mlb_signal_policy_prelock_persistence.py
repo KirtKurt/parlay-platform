@@ -179,7 +179,14 @@ def test_versioned_signal_policy_survives_public_prelock_and_is_durably_stored()
 
 
 def test_store_rejects_stale_commence_after_authoritative_reschedule_cutoff():
-    policy_row = _base_prediction()
+    module = SimpleNamespace()
+    module.predict_all = lambda *_args, **_kwargs: {
+        "ok": True,
+        "modelVersion": "test-model",
+        "predictions": [_base_prediction()],
+    }
+    signal_policy.apply(module)
+    policy_row = module.predict_all()["predictions"][0]
     public_row = public_authority._prelock_row(
         policy_row,
         {},
@@ -191,14 +198,32 @@ def test_store_rejects_stale_commence_after_authoritative_reschedule_cutoff():
 
     previous_table = engine.history.PULLS
     previous_now = engine._now
+    previous_contract_flag = getattr(
+        engine,
+        "_INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED",
+        None,
+    )
     fake_table = FakeTable()
     try:
         engine.history.PULLS = fake_table
         engine._now = lambda: "2026-07-23T16:15:00+00:00"
+        engine._INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED = False
         stored = engine._store_prediction(public_row)
     finally:
         engine.history.PULLS = previous_table
         engine._now = previous_now
+        if previous_contract_flag is None:
+            try:
+                delattr(
+                    engine,
+                    "_INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED",
+                )
+            except AttributeError:
+                pass
+        else:
+            engine._INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED = (
+                previous_contract_flag
+            )
 
     assert stored["ok"] is False
     assert stored["stored"] is False
