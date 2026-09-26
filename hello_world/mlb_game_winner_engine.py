@@ -6,7 +6,7 @@ import os
 import hashlib
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from statistics import mean
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
@@ -26,6 +26,9 @@ MODEL_VERSION = "INQSI-MLB-SINGLE-GAME-ML-v2.1-aws-sam-production"
 PREGAME_SNAPSHOT_RECORD_TYPE = "mlb_immutable_prelock_prediction_snapshot"
 PREGAME_SNAPSHOT_VERSION = "MLB-PREGAME-PREDICTION-SNAPSHOT-v3-user-visible-platform-prelock"
 PREGAME_PERSISTENCE_PROOF_TYPE = "DDB_LIVE_PREDICTION_PUT_SUCCESS_ACK-v1"
+PREGAME_PERSISTENCE_CHRONOLOGY_VERSION = (
+    "MLB-PREGAME-PERSISTENCE-CHRONOLOGY-v1-precutoff-only"
+)
 PREGAME_SNAPSHOT_ROLE = "USER_VISIBLE_PLATFORM_PRELOCK"
 PREGAME_DISPLAY_STATUS = "PRE_LOCK_PLATFORM_PREDICTION"
 PREGAME_DISPLAY_SURFACE = "nonOfficialPredictionDisplay"
@@ -68,6 +71,40 @@ def _parse_dt(value: Any) -> Optional[datetime]:
         return dt.astimezone(timezone.utc)
     except Exception:
         return None
+
+
+def _pregame_cutoff(row: Dict[str, Any]) -> Optional[datetime]:
+    """Return the safest authoritative immutable pre-lock cutoff.
+
+    Coverage wrappers attach the current schedule-derived cutoff even when a
+    candidate still carries an older commence time. Compare attached authorities with derived T-45 and choose the earliest valid
+    value. A stale or mismatched field can therefore only make persistence more
+    conservative; it can never extend the write window.
+    """
+    canonical = row.get("perGameCanonicalLock")
+    canonical = canonical if isinstance(canonical, dict) else {}
+    attached = [
+        row.get("scheduledLockAtUtc"),
+        row.get("scheduled_lock_at_utc"),
+        canonical.get("lockAtUtc"),
+        canonical.get("lock_at_utc"),
+    ]
+    candidates = []
+    for raw_value in attached:
+        if raw_value in (None, ""):
+            continue
+        parsed = _parse_dt(raw_value)
+        if parsed is None:
+            return None
+        candidates.append(parsed)
+
+    commence_raw = row.get("commenceTime") or row.get("commence_time")
+    if commence_raw not in (None, ""):
+        commence = _parse_dt(commence_raw)
+        if commence is None:
+            return None
+        candidates.append(commence - timedelta(minutes=45))
+    return min(candidates) if candidates else None
 
 
 def _game_day(game: Dict[str, Any]) -> Optional[str]:
@@ -463,7 +500,12 @@ def _public_prelock_markers(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _pregame_snapshot_item(row: Dict[str, Any], *, persisted_at: str) -> Dict[str, Any]:
+def _pregame_snapshot_item(
+    row: Dict[str, Any],
+    *,
+    persisted_at: str,
+    live_prediction_item: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     markers = _public_prelock_markers(row)
     created_at = str(row.get("createdAt") or row.get("created_at") or _now())
     identity = str(row.get("gameIdentity") or row.get("gameId") or "unknown")
@@ -486,8 +528,18 @@ def _pregame_snapshot_item(row: Dict[str, Any], *, persisted_at: str) -> Dict[st
         default=str,
     )
     digest = hashlib.sha256(identity_material.encode("utf-8")).hexdigest()[:20]
-    live_pk = f"GAME_WINNERS#mlb#{row.get('slate_date')}"
-    live_sk = f"GAME#{row.get('commenceTime') or 'unknown'}#{identity}"
+    # Bind the proof to the exact key returned by the live write. Rebuilding a
+    # key from mutable row fields can make an otherwise valid proof point at a
+    # different GAME row after an identity or start-time normalization.
+    live_item = live_prediction_item if isinstance(live_prediction_item, dict) else {}
+    live_pk = str(
+        live_item.get("PK")
+        or f"GAME_WINNERS#mlb#{row.get('slate_date')}"
+    )
+    live_sk = str(
+        live_item.get("SK")
+        or f"GAME#{row.get('commenceTime') or 'unknown'}#{identity}"
+    )
     persisted_row = history.ddb_safe(row)
     prediction_payload_fingerprint = history.canonical_payload_fingerprint(persisted_row)
     return history.ddb_safe({
@@ -614,6 +666,32 @@ def _store_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
             "storageClass": "PREGAME_REJECTED",
             "version": PREGAME_SNAPSHOT_VERSION,
         }
+    cutoff = _pregame_cutoff(row)
+    attempted_at = _now()
+    attempted_dt = _parse_dt(attempted_at)
+    if cutoff is None:
+        return {
+            "ok": False,
+            "stored": False,
+            "suppressed": True,
+            "error": "MLB_PREGAME_PERSISTENCE_CUTOFF_INVALID",
+            "storageClass": "PREGAME_REJECTED",
+            "chronologyVersion": PREGAME_PERSISTENCE_CHRONOLOGY_VERSION,
+            "attemptedAtUtc": attempted_at,
+            "productionAuthorityChanged": False,
+        }
+    if attempted_dt and attempted_dt >= cutoff:
+        return {
+            "ok": False,
+            "stored": False,
+            "suppressed": True,
+            "error": "MLB_PREGAME_PERSISTENCE_AFTER_TMINUS45_CUTOFF",
+            "storageClass": "PREGAME_REJECTED",
+            "chronologyVersion": PREGAME_PERSISTENCE_CHRONOLOGY_VERSION,
+            "attemptedAtUtc": attempted_at,
+            "scheduledCutoffAtUtc": cutoff.isoformat().replace("+00:00", "Z"),
+            "productionAuthorityChanged": False,
+        }
     item = history.ddb_safe({
         "PK": f"GAME_WINNERS#mlb#{row.get('slate_date')}",
         "SK": f"GAME#{row.get('commenceTime') or 'unknown'}#{row.get('gameIdentity') or row.get('gameId')}",
@@ -640,8 +718,30 @@ def _store_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
     # the table; a timestamp sampled before put_item cannot prove persistence.
     history.PULLS.put_item(Item=item)
     persisted_at = _now()
+    persisted_dt = _parse_dt(persisted_at)
+    if cutoff and persisted_dt and persisted_dt >= cutoff:
+        # The mutable row was acknowledged, but the immutable pre-lock proof
+        # was deliberately withheld because the write crossed its cutoff.
+        # This preserves the observed failure without backdating or rewriting
+        # a snapshot.
+        return {
+            "ok": False,
+            "stored": True,
+            "livePredictionStored": True,
+            "pregameSnapshotStored": False,
+            "error": "MLB_PREGAME_PERSISTENCE_AFTER_TMINUS45_CUTOFF",
+            "storageClass": "LIVE_MUTABLE",
+            "chronologyVersion": PREGAME_PERSISTENCE_CHRONOLOGY_VERSION,
+            "persistedAtUtc": persisted_at,
+            "scheduledCutoffAtUtc": cutoff.isoformat().replace("+00:00", "Z"),
+            "productionAuthorityChanged": False,
+        }
     snapshot = _put_pregame_snapshot(
-        _pregame_snapshot_item(row, persisted_at=persisted_at)
+        _pregame_snapshot_item(
+            row,
+            persisted_at=persisted_at,
+            live_prediction_item=item,
+        )
     )
     return {
         "ok": True,
@@ -649,6 +749,7 @@ def _store_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
         "sk": item["SK"],
         "storageClass": "LIVE_MUTABLE",
         "pregameSnapshot": snapshot,
+        "chronologyVersion": PREGAME_PERSISTENCE_CHRONOLOGY_VERSION,
     }
 
 
