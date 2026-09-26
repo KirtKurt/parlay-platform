@@ -325,6 +325,10 @@ def test_missing_canonical_lock_authority_remains_fail_closed() -> None:
 def test_future_cutoff_without_recorded_lock_is_pending_and_still_fail_closed() -> None:
     live = _live_prediction(commence="2026-07-22T20:05:00+00:00")
     live["data"].pop("lockedCardAudit", None)
+    live["data"]["lastPossiblePredictionGate"] = {
+        "lockAtUtc": "2026-07-22T19:20:00+00:00",
+        "finalLocked": False,
+    }
     proof = _proof(live)
     report = _report()
     report["games"][0]["commenceTime"] = "2026-07-22T20:05:00+00:00"
