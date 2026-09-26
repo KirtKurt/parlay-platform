@@ -30,6 +30,7 @@ import mlb_scoring_guard_status as base
 import inqsi_pull_history as history_contract
 import mlb_fundamentals_lock_authority_v1 as lock_authority
 import mlb_fundamentals_scoring_bridge_v1 as shadow_contract
+import mlb_fundamentals_snapshot_v2 as snapshot_contract
 
 # The live MLB bridge already installs this exact resolver. Install it in this
 # read-only post-persistence proof too so diagnostics evaluate the same persisted
@@ -39,7 +40,7 @@ lock_authority.install(shadow_contract)
 
 
 PROOF_TYPE = "MLB_SCORING_GUARD_POST_PERSISTENCE_SHADOW_READ_ONLY_PROOF"
-PROOF_VERSION = "MLB-SCORING-GUARD-POST-PERSISTENCE-SHADOW-v2-precutoff-pending-lock"
+PROOF_VERSION = "MLB-SCORING-GUARD-POST-PERSISTENCE-SHADOW-v3-current-schedule-pending-lock"
 PREGAME_RECORD_TYPE = "mlb_immutable_prelock_prediction_snapshot"
 PREGAME_SNAPSHOT_VERSION = (
     "MLB-PREGAME-PREDICTION-SNAPSHOT-v3-user-visible-platform-prelock"
@@ -66,21 +67,54 @@ def _pregame_cutoff(row: Mapping[str, Any]) -> Optional[datetime]:
 
 
 def _awaiting_recorded_lock(
-    row: Mapping[str, Any], *, observed_at: datetime
+    row: Mapping[str, Any],
+    *,
+    observed_at: datetime,
+    authoritative_commence: Any,
 ) -> Tuple[bool, Optional[str]]:
-    """Recognize a still-future canonical lock without treating its schedule as proof.
+    """Recognize a future canonical lock from the current authoritative schedule.
 
-    The immutable proof is captured at T-45, before the canonical per-game
-    lock exists. While the scheduled cutoff is still in the future, a missing
-    lock is a pending readback state. Once the cutoff passes, the same missing
-    lock remains blocked and cannot be promoted to evidence.
+    The proof row's copied commence time can become stale after a schedule
+    change. Pending status therefore uses only the current scoring report's
+    commence time. The derived cutoff is diagnostic chronology context, never
+    substituted for the missing canonical lock authority.
     """
     if shadow_contract._lock_at(row) not in (None, ""):
         return False, None
-    cutoff = _pregame_cutoff(row)
+    commence = base._parse_dt(authoritative_commence)
+    cutoff = (
+        commence - timedelta(minutes=PREGAME_CUTOFF_MINUTES)
+        if commence
+        else None
+    )
     if cutoff is None or observed_at >= cutoff:
         return False, cutoff.isoformat().replace("+00:00", "Z") if cutoff else None
     return True, cutoff.isoformat().replace("+00:00", "Z")
+
+
+def _pending_snapshot_chronology_is_safe(
+    row: Mapping[str, Any],
+    *,
+    authoritative_cutoff: Any,
+) -> bool:
+    """Validate all non-lock timestamps before allowing pending-lock status.
+
+    The provenance validator receives the current scheduled cutoff as an upper
+    chronology bound only. The row remains pending and fail closed; this does
+    not create or substitute canonical lock evidence.
+    """
+    snapshot = row.get("fundamentalsSnapshotV2")
+    if not isinstance(snapshot, Mapping):
+        return False
+    persisted_at = row.get("predictionPersistedAtUtc")
+    cutoff = base._parse_dt(authoritative_cutoff)
+    if persisted_at in (None, "") or cutoff is None:
+        return False
+    return snapshot_contract.provenance_is_lock_safe(
+        dict(snapshot),
+        prediction_persisted_at=persisted_at,
+        lock_at=cutoff,
+    )
 
 
 def _proof_candidates(
@@ -177,6 +211,7 @@ def _diagnostic_shadow(
     proof_item: Mapping[str, Any],
     *,
     observed_at: datetime,
+    authoritative_commence: Any,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], List[str]]:
     errors = _proof_errors(prediction_item, proof_item, observed_at=observed_at)
     if errors:
@@ -201,14 +236,21 @@ def _diagnostic_shadow(
         attestation_errors.append("post_persistence_shadow_can_influence_live_pick")
     if attestation_errors:
         pending_lock, cutoff = _awaiting_recorded_lock(
-            row, observed_at=observed_at
+            row,
+            observed_at=observed_at,
+            authoritative_commence=authoritative_commence,
         )
         if pending_lock and attestation_errors == [
             "shadow_current_snapshot_provenance_invalid"
         ]:
-            # The persisted T-45 snapshot is valid, but its canonical lock is
-            # intentionally not yet recorded. Keep the evidence pending and
-            # fail closed; never substitute the scheduled cutoff as a lock.
+            if not _pending_snapshot_chronology_is_safe(
+                row,
+                authoritative_cutoff=cutoff,
+            ):
+                return None, shadow, sorted(set(attestation_errors))
+            # The timestamp chain is independently valid and only the canonical
+            # lock is absent. Keep the evidence pending and fail closed; never
+            # substitute the scheduled cutoff as lock evidence.
             shadow["pendingRecordedLock"] = True
             shadow["scheduledCutoffUtc"] = cutoff
             shadow["validationErrors"] = []
@@ -256,6 +298,10 @@ def enhance_report(
             prediction,
             proof,
             observed_at=observed,
+            authoritative_commence=(
+                game.get("commenceTime")
+                or game.get("commence_time")
+            ),
         )
         game["fundamentalsPostPersistenceProofSk"] = proof.get("SK")
         if errors:
