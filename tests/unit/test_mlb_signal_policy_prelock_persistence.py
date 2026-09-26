@@ -176,3 +176,33 @@ def test_versioned_signal_policy_survives_public_prelock_and_is_durably_stored()
         == signal_policy.VERSION
     )
     assert snapshot_rows[0]["signal_policy_version"] == signal_policy.VERSION
+
+
+def test_store_rejects_stale_commence_after_authoritative_reschedule_cutoff():
+    policy_row = _base_prediction()
+    public_row = public_authority._prelock_row(
+        policy_row,
+        {},
+        "2026-07-23T16:15:00+00:00",
+        "OPEN_PRE_LOCK",
+    )
+    assert public_row["commenceTime"] == "2026-07-23T18:00:00+00:00"
+    assert public_row["scheduledLockAtUtc"] == "2026-07-23T16:15:00+00:00"
+
+    previous_table = engine.history.PULLS
+    previous_now = engine._now
+    fake_table = FakeTable()
+    try:
+        engine.history.PULLS = fake_table
+        engine._now = lambda: "2026-07-23T16:15:00+00:00"
+        stored = engine._store_prediction(public_row)
+    finally:
+        engine.history.PULLS = previous_table
+        engine._now = previous_now
+
+    assert stored["ok"] is False
+    assert stored["stored"] is False
+    assert stored["suppressed"] is True
+    assert stored["error"] == "MLB_PREGAME_PERSISTENCE_AFTER_TMINUS45_CUTOFF"
+    assert stored["scheduledCutoffAtUtc"] == "2026-07-23T16:15:00Z"
+    assert fake_table.items == {}
