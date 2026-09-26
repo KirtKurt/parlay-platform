@@ -126,6 +126,7 @@ def test_versioned_signal_policy_survives_public_prelock_and_is_durably_stored()
     assert public_row["signalPolicyV13"]["version"] == signal_policy.VERSION
 
     previous_table = engine.history.PULLS
+    previous_now = engine._now
     previous_contract_flag = getattr(
         engine,
         "_INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED",
@@ -134,10 +135,12 @@ def test_versioned_signal_policy_survives_public_prelock_and_is_durably_stored()
     fake_table = FakeTable()
     try:
         engine.history.PULLS = fake_table
+        engine._now = lambda: "2026-07-23T17:14:59+00:00"
         engine._INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED = False
         stored = engine._store_prediction(public_row)
     finally:
         engine.history.PULLS = previous_table
+        engine._now = previous_now
         if previous_contract_flag is None:
             try:
                 delattr(
