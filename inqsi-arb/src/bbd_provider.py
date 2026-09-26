@@ -20,6 +20,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 DEFAULT_BASE_URL = "https://api.bigballsdata.com"
 USER_AGENT = "inqsi-arb-bbd/1.0"
+MAX_RESPONSE_BYTES = 1024 * 1024
 
 
 class BBDError(RuntimeError):
@@ -155,7 +156,10 @@ def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int
     })
     try:
         with build_opener(_RejectRedirects()).open(request, timeout=timeout) as response:
-            raw = response.read()
+            # Bound actual bytes, independent of missing or inaccurate headers.
+            raw = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(raw) > MAX_RESPONSE_BYTES:
+                raise BBDError("BBD_RESPONSE_TOO_LARGE")
             payload = json.loads(
                 raw.decode("utf-8"),
                 object_pairs_hook=_unique_json_object,
@@ -164,10 +168,12 @@ def _request(path: str, *, params: Optional[Dict[str, Any]] = None, timeout: int
             ) if raw else {}
             return int(response.status), dict(response.headers.items()), payload
     except HTTPError as exc:
-        raw = exc.read()
-        if optional and exc.code in {401, 403, 404}:
-            return int(exc.code), dict(exc.headers.items()), {}
-        detail = raw.decode("utf-8", "replace")[:500]
+        # Error bodies are not context; retain access-failure precedence without
+        # downloading an unbounded diagnostic body.
+        with exc:
+            if optional and exc.code in {401, 403, 404}:
+                return int(exc.code), dict(exc.headers.items()), {}
+            detail = exc.read(500).decode("utf-8", "replace")[:500]
         raise BBDError(f"BBD_HTTP_{exc.code}: {detail}") from exc
     except (URLError, TimeoutError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise BBDError(f"BBD_REQUEST_FAILED: {type(exc).__name__}") from exc
