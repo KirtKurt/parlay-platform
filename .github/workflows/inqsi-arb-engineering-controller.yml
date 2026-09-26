@@ -45,8 +45,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
+      - name: Verify immutable controller revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          actual_sha=$(git rev-parse --verify HEAD)
+          test "$actual_sha" = "$GITHUB_SHA"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
