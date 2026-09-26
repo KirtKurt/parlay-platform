@@ -152,3 +152,16 @@ def test_workflow_leaves_setup_and_evidence_time_outside_wrapper_budget():
     job_minutes = int(re.search(r'timeout-minutes:\s*(\d+)', workflow).group(1))
     assert job_minutes * 60 >= mod.CODE_AGENT_TIMEOUT_SECONDS + 30 * 60
     assert job_minutes <= 360
+
+
+def test_workflow_pins_and_verifies_controller_trigger_revision_before_setup():
+    workflow = (ROOT.parent / '.github/workflows/inqsi-arb-engineering-controller.yml').read_text()
+    checkout = workflow.index('ref: ${{ github.sha }}')
+    guard = workflow.index('name: Verify immutable controller revision')
+    setup = workflow.index('uses: actions/setup-python@v5')
+    acting = workflow.index('name: Inspect, prioritize and execute one bounded engineering action')
+
+    assert checkout < guard < setup < acting
+    assert 'actual_sha=$(git rev-parse --verify HEAD)' in workflow
+    assert 'test "$actual_sha" = "$GITHUB_SHA"' in workflow
+    assert 'ref: main' not in workflow
