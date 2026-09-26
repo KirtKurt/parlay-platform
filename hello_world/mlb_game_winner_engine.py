@@ -83,16 +83,27 @@ def _pregame_cutoff(row: Dict[str, Any]) -> Optional[datetime]:
     """
     canonical = row.get("perGameCanonicalLock")
     canonical = canonical if isinstance(canonical, dict) else {}
-    candidates = [
-        _parse_dt(row.get("scheduledLockAtUtc")),
-        _parse_dt(row.get("scheduled_lock_at_utc")),
-        _parse_dt(canonical.get("lockAtUtc")),
-        _parse_dt(canonical.get("lock_at_utc")),
+    attached = [
+        row.get("scheduledLockAtUtc"),
+        row.get("scheduled_lock_at_utc"),
+        canonical.get("lockAtUtc"),
+        canonical.get("lock_at_utc"),
     ]
-    commence = _parse_dt(row.get("commenceTime") or row.get("commence_time"))
-    if commence:
+    candidates = []
+    for raw_value in attached:
+        if raw_value in (None, ""):
+            continue
+        parsed = _parse_dt(raw_value)
+        if parsed is None:
+            return None
+        candidates.append(parsed)
+
+    commence_raw = row.get("commenceTime") or row.get("commence_time")
+    if commence_raw not in (None, ""):
+        commence = _parse_dt(commence_raw)
+        if commence is None:
+            return None
         candidates.append(commence - timedelta(minutes=45))
-    candidates = [value for value in candidates if value is not None]
     return min(candidates) if candidates else None
 
 
@@ -658,7 +669,18 @@ def _store_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
     cutoff = _pregame_cutoff(row)
     attempted_at = _now()
     attempted_dt = _parse_dt(attempted_at)
-    if cutoff and attempted_dt and attempted_dt >= cutoff:
+    if cutoff is None:
+        return {
+            "ok": False,
+            "stored": False,
+            "suppressed": True,
+            "error": "MLB_PREGAME_PERSISTENCE_CUTOFF_INVALID",
+            "storageClass": "PREGAME_REJECTED",
+            "chronologyVersion": PREGAME_PERSISTENCE_CHRONOLOGY_VERSION,
+            "attemptedAtUtc": attempted_at,
+            "productionAuthorityChanged": False,
+        }
+    if attempted_dt and attempted_dt >= cutoff:
         return {
             "ok": False,
             "stored": False,
