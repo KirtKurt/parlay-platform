@@ -231,3 +231,68 @@ def test_store_rejects_stale_commence_after_authoritative_reschedule_cutoff():
     assert stored["error"] == "MLB_PREGAME_PERSISTENCE_AFTER_TMINUS45_CUTOFF"
     assert stored["scheduledCutoffAtUtc"] == "2026-07-23T16:15:00Z"
     assert fake_table.items == {}
+
+
+def test_store_rejects_missing_or_malformed_authoritative_cutoff():
+    module = SimpleNamespace()
+    module.predict_all = lambda *_args, **_kwargs: {
+        "ok": True,
+        "modelVersion": "test-model",
+        "predictions": [_base_prediction()],
+    }
+    signal_policy.apply(module)
+    policy_row = module.predict_all()["predictions"][0]
+    valid_public_row = public_authority._prelock_row(
+        policy_row,
+        {},
+        "2026-07-23T17:15:00+00:00",
+        "OPEN_PRE_LOCK",
+    )
+
+    malformed = copy.deepcopy(valid_public_row)
+    malformed["scheduledLockAtUtc"] = "not-a-timestamp"
+
+    missing = copy.deepcopy(valid_public_row)
+    for field in (
+        "scheduledLockAtUtc",
+        "scheduled_lock_at_utc",
+        "commenceTime",
+        "commence_time",
+    ):
+        missing.pop(field, None)
+    missing.pop("perGameCanonicalLock", None)
+
+    previous_table = engine.history.PULLS
+    previous_now = engine._now
+    previous_contract_flag = getattr(
+        engine,
+        "_INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED",
+        None,
+    )
+    try:
+        engine._now = lambda: "2026-07-23T16:00:00+00:00"
+        engine._INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED = False
+        for row in (malformed, missing):
+            fake_table = FakeTable()
+            engine.history.PULLS = fake_table
+            stored = engine._store_prediction(row)
+            assert stored["ok"] is False
+            assert stored["stored"] is False
+            assert stored["suppressed"] is True
+            assert stored["error"] == "MLB_PREGAME_PERSISTENCE_CUTOFF_INVALID"
+            assert fake_table.items == {}
+    finally:
+        engine.history.PULLS = previous_table
+        engine._now = previous_now
+        if previous_contract_flag is None:
+            try:
+                delattr(
+                    engine,
+                    "_INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED",
+                )
+            except AttributeError:
+                pass
+        else:
+            engine._INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED = (
+                previous_contract_flag
+            )
