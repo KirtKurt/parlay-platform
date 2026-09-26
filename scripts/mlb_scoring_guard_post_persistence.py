@@ -66,6 +66,29 @@ def _pregame_cutoff(row: Mapping[str, Any]) -> Optional[datetime]:
     )
 
 
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _recorded_lock_at(row: Mapping[str, Any]) -> Any:
+    """Return only a lock that was actually recorded, never a scheduled gate."""
+    vector = shadow_contract._vector(row)
+    audit = _mapping(row.get("lockedCardAudit"))
+    slate_lock = _mapping(row.get("slatePredictionLock"))
+    last_gate = _mapping(row.get("lastPossiblePredictionGate"))
+    candidates = [
+        vector.get("lockAtUtc"),
+        audit.get("lockAtUtc"),
+        slate_lock.get("lockAtUtc"),
+        row.get("lockAtUtc"),
+        row.get("lockedAtUtc"),
+        row.get("lockedAt"),
+    ]
+    if last_gate.get("finalLocked") is True:
+        candidates.append(last_gate.get("lockAtUtc"))
+    return next((value for value in candidates if value not in (None, "")), None)
+
+
 def _awaiting_recorded_lock(
     row: Mapping[str, Any],
     *,
@@ -79,7 +102,7 @@ def _awaiting_recorded_lock(
     commence time. The derived cutoff is diagnostic chronology context, never
     substituted for the missing canonical lock authority.
     """
-    if shadow_contract._lock_at(row) not in (None, ""):
+    if _recorded_lock_at(row) not in (None, ""):
         return False, None
     commence = base._parse_dt(authoritative_commence)
     cutoff = (
@@ -225,6 +248,13 @@ def _diagnostic_shadow(
     # This is an isolated diagnostic copy. The persisted timestamp comes only
     # from the write-once proof record created after the live DynamoDB write.
     row["predictionPersistedAtUtc"] = persisted_at
+    if _recorded_lock_at(row) in (None, ""):
+        last_gate = _mapping(row.get("lastPossiblePredictionGate"))
+        if last_gate.get("finalLocked") is not True:
+            # The shared resolver accepts this field for finalized production
+            # locks. A scheduled pre-lock gate is not recorded lock evidence,
+            # so exclude it from this isolated diagnostic evaluation.
+            row.pop("lastPossiblePredictionGate", None)
     shadow = shadow_contract.evaluate_shadow(row)
     row[shadow_contract.SHADOW_FIELD] = copy.deepcopy(shadow)
     attestation_errors = list(
