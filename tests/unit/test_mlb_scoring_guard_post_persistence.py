@@ -346,3 +346,51 @@ def test_future_cutoff_without_recorded_lock_is_pending_and_still_fail_closed() 
         "2026-07-22T19:20:00Z"
     )
     assert result["postPersistenceShadowDiagnostic"]["ok"] is True
+
+
+def test_future_pending_rejects_invalid_snapshot_chronology() -> None:
+    live = _live_prediction(commence="2026-07-22T20:05:00+00:00")
+    live["data"].pop("lockedCardAudit", None)
+    snapshot = live["data"]["fundamentalsSnapshotV2"]
+    snapshot["createdAtUtc"] = "2026-07-22T12:02:00+00:00"
+    snapshot["fingerprint"] = snapshot_v2.fingerprint_for_snapshot(snapshot)
+    live["data"]["fundamentalsSnapshotV2Ref"] = bridge._snapshot_ref(snapshot)
+    proof = _proof(live)
+    report = _report()
+    report["games"][0]["commenceTime"] = "2026-07-22T20:05:00+00:00"
+
+    result = SUBJECT.enhance_report(
+        report,
+        prediction_items=[live],
+        pregame_snapshot_items=[proof],
+        observed_at=datetime(2026, 7, 22, 18, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["summary"]["fundamentalsPostPersistenceProofInvalidCount"] == 1
+    assert result["summary"]["fundamentalsPostPersistencePendingRecordedLockCount"] == 0
+    assert result["games"][0]["fundamentalsPostPersistenceProofValid"] is False
+    assert result["games"][0]["fundamentalsPostPersistenceErrors"] == [
+        "shadow_current_snapshot_provenance_invalid"
+    ]
+
+
+def test_moved_earlier_current_schedule_cannot_use_stale_pending_deadline() -> None:
+    live = _live_prediction(commence="2026-07-22T20:05:00+00:00")
+    live["data"].pop("lockedCardAudit", None)
+    proof = _proof(live)
+    report = _report()
+    report["games"][0]["commenceTime"] = "2026-07-22T18:30:00+00:00"
+
+    result = SUBJECT.enhance_report(
+        report,
+        prediction_items=[live],
+        pregame_snapshot_items=[proof],
+        observed_at=datetime(2026, 7, 22, 18, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["summary"]["fundamentalsPostPersistenceProofInvalidCount"] == 1
+    assert result["summary"]["fundamentalsPostPersistencePendingRecordedLockCount"] == 0
+    assert result["games"][0]["fundamentalsPostPersistenceProofValid"] is False
+    assert result["games"][0]["fundamentalsPostPersistenceErrors"] == [
+        "shadow_current_snapshot_provenance_invalid"
+    ]
