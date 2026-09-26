@@ -77,23 +77,23 @@ def _pregame_cutoff(row: Dict[str, Any]) -> Optional[datetime]:
     """Return the safest authoritative immutable pre-lock cutoff.
 
     Coverage wrappers attach the current schedule-derived cutoff even when a
-    candidate still carries an older commence time. Prefer those attached
-    authorities and choose the earliest valid value if they disagree. Only
-    fall back to deriving T-45 from commence time for unwrapped candidates.
+    candidate still carries an older commence time. Compare attached authorities with derived T-45 and choose the earliest valid
+    value. A stale or mismatched field can therefore only make persistence more
+    conservative; it can never extend the write window.
     """
     canonical = row.get("perGameCanonicalLock")
     canonical = canonical if isinstance(canonical, dict) else {}
-    attached = [
+    candidates = [
         _parse_dt(row.get("scheduledLockAtUtc")),
         _parse_dt(row.get("scheduled_lock_at_utc")),
         _parse_dt(canonical.get("lockAtUtc")),
         _parse_dt(canonical.get("lock_at_utc")),
     ]
-    attached = [value for value in attached if value is not None]
-    if attached:
-        return min(attached)
     commence = _parse_dt(row.get("commenceTime") or row.get("commence_time"))
-    return commence - timedelta(minutes=45) if commence else None
+    if commence:
+        candidates.append(commence - timedelta(minutes=45))
+    candidates = [value for value in candidates if value is not None]
+    return min(candidates) if candidates else None
 
 
 def _game_day(game: Dict[str, Any]) -> Optional[str]:
