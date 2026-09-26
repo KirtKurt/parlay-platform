@@ -50,22 +50,37 @@ def stable_team_id(value):
     return text if re.fullmatch(r"[1-9][0-9]*", text) else None
 
 
-def event_identity_matches(row, event):
-    """Honor serving's retained ID-backed alias decision without inventing fuzzy aliases.
-
-    Exact normalized names are independently checkable. A different official/provider alias is
-    accepted only when the retained prediction records an exact serving crosswalk match
-    (`odds_match_confidence == 1.0`) for two distinct official team IDs. Exact event ID and
-    immutable sidecar/readback proof are still required separately by the caller/report contract.
-    """
-    if str(event.get("id")) != str(row.get("odds_event_id")):
-        return False
-    if all(team_key(event.get(side + "_team")) == team_key(row.get(side + "_team"))
-           for side in ("home", "away")):
-        return True
+def retained_odds_identity(row):
+    """Return only the exact serving alias proof retained with this prediction."""
+    proof = object_value(row.get("odds_identity_proof_json"))
+    if proof.get("contract") != "KS1-odds-identity-proof-v1":
+        return None
+    if str(proof.get("event_id")) != str(row.get("odds_event_id")):
+        return None
     home_id, away_id = stable_team_id(row.get("home_id")), stable_team_id(row.get("away_id"))
-    return (home_id is not None and away_id is not None and home_id != away_id
-            and number(row.get("odds_match_confidence")) == 1.0)
+    if not home_id or not away_id or home_id == away_id:
+        return None
+    if str(proof.get("home_id")) != home_id or str(proof.get("away_id")) != away_id:
+        return None
+    aliases = proof.get("aliases")
+    if not isinstance(aliases, dict):
+        return None
+    normalized = {}
+    for alias, team_id in aliases.items():
+        resolved = stable_team_id(team_id)
+        if resolved not in (home_id, away_id):
+            return None
+        normalized[team_key(alias)] = resolved
+    return {"home": home_id, "away": away_id, "aliases": normalized}
+
+
+def event_identity_matches(row, event, identity_proof):
+    """Reproduce serving identity only from retained ID-backed alias evidence."""
+    if identity_proof is None or str(event.get("id")) != str(row.get("odds_event_id")):
+        return False
+    aliases = identity_proof["aliases"]
+    return all(aliases.get(team_key(event.get(side + "_team"))) == identity_proof[side]
+               for side in ("home", "away"))
 
 
 def identity(row, side, profile):
@@ -201,7 +216,10 @@ def selected_moneylines(row, selected, odds_rows):
         return {"status": "EVENT_MISSING_OR_AMBIGUOUS", "books": missing}
     entry = matches[0]
     event = object_value(entry.get("payload_json"))
-    if not event_identity_matches(row, event):
+    identity_proof = retained_odds_identity(row)
+    if identity_proof is None:
+        return {"status": "IDENTITY_PROOF_UNAVAILABLE", "books": missing}
+    if not event_identity_matches(row, event, identity_proof):
         return {"status": "EVENT_IDENTITY_MISMATCH", "books": missing}
     row_time, start = instant(row.get("as_of")), instant(row.get("commence_time"))
     event_start, receipt = instant(event.get("commence_time")), instant(entry.get("as_of"))
@@ -225,10 +243,9 @@ def selected_moneylines(row, selected, odds_rows):
         values = market.get("outcomes", [])
         if len(values) != 2:
             continue
-        allowed = {side: {team_key(provider_names[side]), team_key(row.get(side + "_team"))}
-                   for side in ("home", "away")}
-        home = [o for o in values if team_key(o.get("name")) in allowed["home"]]
-        away = [o for o in values if team_key(o.get("name")) in allowed["away"]]
+        aliases = identity_proof["aliases"]
+        home = [o for o in values if aliases.get(team_key(o.get("name"))) == identity_proof["home"]]
+        away = [o for o in values if aliases.get(team_key(o.get("name"))) == identity_proof["away"]]
         if len(home) != 1 or len(away) != 1 or home[0] is away[0]:
             continue
         home_price, away_price = number(home[0].get("price")), number(away[0].get("price"))
