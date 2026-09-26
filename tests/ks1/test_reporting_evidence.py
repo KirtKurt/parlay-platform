@@ -22,6 +22,12 @@ def fixture():
         "away_starter_id": "640455", "away_starter_name": "Sean Manaea",
         "as_of": "2026-09-22T15:33:51Z", "commence_time": "2026-09-23T00:05:00Z",
         "calibration_method": "temperature", "odds_event_id": "g1",
+        "home_id": "140", "away_id": "121",
+        "odds_identity_proof_json": json.dumps({
+            "contract": "KS1-odds-identity-proof-v1", "event_id": "g1",
+            "home_id": "140", "away_id": "121",
+            "aliases": {"texasrangers": "140", "newyorkmets": "121"},
+        }),
         "starter_profile_json": json.dumps({"sides": {
             "home": {"starter_id": 669022, "context_basis": "current_season_pitcher", "metrics": {
                 "era_7d": 6.75, "era_30d": 3.0, "outs_7d": 12, "bf_7d": 16,
@@ -211,6 +217,12 @@ def test_doubleheader_books_match_event_id_not_identical_teams():
 def test_retained_serving_crosswalk_allows_id_backed_official_alias():
     row = fixture()
     row.update(home_team="Athletics", home_id="133", away_id="121", odds_match_confidence="1.0")
+    row["odds_identity_proof_json"] = json.dumps({
+        "contract": "KS1-odds-identity-proof-v1", "event_id": "g1",
+        "home_id": "133", "away_id": "121",
+        "aliases": {"athletics": "133", "oaklandathletics": "133",
+                    "newyorkmets": "121"},
+    })
     quote = odds(row)
     payload = json.loads(quote["payload_json"])
     payload["home_team"] = "Oakland Athletics"
@@ -229,7 +241,8 @@ def test_alias_difference_without_retained_crosswalk_proof_fails_closed():
     payload["home_team"] = "Oakland Athletics"
     payload["bookmakers"][0]["markets"][0]["outcomes"][0]["name"] = "Oakland Athletics"
     quote["payload_json"] = json.dumps(payload)
-    assert report_evidence(row, evaluate(row), [quote])["moneylines"]["status"] == "EVENT_IDENTITY_MISMATCH"
+    row["odds_identity_proof_json"] = None
+    assert report_evidence(row, evaluate(row), [quote])["moneylines"]["status"] == "IDENTITY_PROOF_UNAVAILABLE"
 
 
 def test_stale_book_quote_is_not_presented_as_prediction_evidence():
@@ -282,3 +295,42 @@ def test_existing_artifact_path_adds_reporting_view_without_changing_detector(tm
     assert result == expected
     assert report["win_probability"] == float(row["p_home"])
     assert path.read_bytes() == original
+
+
+def test_outcome_alias_requires_retained_id_proof_for_both_sides():
+    row = fixture()
+    row.update(home_team="Athletics", home_id="133", away_id="121")
+    row["odds_identity_proof_json"] = json.dumps({
+        "contract": "KS1-odds-identity-proof-v1", "event_id": "g1",
+        "home_id": "133", "away_id": "121",
+        "aliases": {"athletics": "133", "oaklandathletics": "133", "as": "133",
+                    "newyorkmets": "121", "mets": "121"},
+    })
+    quote = odds(row)
+    payload = json.loads(quote["payload_json"])
+    payload["home_team"] = "Oakland Athletics"
+    payload["bookmakers"][0]["markets"][0]["outcomes"][0]["name"] = "A's"
+    payload["bookmakers"][0]["markets"][0]["outcomes"][1]["name"] = "Mets"
+    quote["payload_json"] = json.dumps(payload)
+    book = report_evidence(row, evaluate(row), [quote])["moneylines"]["books"]["draftkings"]
+    assert book["status"] == "RETAINED_PRE_PREDICTION_QUOTE"
+    assert book["price"] == -133
+
+
+def test_incomplete_h2h_market_stays_unavailable_even_with_identity_proof():
+    row = fixture()
+    quote = odds(row)
+    payload = json.loads(quote["payload_json"])
+    payload["bookmakers"][0]["markets"][0]["outcomes"] = payload["bookmakers"][0]["markets"][0]["outcomes"][:1]
+    quote["payload_json"] = json.dumps(payload)
+    book = report_evidence(row, evaluate(row), [quote])["moneylines"]["books"]["draftkings"]
+    assert book["status"] == "UNAVAILABLE"
+    assert book["price"] is None
+
+
+def test_historical_row_without_retained_alias_proof_fails_closed():
+    row = fixture()
+    row.pop("odds_identity_proof_json")
+    result = report_evidence(row, evaluate(row), [odds(row)])["moneylines"]
+    assert result["status"] == "IDENTITY_PROOF_UNAVAILABLE"
+    assert all(item["price"] is None for item in result["books"].values())
