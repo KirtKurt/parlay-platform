@@ -42,7 +42,7 @@ STRINGS = ['date', 'game_id', 'bbs_game_id', 'odds_event_id', 'home_team', 'away
            'environment_status', 'history_status', 'input_fingerprint', 'status',
            'home_lineup_status', 'away_lineup_status', 'home_lineup_ids', 'away_lineup_ids',
            'home_offense_source', 'away_offense_source', 'lineup_source_status', 'starter_feature_source', 'calibration_version', 'calibration_method']
-STRINGS += ['signal_contributions_json']
+STRINGS += ['signal_contributions_json', 'odds_identity_proof_json']
 STRINGS += ['starter_profile_contract', 'starter_profile_sha256',
             'starter_profile_semantic_sha256', 'starter_profile_json']
 STRINGS += ['lineup_bullpen_profile_contract', 'lineup_bullpen_profile_sha256',
@@ -325,12 +325,33 @@ def market_for(game, events, crosswalk, as_of):
     candidates = [e for e in events if all(crosswalk.resolve(e[s+'_team']) == str(game['teams'][s]['team']['id'])
                   for s in ('home', 'away')) and abs((utc(e['commence_time'])-utc(game['gameDate'])).total_seconds()) <= 90]
     empty = {'market_home_prob': None, 'market_total': None, 'market_spread': None,
-             'odds_event_id': None, 'odds_match_confidence': None, 'market_status': 'unavailable'}
+             'odds_event_id': None, 'odds_match_confidence': None, 'odds_identity_proof_json': None, 'market_status': 'unavailable'}
     if len(candidates) > 1:
         return {**empty, 'market_status': 'ambiguous_event'}
     if not candidates:
         return empty
     event = candidates[0]
+    # Retain the exact ID-backed alias decisions used by serving so reporting can
+    # reproduce identity without fuzzy matching or inference-by-elimination.
+    proof_aliases = {}
+    for alias in [event.get('home_team'), event.get('away_team')]:
+        resolved = crosswalk.resolve(alias)
+        if alias and resolved:
+            proof_aliases[name_key(alias)] = resolved
+    for book in event.get('bookmakers', []):
+        for market in book.get('markets', []):
+            if market.get('key') == 'h2h':
+                for outcome in market.get('outcomes', []):
+                    alias, resolved = outcome.get('name'), crosswalk.resolve(outcome.get('name'))
+                    if alias and resolved:
+                        proof_aliases[name_key(alias)] = resolved
+    identity_proof = encode({
+        'contract': 'KS1-odds-identity-proof-v1',
+        'event_id': str(event.get('id')),
+        'home_id': str(game['teams']['home']['team']['id']),
+        'away_id': str(game['teams']['away']['team']['id']),
+        'aliases': proof_aliases,
+    }).decode()
     probabilities, totals, spreads, seen_books = [], [], [], set()
     for book in event.get('bookmakers', []):
         if book.get('key') in seen_books:
@@ -369,7 +390,7 @@ def market_for(game, events, crosswalk, as_of):
     return {**empty, 'market_home_prob': statistics.mean(probabilities) if probabilities else None,
             'market_total': statistics.median(totals) if totals else None,
             'market_spread': statistics.median(spreads) if spreads else None, 'odds_event_id': str(event['id']),
-            'odds_match_confidence': 1.0, 'market_status': 'available' if probabilities else 'missing_fresh_h2h'}
+            'odds_match_confidence': 1.0, 'odds_identity_proof_json': identity_proof, 'market_status': 'available' if probabilities else 'missing_fresh_h2h'}
 
 
 def load_inputs(folder):
