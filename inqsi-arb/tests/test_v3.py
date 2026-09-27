@@ -341,7 +341,7 @@ def test_v3_health_rules_and_ui_routes(monkeypatch):
 
 
 def test_deploy_and_repair_force_the_supported_worldwide_regions():
-    expected = '"ArbRegions=us,us2,us_dfs,us_ex,uk,eu,fr,se,au"'
+    expected = '"ArbRegions=us,us2,us_dfs,us_ex,uk,eu,ca,fr,se,fi,au"'
     workflows = ROOT.parent / ".github" / "workflows"
     for name in ("inqsi-arb-deploy.yml", "inqsi-arb-repair.yml"):
         assert expected in (workflows / name).read_text()
