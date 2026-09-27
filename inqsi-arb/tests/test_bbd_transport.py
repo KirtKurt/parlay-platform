@@ -152,6 +152,44 @@ def test_valid_json_preserves_finite_numbers_and_quoted_exponents(transport):
     assert responses[0].closed
 
 
+@pytest.mark.parametrize("code", [201, 202, 204, 206])
+@pytest.mark.parametrize("body", [
+    b'{"data": [{"id": "partial-sport"}]}',
+    b'{"data": []}',
+    b'{"unexpected": "schema"}',
+    b'',
+])
+def test_sports_rejects_non_200_success_status_without_context(transport, code, body):
+    install, calls, responses = transport
+    install(code, body=body)
+
+    result = bbd_provider.sports()
+
+    assert result == {
+        "ok": False,
+        "enabled": True,
+        "status": code,
+        "reason": "BBD_SPORTS_ENDPOINT_UNAVAILABLE",
+        "sports": [],
+    }
+    assert len(calls) == 1
+    assert responses[0].closed
+
+
+def test_sports_200_preserves_discovered_rows(transport):
+    install, calls, responses = transport
+    install(200, body=b'{"data": [{"id": "fixture-sport"}]}')
+
+    result = bbd_provider.sports()
+
+    assert result["ok"] is True
+    assert result["status"] == 200
+    assert result["sports"] == [{"id": "fixture-sport"}]
+    assert result["count"] == 1
+    assert len(calls) == 1
+    assert responses[0].closed
+
+
 def test_direct_request_preserves_auth_and_query_contract(transport):
     install, calls, responses = transport
     install(200)
