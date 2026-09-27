@@ -102,3 +102,37 @@ def recent(kind: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
         if not exclusive_start_key:
             break
     return out[:wanted]
+
+
+def claim_once(namespace: str, identity: str, *, ttl_seconds: int = 21600) -> bool:
+    """Atomically claim an alert identity.
+
+    Returns True only for the first claimant during the TTL window. This keeps
+    Lambda retries and repeated scans from emitting duplicate notifications.
+    """
+    table = _table()
+    if table is None:
+        return False
+    now = int(time.time())
+    pk = "CLAIM#" + (str(namespace).strip().upper() or "DEFAULT")
+    sk = str(identity).strip()
+    if not sk:
+        return False
+    try:
+        table.put_item(
+            Item={
+                "pk": pk,
+                "sk": sk,
+                "kind": "CLAIM",
+                "created_at_ms": now * 1000,
+                "ttl": now + max(60, int(ttl_seconds)),
+            },
+            ConditionExpression="attribute_not_exists(pk) AND attribute_not_exists(sk)",
+        )
+        return True
+    except Exception as exc:
+        response = getattr(exc, "response", {}) or {}
+        code = str((response.get("Error") or {}).get("Code") or "")
+        if code == "ConditionalCheckFailedException":
+            return False
+        raise
