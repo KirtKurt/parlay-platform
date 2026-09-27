@@ -265,8 +265,8 @@ def test_worldwide_default_uses_all_configured_provider_regions(monkeypatch):
     monkeypatch.delenv("ARB_DEFAULT_JURISDICTION", raising=False)
     monkeypatch.delenv("ARB_REGIONS", raising=False)
     assert _default_jurisdiction() == "*"
-    assert _regions("*") == "us,us2,us_dfs,us_ex,uk,eu,fr,se,au"
-    assert _regions("ny") == "us,us2,us_dfs,us_ex,uk,eu,fr,se,au"
+    assert _regions("*") == "us,us2,us_dfs,us_ex,uk,eu,ca,fr,se,fi,au"
+    assert _regions("ny") == "us,us2,us_dfs,us_ex,uk,eu,ca,fr,se,fi,au"
     assert _regions("ny", "us") == "us"
 
 
@@ -289,7 +289,7 @@ def test_get_scan_applies_worldwide_default_without_bookmaker_filter(monkeypatch
 
     assert response["statusCode"] == 200
     assert body["jurisdiction"] == "*"
-    assert observed["regions"] == "us,us2,us_dfs,us_ex,uk,eu,fr,se,au"
+    assert observed["regions"] == "us,us2,us_dfs,us_ex,uk,eu,ca,fr,se,fi,au"
     assert observed["bookmakers"] is None
 
 
