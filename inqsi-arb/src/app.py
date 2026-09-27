@@ -9,6 +9,7 @@ from typing import Any, Dict
 
 from arb_engine import ArbValidationError, scan_all
 from audit_store import enabled as audit_enabled, recent as audit_recent, record as audit_record
+from opportunity_alerts import publish_scan_opportunities
 from constraints import apply_book_constraints, optimize_equal_payout
 from lifecycle import outcome_pnl, recommend_two_leg_completion, record_leg
 from market_catalog import MARKET_FAMILY_KEYS, expand_market_families
@@ -89,7 +90,7 @@ def _default_jurisdiction() -> str:
 def _regions(_jurisdiction: str = "*", explicit: str = "") -> str:
     if explicit.strip():
         return explicit.strip()
-    return os.environ.get("ARB_REGIONS", "us,us2,us_dfs,us_ex,uk,eu,fr,se,au")
+    return os.environ.get("ARB_REGIONS", "us,us2,us_dfs,us_ex,uk,eu,ca,fr,se,fi,au")
 
 
 def _audit_candidate(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -232,6 +233,10 @@ def _finalize_scan(result: Dict[str, Any], *, sport: str, jurisdiction: str) -> 
             "sport": sport, "n_arbs": result.get("n_arbs"),
             "hits": result.get("hits", [])[:20],
         })
+    if result.get("hits") or result.get("detected_unverified"):
+        result["opportunity_alerts"] = publish_scan_opportunities(
+            result, audit_event_id=result.get("audit_event_id")
+        )
     result.pop("_audit_pack", None)
     result.pop("_audit_licensed_requested", None)
     return result
@@ -378,6 +383,7 @@ def lambda_handler(event, context):
             "balance_aware_optimizer": True,
             "two_leg_completion_assistant": True,
             "opportunity_history": audit_enabled(),
+            "realtime_opportunity_alerts": bool(os.environ.get("ARB_OPPORTUNITY_TOPIC_ARN")),
             "default_jurisdiction": _default_jurisdiction(),
             "candidate_evidence_audit": True,
             "required_outcome_universe_preserved": True,
@@ -646,12 +652,39 @@ def lambda_handler(event, context):
                     return _scan_rows(events, status)
 
         if market_arg.lower() == "all":
+            if sport == "all":
+                sports, sports_meta = list_sports(all_sports=False)
+                if not sports_meta.get("ok"):
+                    return response(503, {"ok": False, "error": "SPORT_CATALOG_UNAVAILABLE", "provider": sports_meta})
+                limit = min(len(sports), int(os.environ.get("ARB_MAX_SPORTS_PER_ALL_SCAN", "100")))
+                combined_rows = []
+                statuses = []
+                for row in sports[:limit]:
+                    sport_rows, sport_status = fetch_all_discovered_markets(
+                        row["key"],
+                        regions=regions,
+                        bookmakers=books,
+                        max_events=max_events,
+                        max_markets_per_event=int(os.environ.get("ARB_MAX_MARKETS_PER_EVENT", "250")),
+                    )
+                    combined_rows.extend(sport_rows)
+                    statuses.append({"sport": row["key"], **sport_status})
+                complete = limit == len(sports) and all(status.get("ok") for status in statuses)
+                return _scan_rows(combined_rows, {
+                    "ok": complete,
+                    "source": "live",
+                    "sports": statuses,
+                    "n_sports_scanned": limit,
+                    "n_sports_catalog": len(sports),
+                    "partial": not complete,
+                    "catalog": sports_meta,
+                })
             rows, status = fetch_all_discovered_markets(
                 sport,
                 regions=regions,
                 bookmakers=books,
                 max_events=max_events,
-                max_markets_per_event=int(os.environ.get("ARB_MAX_MARKETS_PER_EVENT", "120")),
+                max_markets_per_event=int(os.environ.get("ARB_MAX_MARKETS_PER_EVENT", "250")),
             )
             status = {**status, "source": "live"}
             return _scan_rows(rows, status)

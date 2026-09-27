@@ -24,7 +24,7 @@ def _regions() -> str:
         os.environ.get("ARB_COLLECT_REGIONS")
         or os.environ.get("ARB_REGIONS")
         or os.environ.get("ARB_US_REGIONS")
-        or "us,us2,us_dfs,us_ex,uk,eu,fr,se,au"
+        or "us,us2,us_dfs,us_ex,uk,eu,ca,fr,se,fi,au"
     ).strip()
 
 
