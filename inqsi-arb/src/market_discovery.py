@@ -1,9 +1,10 @@
 """Automatic event-market enumeration for Inqsi ARB.
 
-The provider documents event-specific market keys but does not expose a complete
-per-event market-list endpoint. Inqsi therefore builds the sport-appropriate
-provider key universe from the documented catalog and probes the event-odds
-endpoint. Unsupported keys are isolated by recursive bisection and fail closed.
+The provider event-markets endpoint is the primary runtime inventory because it
+returns recently observed market keys per bookmaker for a specific event. Inqsi
+then requests only those observed keys from the event-odds endpoint. The static
+sport catalog remains a fail-closed fallback when market inventory is
+unavailable; unsupported fallback keys are isolated by recursive bisection.
 """
 from __future__ import annotations
 
@@ -55,6 +56,46 @@ def _request_event_odds(
     })
 
 
+def _event_markets_url(sport_key: str, event_id: str) -> str:
+    return (
+        f"{BASE}/sports/{urllib.parse.quote(str(sport_key), safe='')}"
+        f"/events/{urllib.parse.quote(str(event_id), safe='')}/markets"
+    )
+
+
+def _discover_event_markets_direct(
+    sport_key: str,
+    event_id: str,
+    *,
+    regions: str,
+    bookmakers: Optional[str] = None,
+) -> Tuple[List[str], Dict[str, Any]]:
+    payload, meta = _get(_event_markets_url(sport_key, event_id), {
+        "apiKey": api_key(),
+        "regions": regions,
+        "bookmakers": bookmakers,
+        "dateFormat": "iso",
+    })
+    if not meta.get("ok") or not isinstance(payload, dict):
+        return [], {**meta, "discovery": "event_markets_endpoint"}
+    keys: List[str] = []
+    for book in payload.get("bookmakers") or []:
+        if not isinstance(book, dict):
+            continue
+        for market in book.get("markets") or []:
+            if not isinstance(market, dict):
+                continue
+            key = str(market.get("key") or "").strip()
+            if key and key not in keys:
+                keys.append(key)
+    return keys, {
+        **meta,
+        "ok": True,
+        "discovery": "event_markets_endpoint",
+        "n_market_keys": len(keys),
+    }
+
+
 def _probe_market_batch(
     sport_key: str,
     event_id: str,
@@ -97,22 +138,40 @@ def discover_event_market_keys(
     *,
     regions: str = "us,us2,us_dfs,us_ex,uk,eu,fr,se,au",
     bookmakers: Optional[str] = None,
-    max_markets: int = 120,
+    max_markets: int = 250,
 ) -> Tuple[List[str], Dict[str, Any]]:
     if not api_key():
         return [], {"ok": False, "error": "ODDS_API_KEY_MISSING"}
-    candidates = candidate_markets_for_sport(sport_key)[:max(1, int(max_markets))]
+
+    observed, observed_meta = _discover_event_markets_direct(
+        sport_key, event_id, regions=regions, bookmakers=bookmakers,
+    )
+    limit = max(1, int(max_markets))
+    if observed_meta.get("ok"):
+        selected = observed[:limit]
+        return selected, {
+            **observed_meta,
+            "n_candidates": len(observed),
+            "n_market_keys": len(selected),
+            "partial": len(observed) > len(selected),
+            "fallback_used": False,
+        }
+
+    candidates = candidate_markets_for_sport(sport_key)[:limit]
     accepted, _rows, evidence = _probe_market_batch(
         sport_key, event_id, candidates, regions=regions, bookmakers=bookmakers,
     )
     return accepted, {
         "ok": bool(accepted),
-        "discovery": "documented_catalog_runtime_probe",
+        "discovery": "documented_catalog_runtime_probe_fallback",
         "n_candidates": len(candidates),
         "n_market_keys": len(accepted),
         "partial": len(candidate_markets_for_sport(sport_key)) > len(candidates),
         "probe_requests": len(evidence),
         "evidence": evidence[:50],
+        "fallback_used": True,
+        "event_markets_error": observed_meta.get("error"),
+        "event_markets_status": observed_meta.get("status"),
     }
 
 
@@ -155,7 +214,7 @@ def fetch_all_discovered_markets(
     regions: str,
     bookmakers: Optional[str] = None,
     max_events: int = 40,
-    max_markets_per_event: int = 120,
+    max_markets_per_event: int = 250,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     events, events_meta = discover_events(sport_key)
     if not events_meta.get("ok"):
@@ -163,20 +222,33 @@ def fetch_all_discovered_markets(
     selected = events[:max(0, int(max_events))]
     normalized: List[Dict[str, Any]] = []
     details: List[Dict[str, Any]] = []
-    candidates = candidate_markets_for_sport(sport_key)[:max(1, int(max_markets_per_event))]
+    limit = max(1, int(max_markets_per_event))
     for event in selected:
         event_id = str(event["id"])
+        observed, discovery_meta = _discover_event_markets_direct(
+            sport_key, event_id, regions=regions, bookmakers=bookmakers,
+        )
+        fallback_used = not discovery_meta.get("ok")
+        candidates = (
+            observed[:limit]
+            if not fallback_used
+            else candidate_markets_for_sport(sport_key)[:limit]
+        )
         accepted, rows, evidence = _probe_market_batch(
             sport_key, event_id, candidates, regions=regions, bookmakers=bookmakers,
-        )
+        ) if candidates else ([], [], [])
         normalized.extend(rows)
         details.append({
             "event_id": event_id,
-            "ok": bool(accepted),
+            "ok": bool(accepted) or (not fallback_used and not candidates),
             "n_candidates": len(candidates),
+            "n_observed": len(observed),
             "n_discovered": len(accepted),
             "markets": accepted,
             "probe_requests": len(evidence),
+            "discovery": discovery_meta.get("discovery"),
+            "fallback_used": fallback_used,
+            "partial": len(observed) > len(candidates) if not fallback_used else len(candidate_markets_for_sport(sport_key)) > len(candidates),
         })
     good = sum(1 for x in details if x.get("ok"))
     return normalized, {
@@ -188,5 +260,5 @@ def fetch_all_discovered_markets(
         "n_events_succeeded": good,
         "n_normalized_markets": len(normalized),
         "event_details": details[:100],
-        "partial": len(selected) < len(events) or len(candidate_markets_for_sport(sport_key)) > len(candidates),
+        "partial": len(selected) < len(events) or any(bool(x.get("partial")) for x in details),
     }
