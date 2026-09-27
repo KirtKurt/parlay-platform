@@ -72,7 +72,7 @@ def test_licensed_and_jurisdiction_do_not_filter_books(monkeypatch):
     assert body["product_filter"] == "books"
     assert body["books"] is None
     assert observed["bookmakers"] is None
-    assert observed["regions"] == "us,us2,us_dfs,us_ex,uk,eu,fr,se,au"
+    assert observed["regions"] == "us,us2,us_dfs,us_ex,uk,eu,ca,fr,se,fi,au"
 
 
 def test_books_query_is_the_only_product_filter(monkeypatch):
@@ -112,7 +112,7 @@ def test_store_scan_respects_user_book_filter():
             {"book": "fanduel", "outcome": "B", "decimal": 2.2, "last_update": fresh_ts()},
             {"book": "pinnacle", "outcome": "B", "decimal": 3.0, "last_update": fresh_ts()},
         ],
-    }], meta={"ok": True, "markets": ["h2h"], "regions": "us,us2,us_dfs,us_ex,uk,eu,fr,se,au"})
+    }], meta={"ok": True, "markets": ["h2h"], "regions": "us,us2,us_dfs,us_ex,uk,eu,ca,fr,se,fi,au"})
     open_body = json.loads(lambda_handler({
         "httpMethod": "GET",
         "path": "/v1/arb/scan",
@@ -239,7 +239,7 @@ def test_auto_bypasses_us_snapshot_for_international_book(monkeypatch):
     assert response["statusCode"] == 200
     assert body["source"] == "live"
     assert observed["bookmakers"] == "pinnacle"
-    assert observed["regions"] == "us,us2,us_dfs,us_ex,uk,eu,fr,se,au"
+    assert observed["regions"] == "us,us2,us_dfs,us_ex,uk,eu,ca,fr,se,fi,au"
 
 
 def test_auto_bypasses_us_snapshot_for_unfiltered_worldwide_scan(monkeypatch):
@@ -269,7 +269,7 @@ def test_all_sports_auto_falls_live_when_any_snapshot_region_is_ineligible(monke
     monkeypatch.setattr("app.list_sports", lambda all_sports=False: ([
         {"key": "sport_one"}, {"key": "sport_two"},
     ], {"ok": True}))
-    put_snapshot("sport_one", [], meta={"ok": True, "markets": ["h2h"], "regions": "us,us2,us_dfs,us_ex,uk,eu,fr,se,au"})
+    put_snapshot("sport_one", [], meta={"ok": True, "markets": ["h2h"], "regions": "us,us2,us_dfs,us_ex,uk,eu,ca,fr,se,fi,au"})
     put_snapshot("sport_two", [], meta={"ok": True, "markets": ["h2h"], "regions": "us,us2"})
 
     def fake_scan(sport, **kwargs):
