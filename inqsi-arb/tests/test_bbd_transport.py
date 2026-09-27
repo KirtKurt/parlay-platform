@@ -167,6 +167,58 @@ def test_direct_request_preserves_auth_and_query_contract(transport):
     assert responses[0].closed
 
 
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+def test_oversized_response_is_bounded_before_json_decoding(transport, monkeypatch, operation):
+    install, calls, responses = transport
+    limit = bbd_provider.MAX_RESPONSE_BYTES
+    install(200, body=b" " * (limit + 100))
+    reads = []
+    original_read = io.BytesIO.read
+
+    class TrackedBody(io.BytesIO):
+        def read(self, size=-1):
+            reads.append(size)
+            return original_read(self, size)
+
+    monkeypatch.setattr(io, "BytesIO", TrackedBody)
+
+    def unexpected_decode(*args, **kwargs):
+        pytest.fail("Oversized response must be rejected before JSON decoding")
+
+    monkeypatch.setattr(bbd_provider.json, "loads", unexpected_decode)
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is False
+    assert result["reason"] == "BBD_RESPONSE_TOO_LARGE"
+    assert reads == [limit + 1]
+    assert len(calls) == 1
+    assert responses[0].closed
+    assert "offline-test-token" not in str(result)
+    if operation == "health":
+        assert result["sports_count"] is None
+    else:
+        assert result[operation] == []
+
+
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+@pytest.mark.parametrize("extra_bytes", [-1, 0, 1])
+def test_response_size_boundary(transport, operation, extra_bytes):
+    install, _, responses = transport
+    prefix = b'{"data": [], "padding": "'
+    suffix = b'"}'
+    padding_size = bbd_provider.MAX_RESPONSE_BYTES + extra_bytes - len(prefix + suffix)
+    install(200, body=prefix + b"x" * padding_size + suffix)
+
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is (extra_bytes <= 0)
+    if extra_bytes > 0:
+        assert result["reason"] == "BBD_RESPONSE_TOO_LARGE"
+    else:
+        assert result["sports_count" if operation == "health" else "count"] == 0
+    assert all(response.closed for response in responses)
+
+
 @pytest.mark.parametrize("base_url", [
     "http://bbd.invalid", "ftp://bbd.invalid", "//bbd.invalid", "https:///missing-host",
     "https://user:password@bbd.invalid", "https://user@bbd.invalid",
