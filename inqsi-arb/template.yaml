@@ -34,6 +34,8 @@ Globals:
         ARB_AUDIT_TABLE: !Ref ArbAuditTable
         ARB_STATE_TABLE: !Ref ArbStateTable
         ARB_CONNECTIONS_TABLE: !Ref ArbConnectionsTable
+        ARB_OPPORTUNITY_TOPIC_ARN: !Ref ArbOpportunityTopic
+        ARB_OPPORTUNITY_ALERT_DEDUPE_SECONDS: '21600'
         ARB_WEBSOCKET_MANAGEMENT_ENDPOINT: !Sub 'https://${ArbWebSocketApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod'
         ARB_WEBSOCKET_PUBLIC_URL: !Sub 'wss://${ArbWebSocketApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod'
 Resources:
@@ -86,6 +88,11 @@ Resources:
         AttributeName: ttl
         Enabled: true
 
+  ArbOpportunityTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Inqsi ARB Opportunities
+
   ArbApi:
     Type: AWS::Serverless::Api
     Properties:
@@ -107,6 +114,8 @@ Resources:
             TableName: !Ref ArbStateTable
         - DynamoDBCrudPolicy:
             TableName: !Ref ArbConnectionsTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt ArbOpportunityTopic.TopicName
         - Statement:
             - Effect: Allow
               Action: execute-api:ManageConnections
@@ -257,5 +266,7 @@ Outputs:
     Value: !Sub 'wss://${ArbWebSocketApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod'
   ArbCollectorFunctionName:
     Value: !Ref ArbCollectorFunction
+  ArbOpportunityTopicArn:
+    Value: !Ref ArbOpportunityTopic
   ArbBooksUrl:
     Value: !Sub 'https://${ArbApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/v1/arb/books'
