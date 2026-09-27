@@ -89,7 +89,7 @@ def _default_jurisdiction() -> str:
 def _regions(_jurisdiction: str = "*", explicit: str = "") -> str:
     if explicit.strip():
         return explicit.strip()
-    return os.environ.get("ARB_REGIONS", "us,us2,us_dfs,us_ex,uk,eu,fr,se,au")
+    return os.environ.get("ARB_REGIONS", "us,us2,us_dfs,us_ex,uk,eu,ca,fr,se,fi,au")
 
 
 def _audit_candidate(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -646,12 +646,39 @@ def lambda_handler(event, context):
                     return _scan_rows(events, status)
 
         if market_arg.lower() == "all":
+            if sport == "all":
+                sports, sports_meta = list_sports(all_sports=False)
+                if not sports_meta.get("ok"):
+                    return response(503, {"ok": False, "error": "SPORT_CATALOG_UNAVAILABLE", "provider": sports_meta})
+                limit = min(len(sports), int(os.environ.get("ARB_MAX_SPORTS_PER_ALL_SCAN", "100")))
+                combined_rows = []
+                statuses = []
+                for row in sports[:limit]:
+                    sport_rows, sport_status = fetch_all_discovered_markets(
+                        row["key"],
+                        regions=regions,
+                        bookmakers=books,
+                        max_events=max_events,
+                        max_markets_per_event=int(os.environ.get("ARB_MAX_MARKETS_PER_EVENT", "250")),
+                    )
+                    combined_rows.extend(sport_rows)
+                    statuses.append({"sport": row["key"], **sport_status})
+                complete = limit == len(sports) and all(status.get("ok") for status in statuses)
+                return _scan_rows(combined_rows, {
+                    "ok": complete,
+                    "source": "live",
+                    "sports": statuses,
+                    "n_sports_scanned": limit,
+                    "n_sports_catalog": len(sports),
+                    "partial": not complete,
+                    "catalog": sports_meta,
+                })
             rows, status = fetch_all_discovered_markets(
                 sport,
                 regions=regions,
                 bookmakers=books,
                 max_events=max_events,
-                max_markets_per_event=int(os.environ.get("ARB_MAX_MARKETS_PER_EVENT", "120")),
+                max_markets_per_event=int(os.environ.get("ARB_MAX_MARKETS_PER_EVENT", "250")),
             )
             status = {**status, "source": "live"}
             return _scan_rows(rows, status)
