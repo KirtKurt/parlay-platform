@@ -9,6 +9,7 @@ from typing import Any, Dict
 
 from arb_engine import ArbValidationError, scan_all
 from audit_store import enabled as audit_enabled, recent as audit_recent, record as audit_record
+from opportunity_alerts import publish_scan_opportunities
 from constraints import apply_book_constraints, optimize_equal_payout
 from lifecycle import outcome_pnl, recommend_two_leg_completion, record_leg
 from market_catalog import MARKET_FAMILY_KEYS, expand_market_families
@@ -232,6 +233,10 @@ def _finalize_scan(result: Dict[str, Any], *, sport: str, jurisdiction: str) -> 
             "sport": sport, "n_arbs": result.get("n_arbs"),
             "hits": result.get("hits", [])[:20],
         })
+    if result.get("hits") or result.get("detected_unverified"):
+        result["opportunity_alerts"] = publish_scan_opportunities(
+            result, audit_event_id=result.get("audit_event_id")
+        )
     result.pop("_audit_pack", None)
     result.pop("_audit_licensed_requested", None)
     return result
@@ -378,6 +383,7 @@ def lambda_handler(event, context):
             "balance_aware_optimizer": True,
             "two_leg_completion_assistant": True,
             "opportunity_history": audit_enabled(),
+            "realtime_opportunity_alerts": bool(os.environ.get("ARB_OPPORTUNITY_TOPIC_ARN")),
             "default_jurisdiction": _default_jurisdiction(),
             "candidate_evidence_audit": True,
             "required_outcome_universe_preserved": True,
