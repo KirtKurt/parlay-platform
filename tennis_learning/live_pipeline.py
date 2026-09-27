@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -452,6 +453,30 @@ def collect_live() -> Dict[str, Any]:
     return summary
 
 
+def _score_receipt(score_event: Mapping[str, Any], *, sport_key: str, player: str, opponent: str) -> Dict[str, Any]:
+    source_payload = {
+        "event_id": str(score_event.get("id") or ""),
+        "sport_key": str(sport_key),
+        "commence_time": str(score_event.get("commence_time") or ""),
+        "completed": bool(score_event.get("completed")),
+        "scores": score_event.get("scores") or [],
+    }
+    encoded = json.dumps(source_payload, sort_keys=True, separators=(",", ":"), default=str).encode()
+    participants = sorted((str(player), str(opponent)), key=str.casefold)
+    slate_date = source_payload["commence_time"][:10]
+    alias_payload = {"sport_key": str(sport_key), "slate_date": slate_date, "participants": participants}
+    alias_encoded = json.dumps(alias_payload, sort_keys=True, separators=(",", ":")).encode()
+    return {
+        "source_event_id": source_payload["event_id"],
+        "source_sport_key": source_payload["sport_key"],
+        "source_commence_time": source_payload["commence_time"],
+        "source_completed": source_payload["completed"],
+        "source_scores": source_payload["scores"],
+        "source_score_receipt_sha256": hashlib.sha256(encoded).hexdigest(),
+        "participant_date_identity_sha256": hashlib.sha256(alias_encoded).hexdigest(),
+    }
+
+
 def _winner(score_event: Mapping[str, Any]) -> str | None:
     if not score_event.get("completed"):
         return None
@@ -532,20 +557,29 @@ def settle_recent() -> Dict[str, Any]:
                     if k != "best_of_five"
                 ):
                     raise ValueError("stored signals contain non-finite values")
+                player = str(item["player"])
+                opponent = str(item["opponent"])
+                receipt = _score_receipt(
+                    event,
+                    sport_key=sport_key,
+                    player=player,
+                    opponent=opponent,
+                )
                 result = settle(
                     {
                         "match_id": event_id,
-                        "player": str(item["player"]),
-                        "opponent": str(item["opponent"]),
+                        "player": player,
+                        "opponent": opponent,
                         "event_time": str(
                             event.get("commence_time")
                             or item.get("commence_time")
                             or datetime.now(timezone.utc).isoformat()
                         ),
-                        "player_won": winner == str(item["player"]),
+                        "player_won": winner == player,
                         "signals": signals,
                         "source": "the-odds-api-v4-scores",
                         "source_mode": "live_settlement_t10",
+                        **receipt,
                     }
                 )
             except (ValueError, ArithmeticError) as exc:
