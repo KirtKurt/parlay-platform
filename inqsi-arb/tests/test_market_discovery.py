@@ -64,3 +64,73 @@ def test_catalog_probe_is_fail_closed_fallback_when_inventory_endpoint_fails(mon
     assert meta["fallback_used"] is True
     assert meta["discovery"] == "documented_catalog_runtime_probe_fallback"
     assert meta["event_markets_status"] == 503
+
+
+def test_all_sports_all_markets_fans_out_instead_of_scanning_literal_all(monkeypatch):
+    import app
+
+    monkeypatch.setattr(
+        app,
+        "list_sports",
+        lambda all_sports=False: (
+            [{"key": "baseball_mlb"}, {"key": "basketball_nba"}],
+            {"ok": True},
+        ),
+    )
+    calls = []
+
+    def fake_fetch(sport, **kwargs):
+        calls.append((sport, kwargs))
+        return [], {
+            "ok": True,
+            "stage": "complete",
+            "n_events_discovered": 0,
+            "n_events_requested": 0,
+            "n_events_succeeded": 0,
+            "n_normalized_markets": 0,
+            "partial": False,
+        }
+
+    monkeypatch.setattr(app, "fetch_all_discovered_markets", fake_fetch)
+    monkeypatch.setattr(app, "validate_events", lambda rows, jurisdiction="*": rows)
+    monkeypatch.setattr(
+        app,
+        "scan_all",
+        lambda payload: {
+            "n_arbs": 0,
+            "n_detected_unverified": 0,
+            "n_rejected": 0,
+            "n_held_unverified": 0,
+            "n_exchange_pending": 0,
+            "n_middles": 0,
+            "hits": [],
+            "detected_unverified": [],
+            "rejected": [],
+            "exchange_pending": [],
+            "middles": [],
+            "n_markets": 0,
+        },
+    )
+    monkeypatch.setattr(app, "audit_enabled", lambda: False)
+
+    response = app.lambda_handler(
+        {
+            "httpMethod": "GET",
+            "path": "/v1/arb/scan",
+            "queryStringParameters": {
+                "sport": "all",
+                "markets": "all",
+                "source": "live",
+                "max_events": "40",
+            },
+        },
+        None,
+    )
+    import json
+
+    body = json.loads(response["body"])
+    assert response["statusCode"] == 200
+    assert [sport for sport, _ in calls] == ["baseball_mlb", "basketball_nba"]
+    assert body["status"]["n_sports_scanned"] == 2
+    assert body["status"]["partial"] is False
+    assert all(call[1]["max_markets_per_event"] == 250 for call in calls)
