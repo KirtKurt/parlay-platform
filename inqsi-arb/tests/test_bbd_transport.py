@@ -167,6 +167,44 @@ def test_direct_request_preserves_auth_and_query_contract(transport):
     assert responses[0].closed
 
 
+@pytest.mark.parametrize("code", [201, 202, 203, 204, 205, 206, 299])
+@pytest.mark.parametrize("body", [
+    b'{"data": [{"id": "unqualified-sport"}]}',
+    b'{"data": []}',
+    b'{"error": "not a collection"}',
+    b'',
+])
+def test_sports_non_200_success_status_returns_no_context(transport, code, body):
+    install, calls, responses = transport
+    install(code, body=body)
+
+    result = bbd_provider.sports()
+
+    assert result == {
+        "ok": False,
+        "enabled": True,
+        "status": code,
+        "reason": "BBD_SPORTS_ENDPOINT_UNAVAILABLE_OR_UNENTITLED",
+        "sports": [],
+    }
+    assert len(calls) == 1
+    assert responses[0].closed
+
+
+def test_sports_200_preserves_collection(transport):
+    install, calls, responses = transport
+    install(200, body=b'{"data": [{"id": "qualified-sport"}]}')
+
+    result = bbd_provider.sports()
+
+    assert result["ok"] is True
+    assert result["status"] == 200
+    assert result["sports"] == [{"id": "qualified-sport"}]
+    assert result["count"] == 1
+    assert len(calls) == 1
+    assert responses[0].closed
+
+
 @pytest.mark.parametrize("base_url", [
     "http://bbd.invalid", "ftp://bbd.invalid", "//bbd.invalid", "https:///missing-host",
     "https://user:password@bbd.invalid", "https://user@bbd.invalid",
