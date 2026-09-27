@@ -97,7 +97,7 @@ def test_scan_reads_store_without_live_provider(monkeypatch):
             {"book": "draftkings", "outcome": "A", "decimal": 2.2, "last_update": fresh_ts()},
             {"book": "fanduel", "outcome": "B", "decimal": 2.2, "last_update": fresh_ts()},
         ],
-    }], meta={"ok": True, "markets": ["h2h"], "regions": "us,us2,us_dfs,us_ex,uk,eu,fr,se,au"})
+    }], meta={"ok": True, "markets": ["h2h"], "regions": "us,us2,us_dfs,us_ex,uk,eu,ca,fr,se,fi,au"})
 
     def boom(*args, **kwargs):
         raise AssertionError("live provider should not run")
