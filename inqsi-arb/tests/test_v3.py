@@ -327,7 +327,7 @@ def test_v3_health_rules_and_ui_routes(monkeypatch):
     assert body["required_outcome_universe_preserved"] is True
     assert body["exchange_lay_routed"] is True
     assert body["sportsbook_scope"] == "all_provider_returned"
-    assert body["default_regions"] == ["us", "us2", "us_dfs", "us_ex", "uk", "eu", "fr", "se", "au"]
+    assert body["default_regions"] == ["us", "us2", "us_dfs", "us_ex", "uk", "eu", "ca", "fr", "se", "fi", "au"]
     assert body["rules_registry_entries"] >= 6
     rules = lambda_handler({"httpMethod": "GET", "path": "/v1/arb/rules"}, None)
     rules_body = json.loads(rules["body"])
