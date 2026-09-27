@@ -20,14 +20,14 @@ def transport(monkeypatch):
     calls = []
     responses = []
 
-    def install(code, location=None, body=b'{"data": []}'):
+    def install(code, location=None, body=b'{"data": []}', stream_factory=io.BytesIO):
         class OfflineHTTPS(HTTPSHandler):
             def https_open(self, request):
                 calls.append(request)
                 headers = Message()
                 if location is not None:
                     headers["Location"] = location
-                response = addinfourl(io.BytesIO(body), headers, request.full_url, code)
+                response = addinfourl(stream_factory(body), headers, request.full_url, code)
                 response.msg = "offline fixture"
                 responses.append(response)
                 return response
@@ -40,6 +40,68 @@ def transport(monkeypatch):
         )
 
     return install, calls, responses
+
+
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+@pytest.mark.parametrize("extra_bytes", [-1, 0, 1])
+def test_response_size_boundary(transport, operation, extra_bytes):
+    install, calls, responses = transport
+    limit = bbd_provider.MAX_RESPONSE_BYTES
+    body = b'{"data": []}'
+    body += b' ' * (limit + extra_bytes - len(body))
+    reads = []
+
+    class BoundedStream(io.BytesIO):
+        def read(self, size=-1):
+            reads.append(size)
+            assert size == limit + 1
+            return super().read(size)
+
+    install(200, body=body, stream_factory=BoundedStream)
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is (extra_bytes <= 0)
+    assert all(response.closed for response in responses)
+    assert len(reads) == len(calls)
+    if extra_bytes > 0:
+        assert result["reason"] == "BBD_RESPONSE_TOO_LARGE"
+        assert len(calls) == 1
+        if operation == "health":
+            assert result["sports_count"] is None
+        else:
+            assert result[operation] == []
+    else:
+        assert result["sports_count" if operation == "health" else "count"] == 0
+
+
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+@pytest.mark.parametrize("code", [401, 403, 404, 429, 500])
+def test_http_errors_close_without_reading_body(transport, operation, code):
+    install, _, responses = transport
+
+    class UnreadableStream(io.BytesIO):
+        def read(self, size=-1):
+            pytest.fail("HTTP error bodies must not be consumed")
+
+    install(code, body=b'offline-test-token', stream_factory=UnreadableStream)
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is False
+    expected = f"BBD_HTTP_{code}"
+    if code in {401, 403, 404}:
+        if operation == "health":
+            expected = "BBD_AUTH_OR_DISCOVERY_FAILED"
+            assert result["auth_status"] == result["sports_status"] == code
+        elif operation == "events":
+            expected = "BBD_MATCH_ENDPOINT_UNAVAILABLE_OR_UNENTITLED"
+            assert result["status"] == code
+    assert result["reason"] == expected
+    assert "offline-test-token" not in str(result)
+    assert responses and all(response.closed for response in responses)
+    if operation == "health":
+        assert result["sports_count"] is None
+    else:
+        assert result[operation] == []
 
 
 @pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
