@@ -20,14 +20,20 @@ def transport(monkeypatch):
     calls = []
     responses = []
 
-    def install(code, location=None, body=b'{"data": []}'):
+    def install(code, location=None, body=b'{"data": []}', forbid_read=False):
+        class ResponseBody(io.BytesIO):
+            def read(self, *args, **kwargs):
+                if forbid_read:
+                    pytest.fail("HTTP error bodies must not be read")
+                return super().read(*args, **kwargs)
+
         class OfflineHTTPS(HTTPSHandler):
             def https_open(self, request):
                 calls.append(request)
                 headers = Message()
                 if location is not None:
                     headers["Location"] = location
-                response = addinfourl(io.BytesIO(body), headers, request.full_url, code)
+                response = addinfourl(ResponseBody(body), headers, request.full_url, code)
                 response.msg = "offline fixture"
                 responses.append(response)
                 return response
@@ -40,6 +46,44 @@ def transport(monkeypatch):
         )
 
     return install, calls, responses
+
+
+@pytest.mark.parametrize("code", [401, 403, 404, 429, 500, 503])
+@pytest.mark.parametrize("operation", ["health", "sports", "events"])
+def test_http_failures_close_without_reading_error_body(transport, code, operation):
+    install, calls, responses = transport
+    install(code, body=b"reflected offline-test-token", forbid_read=True)
+
+    result = getattr(bbd_provider, operation)()
+
+    assert result["ok"] is False
+    optional_access_failure = code in {401, 403, 404}
+    if operation == "health" and optional_access_failure:
+        assert result["reason"] == "BBD_AUTH_OR_DISCOVERY_FAILED"
+        assert result["auth_status"] == result["sports_status"] == code
+    elif operation == "events" and optional_access_failure:
+        assert result["reason"] == "BBD_MATCH_ENDPOINT_UNAVAILABLE_OR_UNENTITLED"
+        assert result["status"] == code
+    else:
+        assert result["reason"] == f"BBD_HTTP_{code}"
+    assert len(calls) == (2 if operation == "health" and optional_access_failure else 1)
+    assert all(response.closed for response in responses)
+    assert "offline-test-token" not in str(result)
+    if operation == "health":
+        assert result["sports_count"] is None
+    else:
+        assert result[operation] == []
+
+
+def test_direct_http_failure_omits_reflected_body(transport):
+    install, _, responses = transport
+    install(500, body=b"reflected offline-test-token")
+
+    with pytest.raises(bbd_provider.BBDError) as error:
+        bbd_provider._request("/v1/sports")
+
+    assert str(error.value) == "BBD_HTTP_500"
+    assert responses[0].closed
 
 
 @pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
