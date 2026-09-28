@@ -95,6 +95,25 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
+      - name: Preflight SNS deployment authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REGION="${{ secrets.AWS_REGION }}"
+          TOPIC_ARN="arn:aws:sns:${REGION}:${ACCOUNT_ID}:inqsi-arb-prod-ArbOpportunityTopic-*"
+          DECISION=$(aws iam simulate-principal-policy \
+            --policy-source-arn "$(aws sts get-caller-identity --query Arn --output text)" \
+            --action-names sns:CreateTopic sns:GetTopicAttributes sns:SetTopicAttributes sns:DeleteTopic sns:Subscribe sns:Unsubscribe sns:Publish \
+            --resource-arns "${TOPIC_ARN}" \
+            --query 'EvaluationResults[?EvalDecision!=`allowed`].[EvalActionName,EvalDecision]' \
+            --output text 2>/dev/null || true)
+          if [ -n "${DECISION}" ]; then
+            echo "ARB SNS deployment identity is missing required bounded SNS lifecycle permissions:"
+            echo "${DECISION}"
+            echo "Apply inqsi-arb/deploy_iam_policy.json to the GitHub Actions AWS deployment principal before retrying."
+            exit 1
+          fi
       - name: Deploy isolated arb stack
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
