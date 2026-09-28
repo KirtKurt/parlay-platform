@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:arb": "node scripts/check-arb-math.mjs && node scripts/check-arb-prototype.mjs"
   },
   "dependencies": {
     "@types/node": "^20.12.7",

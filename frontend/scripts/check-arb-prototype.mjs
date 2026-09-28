@@ -1,0 +1,15 @@
+import {readFileSync} from 'node:fs';
+const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8');
+const page=read('app/arbitrage-v2/page.tsx');
+const calc=read('app/arbitrage-v2/calculator/page.tsx');
+const route=read('app/v1/inqsi/arbitrage/history/route.ts');
+const vercel=read('vercel.json');
+const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+must(page.includes('NOT LIVE SPORTSBOOK DATA'),'preview-data warning missing');
+must(page.includes('selected.legs.map'),'multi-leg rendering missing');
+must(page.includes('known sportsbook limit')||page.includes('sportsbook limit'),'limit warning missing');
+must(page.includes("window.innerWidth<=980"),'mobile selection handoff missing');
+must(calc.includes("setCount(3)")&&calc.includes('3-way'),'three-way calculator missing');
+must(route.includes('AbortController')&&route.includes('8000'),'bounded ARB proxy timeout missing');
+const cfg=JSON.parse(vercel);must(cfg.framework==='nextjs','Vercel Next.js framework config missing');
+console.log('ARB prototype contract checks passed');

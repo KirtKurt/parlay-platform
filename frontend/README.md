@@ -82,3 +82,7 @@ The repo includes a frontend build workflow. Production hosting still needs the 
 - `/v1/inqsi/arbitrage/history` — server-side, read-only proxy to the existing ARB history endpoint. Configure `INQSI_ARB_API_URL` (preferred) or one of the existing API base variables. The proxy fails closed and times out after 8 seconds.
 - If live ARB history is unavailable, the UI enters an explicit **DESIGN PREVIEW / SAMPLE OPPORTUNITIES / NOT LIVE SPORTSBOOK DATA** state. Sample rows must never be represented as live opportunities.
 - These routes are additive and do not replace the current production home route.
+
+### Vercel deployment
+
+Import the GitHub repository into Vercel with **Root Directory = `frontend`**. The included `frontend/vercel.json` uses the existing Next.js build and install commands. Configure `INQSI_ARB_API_URL` to the deployed AWS ARB API base (preferred); existing API base variables remain supported as fallback. Preview deployments can run without that variable, but they will display the explicit non-live sample-data banner instead of implying live sportsbook access.
