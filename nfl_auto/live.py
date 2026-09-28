@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
+from zoneinfo import ZoneInfo
 
 from .canonical import digest, iso_utc, normalize_team, now_utc, strict_event_match
 from .config import (
@@ -112,7 +113,12 @@ def _schedule_game(row: Mapping[str, Any], kickoff_utc: str | None = None) -> tu
         return None, str(exc)
 
 
-def _matching_commence(home: Any, away: Any, events: list[Mapping[str, Any]]) -> str | None:
+def _matching_commence(
+    home: Any,
+    away: Any,
+    events: list[Mapping[str, Any]],
+    game_date: str | None = None,
+) -> str | None:
     found: set[str] = set()
     for event in events:
         try:
@@ -127,7 +133,28 @@ def _matching_commence(home: Any, away: Any, events: list[Mapping[str, Any]]) ->
             found.add(commence)
     if len(found) == 1:
         return next(iter(found))
+    if not found or not game_date:
+        return None
+    wanted = str(game_date)[:10]
+    on_date: list[str] = []
+    for commence in found:
+        try:
+            local_date = parse_utc(commence).astimezone(ZoneInfo("America/New_York")).date().isoformat()
+        except (TypeError, ValueError):
+            continue
+        if local_date == wanted:
+            on_date.append(commence)
+    if len(on_date) == 1:
+        return on_date[0]
     return None
+
+
+def _historical_events_at(odds: OddsApiClient, snapshot_at: str) -> list[Mapping[str, Any]]:
+    try:
+        payload, _transport = odds.historical_events(snapshot_at=snapshot_at)
+    except Exception:
+        return []
+    return [event for event in (payload.get("data") or []) if isinstance(event, Mapping)]
 
 
 def _events_for_weeks(odds: OddsApiClient, pending: list[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
@@ -144,12 +171,9 @@ def _events_for_weeks(odds: OddsApiClient, pending: list[Mapping[str, Any]]) -> 
         if not dates:
             continue
         try:
-            payload, _transport = odds.historical_events(snapshot_at=f"{dates[0]}T12:00:00Z")
+            events.extend(_historical_events_at(odds, f"{dates[0]}T12:00:00Z"))
         except Exception:
             continue
-        for event in payload.get("data") or []:
-            if isinstance(event, Mapping):
-                events.append(event)
     try:
         live_events, _transport = odds.live_odds()
     except Exception:
@@ -220,7 +244,7 @@ def sync_regular_season_schedule(store: NflStore, bbd: BBDClient, odds: OddsApiC
             game_id = str(row.get("game_id") or "")
             last = str(attempted.get(game_id) or "")
             retry = True
-            if last:
+            if last and _kickoff_state(store).get("strategy") == "per_game_date_v1":
                 try:
                     retry = now - parse_utc(last) >= timedelta(hours=12)
                 except (TypeError, ValueError):
@@ -237,7 +261,12 @@ def sync_regular_season_schedule(store: NflStore, bbd: BBDClient, odds: OddsApiC
         resolved: dict[str, str] = dict(remembered)
         for row, raw_provenance in pending:
             game_id = str(row.get("game_id") or "")
-            commence = _matching_commence(row.get("home_team"), row.get("away_team"), events)
+            commence = _matching_commence(
+                row.get("home_team"),
+                row.get("away_team"),
+                events,
+                str(row.get("game_date") or ""),
+            )
             game, reason = _schedule_game(row, commence)
             if game is None or game.season != LIVE_SEASON or game.game_type != "REG":
                 rejected += 1
@@ -269,7 +298,53 @@ def sync_regular_season_schedule(store: NflStore, bbd: BBDClient, odds: OddsApiC
             if game_id:
                 resolved[game_id] = game.kickoff_utc
             accepted += 1
-        store.state_put("NFL_AUTO_KICKOFF_RESOLUTION", {"games": resolved, "attempted": attempted})
+        still_open = [
+            (row, raw_provenance)
+            for row, raw_provenance in pending
+            if str(row.get("game_id") or "") not in resolved
+        ]
+        extra_dates = sorted(
+            {
+                str(row.get("game_date") or "")[:10]
+                for row, _raw in still_open
+                if str(row.get("game_date") or "")[:10] <= now.date().isoformat()
+            }
+        )
+        extra_events: list[Mapping[str, Any]] = []
+        for game_date in extra_dates:
+            extra_events.extend(_historical_events_at(odds, f"{game_date}T20:00:00Z"))
+        if extra_events:
+            recovered: list[str] = []
+            for row, raw_provenance in still_open:
+                game_id = str(row.get("game_id") or "")
+                if game_id in resolved:
+                    continue
+                commence = _matching_commence(
+                    row.get("home_team"),
+                    row.get("away_team"),
+                    extra_events,
+                    str(row.get("game_date") or ""),
+                )
+                game, _reason = _schedule_game(row, commence)
+                if game is None or game.season != LIVE_SEASON or game.game_type != "REG":
+                    continue
+                store.put_game(
+                    game,
+                    raw_provenance={**raw_provenance, "row_digest": digest(row), "kickoff_source": "odds_api_commence_time"},
+                )
+                resolved[game_id] = game.kickoff_utc
+                recovered.append(game_id)
+                accepted += 1
+                rejected -= 1
+                unmatched_sample[:] = [sample for sample in unmatched_sample if sample.get("game_id") != game_id]
+            if recovered and reasons.get("BBD_KICKOFF_MISSING"):
+                reasons["BBD_KICKOFF_MISSING"] = max(0, reasons["BBD_KICKOFF_MISSING"] - len(recovered))
+                if reasons["BBD_KICKOFF_MISSING"] == 0:
+                    reasons.pop("BBD_KICKOFF_MISSING", None)
+        store.state_put(
+            "NFL_AUTO_KICKOFF_RESOLUTION",
+            {"games": resolved, "attempted": attempted, "strategy": "per_game_date_v1"},
+        )
     elif pending:
         for row, _raw_provenance in pending:
             rejected += 1
