@@ -528,6 +528,28 @@ Resources:
             Method: ANY
 
 
+  MLWinnerApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: ml_winner_api.lambda_handler
+      Timeout: 60
+      MemorySize: 1024
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref SnapshotsTable
+      Events:
+        MLWinnerRequirements:
+          Type: Api
+          Properties:
+            Path: /v1/ml/winners/requirements
+            Method: GET
+        MLWinners:
+          Type: Api
+          Properties:
+            Path: /v1/ml/winners
+            Method: GET
+
   MLBV3ReadFunction:
     Type: AWS::Serverless::Function
     Properties:
