@@ -1,74 +1,57 @@
 import Link from 'next/link';
 import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
-import { RadarStrip } from '@/components/RadarStrip';
-import { LineMovementGraph } from '@/components/LineMovementGraph';
+import { GameTools } from '@/components/GameTools';
 import { findGame } from '@/lib/findGame';
-import { formatAmericanOdds, formatKickoff, impliedPercent } from '@/lib/kickoff';
+import { formatKickoff } from '@/lib/kickoff';
 import { getSportSlugForLeague } from '@/lib/sports';
-import { radarFromGame } from '@/lib/radarSignals';
 
 export default async function GameDetailPage({ params }: { params: { gameId: string } }) {
-  const { games, lineMovement, apiStatus, apiDetail } = await getApiSnapshot();
+  const { games, predictions, rankings, apiStatus, apiDetail } = await getApiSnapshot();
   const game = findGame(games, params.gameId);
+  const pred = predictions.find((row) =>
+    row.game_id === game?.id ||
+    row.game_id === game?.game_id ||
+    (row.home_team === game?.home_team && row.away_team === game?.away_team)
+  );
+  const merged = game
+    ? {
+        ...game,
+        predicted_winner: pred?.predicted_winner || (pred as { predicted_team?: string } | undefined)?.predicted_team || game.predicted_winner,
+        predicted_side: pred?.predicted_side || game.predicted_side,
+        short_explanation: pred?.short_explanation,
+        confidence: pred?.confidence_score ?? game.confidence,
+        primary_signal: pred?.primary_signal || game.primary_signal,
+        signal_score: pred?.signal_score ?? game.signal_score,
+        stability_classification: pred?.stability_classification || game.stability_classification,
+      }
+    : game;
   const start = formatKickoff(game?.start || game?.commence_time);
-  const favoriteOdds = game?.favoriteMl ?? game?.favorite_ml;
-  const implied = impliedPercent(favoriteOdds);
   const sportSlug = getSportSlugForLeague(game?.league || game?.sport_key || 'mlb');
-  const radar = radarFromGame(game || {});
+  const blob = JSON.stringify(rankings || []).toLowerCase();
+  const inOfficialParlay = Boolean(
+    game?.home_team &&
+      game?.away_team &&
+      blob.includes(game.home_team.toLowerCase()) &&
+      blob.includes(game.away_team.toLowerCase())
+  );
 
   return (
-    <main className="shell">
-      <AppHeader title="Game Detail" apiStatus={apiStatus} apiDetail={apiDetail} />
-
-      <section className="panel" style={{ marginBottom: 18 }}>
-        <div className="game-topline"><span className="league-chip">{game?.league || 'SPORT'}</span><span>{start}</span><span className="data-status">{game ? (game.status_label || 'Live') : 'Waiting'}</span></div>
-        <h2 style={{ marginBottom: 12 }}>{game?.matchup || 'Waiting on this matchup'}</h2>
-        <p className="movement">
-          {game?.favorite
-            ? `Market favorite: ${game.favorite} ${formatAmericanOdds(favoriteOdds) || 'Waiting'}${implied ? ` · ${implied}% implied` : ''}`
-            : 'Waiting for a live market favorite. InQsi is not inventing a winner.'}
-        </p>
-        <p className="movement">{game?.movement || 'This game is not on the current live board.'}</p>
-        <RadarStrip items={radar} title="On our radar" />
-        <div className="hero-actions">
-          <Link className="ghost-button" href={`/sports/${sportSlug}`} style={{ textDecoration: 'none' }}>Back to Market Board</Link>
-          <Link className="inqsi-primary" href="/parlays" style={{ textDecoration: 'none' }}>Build With This Game</Link>
-        </div>
+    <main className="inqsi-shell tool-shell game-sheet">
+      <AppHeader title={game?.matchup || 'Game'} apiStatus={apiStatus} apiDetail={apiDetail} />
+      <nav className="tool-tabs" aria-label="InQsi tools">
+        <Link className="tool-tab" href="/">Games</Link>
+        <Link className="tool-tab" href="/arbitrage-v2">ARB</Link>
+        <Link className="tool-tab" href="/parlays">3-Leg</Link>
+        <Link className="tool-tab" href="/game-leans">Leans</Link>
+        <Link className="tool-tab" href="/parlay-scanner">Scan</Link>
+      </nav>
+      <section className="game-sheet-head">
+        <small>{game?.league || game?.sport_key || 'SPORT'} · {start || 'Waiting'}</small>
+        <h2>{game?.matchup || 'Waiting on this matchup'}</h2>
+        <p className="movement">Tap Lean, ARB, 3-Leg, or Scan for this game. InQsi does not invent a winner when no prediction is published.</p>
       </section>
-
-      <section className="panel" style={{ marginBottom: 18 }}>
-        <div className="panel-header"><div><p className="eyebrow">Live Market Snapshot</p><h3>Moneyline, spread, and total</h3></div></div>
-        <div className="market-row">
-          <div><span>Favorite</span><strong>{game?.favorite || 'Waiting'}</strong><b>{formatAmericanOdds(favoriteOdds) || 'Waiting'}</b></div>
-          <div><span>Underdog</span><strong>{game?.underdog || 'Waiting'}</strong><b>{formatAmericanOdds(game?.underdogMl ?? game?.underdog_ml) || 'Waiting'}</b></div>
-          <div><span>Spread</span><strong>Line</strong><b>{game?.spread || 'Waiting'}</b></div>
-          <div><span>Total</span><strong>O/U</strong><b>{game?.total || 'Waiting'}</b></div>
-        </div>
-      </section>
-
-      <section className="status-row">
-        <article className="status-card"><span>Kickoff</span><strong>{start}</strong><p>Eastern time from the live board.</p></article>
-        <article className="status-card"><span>Favorite</span><strong>{game?.favorite || 'Waiting'}</strong><p>Market favorite from live moneyline.</p></article>
-        <article className="status-card"><span>Book Count</span><strong>{game?.bookCount || 'Waiting'}</strong><p>Market sources represented.</p></article>
-        <article className="status-card"><span>Risk</span><strong>{game?.risk || 'Waiting'}</strong><p>{game?.confidence || 'Waiting on live board data.'}</p></article>
-      </section>
-
-      <section className="content-grid" style={{ marginTop: 18 }}>
-        <div className="panel">
-          <div className="panel-header"><div><p className="eyebrow">Market Signals</p><h3>On our radar</h3></div></div>
-          <RadarStrip items={radar} />
-          <p className="movement">{game?.marketNote ?? 'Signals reflect market movement only. They do not guarantee outcomes.'}</p>
-        </div>
-        <aside className="panel">
-          <p className="eyebrow">Build Gate</p>
-          <h3>Eligibility review</h3>
-          <p className="movement">Eligible only if the rest of the slate preserves anchor discipline and avoids forced confidence.</p>
-          <Link className="inqsi-primary" href="/parlays" style={{ textDecoration: 'none', width: '100%' }}>Open Parlays</Link>
-        </aside>
-      </section>
-
-      <LineMovementGraph data={lineMovement} />
+      <GameTools game={merged} sportSlug={sportSlug} inOfficialParlay={inOfficialParlay} />
     </main>
   );
 }
