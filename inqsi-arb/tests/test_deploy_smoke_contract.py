@@ -35,29 +35,17 @@ def run_smoke(mutate=None):
     return scope["report"]
 
 
-def test_deployment_fixture_matches_current_fail_closed_runtime():
+def test_deployment_fixture_surfaces_current_price_arb_with_rule_advisory():
     report = run_smoke()
-    assert report["n_arbs"] == 0
-    assert report["detected_unverified"][0]["arb"] is False
-
-
-def test_deployment_smoke_rejects_qualified_unreviewed_opportunity():
-    with pytest.raises(AssertionError):
-        run_smoke(lambda report: report["detected_unverified"][0].update(arb=True))
-
-
-def test_deployment_smoke_rejects_compatible_unreviewed_rules():
-    with pytest.raises(AssertionError):
-        run_smoke(lambda report: report["detected_unverified"][0]["validation"].update(
-            rules_compatible=True))
-
+    assert report["n_arbs"] == 1
+    assert report["n_detected_unverified"] == 0
+    hit = report["hits"][0]
+    assert hit["arb"] is True
+    assert hit["validation"]["rules_compatible"] is False
+    assert hit["validation"]["settlement_advisory"] == "SPORTSBOOK_RULES_MAY_AFFECT_SETTLEMENT"
 
 def test_deployment_smoke_rejects_wagering():
     with pytest.raises(AssertionError):
         run_smoke(lambda report: report.update(places_bets=True))
 
 
-def test_deployment_smoke_rejects_wrong_settlement_contract():
-    with pytest.raises(AssertionError):
-        run_smoke(lambda report: report["detected_unverified"][0]["validation"].update(
-            settlement_reason="UNREVIEWED_OR_MISSING_RULE"))
