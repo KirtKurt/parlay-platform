@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { AppHeader } from '@/components/AppHeader';
 
 export const metadata = {
-  title: 'My Slips | InQsi',
+  title: 'My Slips',
   description: 'View, track, save, and manage InQsi slips.',
   alternates: { canonical: '/account/slips' }
 };
