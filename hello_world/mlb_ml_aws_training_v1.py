@@ -2737,6 +2737,28 @@ class TrainingService:
         movement_coverage = _movement_coverage(accepted)
 
         def save_continuity_wait(continuity: Mapping[str, Any]) -> Dict[str, Any]:
+            # Incomplete R8 input permits readiness/status only. Full successor
+            # fitting, freezing and qualification remain after both gates.
+            successor_development = {
+                "ok": False, "status": "STORE_ADAPTER_UNAVAILABLE",
+                "statusOnly": True, "trainingReady": False,
+            }
+            successor_factory = getattr(self.store, "successor_repository", None)
+            if callable(successor_factory):
+                try:
+                    import mlb_successor_runtime_v1 as successor
+                    successor_development = successor.refresh_development_status(
+                        successor_factory(), accepted, self.now(),
+                        {"gitSha": self.config.deployment_git_sha,
+                         "templateSha256": self.config.deployment_template_sha256},
+                        continuity,
+                    )
+                except Exception as exc:
+                    successor_development = {
+                        "ok": False, "status": "SUCCESSOR_STATUS_REFRESH_FAILED",
+                        "statusOnly": True, "trainingReady": False,
+                        "error": f"{type(exc).__name__}:{exc}",
+                    }
             counts = {
                 name: int((manifest["partitions"][name]).get("rowCount") or 0)
                 for name in experiment.PARTITION_ORDER
@@ -2745,6 +2767,7 @@ class TrainingService:
                 {
                     "ok": False,
                     "status": "CANONICAL_SLATE_CONTINUITY_BLOCKED",
+                    "successorDevelopment": successor_development,
                     "executionMode": "training",
                     "partitionCounts": counts,
                     "acceptedRowCount": filtered["acceptedRowCount"],

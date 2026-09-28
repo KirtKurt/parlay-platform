@@ -248,7 +248,7 @@ jobs:
           python -m pytest -q tests/unit/test_mlb_deployed_audit_binding.py tests/unit/test_mlb_security_setup.py
           python -m pytest -q tests/unit/test_mlb_research_v1.py
           python -m pytest -q tests/unit/test_mlb_research_lambda_packaging.py
-          python -m pytest -q tests/unit/test_mlb_successor.py tests/unit/test_mlb_statsapi_starter_context.py tests/unit/test_mlb_statsapi_team_context.py
+          python -m pytest -q tests/unit/test_mlb_successor.py tests/unit/test_mlb_successor_training_independence.py tests/unit/test_mlb_statsapi_starter_context.py tests/unit/test_mlb_statsapi_team_context.py
 
       - name: Compile deployment and acceptance tooling
         run: |

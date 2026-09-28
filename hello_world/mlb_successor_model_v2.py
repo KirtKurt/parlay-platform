@@ -249,7 +249,7 @@ def evaluate(rows, candidate):
     return metrics.evaluate(scored, "probability", "homeWon", baseline_probability_key="marketHomeProbability")
 
 
-def development(rows):
+def development(rows, *, readiness_only=False):
     ordered = sorted(rows, key=lambda r: (r["slateDateEt"], r["officialGamePk"]))
     if len({(r["slateDateEt"], r["officialGamePk"]) for r in rows}) != len(rows):
         raise ValueError("duplicate development identity")
@@ -286,7 +286,7 @@ def development(rows):
               "observedTeamCounts": team_observed,
               "counts": counts, "observedStarterCounts": observed, "blockers": blockers,
               "protocol": PROTOCOL, "productionAuthorityChanged": False}
-    if blockers:
+    if blockers or readiness_only:
         return report
     candidates = []
     for penalty in PROTOCOL["penalties"]:
