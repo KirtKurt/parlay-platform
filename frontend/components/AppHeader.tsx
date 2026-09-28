@@ -8,23 +8,24 @@ export type AppHeaderProps = {
 };
 
 const menuLinks = [
-  { href: '/', label: 'Home' },
-  { href: '/sports', label: 'Markets' },
+  { href: '/', label: 'Games' },
+  { href: '/game-leans', label: 'Leans' },
   { href: '/parlays', label: 'Parlays' },
   { href: '/parlay-scanner', label: 'Scan' },
-  { href: '/arbitrage-v2', label: 'Arbitrage' },
+  { href: '/arbitrage-v2', label: 'ARB' },
   { href: '/arbitrage-v2/calculator', label: 'Calculator' },
+  { href: '/sports', label: 'Markets' },
   { href: '/account', label: 'Account' },
   { href: '/login', label: 'Login' },
   { href: '/register', label: 'Start Membership' }
 ];
 
 const bottomLinks = [
-  { href: '/', label: 'Home', icon: 'H' },
-  { href: '/sports', label: 'Markets', icon: 'M' },
+  { href: '/', label: 'Games', icon: 'G' },
   { href: '/parlays', label: 'Parlays', icon: 'P' },
-  { href: '/parlay-scanner', label: 'Scan', icon: 'S' },
-  { href: '/account', label: 'Account', icon: 'A' }
+  { href: '/game-leans', label: 'Leans', icon: 'L' },
+  { href: '/arbitrage-v2', label: 'ARB', icon: 'A' },
+  { href: '/parlay-scanner', label: 'Scan', icon: 'S' }
 ];
 
 function readableStatus(status?: string) {
