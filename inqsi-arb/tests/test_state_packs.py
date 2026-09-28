@@ -434,12 +434,12 @@ def test_store_all_reports_missing_active_snapshot_head(monkeypatch):
 
 def test_deployed_snapshot_freshness_covers_full_collector_rotation():
     template = (ROOT / "template.yaml").read_text(encoding="utf-8")
-    assert "ARB_COLLECT_MAX_SPORTS: '6'" in template
+    assert "ARB_COLLECT_MAX_SPORTS: '20'" in template
     assert "ARB_COLLECT_REGIONS: !Ref ArbRegions" in template
-    assert "ARB_QUOTE_FRESH_SECONDS: '3600'" in template
-    assert "ARB_MAX_QUOTE_AGE_SECONDS: '3600'" in template
-    # 100 active sports / 6 per two-minute tick rounds up to 17 ticks.
-    assert 3600 >= 17 * 120
+    assert "ARB_QUOTE_FRESH_SECONDS: '300'" in template
+    assert "ARB_MAX_QUOTE_AGE_SECONDS: '300'" in template
+    # 100 active sports / 20 per one-minute tick completes a rotation in 5 ticks.
+    assert 300 >= 5 * 60
 
 
 def test_collector_regions_follow_default_scan_regions(monkeypatch):
