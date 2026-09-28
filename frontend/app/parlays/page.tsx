@@ -1,9 +1,16 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
 import { formatKickoff } from '@/lib/kickoff';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = {
+  title: 'Official Hourly Parlays',
+  description: 'Official 3-leg hourly parlays built from live market structure. Combined odds stay hidden until a real price is published.',
+  alternates: { canonical: '/parlays' }
+};
 
 function isSampleParlay(row: any) {
   const blob = JSON.stringify(row || {}).toLowerCase();

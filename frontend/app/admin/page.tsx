@@ -6,7 +6,7 @@ import { adminAuditEvents, adminFeatureFlags, adminMembers, adminSeoPages, admin
 import { hasInternalSession, isInternalPortalEnabled } from '@/lib/internal-access';
 
 export const metadata: Metadata = {
-  title: 'Internal Admin | InQsi',
+  title: 'Internal Admin',
   robots: { index: false, follow: false }
 };
 

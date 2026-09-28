@@ -38,7 +38,7 @@ const tools = [
 ];
 
 export const metadata: Metadata = {
-  title: 'Internal AI Tools | InQsi',
+  title: 'Internal AI Tools',
   robots: { index: false, follow: false }
 };
 
