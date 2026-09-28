@@ -222,6 +222,17 @@ export function SlipScannerClient() {
         oddsAmerican: quote.odds,
         line: quote.line,
         matchup: game?.matchup || '',
+        marketSnapshots: game ? game.books.map((book) => {
+          const pricedDraft = { ...leg, book: book.book };
+          const priced = quoteFor(game, pricedDraft);
+          return {
+            book: book.book,
+            oddsAmerican: priced.odds,
+            line: priced.line,
+            observedAt: new Date().toISOString(),
+            source: 'LIVE_MARKET_BOARD',
+          };
+        }).filter((snapshot) => snapshot.oddsAmerican && snapshot.oddsAmerican !== 'Waiting') : [],
       };
     }).filter((leg) => leg.sport && leg.selection && leg.book);
     if (!payload.length) {
