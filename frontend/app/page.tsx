@@ -2,7 +2,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { AppHeader } from '@/components/AppHeader';
 import { GameCard } from '@/components/GameCard';
+import { KickoffLabel } from '@/components/KickoffLabel';
 import { getApiSnapshot } from '@/lib/api';
+import { visitorTimeZone } from '@/lib/visitorTimeZone';
 import { sports as sportNav } from '@/lib/sports';
 
 export const dynamic = 'force-dynamic';
@@ -33,7 +35,7 @@ export default async function Home() {
   const { games, apiStatus, apiDetail } = await getApiSnapshot();
   const previewGames = games.slice(0, 6);
   const hasMarketData = previewGames.length > 0;
-  const nowLabel = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date());
+  const serverTimeZone = visitorTimeZone();
 
   return (
     <main className="inqsi-shell">
@@ -64,7 +66,7 @@ export default async function Home() {
       <section className="status-row">
         <article className="status-card"><span>Active Games</span><strong>{games.length}</strong><p>Full board count. Home preview shows six.</p></article>
         <article className="status-card"><span>Sports Live</span><strong>{new Set(games.map((g) => g.sport_key)).size}</strong><p>Sports with visible board data.</p></article>
-        <article className="status-card"><span>Fresh Pull</span><strong>{nowLabel}</strong><p>Frontend render time.</p></article>
+        <article className="status-card"><span>Fresh Pull</span><strong><KickoffLabel mode="clock" serverTimeZone={serverTimeZone} /></strong><p>Frontend render time in your timezone.</p></article>
         <article className="status-card"><span>Status</span><strong>{apiStatus === 'CONNECTED' ? 'Live' : 'Syncing'}</strong><p>{apiDetail}</p></article>
       </section>
 

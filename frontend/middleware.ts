@@ -12,6 +12,9 @@ export async function middleware(request: NextRequest) {
     requestHeaders.set(key, value);
   }
 
+  const incomingZone = request.headers.get('x-vercel-ip-timezone');
+  if (incomingZone) requestHeaders.set('x-inqsi-timezone', incomingZone);
+
   const geo = `${request.geo?.country || ''}-${request.geo?.region || ''}`.replace(/-$/, '');
   const blocked = flags.blockedRegions.some((code) => {
     const needle = code.toUpperCase();
@@ -40,6 +43,7 @@ export async function middleware(request: NextRequest) {
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   Object.entries(flagHeaders(flags)).forEach(([key, value]) => response.headers.set(key, value));
+  if (incomingZone) response.headers.set('x-inqsi-timezone', incomingZone);
   if (request.nextUrl.pathname.startsWith('/v1/inqsi') || request.nextUrl.pathname.startsWith('/arbitrage-v2')) {
     response.headers.set('cache-control', 'no-store');
   }

@@ -3,15 +3,18 @@ import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
 import { RadarStrip } from '@/components/RadarStrip';
 import { LineMovementGraph } from '@/components/LineMovementGraph';
+import { KickoffLabel } from '@/components/KickoffLabel';
 import { findGame } from '@/lib/findGame';
-import { formatAmericanOdds, formatKickoff, impliedPercent } from '@/lib/kickoff';
+import { formatAmericanOdds, impliedPercent } from '@/lib/kickoff';
+import { visitorTimeZone } from '@/lib/visitorTimeZone';
 import { getSportSlugForLeague } from '@/lib/sports';
 import { radarFromGame } from '@/lib/radarSignals';
 
 export default async function GameDetailPage({ params }: { params: { gameId: string } }) {
   const { games, lineMovement, apiStatus, apiDetail } = await getApiSnapshot();
   const game = findGame(games, params.gameId);
-  const start = formatKickoff(game?.start || game?.commence_time);
+  const serverTimeZone = visitorTimeZone();
+  const kickoffValue = game?.start || game?.commence_time;
   const favoriteOdds = game?.favoriteMl ?? game?.favorite_ml;
   const implied = impliedPercent(favoriteOdds);
   const sportSlug = getSportSlugForLeague(game?.league || game?.sport_key || 'mlb');
@@ -22,7 +25,7 @@ export default async function GameDetailPage({ params }: { params: { gameId: str
       <AppHeader title="Game Detail" apiStatus={apiStatus} apiDetail={apiDetail} />
 
       <section className="panel" style={{ marginBottom: 18 }}>
-        <div className="game-topline"><span className="league-chip">{game?.league || 'SPORT'}</span><span>{start}</span><span className="data-status">{game ? (game.status_label || 'Live') : 'Waiting'}</span></div>
+        <div className="game-topline"><span className="league-chip">{game?.league || 'SPORT'}</span><KickoffLabel value={kickoffValue} serverTimeZone={serverTimeZone} /><span className="data-status">{game ? (game.status_label || 'Live') : 'Waiting'}</span></div>
         <h2 style={{ marginBottom: 12 }}>{game?.matchup || 'Waiting on this matchup'}</h2>
         <p className="movement">
           {game?.favorite
@@ -48,7 +51,7 @@ export default async function GameDetailPage({ params }: { params: { gameId: str
       </section>
 
       <section className="status-row">
-        <article className="status-card"><span>Kickoff</span><strong>{start}</strong><p>Eastern time from the live board.</p></article>
+        <article className="status-card"><span>Kickoff</span><strong><KickoffLabel value={kickoffValue} serverTimeZone={serverTimeZone} /></strong><p>Shown in your local timezone from the live board.</p></article>
         <article className="status-card"><span>Favorite</span><strong>{game?.favorite || 'Waiting'}</strong><p>Market favorite from live moneyline.</p></article>
         <article className="status-card"><span>Book Count</span><strong>{game?.bookCount || 'Waiting'}</strong><p>Market sources represented.</p></article>
         <article className="status-card"><span>Risk</span><strong>{game?.risk || 'Waiting'}</strong><p>{game?.confidence || 'Waiting on live board data.'}</p></article>

@@ -67,3 +67,24 @@
   }
   .market-row { grid-template-columns: repeat(2,1fr) !important; }
 }
+
+.game-topline,
+.rank-head {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.kickoff-label {
+  font-weight: 800;
+  color: var(--text, #eef4ff);
+  white-space: nowrap;
+}
+@media (max-width: 680px) {
+  .game-topline {
+    align-items: flex-start;
+  }
+  .kickoff-label {
+    font-size: 0.92rem;
+    order: 3;
+    flex: 1 0 100%;
+  }
+}
