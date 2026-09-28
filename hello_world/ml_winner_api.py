@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import boto3
 from boto3.dynamodb.conditions import Key
 
-from ml_winner_engine import all_sport_winner_requirements, score_rule_based_winner_candidate
+from ml_winner_engine import all_sport_winner_requirements, score_rule_based_winner_candidate, slate_expected_miss_layer
 
 
 dynamodb = boto3.resource("dynamodb")
@@ -15,7 +15,7 @@ SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
 snapshots_tbl = dynamodb.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
 
 PANEL_BOOKS = ["fanatics", "draftkings", "fanduel", "betmgm", "caesars"]
-SUPPORTED_SNAPSHOT_SPORTS = {"mlb", "nba", "ncaam"}
+SUPPORTED_SNAPSHOT_SPORTS = {"mlb", "nba", "ncaam", "nhl"}
 
 
 def _json_default(value: Any) -> Any:
