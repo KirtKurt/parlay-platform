@@ -780,7 +780,10 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
             if math_arb:
                 settlement_state_reason = settlement_state_reason or "SETTLEMENT_STATE_NOT_STRICT"
             executable = False
-    # Product contract: surface a valid executable current-price arbitrage even\n    # when sportsbook house-rule metadata is unknown. Rule metadata remains an\n    # advisory disclosure; it is not a qualification gate.\n    is_arb = bool(math_arb and executable)
+    # Product contract: surface a valid executable current-price arbitrage even
+    # when sportsbook house-rule metadata is unknown. Rule metadata remains an
+    # advisory disclosure; it is not a qualification gate.
+    is_arb = bool(math_arb and executable)
     settlement_proof_failed = bool(
         settlement_states is not None and settlement_states.get("ok") is False
     )
