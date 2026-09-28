@@ -29,24 +29,16 @@ export default async function Home() {
     <main className="inqsi-shell tool-shell">
       <AppHeader eyebrow="InQsi" title="Tool Workspace" apiStatus={apiStatus} apiDetail={apiDetail} />
 
-      <nav className="tool-tabs" aria-label="InQsi tools">
-        <Link className="tool-tab on" href="/">Games</Link>
-        <Link className="tool-tab" href="/arbitrage-v2">ARB</Link>
-        <Link className="tool-tab" href="/parlays">3-Leg</Link>
-        <Link className="tool-tab" href="/game-leans">Leans</Link>
-        <Link className="tool-tab" href="/parlay-scanner">Scan</Link>
-      </nav>
-
       <nav className="inqsi-tabs" aria-label="Sports">
         <Link href="/">All</Link>
         {sportNav.map((sport) => <Link key={sport.slug} href={`/sports/${sport.slug}`}>{sport.label}</Link>)}
       </nav>
 
       <section className="tool-kpis">
-        <Link href="/arbitrage-v2"><b>ARB</b><span>Live books and stake math</span></Link>
-        <Link href="/parlays"><b>{official.length || 'Waiting'}</b><span>Official 3-leg slips</span></Link>
-        <Link href="/game-leans"><b>{predictions.length || leans.length || 'Waiting'}</b><span>Game predictions</span></Link>
-        <Link href="/parlay-scanner"><b>Scan</b><span>Review a 3-leg slip</span></Link>
+        <Link href="/parlay-scanner"><b>Build My Slip</b><span>Choose live games and automatically compare quoted books</span></Link>
+        <Link href="/parlays"><b>{official.length || '—'}</b><span>Published 3-leg slips</span></Link>
+        <Link href="/game-leans"><b>{predictions.length || leans.length || '—'}</b><span>Published game leans</span></Link>
+        <Link href="/arbitrage-v2"><b>ARB</b><span>Live arbitrage and stake math</span></Link>
       </section>
 
       {official.length > 0 && (
@@ -104,9 +96,9 @@ export default async function Home() {
         }) : (
           <article className="tool-row">
             <div>
-              <small>SYNCING</small>
-              <strong>Waiting on live tool data</strong>
-              <p>InQsi does not invent winners or parlay prices while the board is empty.</p>
+              <small>LIVE BOARD SYNCING</small>
+              <strong>Verified games are loading</strong>
+              <p>We’ll show games as soon as current market data is available. InQsi never substitutes sample picks or invented prices.</p>
             </div>
           </article>
         )}
