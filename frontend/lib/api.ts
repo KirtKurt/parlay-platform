@@ -30,6 +30,8 @@ export type InqsiGame = {
   underdogMl?: number | string;
   underdog_ml?: number | string;
   bookCount?: number;
+  predicted_winner?: string;
+  predicted_side?: string;
 };
 
 export type InqsiPrediction = {
@@ -154,6 +156,14 @@ function formatAmerican(value: any): string {
   return String(value);
 }
 
+function slugPart(value?: string | null) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function gameSlug(sport: string, away: string, home: string) {
+  return `${slugPart(sport)}-${slugPart(away)}-${slugPart(home)}`;
+}
+
 function formatSpreadFromBooks(books: any[] | undefined, favorite: string): string {
   const firstSpread = (books || []).map((b) => b?.spread).find(Boolean);
   if (!firstSpread) return 'Waiting';
@@ -193,7 +203,8 @@ function normalizeMarketBoardGame(raw: any, sport: string): InqsiGame {
   const underdog = favorite === home ? away : home;
   const favoriteMl = favorite === home ? homeMl : awayMl;
   const underdogMl = favorite === home ? awayMl : homeMl;
-  const id = raw.gameId || raw.game_id || raw.id || `${sport}-${away}-${home}`.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const id = gameSlug(sport, away, home);
+  const books = Number(raw.bookCount || (raw.books || []).length || 0);
 
   return {
     id,
@@ -212,29 +223,30 @@ function normalizeMarketBoardGame(raw: any, sport: string): InqsiGame {
     underdog_ml: underdogMl,
     spread: formatSpreadFromBooks(raw.books, favorite),
     total: formatTotalFromBooks(raw.books),
-    movement: `${raw.bookCount || 0} books · active-slate market board`,
-    signals: ['ACTIVE_SLATE', 'MARKET_BOARD'],
+    movement: books ? `Live board · ${books} books quoting` : 'Live board quotes',
+    signals: books ? ['ACTIVE_SLATE'] : ['WAITING'],
     risk: 'MODERATE',
     confidence: 'Market data live',
-    marketNote: book ? `Primary book shown: ${book.book}` : 'Market board active; books pending.',
+    marketNote: book ? `Primary book shown: ${book.book}` : 'Waiting on a primary book.',
     commence_time: raw.commenceTime || raw.commence_time,
-    primary_signal: 'ACTIVE_SLATE',
+    primary_signal: books ? 'ACTIVE_SLATE' : 'WAITING',
     status_label: 'Live',
-    bookCount: raw.bookCount || 0
+    bookCount: books
   };
 }
 
 function normalizeLegacyGame(raw: any): InqsiGame {
   const home = raw.home_team || raw.homeTeam || 'Home';
   const away = raw.away_team || raw.awayTeam || 'Away';
-  const id = raw.id || raw.game_id || `${raw.sport_key || 'sport'}-${away}-${home}`.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const sport = raw.sport_key || raw.league || 'sport';
+  const id = gameSlug(sport, away, home);
   const favorite = raw.favorite || raw.market_direction?.team || home;
   const underdog = raw.underdog || (favorite === home ? away : home);
 
   return {
     id,
-    game_id: raw.game_id || id,
-    sport_key: raw.sport_key || raw.league || 'sport',
+    game_id: id,
+    sport_key: sport,
     league: raw.league || raw.sport_key || 'SPORT',
     matchup: raw.matchup || `${away} @ ${home}`,
     start: raw.start || raw.commence_time || 'TBD',
@@ -261,9 +273,15 @@ function normalizeLegacyGame(raw: any): InqsiGame {
 
 function gamesFromMarketBoard(boardPayload: any): InqsiGame[] {
   const boards = Array.isArray(boardPayload?.boards) ? boardPayload.boards : [];
-  return boards.flatMap((board: any) => {
+  const rows = boards.flatMap((board: any) => {
     const sport = board?.sport || providerToInqisSport[String(board?.providerSportKey || '')] || 'sport';
     return (board?.games || []).map((game: any) => normalizeMarketBoardGame(game, sport));
+  });
+  const seen = new Set<string>();
+  return rows.filter((game: InqsiGame) => {
+    if (!game.id || seen.has(game.id)) return false;
+    seen.add(game.id);
+    return true;
   });
 }
 
@@ -281,18 +299,25 @@ export async function getInqsiSnapshot(sportKey = process.env.NEXT_PUBLIC_DEFAUL
 
   const marketBoardGames = gamesFromMarketBoard(marketBoardPayload);
   const legacyGames = (livePayload.games || []).map(normalizeLegacyGame) as InqsiGame[];
-  const games = marketBoardGames.length ? marketBoardGames : legacyGames;
   const predictions = (predictionsPayload.predictions || []) as InqsiPrediction[];
+  const games = (marketBoardGames.length ? marketBoardGames : legacyGames).map((game) => {
+    const pred = predictions.find((row) =>
+      (row.home_team && row.away_team && row.home_team === game.home_team && row.away_team === game.away_team) ||
+      row.game_id === game.id ||
+      row.game_id === game.game_id
+    );
+    return pred ? { ...game, predicted_winner: pred.predicted_winner, predicted_side: pred.predicted_side } : game;
+  });
   const rankings = parlayPayload.rankings || parlayPayload.combinations || parlayPayload.top_rankings || [];
   const marketFetch = marketBoardPayload.__inqsiFetchMeta || {};
 
   return {
     apiStatus: games.length || predictions.length || parlayPayload?.built ? 'CONNECTED' : marketFetch.ok === false ? 'FAILED' : 'WAITING',
     apiDetail: marketBoardGames.length
-      ? `Connected to InQsi active-slate market board via ${marketFetch.target || '/v1/inqsi/markets/board'}.`
+      ? 'Live board connected'
       : marketFetch.ok === false
-        ? `Market board not connected. Tried: ${(marketFetch.attempted || []).join(', ')}`
-        : 'Connected to InQsi API. Waiting for active-slate market board games.',
+        ? 'Live board unavailable'
+        : 'Waiting on live board games',
     sports: defaultSports,
     selectedSport,
     games,
