@@ -39,6 +39,16 @@ function formatOdds(value: number | string | undefined) {
   return String(value);
 }
 
+function customerMovement(game: GameLike) {
+  const raw = String(game.movement || game.what_looks_wrong || '');
+  if (!raw || /active[\s_]?slate/i.test(raw) || raw.toUpperCase() === 'ACTIVE_SLATE') {
+    return game.bookCount
+      ? `Live board · ${game.bookCount} books quoting`
+      : 'Waiting on verified market movement.';
+  }
+  return raw;
+}
+
 export function GameCard({ game }: { game: GameLike }) {
   const league = game.league || game.sport_key || 'SPORT';
   const start = formatKickoff(game.start || game.commence_time);
@@ -47,7 +57,11 @@ export function GameCard({ game }: { game: GameLike }) {
   const favoriteOdds = game.favoriteMl ?? game.favorite_ml;
   const implied = impliedPercent(favoriteOdds);
   const href = gamePath({ ...game, matchup });
-  const radar = radarFromGame(game).slice(0, 4);
+  const radar = radarFromGame({
+    ...game,
+    signals: (game.signals || []).filter((s) => String(s).toUpperCase() !== 'ACTIVE_SLATE'),
+    primary_signal: game.primary_signal === 'ACTIVE_SLATE' ? 'MARKET_BOARD' : game.primary_signal
+  }).slice(0, 4);
 
   return (
     <article className="game-card">
@@ -84,7 +98,7 @@ export function GameCard({ game }: { game: GameLike }) {
           <b>{game.total ?? 'Waiting'}</b>
         </div>
       </div>
-      <p className="movement">{game.movement || 'Waiting on verified market movement.'}</p>
+      <p className="movement">{customerMovement(game)}</p>
       <RadarStrip items={radar} title="On our radar" />
       {game.marketNote && <p className="movement">{game.marketNote}</p>}
     </article>
