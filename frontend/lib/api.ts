@@ -203,7 +203,7 @@ function normalizeMarketBoardGame(raw: any, sport: string): InqsiGame {
   const underdog = favorite === home ? away : home;
   const favoriteMl = favorite === home ? homeMl : awayMl;
   const underdogMl = favorite === home ? awayMl : homeMl;
-  const id = gameSlug(sport, away, home);
+  const id = raw.gameId || gameSlug(sport, away, home);
   const books = Number(raw.bookCount || (raw.books || []).length || 0);
 
   return {
@@ -224,12 +224,12 @@ function normalizeMarketBoardGame(raw: any, sport: string): InqsiGame {
     spread: formatSpreadFromBooks(raw.books, favorite),
     total: formatTotalFromBooks(raw.books),
     movement: books ? `Live board · ${books} books quoting` : 'Live board quotes',
-    signals: books ? ['ACTIVE_SLATE'] : ['WAITING'],
+    signals: books ? ['MARKET_BOARD'] : ['WAITING'],
     risk: 'MODERATE',
     confidence: 'Market data live',
     marketNote: book ? `Primary book shown: ${book.book}` : 'Waiting on a primary book.',
     commence_time: raw.commenceTime || raw.commence_time,
-    primary_signal: books ? 'ACTIVE_SLATE' : 'WAITING',
+    primary_signal: books ? 'MARKET_BOARD' : 'WAITING',
     status_label: 'Live',
     bookCount: books
   };
@@ -239,7 +239,7 @@ function normalizeLegacyGame(raw: any): InqsiGame {
   const home = raw.home_team || raw.homeTeam || 'Home';
   const away = raw.away_team || raw.awayTeam || 'Away';
   const sport = raw.sport_key || raw.league || 'sport';
-  const id = gameSlug(sport, away, home);
+  const id = raw.game_id || raw.id || gameSlug(sport, away, home);
   const favorite = raw.favorite || raw.market_direction?.team || home;
   const underdog = raw.underdog || (favorite === home ? away : home);
 
@@ -257,13 +257,13 @@ function normalizeLegacyGame(raw: any): InqsiGame {
     spread: String(raw.spread ?? raw.line ?? 'Waiting'),
     total: String(raw.total ?? raw.over_under ?? 'Waiting'),
     movement: raw.movement || raw.what_looks_wrong || raw.status_label || 'Waiting on verified market movement.',
-    signals: Array.isArray(raw.signals) ? raw.signals : raw.primary_signal ? [raw.primary_signal] : ['WAITING'],
+    signals: Array.isArray(raw.signals) ? raw.signals.filter((s: string) => String(s).toUpperCase() !== 'ACTIVE_SLATE') : ['WAITING'],
     risk: raw.risk || raw.stability_classification || 'MODERATE',
     confidence: raw.confidence || raw.status_label || 'Working on it',
     marketNote: raw.marketNote || raw.short_explanation,
     commence_time: raw.commence_time,
     signal_score: raw.signal_score,
-    primary_signal: raw.primary_signal,
+    primary_signal: raw.primary_signal === 'ACTIVE_SLATE' ? 'MARKET_BOARD' : raw.primary_signal,
     stability_classification: raw.stability_classification,
     status_label: raw.status_label,
     what_looks_wrong: raw.what_looks_wrong,
@@ -287,7 +287,7 @@ function gamesFromMarketBoard(boardPayload: any): InqsiGame[] {
 
 function isSampleParlay(row: any) {
   const blob = JSON.stringify(row || {}).toLowerCase();
-  return blob.includes('+342') || blob.includes('"342"') || blob.includes('confidence":82') || blob.includes('confidence":76') || blob.includes('confidence":70') || blob.includes('celtics') || blob.includes('thunder') || blob.includes('sample');
+  return blob.includes('+342') || blob.includes('"342"') || blob.includes('confidence":82') || blob.includes('confidence":76') || blob.includes('confidence":70') || blob.includes('celtics') || blob.includes('thunder') || blob.includes('dodgers') || blob.includes('sample') || blob.includes('highest confidence');
 }
 
 export async function getInqsiSnapshot(sportKey = process.env.NEXT_PUBLIC_DEFAULT_SPORT || 'nfl'): Promise<InqsiSnapshot> {
@@ -315,6 +315,8 @@ export async function getInqsiSnapshot(sportKey = process.env.NEXT_PUBLIC_DEFAUL
   });
   const rankings = (parlayPayload.rankings || parlayPayload.combinations || parlayPayload.top_rankings || []).filter((row: any) => !isSampleParlay(row));
   const marketFetch = marketBoardPayload.__inqsiFetchMeta || {};
+  const rawMovement = livePayload.lineMovement || livePayload.line_movement || [];
+  const lineMovement = Array.isArray(rawMovement) ? rawMovement.filter((point: any) => !String(point?.time || '').includes('BUF') && !String(JSON.stringify(point)).includes('"bufMoneyline":-154')) : [];
 
   return {
     apiStatus: games.length || predictions.length || parlayPayload?.built ? 'CONNECTED' : marketFetch.ok === false ? 'FAILED' : 'WAITING',
@@ -331,7 +333,7 @@ export async function getInqsiSnapshot(sportKey = process.env.NEXT_PUBLIC_DEFAUL
     liveMarket: marketBoardPayload,
     alerts: alertsPayload.alerts || [],
     performance: performancePayload,
-    lineMovement: livePayload.lineMovement || livePayload.line_movement || [],
+    lineMovement,
     rankings
   };
 }
