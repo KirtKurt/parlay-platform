@@ -1,114 +1,124 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { formatAmericanOdds, formatKickoff } from '@/lib/kickoff';
 
 type BookQuote = {
   book: string;
-  moneyline?: { home?: number; away?: number };
-  spread?: { home_point?: number; home_price?: number; away_point?: number; away_price?: number };
-  total?: { over_point?: number; over_price?: number; under_point?: number; under_price?: number };
+  homeMl?: number;
+  awayMl?: number;
+  homeSpread?: number;
+  awaySpread?: number;
+  homeSpreadPrice?: number;
+  awaySpreadPrice?: number;
+  totalPoint?: number;
+  overPrice?: number;
+  underPrice?: number;
 };
 
 type BoardGame = {
-  id: string;
+  key: string;
   sport: string;
   away: string;
   home: string;
-  start?: string;
+  matchup: string;
   books: BookQuote[];
 };
 
 type LegDraft = {
   sport: string;
-  gameId: string;
-  market: 'moneyline' | 'spread' | 'total' | '';
-  side: string;
+  gameKey: string;
+  market: string;
+  selection: string;
   book: string;
 };
 
-const emptyLeg = (): LegDraft => ({ sport: '', gameId: '', market: '', side: '', book: '' });
+const emptyLeg: LegDraft = { sport: '', gameKey: '', market: 'moneyline', selection: '', book: '' };
+const markets = [
+  { value: 'moneyline', label: 'Moneyline' },
+  { value: 'spread', label: 'Spread' },
+  { value: 'total', label: 'Total' },
+];
 
-function unique(values: string[]) {
-  return Array.from(new Set(values.filter(Boolean)));
+function numberOrUndef(value: unknown) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function formatAmerican(value?: number) {
+  if (!Number.isFinite(value)) return 'Waiting';
+  return Number(value) > 0 ? `+${value}` : String(value);
 }
 
 function parseBoard(payload: any): BoardGame[] {
   const boards = Array.isArray(payload?.boards) ? payload.boards : [];
-  const games: BoardGame[] = [];
-  for (const board of boards) {
-    const sport = String(board?.sport || '').toUpperCase();
-    for (const raw of board?.games || []) {
-      const away = String(raw.awayTeam || raw.away_team || '');
-      const home = String(raw.homeTeam || raw.home_team || '');
-      if (!away || !home) continue;
-      games.push({
-        id: `${sport}-${away}-${home}`.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+  return boards.flatMap((board: any) => {
+    const sport = String(board?.sport || board?.providerSportKey || 'sport').toUpperCase();
+    return (board?.games || []).map((game: any) => {
+      const away = String(game.awayTeam || game.away_team || 'Away');
+      const home = String(game.homeTeam || game.home_team || 'Home');
+      const books: BookQuote[] = (game.books || []).map((book: any) => ({
+        book: String(book.book || book.bookmaker || 'Book'),
+        homeMl: numberOrUndef(book?.moneyline?.home),
+        awayMl: numberOrUndef(book?.moneyline?.away),
+        homeSpread: numberOrUndef(book?.spread?.home_point),
+        awaySpread: numberOrUndef(book?.spread?.away_point),
+        homeSpreadPrice: numberOrUndef(book?.spread?.home_price),
+        awaySpreadPrice: numberOrUndef(book?.spread?.away_price),
+        totalPoint: numberOrUndef(book?.total?.over_point ?? book?.total?.point),
+        overPrice: numberOrUndef(book?.total?.over_price),
+        underPrice: numberOrUndef(book?.total?.under_price),
+      }));
+      return {
+        key: `${sport}|${away}|${home}`,
         sport,
         away,
         home,
-        start: raw.commenceTime || raw.commence_time,
-        books: Array.isArray(raw.books) ? raw.books : [],
-      });
-    }
+        matchup: `${away} @ ${home}`,
+        books,
+      } as BoardGame;
+    });
+  }).filter((game: BoardGame) => game.away !== 'Away' && game.home !== 'Home');
+}
+
+function quoteFor(game: BoardGame | undefined, draft: LegDraft) {
+  if (!game) return { selection: '', odds: '', line: '' };
+  const book = game.books.find((item) => item.book === draft.book) || game.books[0];
+  if (!book) return { selection: draft.selection, odds: 'Waiting', line: '' };
+  if (draft.market === 'total') {
+    const over = draft.selection.toLowerCase().startsWith('under') ? false : true;
+    return {
+      selection: over ? `Over ${book.totalPoint ?? ''}`.trim() : `Under ${book.totalPoint ?? ''}`.trim(),
+      odds: formatAmerican(over ? book.overPrice : book.underPrice),
+      line: book.totalPoint != null ? String(book.totalPoint) : '',
+    };
   }
-  const seen = new Map<string, BoardGame>();
-  for (const game of games) {
-    const prior = seen.get(game.id);
-    if (!prior || game.books.length > prior.books.length) seen.set(game.id, game);
-  }
-  return Array.from(seen.values());
-}
-
-function quoteFor(game: BoardGame | undefined, bookName: string) {
-  return game?.books.find((book) => book.book === bookName) || game?.books[0];
-}
-
-function sidesFor(game: BoardGame | undefined, market: LegDraft['market']) {
-  if (!game || !market) return [];
-  if (market === 'moneyline' || market === 'spread') return [game.away, game.home];
-  if (market === 'total') return ['Over', 'Under'];
-  return [];
-}
-
-function booksFor(game: BoardGame | undefined, market: LegDraft['market']) {
-  if (!game || !market) return [];
-  return unique(game.books.filter((book) => {
-    if (market === 'moneyline') return book.moneyline?.home != null || book.moneyline?.away != null;
-    if (market === 'spread') return book.spread?.home_point != null || book.spread?.away_point != null;
-    return book.total?.over_point != null || book.total?.under_point != null;
-  }).map((book) => book.book));
-}
-
-function pricedLeg(game: BoardGame | undefined, draft: LegDraft) {
-  const quote = quoteFor(game, draft.book);
-  if (!game || !quote || !draft.market || !draft.side) return { odds: '', line: '', label: '' };
-  const homeSide = draft.side === game.home;
-  if (draft.market === 'moneyline') {
-    const odds = homeSide ? quote.moneyline?.home : quote.moneyline?.away;
-    return { odds: formatAmericanOdds(odds), line: '', label: draft.side };
-  }
+  const away = draft.selection === game.away;
   if (draft.market === 'spread') {
-    const point = homeSide ? quote.spread?.home_point : quote.spread?.away_point;
-    const odds = homeSide ? quote.spread?.home_price : quote.spread?.away_price;
-    return { odds: formatAmericanOdds(odds), line: point == null ? '' : String(point), label: `${draft.side} ${point ?? ''}` };
+    const point = away ? book.awaySpread : book.homeSpread;
+    const price = away ? book.awaySpreadPrice : book.homeSpreadPrice;
+    return {
+      selection: `${draft.selection || (away ? game.away : game.home)} ${point ?? ''}`.trim(),
+      odds: formatAmerican(price),
+      line: point != null ? String(point) : '',
+    };
   }
-  const over = draft.side === 'Over';
-  const point = over ? quote.total?.over_point : quote.total?.under_point;
-  const odds = over ? quote.total?.over_price : quote.total?.under_price;
-  return { odds: formatAmericanOdds(odds), line: point == null ? '' : String(point), label: `${draft.side} ${point ?? ''}` };
+  return {
+    selection: draft.selection || game.home,
+    odds: formatAmerican(away ? book.awayMl : book.homeMl),
+    line: '',
+  };
 }
 
 export function SlipScannerClient() {
   const [games, setGames] = useState<BoardGame[]>([]);
   const [mode, setMode] = useState<'loading' | 'live' | 'waiting'>('loading');
-  const [legs, setLegs] = useState<LegDraft[]>([emptyLeg(), emptyLeg(), emptyLeg()]);
+  const [legs, setLegs] = useState<LegDraft[]>([{ ...emptyLeg }, { ...emptyLeg }, { ...emptyLeg }]);
   const [state, setState] = useState<{ loading: boolean; error?: string; result?: unknown }>({ loading: false });
 
   useEffect(() => {
     let active = true;
     fetch('/v1/inqsi/markets/board', { cache: 'no-store' })
-      .then((response) => response.json())
+      .then((res) => res.json())
       .then((payload) => {
         if (!active) return;
         const found = parseBoard(payload);
@@ -116,57 +126,49 @@ export function SlipScannerClient() {
         setMode(found.length ? 'live' : 'waiting');
       })
       .catch(() => {
-        if (active) {
-          setGames([]);
-          setMode('waiting');
-        }
+        if (active) setMode('waiting');
       });
     return () => { active = false; };
   }, []);
 
-  const sports = useMemo(() => unique(games.map((game) => game.sport)), [games]);
+  const sports = useMemo(() => Array.from(new Set(games.map((game) => game.sport))), [games]);
 
-  function update(index: number, patch: Partial<LegDraft>) {
+  function updateLeg(index: number, patch: Partial<LegDraft>) {
     setLegs((current) => current.map((leg, i) => {
       if (i !== index) return leg;
       const next = { ...leg, ...patch };
       if (patch.sport && patch.sport !== leg.sport) {
-        next.gameId = '';
-        next.market = '';
-        next.side = '';
+        next.gameKey = '';
+        next.selection = '';
         next.book = '';
       }
-      if (patch.gameId && patch.gameId !== leg.gameId) {
-        next.market = '';
-        next.side = '';
-        next.book = '';
+      if (patch.gameKey && patch.gameKey !== leg.gameKey) {
+        const game = games.find((item) => item.key === patch.gameKey);
+        next.selection = game?.away || '';
+        next.book = game?.books[0]?.book || '';
       }
-      if (patch.market && patch.market !== leg.market) {
-        next.side = '';
-        next.book = '';
-      }
+      if (patch.market === 'total') next.selection = 'Over';
       return next;
     }));
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const payload = legs.map((draft) => {
-      const game = games.find((item) => item.id === draft.gameId);
-      const priced = pricedLeg(game, draft);
+    const payload = legs.map((leg) => {
+      const game = games.find((item) => item.key === leg.gameKey);
+      const quote = quoteFor(game, leg);
       return {
-        sport: draft.sport,
-        marketType: draft.market,
-        selection: priced.label || draft.side,
-        book: draft.book,
-        oddsAmerican: priced.odds,
-        line: priced.line,
-        event: game ? `${game.away} @ ${game.home}` : '',
-        start: game?.start || '',
+        sport: leg.sport,
+        marketType: leg.market,
+        selection: quote.selection,
+        book: leg.book,
+        oddsAmerican: quote.odds,
+        line: quote.line,
+        matchup: game?.matchup || '',
       };
-    }).filter((leg) => leg.sport && leg.marketType && leg.selection);
-    if (payload.length < 1) {
-      setState({ loading: false, error: 'Pick at least one live game from the dropdowns.' });
+    }).filter((leg) => leg.sport && leg.selection && leg.selection !== 'Waiting');
+    if (!payload.length) {
+      setState({ loading: false, error: 'Choose a live team from each dropdown before scanning.' });
       return;
     }
     setState({ loading: true });
@@ -176,11 +178,11 @@ export function SlipScannerClient() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ legs: payload, save: false }),
       });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || body.reason || 'MARKET_DATA_REQUIRED');
-      setState({ loading: false, result: body });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || data.message || 'MARKET_DATA_REQUIRED');
+      setState({ loading: false, result: data });
     } catch (error) {
-      setState({ loading: false, error: error instanceof Error ? error.message : 'scan_failed' });
+      setState({ loading: false, error: error instanceof Error ? error.message : 'Scan waiting on live market match' });
     }
   }
 
@@ -190,69 +192,62 @@ export function SlipScannerClient() {
         <h2>Live scanner input</h2>
         <span className="data-status">{mode === 'live' ? 'Live board' : mode === 'loading' ? 'Connecting' : 'Waiting'}</span>
       </div>
-      <p className="inqsi-empty">Choose sport, game, market, side, and book from the live board. Team names are not typed.</p>
+      <p className="movement">Pick sport, game, market, team, and book from the live board. Team names are not typed.</p>
+      {!games.length && <p className="movement">Waiting on live board games before dropdowns can fill.</p>}
       <form onSubmit={onSubmit} className="inqsi-game-list" style={{ marginTop: 14 }}>
-        {legs.map((draft, index) => {
-          const sportGames = games.filter((game) => !draft.sport || game.sport === draft.sport);
-          const game = sportGames.find((item) => item.id === draft.gameId);
-          const sideOptions = sidesFor(game, draft.market);
-          const bookOptions = booksFor(game, draft.market);
-          const priced = pricedLeg(game, draft);
+        {legs.map((leg, index) => {
+          const sportGames = games.filter((game) => !leg.sport || game.sport === leg.sport);
+          const game = games.find((item) => item.key === leg.gameKey);
+          const bookNames = game?.books.map((book) => book.book) || [];
+          const selections = leg.market === 'total'
+            ? ['Over', 'Under']
+            : game ? [game.away, game.home] : [];
+          const quote = quoteFor(game, { ...leg, selection: leg.selection || selections[0] || '' });
           return (
             <article className="inqsi-game-card" key={index}>
-              <div className="inqsi-game-row"><b>Leg {index + 1}</b><span className="inqsi-score-chip">{priced.odds || 'Waiting'}</span></div>
+              <div className="inqsi-game-row"><b>Leg {index + 1}</b><span className="inqsi-score-chip">{quote.odds}</span></div>
               <div className="inqsi-market-grid">
                 <label><span>Sport</span>
-                  <select value={draft.sport} onChange={(event) => update(index, { sport: event.target.value })}>
-                    <option value="">{sports.length ? 'Select sport' : 'Waiting on live sports'}</option>
+                  <select value={leg.sport} onChange={(event) => updateLeg(index, { sport: event.target.value })}>
+                    <option value="">{sports.length ? 'Select sport' : 'Waiting'}</option>
                     {sports.map((sport) => <option key={sport} value={sport}>{sport}</option>)}
                   </select>
                 </label>
                 <label><span>Game</span>
-                  <select value={draft.gameId} onChange={(event) => update(index, { gameId: event.target.value })}>
-                    <option value="">{sportGames.length ? 'Select game' : 'Waiting on live games'}</option>
-                    {sportGames.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.away} @ {item.home}{item.start ? ` · ${formatKickoff(item.start)}` : ''}
-                      </option>
-                    ))}
+                  <select value={leg.gameKey} onChange={(event) => updateLeg(index, { gameKey: event.target.value })}>
+                    <option value="">{sportGames.length ? 'Select game' : 'Waiting'}</option>
+                    {sportGames.map((item) => <option key={item.key} value={item.key}>{item.matchup}</option>)}
                   </select>
                 </label>
                 <label><span>Market</span>
-                  <select value={draft.market} onChange={(event) => update(index, { market: event.target.value as LegDraft['market'] })}>
-                    <option value="">Select market</option>
-                    <option value="moneyline">Moneyline</option>
-                    <option value="spread">Spread</option>
-                    <option value="total">Total</option>
+                  <select value={leg.market} onChange={(event) => updateLeg(index, { market: event.target.value })}>
+                    {markets.map((market) => <option key={market.value} value={market.value}>{market.label}</option>)}
                   </select>
                 </label>
-                <label><span>Side</span>
-                  <select value={draft.side} onChange={(event) => update(index, { side: event.target.value })}>
-                    <option value="">{sideOptions.length ? 'Select side' : 'Waiting on game'}</option>
-                    {sideOptions.map((side) => <option key={side} value={side}>{side}</option>)}
+                <label><span>Team / side</span>
+                  <select value={leg.selection} onChange={(event) => updateLeg(index, { selection: event.target.value })}>
+                    <option value="">{selections.length ? 'Select side' : 'Waiting'}</option>
+                    {selections.map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </label>
                 <label><span>Book</span>
-                  <select value={draft.book} onChange={(event) => update(index, { book: event.target.value })}>
-                    <option value="">{bookOptions.length ? 'Select book' : 'Waiting on books'}</option>
-                    {bookOptions.map((book) => <option key={book} value={book}>{book}</option>)}
+                  <select value={leg.book} onChange={(event) => updateLeg(index, { book: event.target.value })}>
+                    <option value="">{bookNames.length ? 'Select book' : 'Waiting'}</option>
+                    {bookNames.map((book) => <option key={book} value={book}>{book}</option>)}
                   </select>
                 </label>
-                <label><span>Live number</span>
-                  <select value={priced.odds ? `${priced.label} ${priced.odds}` : ''} disabled>
-                    <option value="">{priced.odds ? `${priced.label} ${priced.odds}` : 'Fills after side and book'}</option>
+                <label><span>Live quote</span>
+                  <select value={quote.odds} disabled>
+                    <option>{quote.line ? `${quote.selection} · ${quote.odds}` : quote.odds}</option>
                   </select>
                 </label>
               </div>
             </article>
           );
         })}
-        <button className="inqsi-primary" type="submit" disabled={state.loading || mode !== 'live'}>
-          {state.loading ? 'Scanning...' : 'Scan slip'}
-        </button>
+        <button className="inqsi-primary" type="submit" disabled={state.loading || !games.length}>{state.loading ? 'Scanning...' : 'Scan slip'}</button>
       </form>
-      {state.error ? <p className="inqsi-empty" style={{ marginTop: 12 }}>{state.error}</p> : null}
-      {state.result ? <pre className="inqsi-empty" style={{ marginTop: 12, overflowX: 'auto' }}>{JSON.stringify(state.result, null, 2)}</pre> : null}
+      {state.error ? <p className="movement" style={{ marginTop: 12 }}>{state.error}</p> : null}
     </section>
   );
 }

@@ -23,36 +23,12 @@ function WorkspaceLinkCard({ href, chip, title, copy }: { href: string; chip: st
   );
 }
 
-function WelcomeFloat({ email, onClose }: { email?: string; onClose: () => void }) {
-  return (
-    <div role="dialog" aria-label="Welcome to InQsi" className="panel" style={{ position: 'fixed', left: '50%', bottom: 'max(96px, env(safe-area-inset-bottom))', transform: 'translateX(-50%)', zIndex: 70, width: 'min(720px, calc(100vw - 28px))', padding: 18 }}>
-      <button aria-label="Close welcome message" type="button" onClick={onClose} style={{ position: 'absolute', right: 14, top: 12, width: 34, height: 34, borderRadius: 999, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.08)', color: 'white', fontSize: 18, fontWeight: 900, cursor: 'pointer' }}×</button>
-      <p className="eyebrow blue">Welcome to InQsi</p>
-      <h3 style={{ marginRight: 42 }}>Your account is active.</h3>
-      <p className="movement">{email ? `You are signed in as ${email}. ` : ''}Start with the market board, official parlays, or scanner. One membership includes every supported sport.</p>
-      <div className="hero-actions">
-        <Link className="inqsi-primary" href="/sports/mlb">Open Market Board</Link>
-        <Link className="ghost-button" href="/parlays">Official Parlays</Link>
-        <Link className="ghost-button" href="/parlay-scanner">Scan My Slip</Link>
-      </div>
-    </div>
-  );
-}
-
 export function AccountWorkspace() {
   const [session, setSession] = useState<MemberSession | null>(null);
-  const [showWelcome, setShowWelcome] = useState(false);
 
   useEffect(() => {
-    const activeSession = getMemberSession();
-    setSession(activeSession);
-    if (activeSession) setShowWelcome(window.localStorage.getItem('inqsi_welcome_float_dismissed') !== 'true');
+    setSession(getMemberSession());
   }, []);
-
-  function closeWelcome() {
-    window.localStorage.setItem('inqsi_welcome_float_dismissed', 'true');
-    setShowWelcome(false);
-  }
 
   if (!session) {
     return (
@@ -69,8 +45,6 @@ export function AccountWorkspace() {
 
   return (
     <>
-      {showWelcome && <WelcomeFloat email={session.email} onClose={closeWelcome} />}
-
       <section className="panel" style={{ marginBottom: 18 }}>
         <div className="panel-header compact">
           <div>
@@ -99,7 +73,7 @@ export function AccountWorkspace() {
           <h3>Public or private.</h3>
           <p className="movement">Saved slips are private by default. You choose what appears on your public profile.</p>
           <Link className="inqsi-primary" href="/account/slips" style={{ textDecoration: 'none', width: '100%' }}>Open My Slips</Link>
-          <button className="ghost-button" type="button" style={{ width: '100%', marginTop: 12 }} onClick={() => { clearMemberSession(); window.localStorage.removeItem('inqsi_welcome_float_dismissed'); window.location.href = '/'; }}>Log out</button>
+          <button className="ghost-button" type="button" style={{ width: '100%', marginTop: 12 }} onClick={() => { clearMemberSession(); window.location.href = '/'; }}>Log out</button>
         </aside>
       </section>
     </>
