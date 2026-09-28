@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getApiSnapshot } from '@/lib/api';
@@ -7,6 +8,18 @@ import { getSportBySlug, getSportSlugForLeague, sports } from '@/lib/sports';
 
 export function generateStaticParams() {
   return sports.map((sport) => ({ sport: sport.slug }));
+}
+
+export async function generateMetadata({ params }: { params: { sport: string } }): Promise<Metadata> {
+  const sport = getSportBySlug(params.sport);
+  if (!sport) {
+    return { title: 'Sports Market Board' };
+  }
+  return {
+    title: sport.title,
+    description: sport.description,
+    alternates: { canonical: `/sports/${sport.slug}` }
+  };
 }
 
 export default async function SportPage({ params }: { params: { sport: string } }) {
