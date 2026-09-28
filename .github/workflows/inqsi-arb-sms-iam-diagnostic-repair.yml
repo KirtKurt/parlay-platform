@@ -41,4 +41,8 @@ jobs:
           aws iam get-group --group-name "$GROUP" --query "Users[?UserName=='$USER'].UserName" --output text | grep -F "$USER"
           COUNT=$(aws sns list-sms-sandbox-phone-numbers --query "length(PhoneNumbers)" --output text)
           echo "SMS sandbox read verification succeeded; verified/pending destination count=$COUNT"
+          echo "SMS Voice account attributes:"
+          aws pinpoint-sms-voice-v2 describe-account-attributes --query "AccountAttributes[].{Name:Name,Value:Value}" --output json
+          echo "SMS Voice account limits:"
+          aws pinpoint-sms-voice-v2 describe-account-limits --output json
           echo "No SMS was sent."
