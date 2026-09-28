@@ -18,55 +18,40 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Invoke the live schedule tick and print the result
+      - name: Read one rejected 2026 schedule row and its reason
         run: |
           set -euo pipefail
           REGION="${AWS_REGION}"
           STACK=parlay-platform-nfl-auto
-          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK" --logical-resource-id NflLiveFunction --region "$REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
-          RULE=$(aws cloudformation describe-stack-resource --stack-name "$STACK" --logical-resource-id NflLiveFunctionLiveEveryFiveMinutes --region "$REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
-          echo "FUNCTION=$FN"
-          aws events describe-rule --name "$RULE" --region "$REGION" --query '{Name:Name,State:State,Schedule:ScheduleExpression}' --output json
-          STATE=$(aws events describe-rule --name "$RULE" --region "$REGION" --query 'State' --output text)
-          if [ "$STATE" != "ENABLED" ]; then
-            echo "Enabling disabled live schedule rule"
-            aws events enable-rule --name "$RULE" --region "$REGION"
-          fi
-          START_MS=$(( ($(date +%s) - 3600) * 1000 ))
-          echo "--- recent live logs ---"
-          aws logs filter-log-events \
-            --region "$REGION" \
-            --log-group-name "/aws/lambda/$FN" \
-            --start-time "$START_MS" \
-            --filter-pattern '?BBD ?ERROR ?Exception ?Traceback ?Task' \
-            --max-items 15 \
-            --query 'events[].message' \
-            --output text | head -c 4000 || true
-          echo
-          aws lambda invoke \
-            --function-name "$FN" \
-            --region "$REGION" \
-            --cli-read-timeout 180 \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{"action":"live_tick"}' \
-            /tmp/live.json > /tmp/meta.json
+          resource() {
+            aws cloudformation describe-stack-resource --stack-name "$STACK" --logical-resource-id "$1" --region "$REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text
+          }
+          BUCKET=$(resource NflRawBucket)
+          OPS=$(resource NflOpsTable)
+          KEY=$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "bbd/nfl/live-schedule/2026/offset-0/" --query 'sort_by(Contents, &LastModified)[-1].Key' --output text)
+          echo "KEY=$KEY"
+          aws s3 cp "s3://$BUCKET/$KEY" /tmp/sched.json
+          aws dynamodb query --table-name "$OPS" --region "$REGION" --key-condition-expression "PK = :pk" --expression-attribute-values '{":pk":{"S":"LIVE_SCHEDULE_EXCLUSION"}}' --limit 5 --output json > /tmp/ops.json
           python3 - << 'PY'
           import json
-          meta = json.load(open("/tmp/meta.json"))
-          body = json.load(open("/tmp/live.json"))
-          print("INVOKE", {k: meta.get(k) for k in ("StatusCode", "FunctionError")})
-
-          def scrub(value, depth=0):
-              if depth > 6:
-                  return "..."
-              if isinstance(value, dict):
-                  hidden = {"api_key", "authorization", "Authorization", "token"}
-                  return {key: scrub(item, depth + 1) for key, item in value.items() if key not in hidden}
-              if isinstance(value, list):
-                  return [scrub(item, depth + 1) for item in value[:12]]
-              if isinstance(value, str) and len(value) > 300:
-                  return value[:300]
-              return value
-
-          print(json.dumps(scrub(body), sort_keys=True)[:7000])
+          payload = json.load(open("/tmp/sched.json"))
+          rows = payload.get("data") or []
+          print("rows", len(rows), "pagination", payload.get("pagination"))
+          row = rows[0] if rows else {}
+          print("keys", sorted(row.keys()))
+          interesting = ("game_id", "id", "season", "week", "week_number", "game_type", "season_type", "type", "game_date", "gameday", "kickoff_utc", "kickoff", "commence_time", "start_time", "gametime", "game_time", "home_team", "away_team", "home", "away", "home_score", "away_score", "status")
+          sample = {}
+          for key in interesting:
+              if key in row:
+                  value = row[key]
+                  if isinstance(value, dict):
+                      sample[key] = {child: value.get(child) for child in list(value)[:8]}
+                  else:
+                      sample[key] = value
+          print("sample", json.dumps(sample, default=str)[:2500])
+          ops = json.load(open("/tmp/ops.json"))
+          reasons = []
+          for item in ops.get("Items") or []:
+              reasons.append({"sk": (item.get("SK") or {}).get("S"), "reason": (item.get("reason") or {}).get("S")})
+          print("reasons", json.dumps(reasons)[:2000])
           PY
