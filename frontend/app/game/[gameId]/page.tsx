@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
@@ -7,6 +8,20 @@ import { findGame } from '@/lib/findGame';
 import { formatAmericanOdds, formatKickoff, impliedPercent } from '@/lib/kickoff';
 import { getSportSlugForLeague } from '@/lib/sports';
 import { radarFromGame } from '@/lib/radarSignals';
+
+export async function generateMetadata({ params }: { params: { gameId: string } }): Promise<Metadata> {
+  const { games } = await getApiSnapshot();
+  const game = findGame(games, params.gameId);
+  const matchup = game?.matchup || 'Game Detail';
+  const league = game?.league || 'Sports';
+  return {
+    title: matchup,
+    description: game
+      ? `${league} market snapshot for ${matchup}: moneyline, spread, total, and live board signals.`
+      : 'Live market snapshot for this game. Moneyline, spread, total, and board signals when available.',
+    alternates: { canonical: `/game/${params.gameId}` }
+  };
+}
 
 export default async function GameDetailPage({ params }: { params: { gameId: string } }) {
   const { games, lineMovement, apiStatus, apiDetail } = await getApiSnapshot();
