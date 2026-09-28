@@ -117,3 +117,27 @@ def pytest_collection_modifyitems(session, config, items):
         )
 
     module.audit_report._canonical_finalized_slate_evidence = cutoff_aligned_evidence
+
+
+@pytest.fixture(autouse=True)
+def _isolate_r7_wraps_from_canonical_label_tests(request, monkeypatch):
+    """Keep labels unit tests on the native verdict/join.
+
+    Deploy SAM runs this file in one process after trainer/compat imports
+    from test_mlb_successor_training_independence.py (PR #1014). That
+    install() wraps labels._training_verdict and _joined_training_row.
+    Unwrap for this module only so the labels fixtures stay valid until
+    they are updated to carry R7 lock markers.
+    """
+
+    if "test_mlb_canonical_final_labels_v1.py" not in request.node.nodeid:
+        return
+    import mlb_canonical_final_labels_v1 as labels
+
+    for name in ("_training_verdict", "_joined_training_row"):
+        fn = getattr(labels, name, None)
+        if not callable(fn):
+            continue
+        while hasattr(fn, "__wrapped__"):
+            fn = fn.__wrapped__
+        monkeypatch.setattr(labels, name, fn)
