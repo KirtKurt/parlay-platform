@@ -1,6 +1,6 @@
 'use client';
 import {useMemo,useState} from 'react';
-import '../arbitrage-v2/arb-v2.css';
+import '../arb-v2.css';
 const dec=(a:number)=>a>0?1+a/100:1+100/Math.abs(a);
 const money=(n:number)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number.isFinite(n)?n:0);
 export default function CalculatorPage(){
