@@ -33,6 +33,22 @@ export default async function SportsPage() {
         ))}
       </nav>
 
+      <section className="board-snapshot">
+        <div className="board-snapshot-head">
+          <h2>Live games</h2>
+          <span className="data-status">{apiStatus === 'CONNECTED' ? 'Live' : 'Syncing'}</span>
+        </div>
+        <div className="game-list">
+          {activeGames.length ? activeGames.map((game) => <GameCard game={game} key={game.id} />) : (
+            <article className="game-card">
+              <div className="game-topline"><span className="league-chip">SYNCING</span><span className="data-status">Waiting</span></div>
+              <h4>Waiting for market-board data</h4>
+              <p className="movement">Active games will show moneyline, spread, over/under, start time, and market signal status.</p>
+            </article>
+          )}
+        </div>
+      </section>
+
       <section className="board-promo-strip" aria-label="InQsi tools">
         <Link className="board-promo-card" href="/parlay-scanner">
           <span>Scan</span>
@@ -49,32 +65,6 @@ export default async function SportsPage() {
           <strong>Line Movement</strong>
           <small>See what the board is warning</small>
         </Link>
-      </section>
-
-      <nav className="board-action-pills" aria-label="Quick tools">
-        <Link href="/parlay-scanner">Scan</Link>
-        <Link href="/parlays/build">Build</Link>
-        <Link href="/parlays">Official Parlays</Link>
-        <Link href="/account">Account</Link>
-      </nav>
-
-      <section className="panel board-snapshot">
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Live Snapshot</p>
-            <h3>All active markets</h3>
-          </div>
-          <span className="data-status">{apiStatus === 'CONNECTED' ? 'Live' : 'Syncing'}</span>
-        </div>
-        <div className="game-list">
-          {activeGames.length ? activeGames.map((game) => <GameCard game={game} key={game.id} />) : (
-            <article className="game-card">
-              <div className="game-topline"><span className="league-chip">SYNCING</span><span className="data-status">Waiting</span></div>
-              <h4>Waiting for market-board data</h4>
-              <p className="movement">Active games will show moneyline, spread, over/under, start time, and market signal status.</p>
-            </article>
-          )}
-        </div>
       </section>
     </main>
   );

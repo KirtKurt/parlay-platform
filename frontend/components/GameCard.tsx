@@ -1,3 +1,6 @@
+'use client';
+
+import { useState } from 'react';
 import Link from 'next/link';
 import { RadarStrip } from '@/components/RadarStrip';
 import { getTeamVisual } from '@/components/SportVisuals';
@@ -31,6 +34,10 @@ type GameLike = {
   dataStatus?: string;
   marketNote?: string;
   bookCount?: number;
+  predicted_winner?: string;
+  predicted_side?: string;
+  risk?: string;
+  confidence?: string;
 };
 
 function formatOdds(value: number | string | undefined) {
@@ -88,7 +95,19 @@ function customerMovement(game: GameLike) {
   return raw;
 }
 
+function breakdownCopy(game: GameLike, favoriteOdds: number | string | undefined, implied: number | null) {
+  const lean = game.predicted_winner || game.predicted_side;
+  if (lean) {
+    return `InQsi lean: ${lean}. This is a market-review lean from the live board, not a guaranteed winner.`;
+  }
+  if (game.favorite) {
+    return `Market favorite is ${game.favorite} ${formatAmericanOdds(favoriteOdds) || ''}${implied ? ` · ${implied}% implied` : ''}. InQsi is not inventing a winner.`;
+  }
+  return 'Waiting on enough live board data to explain this matchup.';
+}
+
 export function GameCard({ game }: { game: GameLike }) {
+  const [open, setOpen] = useState(false);
   const league = game.league || game.sport_key || 'SPORT';
   const start = formatKickoff(game.start || game.commence_time);
   const matchup = game.matchup || `${game.away_team || 'Away'} @ ${game.home_team || 'Home'}`;
@@ -111,48 +130,61 @@ export function GameCard({ game }: { game: GameLike }) {
   }).slice(0, 4);
 
   return (
-    <article className="game-card board-game-card">
-      <div className="game-topline">
-        <Link className="league-chip" href={`/sports/${getSportSlugForLeague(league)}`} style={{ textDecoration: 'none' }}>{league}</Link>
-        <span>{start}</span>
-        <span className={`data-status ${String(dataStatus).toLowerCase()}`}>{dataStatus}</span>
-      </div>
-
-      <div className="board-matchup">
-        <div className="board-team">
-          <b>{awayVisual.abbr}</b>
-          <strong>{away}</strong>
+    <article className={`game-card board-game-card${open ? ' is-open' : ''}`}>
+      <button type="button" className="board-card-hit" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
+        <div className="game-topline">
+          <span className="league-chip">{league}</span>
+          <span>{start}</span>
+          <span className={`data-status ${String(dataStatus).toLowerCase()}`}>{dataStatus}</span>
         </div>
-        <span className="board-kickoff">{start || 'Waiting'}</span>
-        <div className="board-team board-team-right">
-          <b>{homeVisual.abbr}</b>
-          <strong>{home}</strong>
+
+        <div className="board-matchup">
+          <div className="board-team">
+            <b>{awayVisual.abbr}</b>
+            <strong>{away}</strong>
+          </div>
+          <span className="board-kickoff">{start || 'Waiting'}</span>
+          <div className="board-team board-team-right">
+            <b>{homeVisual.abbr}</b>
+            <strong>{home}</strong>
+          </div>
         </div>
-      </div>
 
-      <p className="board-odds-caption">{awayVisual.abbr}</p>
-      <div className="board-odds-grid">
-        <div className="board-odds-cell"><span>Spread</span><b>{awaySpread == null ? 'Waiting' : formatLine(awaySpread)}</b></div>
-        <div className="board-odds-cell"><span>Money</span><b>{formatOdds(moneyFor(away, game, awayIsFavorite ? favoriteOdds : game.underdogMl ?? game.underdog_ml))}</b></div>
-        <div className="board-odds-cell"><span>Total</span><b>{total == null ? 'Waiting' : `o${total}`}</b></div>
-      </div>
+        <p className="board-odds-caption">{awayVisual.abbr}</p>
+        <div className="board-odds-grid">
+          <div className="board-odds-cell"><span>Spread</span><b>{awaySpread == null ? 'Waiting' : formatLine(awaySpread)}</b></div>
+          <div className="board-odds-cell"><span>Money</span><b>{formatOdds(moneyFor(away, game, awayIsFavorite ? favoriteOdds : game.underdogMl ?? game.underdog_ml))}</b></div>
+          <div className="board-odds-cell"><span>Total</span><b>{total == null ? 'Waiting' : `o${total}`}</b></div>
+        </div>
 
-      <p className="board-odds-caption">{homeVisual.abbr}</p>
-      <div className="board-odds-grid">
-        <div className="board-odds-cell"><span>Spread</span><b>{homeSpread == null ? 'Waiting' : formatLine(homeSpread)}</b></div>
-        <div className="board-odds-cell"><span>Money</span><b>{formatOdds(moneyFor(home, game, awayIsFavorite ? game.underdogMl ?? game.underdog_ml : favoriteOdds))}</b></div>
-        <div className="board-odds-cell"><span>Total</span><b>{total == null ? 'Waiting' : `u${total}`}</b></div>
-      </div>
+        <p className="board-odds-caption">{homeVisual.abbr}</p>
+        <div className="board-odds-grid">
+          <div className="board-odds-cell"><span>Spread</span><b>{homeSpread == null ? 'Waiting' : formatLine(homeSpread)}</b></div>
+          <div className="board-odds-cell"><span>Money</span><b>{formatOdds(moneyFor(home, game, awayIsFavorite ? game.underdogMl ?? game.underdog_ml : favoriteOdds))}</b></div>
+          <div className="board-odds-cell"><span>Total</span><b>{total == null ? 'Waiting' : `u${total}`}</b></div>
+        </div>
 
-      <p className="movement">
-        {game.favorite
-          ? `Market favorite: ${game.favorite} ${formatAmericanOdds(favoriteOdds) || 'Waiting'}${implied ? ` · ${implied}% implied` : ''}`
-          : 'Waiting for a market favorite.'}
-      </p>
-      <p className="movement">{customerMovement(game)}</p>
-      <RadarStrip items={radar} title="On our radar" />
-      {game.marketNote && <p className="movement">{game.marketNote}</p>}
-      <Link href={href} style={{ color: '#20e5ff', textDecoration: 'none', fontWeight: 800 }}>Open game</Link>
+        <span className="board-open-hint">{open ? 'Hide breakdown' : 'Tap for why this side'}</span>
+      </button>
+
+      {open && (
+        <div className="board-breakdown">
+          <p className="eyebrow">Why this side</p>
+          <h4>{game.predicted_winner || game.predicted_side || game.favorite || 'Waiting on a lean'}</h4>
+          <p className="movement">{breakdownCopy(game, favoriteOdds, implied)}</p>
+          <p className="movement">{customerMovement(game)}</p>
+          {(game.risk || game.confidence) && (
+            <p className="movement">Risk {game.risk || 'Waiting'}{game.confidence ? ` · ${game.confidence}` : ''}</p>
+          )}
+          <RadarStrip items={radar} title="On our radar" />
+          {game.marketNote && <p className="movement">{game.marketNote}</p>}
+          <div className="board-breakdown-actions">
+            <Link href={href}>Open full breakdown</Link>
+            <Link href={`/sports/${getSportSlugForLeague(league)}`}>More {league}</Link>
+            <Link href="/parlays">Build 3-leg</Link>
+          </div>
+        </div>
+      )}
     </article>
   );
 }
