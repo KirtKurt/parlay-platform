@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
-import { formatKickoff } from '@/lib/kickoff';
+import { KickoffLabel } from '@/components/KickoffLabel';
+import { visitorTimeZone } from '@/lib/visitorTimeZone';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,7 @@ export default async function ParlaysPage() {
   const { games, rankings, apiStatus, apiDetail } = await getApiSnapshot();
   const official = (Array.isArray(rankings) ? rankings : []).filter((row) => !isSampleParlay(row));
   const liveCount = games.length;
+  const serverTimeZone = visitorTimeZone();
 
   return (
     <main className="shell">
@@ -55,7 +57,7 @@ export default async function ParlaysPage() {
           </article>
         )) : games.slice(0, 8).map((game) => (
           <article className="rank-card" key={game.id}>
-            <div className="rank-head"><span>{game.league}</span><b>{formatKickoff(game.start || game.commence_time) || 'Waiting'}</b></div>
+            <div className="rank-head"><span>{game.league}</span><b><KickoffLabel value={game.start || game.commence_time} serverTimeZone={serverTimeZone} /></b></div>
             <h4>{game.matchup}</h4>
             <p>Market favorite: {game.favorite || 'Waiting'} {game.favoriteMl || game.favorite_ml || ''}.</p>
           </article>
