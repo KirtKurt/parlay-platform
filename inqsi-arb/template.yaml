@@ -34,11 +34,11 @@ Globals:
         # Keep stored snapshots eligible for the default book-first scan. An
         # explicit deployment override can still narrow both via ArbRegions.
         ARB_COLLECT_REGIONS: !Ref ArbRegions
-        ARB_COLLECT_MAX_SPORTS: '6'
-        # Six sports are collected every two minutes. One hour safely covers
-        # a complete 100-sport rotation plus scheduling/provider jitter.
-        ARB_QUOTE_FRESH_SECONDS: '3600'
-        ARB_MAX_QUOTE_AGE_SECONDS: '3600'
+        ARB_COLLECT_MAX_SPORTS: '20'
+        # Twenty active sports are collected every minute. Five minutes covers a
+        # complete 100-sport rotation before provider/scheduling jitter.
+        ARB_QUOTE_FRESH_SECONDS: '300'
+        ARB_MAX_QUOTE_AGE_SECONDS: '300'
         ARB_AUDIT_TABLE: !Ref ArbAuditTable
         ARB_STATE_TABLE: !Ref ArbStateTable
         ARB_CONNECTIONS_TABLE: !Ref ArbConnectionsTable
@@ -222,7 +222,7 @@ Resources:
         Tick:
           Type: Schedule
           Properties:
-            Schedule: rate(2 minutes)
+            Schedule: rate(1 minute)
             Enabled: true
             Description: Rotate featured-market quote snapshots for the ARB desk
 

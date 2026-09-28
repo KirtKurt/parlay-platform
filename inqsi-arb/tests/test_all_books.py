@@ -65,7 +65,7 @@ def test_collector_status_route():
     response = lambda_handler({"httpMethod": "GET", "path": "/v1/arb/collector"}, None)
     body = json.loads(response["body"])
     assert response["statusCode"] == 200
-    assert body["schedule"] == "rate(2 minutes)"
+    assert body["schedule"] == "rate(1 minute)"
     assert body["places_bets"] is False
 
 
