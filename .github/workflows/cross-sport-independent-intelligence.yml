@@ -1,0 +1,57 @@
+name: Cross-Sport Independent Intelligence Contract
+
+"on":
+  pull_request:
+    paths:
+      - 'inqsi_intelligence/**'
+      - 'ks1/independent_intelligence.py'
+      - 'nfl_auto/independent_intelligence.py'
+      - 'soccer_auto/independent_intelligence.py'
+      - 'tennis_independent_intelligence.py'
+      - 'tests/unit/test_cross_sport_*'
+      - '.github/workflows/cross-sport-independent-intelligence.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'inqsi_intelligence/**'
+      - 'ks1/independent_intelligence.py'
+      - 'nfl_auto/independent_intelligence.py'
+      - 'soccer_auto/independent_intelligence.py'
+      - 'tennis_independent_intelligence.py'
+      - 'tests/unit/test_cross_sport_*'
+      - '.github/workflows/cross-sport-independent-intelligence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test dependencies
+        run: pip install pytest numpy
+      - name: Verify independent intelligence contracts
+        run: |
+          pytest -q             tests/unit/test_cross_sport_favorite_bias.py             tests/unit/test_cross_sport_shadow_wiring.py             tests/unit/test_cross_sport_shadow_ledger.py
+      - name: Prove authority-neutral implementation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          paths=[
+            Path('inqsi_intelligence/favorite_bias.py'),
+            Path('inqsi_intelligence/adapters.py'),
+            Path('inqsi_intelligence/ledger.py'),
+          ]
+          forbidden=('put_item(', 'update_item(', 'lambda.invoke', 'automatic_prediction_allowed = True')
+          for path in paths:
+              text=path.read_text()
+              for token in forbidden:
+                  assert token not in text, (path, token)
+          print('authority-neutral contract verified')
+          PY
