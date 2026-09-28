@@ -3,8 +3,8 @@ import { AppHeader } from '@/components/AppHeader';
 import { SlipScannerClient } from '@/components/SlipScannerClient';
 
 export const metadata: Metadata = {
-  title: 'Scan My Slip',
-  description: 'Upload or enter a slip and let InQsi review line movement, weak-leg risk, signals, and market stability before lock-in.',
+  title: 'Build My Slip',
+  description: 'Build a 3-leg slip from verified live markets, compare sportsbook prices, and analyze the completed slip.',
   alternates: { canonical: '/parlay-scanner' }
 };
 
@@ -14,12 +14,6 @@ export default function Page() {
   return (
     <main className="inqsi-shell">
       <AppHeader eyebrow="InQsi" title="Scan My Slip" />
-
-      <section className="inqsi-panel" style={{ textAlign: 'center', marginBottom: 18 }}>
-        <p className="eyebrow blue">Scan My Slip</p>
-        <h2>Scan Your Bet Slip</h2>
-        <p className="movement" style={{ maxWidth: 620, margin: '0 auto 18px' }}>Scan or enter a 3-leg slip to break down each leg, review risk, and compare the pick to live market context.</p>
-      </section>
 
       <SlipScannerClient />
 
