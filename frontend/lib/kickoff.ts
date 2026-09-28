@@ -1,13 +1,41 @@
-export function formatKickoff(value?: string | null) {
+export const DEFAULT_TIME_ZONE = 'America/New_York';
+
+export function isValidTimeZone(value?: string | null): value is string {
+  const zone = String(value || '').trim();
+  if (!zone || zone.length > 64 || /[\s<>"']/.test(zone)) return false;
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: zone }).format(0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function resolveTimeZone(value?: string | null) {
+  return isValidTimeZone(value) ? String(value).trim() : DEFAULT_TIME_ZONE;
+}
+
+export function formatKickoff(value?: string | null, timeZone?: string | null) {
   if (!value || value === 'TBD' || value === 'Waiting') return 'Waiting';
   if (/\.\d{3}Z$/.test(value)) return 'Waiting';
   const stamp = Date.parse(value);
   if (!Number.isFinite(stamp)) return 'Waiting';
   return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
+    timeZone: resolveTimeZone(timeZone),
     weekday: 'short',
     month: 'short',
     day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  }).format(new Date(stamp));
+}
+
+export function formatLocalClock(value: Date | string | number = new Date(), timeZone?: string | null) {
+  const stamp = value instanceof Date ? value.getTime() : Date.parse(String(value));
+  if (!Number.isFinite(stamp)) return 'Waiting';
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: resolveTimeZone(timeZone),
     hour: 'numeric',
     minute: '2-digit',
     timeZoneName: 'short',
