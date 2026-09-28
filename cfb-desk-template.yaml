@@ -42,12 +42,6 @@ Resources:
                 - dynamodb:GetItem
                 - dynamodb:PutItem
               Resource: !GetAtt CfbDeskTable.Arn
-      Events:
-        EveryThirtyMinutes:
-          Type: Schedule
-          Properties:
-            Schedule: rate(30 minutes)
-            Input: '{"action":"tick"}'
 
   CfbDeskStatusFunction:
     Type: AWS::Serverless::Function

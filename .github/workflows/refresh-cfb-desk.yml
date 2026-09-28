@@ -1,0 +1,52 @@
+name: Refresh isolated college desk
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Fetch ESPN scores and run the college model in AWS
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import json
+          import sys
+          sys.path.insert(0, "cfb_desk")
+          from ingest import load_cfb_season
+          season = load_cfb_season()
+          print("FETCH", len(season["games"]), season["season"], season["week"], season.get("errors"))
+          if len(season["games"]) < 1000:
+              raise SystemExit(1)
+          json.dump({"action": "tick", "season": season["season"], "week": season["week"], "games": season["games"]}, open("/tmp/cfb-event.json", "w"))
+          PY
+          stack=parlay-platform-cfb-desk
+          tick=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id CfbDeskTickFunction --region "$AWS_REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          aws lambda invoke --function-name "$tick" --region "$AWS_REGION" --cli-read-timeout 200 --cli-binary-format raw-in-base64-out --payload file:///tmp/cfb-event.json /tmp/tick.json >/tmp/tick-meta.json
+          python3 - << 'PY'
+          import json
+          meta = json.load(open("/tmp/tick-meta.json"))
+          body = json.load(open("/tmp/tick.json"))
+          print("TICK", meta.get("StatusCode"), meta.get("FunctionError"), body.get("ok"), body.get("mode"), body.get("authority"), body.get("games"), body.get("boardCount"))
+          if meta.get("FunctionError") or body.get("ok") is not True or not body.get("boardCount"):
+              raise SystemExit(1)
+          PY
+          url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='CfbDeskStatusUrl'].OutputValue" --output text)
+          curl -fsS "$url" | python3 -c 'import json,sys; s=json.load(sys.stdin); print("PUBLIC", s.get("sport"), s.get("mode"), s.get("authority"), s.get("games"), s.get("boardCount"), s.get("promotedResidual"))'

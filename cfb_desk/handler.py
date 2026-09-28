@@ -50,8 +50,17 @@ def status_payload() -> dict[str, Any]:
     return current if current else _starting()
 
 
-def tick() -> dict[str, Any]:
-    season = load_cfb_season()
+def tick(event: Any | None = None) -> dict[str, Any]:
+    supplied = event.get("games") if isinstance(event, dict) else None
+    if isinstance(supplied, list) and supplied:
+        season = {
+            "games": supplied,
+            "season": int(event.get("season") or supplied[0].get("season") or 2026),
+            "week": int(event.get("week") or supplied[0].get("week") or 1),
+            "errors": [],
+        }
+    else:
+        season = load_cfb_season()
     if len(season["games"]) < 100:
         return {
             "ok": False,
@@ -117,7 +126,7 @@ def status_handler(event: Any, context: Any) -> dict[str, Any]:
 def tick_handler(event: Any, context: Any) -> dict[str, Any]:
     del context
     try:
-        result = tick()
+        result = tick(event if isinstance(event, dict) else None)
         return result
     except Exception as exc:
         return {"ok": False, "sport": "CFB", "mode": "FAILED", "reason": str(exc)[:240]}

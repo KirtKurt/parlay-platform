@@ -58,7 +58,18 @@ jobs:
           set -euo pipefail
           stack=parlay-platform-cfb-desk
           tick=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id CfbDeskTickFunction --region "$AWS_REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
-          aws lambda invoke --function-name "$tick" --region "$AWS_REGION" --cli-read-timeout 200 --cli-binary-format raw-in-base64-out --payload '{"action":"tick"}' /tmp/tick.json >/tmp/tick-meta.json
+          python3 - << 'PY'
+          import json
+          import sys
+          sys.path.insert(0, "cfb_desk")
+          from ingest import load_cfb_season
+          season = load_cfb_season()
+          print("FETCH", len(season["games"]), season["season"], season["week"], season.get("errors"))
+          if len(season["games"]) < 1000:
+              raise SystemExit(1)
+          json.dump({"action": "tick", "season": season["season"], "week": season["week"], "games": season["games"]}, open("/tmp/cfb-event.json", "w"))
+          PY
+          aws lambda invoke --function-name "$tick" --region "$AWS_REGION" --cli-read-timeout 200 --cli-binary-format raw-in-base64-out --payload file:///tmp/cfb-event.json /tmp/tick.json >/tmp/tick-meta.json
           python3 - << 'PY'
           import json
           meta = json.load(open("/tmp/tick-meta.json"))
