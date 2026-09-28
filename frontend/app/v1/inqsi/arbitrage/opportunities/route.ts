@@ -6,12 +6,12 @@ export const dynamic = 'force-dynamic';
 function apiBase() {
   return (
     process.env.INQSI_ARB_API_URL ||
+    GENERATED_ARB_API_URL ||
     process.env.INQSI_API_URL ||
     process.env.API_URL ||
     process.env.NEXT_PUBLIC_INQSI_API_URL ||
     process.env.NEXT_PUBLIC_INQSI_API_BASE_URL ||
     process.env.NEXT_PUBLIC_API_BASE_URL ||
-    GENERATED_ARB_API_URL ||
     ''
   ).trim().replace(/\/$/, '');
 }
