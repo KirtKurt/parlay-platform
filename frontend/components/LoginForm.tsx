@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { OAuthButtons } from '@/components/OAuthButtons';
 import { createDemoMemberSession, saveMemberSession } from '@/lib/memberSession';
 
 export function LoginForm() {
@@ -18,10 +19,8 @@ export function LoginForm() {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const submittedEmail = String(formData.get('email') ?? email).trim();
-
     saveMemberSession(createDemoMemberSession(submittedEmail, 'Full Access'));
     setStatus('signed-in');
-
     window.setTimeout(() => {
       router.push('/account');
     }, 450);
@@ -32,27 +31,19 @@ export function LoginForm() {
       <div>
         <p className="eyebrow blue">Member login</p>
         <h3>Sign in to your market workspace</h3>
-        <p className="slip-note">Your InQsi workspace opens your watchlist, sport boards, AI Slip Scanner, and saved review tools.</p>
+        <p className="slip-note">Continue with Google if it is enabled, or use email to open the workspace.</p>
       </div>
+      <OAuthButtons />
       <label className="field-card full-span">
         <span>Email</span>
         <input required name="email" type="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} />
       </label>
-      <label className="field-card full-span">
-        <span>Access</span>
-        <select name="plan" defaultValue="full_access">
-          <option value="full_access">InQsi Full Access</option>
-        </select>
-      </label>
-      <button className="primary-button large" type="submit">Sign in</button>
+      <button className="primary-button large" type="submit">Sign in with email</button>
       {status === 'signed-in' && (
         <div className="compliance-box success-box">
-          You are signed in with InQsi Full Access. Sending you to your account workspace now.
+          You are signed in. Sending you to your account workspace now.
         </div>
       )}
-      <div className="compliance-box">
-        First 5 days free for new members. Preview your board, save a watchlist, and decide from there.
-      </div>
     </form>
   );
 }
