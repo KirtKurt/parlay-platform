@@ -285,6 +285,11 @@ function gamesFromMarketBoard(boardPayload: any): InqsiGame[] {
   });
 }
 
+function isSampleParlay(row: any) {
+  const blob = JSON.stringify(row || {}).toLowerCase();
+  return blob.includes('+342') || blob.includes('"342"') || blob.includes('confidence":82') || blob.includes('confidence":76') || blob.includes('confidence":70') || blob.includes('celtics') || blob.includes('thunder') || blob.includes('sample');
+}
+
 export async function getInqsiSnapshot(sportKey = process.env.NEXT_PUBLIC_DEFAULT_SPORT || 'nfl'): Promise<InqsiSnapshot> {
   const selectedSport = providerToInqisSport[sportKey] || sportKey || defaultSports[0];
 
@@ -308,7 +313,7 @@ export async function getInqsiSnapshot(sportKey = process.env.NEXT_PUBLIC_DEFAUL
     );
     return pred ? { ...game, predicted_winner: pred.predicted_winner, predicted_side: pred.predicted_side } : game;
   });
-  const rankings = parlayPayload.rankings || parlayPayload.combinations || parlayPayload.top_rankings || [];
+  const rankings = (parlayPayload.rankings || parlayPayload.combinations || parlayPayload.top_rankings || []).filter((row: any) => !isSampleParlay(row));
   const marketFetch = marketBoardPayload.__inqsiFetchMeta || {};
 
   return {

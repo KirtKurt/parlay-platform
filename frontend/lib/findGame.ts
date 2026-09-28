@@ -1,24 +1,36 @@
 import { slugPart } from '@/lib/kickoff';
 
 const NICK: Record<string, string> = {
-  cubs: 'chicago-cubs',
-  padres: 'san-diego-padres',
-  yankees: 'new-york-yankees',
-  'red-sox': 'boston-red-sox',
-  'white-sox': 'chicago-white-sox',
-  'blue-jays': 'toronto-blue-jays',
-  jays: 'toronto-blue-jays',
-  phillies: 'philadelphia-phillies',
-  braves: 'atlanta-braves',
-  astros: 'houston-astros',
-  dodgers: 'los-angeles-dodgers',
-  giants: 'san-francisco-giants',
-  mets: 'new-york-mets',
+  cubs: 'cubs',
+  padres: 'padres',
+  yankees: 'yankees',
+  sox: 'sox',
+  jays: 'jays',
+  phillies: 'phillies',
+  braves: 'braves',
+  astros: 'astros',
+  dodgers: 'dodgers',
+  giants: 'giants',
+  mets: 'mets',
 };
 
-function lastName(value?: string) {
-  const slug = slugPart(value);
-  return slug.split('-').filter((part) => part.length > 3).pop() || slug;
+const CITY_ONLY = new Set(['chicago', 'new', 'york', 'boston', 'san', 'diego', 'los', 'angeles', 'la', 'ny']);
+
+function tokens(value?: string) {
+  return slugPart(value).split('-').filter(Boolean);
+}
+
+function teamKeys(value?: string) {
+  const parts = tokens(value);
+  const last = [...parts].reverse().find((part) => part.length > 2 && !CITY_ONLY.has(part)) || parts[parts.length - 1] || '';
+  const nick = NICK[last] || last;
+  return new Set([slugPart(value), last, nick].filter(Boolean));
+}
+
+function slugHasTeam(id: string, team?: string) {
+  const keys = teamKeys(team);
+  const padded = `-${id}-`;
+  return Array.from(keys).some((key) => key.length > 2 && !CITY_ONLY.has(key) && padded.includes(`-${key}-`));
 }
 
 export function findGame<T extends { id?: string; game_id?: string; league?: string; sport_key?: string; away_team?: string; home_team?: string; matchup?: string }>(games: T[], gameId: string) {
@@ -34,24 +46,13 @@ export function findGame<T extends { id?: string; game_id?: string; league?: str
       slugPart(game.game_id),
       slugPart(`${game.league}-${game.away_team}-${game.home_team}`),
       slugPart(`${game.sport_key}-${game.away_team}-${game.home_team}`),
-      slugPart(game.matchup),
-      `${away}-${home}`,
-      `${home}-${away}`,
-    ];
+    ].filter(Boolean);
     return keys.includes(id);
   });
   if (exact) return exact;
 
   return games.find((game) => {
-    const away = slugPart(game.away_team);
-    const home = slugPart(game.home_team);
-    if (!away || !home) return false;
-    if (id.includes(away) && id.includes(home)) return true;
-    const awayShort = lastName(game.away_team);
-    const homeShort = lastName(game.home_team);
-    if (!awayShort || !homeShort || awayShort === homeShort) return false;
-    const awayFull = NICK[awayShort] || away;
-    const homeFull = NICK[homeShort] || home;
-    return id.includes(awayShort) && id.includes(homeShort) && (id.includes(awayFull) || id.includes(awayShort)) && (id.includes(homeFull) || id.includes(homeShort));
+    if (!game.away_team || !game.home_team) return false;
+    return slugHasTeam(id, game.away_team) && slugHasTeam(id, game.home_team);
   });
 }
