@@ -18,10 +18,11 @@ const demo:O[]=[
  sample('5','NCAAB','UConn vs Marquette','Moneyline',[{book:'Caesars',bet:'UConn',odds:125},{book:'FanDuel',bet:'Marquette',odds:110}],22,'HELD','Settlement verification pending'),
  sample('6','MLB','Dodgers vs Padres','Total',[{book:'DraftKings',bet:'Over 8.5',odds:112},{book:'BetMGM',bet:'Under 8.5',odds:105}],27)
 ];
+const empty:O={id:'',sport:'',event:'',market:'',roi:0,age:0,legs:[],status:'HELD'};
 const ageFrom=(legs:any[],fallbackMs?:number)=>{const now=Date.now();const ages=legs.map(l=>Date.parse(String(l?.last_update||l?.lastUpdate||''))).filter(Number.isFinite).map(t=>Math.max(0,Math.floor((now-t)/1000)));if(ages.length)return Math.max(...ages);return fallbackMs?Math.max(0,Math.floor((now-fallbackMs)/1000)):0};
 
 export default function Page(){
- const[selected,setSelected]=useState<O>(demo[0]); const[rows,setRows]=useState<O[]>([]); const[query,setQuery]=useState(''); const[book,setBook]=useState('All Books'); const[updatedAt,setUpdatedAt]=useState<number|null>(null); const[mode,setMode]=useState<'loading'|'live'|'preview'>('loading');
+ const[selected,setSelected]=useState<O>(empty); const[rows,setRows]=useState<O[]>([]); const[query,setQuery]=useState(''); const[book,setBook]=useState('All Books'); const[updatedAt,setUpdatedAt]=useState<number|null>(null); const[mode,setMode]=useState<'loading'|'live'|'preview'>('loading');
  const[bankText,setBankText]=useState('1000'); const[detailOpen,setDetailOpen]=useState(true); const[favorites,setFavorites]=useState<Set<string>>(new Set()); const[sortDesc,setSortDesc]=useState(true); const[sport,setSport]=useState('All Sports'); const[market,setMarket]=useState('All Markets'); const[verifiedOnly,setVerifiedOnly]=useState(false); const[tab,setTab]=useState('Market Details');
  useEffect(()=>{fetch('/v1/inqsi/arbitrage/opportunities',{cache:'no-store'}).then(async r=>{const data=await r.json();if(!r.ok||data.mode!=='live'){setRows([]);setMode('preview');return}const found:O[]=[];for(const scan of (Array.isArray(data.history)?data.history:[])){const p=scan?.payload||scan?.data||scan||{};for(const [key,status] of [['hits','VERIFIED'],['detected_unverified','HELD']] as const){for(const row of (p[key]||[])){const raw=Array.isArray(row.legs)?row.legs:Array.isArray(row.quotes)?row.quotes:[];const legs:Leg[]=raw.map((x:any)=>({book:String(x?.book||x?.bookmaker||'Book'),bet:String(x?.outcome||x?.name||'Outcome'),odds:Number(x?.american??x?.american_odds??x?.price??x?.odds??0),lastUpdate:x?.last_update?String(x.last_update):undefined,limit:Number.isFinite(Number(x?.limit))?Number(x.limit):undefined})).filter((x:Leg)=>x.odds!==0);if(legs.length<2)continue;found.push({id:String(row.market_id||row.event_id||row.event||found.length),sport:String(row.sport||p.sport||'Sport').toUpperCase(),event:String(row.event||row.event_id||'Market opportunity'),market:String(row.market||'Market'),roi:Number(row.margin_pct??roiFrom(legs)),age:ageFrom(raw,Number(scan?.created_at_ms)||undefined),legs,status,reason:row?.validation?.settlement_reason||row?.reason});}}}if(found.length){found.sort((a,b)=>b.roi-a.roi);setRows(found.slice(0,50));setSelected(found[0]);}else setRows([]);setUpdatedAt(Date.now());setMode('live')}).catch(()=>{setRows([]);setMode('preview')});},[]);
  const bank=Math.max(0,Number(bankText.replace(/,/g,''))||0);
@@ -56,7 +57,7 @@ export default function Page(){
     </button>)}</div>
    </section>
    </section>
-   <aside className="detail" id="arb-detail">
+   <aside className={'detail '+(rows.length?'':'hidden')} id="arb-detail">
     <div className="detail-top"><div><small>{selected.sport}　·　{selected.market}</small><b>{selected.age}s ago <i/></b></div><div className="title-line"><h2>{selected.event}</h2><button className={'favorite '+(favorites.has(selected.id)?'on':'')} aria-label="Save opportunity" onClick={()=>setFavorites(prev=>{const next=new Set(prev);next.has(selected.id)?next.delete(selected.id):next.add(selected.id);return next})}>☆</button></div></div>
     <div className="roi-hero"><div><strong>{selected.roi>=0?'+':''}{selected.roi.toFixed(2)}%</strong><small>Recorded ROI</small></div><em className={mode==='preview'?'held':selected.status==='VERIFIED'?'verified':'held'}>● {mode==='preview'?'PREVIEW SAMPLE':selected.status==='VERIFIED'?'VERIFIED EXECUTABLE':'HELD BACK'}</em></div>
     <div className={'quote-pair '+(selected.legs.length>2?'multi':'')}>{selected.legs.map((l,i)=><div key={i}><small>{l.book}</small><span>{l.bet}</span><b>{american(l.odds)}</b></div>)}</div>
@@ -71,7 +72,7 @@ export default function Page(){
     <div className="evidence">{tab==='Market Details'?<>{mode==='live'?<><p>✓ Opportunity loaded from ARB audit history</p><p>✓ Displayed prices independently recalculated across all legs</p><p>✓ Status preserved from backend verification</p></>:<p>Preview data — not a live betting opportunity.</p>}</>:<p>{tab} information remains secondary to the betting workflow.</p>}{selected.reason&&<p className="reason">Holdback: {selected.reason}</p>}</div></>}
    </aside>
   </div>
-  <section className="execution-workspace">
+  <section className={'execution-workspace '+(rows.length?'':'hidden')}>
    <div className="execution-head"><a href="#arb-detail">← Back to Opportunities</a><div><h2>{selected.event}</h2><span>{selected.sport} · {selected.market}</span></div><strong>{selected.roi.toFixed(1)}% ARB<small>Estimated ROI</small></strong><span>● Last updated<br/><b>{selected.age} seconds ago</b></span></div>
    <div className="execution-grid">
     <div className="leg-cards">{selected.legs.slice(0,2).map((l,i)=><div className={'leg '+(i?'blue':'green')} key={i}><small>Leg {i+1} · {l.book}</small><div><b>{l.bet}</b><strong>{american(l.odds)}</strong></div><div><span>Stake <b>{money(calc.stakes[i]||0)}</b></span><span>To Win <b>{money((calc.stakes[i]||0)*(dec(l.odds)-1))}</b></span><span>Total Payout <b>{money((calc.stakes[i]||0)*dec(l.odds))}</b></span></div><button type="button">Open at {l.book} →</button></div>)}</div>
