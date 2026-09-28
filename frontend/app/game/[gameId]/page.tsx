@@ -3,27 +3,54 @@ import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
 import { SignalPill } from '@/components/SignalPill';
 import { LineMovementGraph } from '@/components/LineMovementGraph';
-import { formatAmericanOdds, formatKickoff, impliedPercent } from '@/lib/kickoff';
+import { formatAmericanOdds, formatKickoff, impliedPercent, slugPart } from '@/lib/kickoff';
 import { getSportSlugForLeague } from '@/lib/sports';
 
-function slug(value?: string) {
-  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const NICK: Record<string, string> = {
+  cubs: 'chicago-cubs',
+  padres: 'san-diego-padres',
+  yankees: 'new-york-yankees',
+  'red-sox': 'boston-red-sox',
+  'white-sox': 'chicago-white-sox',
+  sox: 'boston-red-sox',
+  'blue-jays': 'toronto-blue-jays',
+  jays: 'toronto-blue-jays',
+  phillies: 'philadelphia-phillies',
+  braves: 'atlanta-braves',
+  astros: 'houston-astros',
+  dodgers: 'los-angeles-dodgers',
+  giants: 'san-francisco-giants',
+  mets: 'new-york-mets',
+};
+
+function expand(value: string) {
+  return NICK[value] || value;
 }
 
 function findGame(games: Awaited<ReturnType<typeof getApiSnapshot>>['games'], gameId: string) {
-  const id = decodeURIComponent(gameId).toLowerCase();
+  const raw = decodeURIComponent(gameId || '').toLowerCase();
+  const trimmed = raw.split('|')[0];
+  const id = slugPart(trimmed);
   return games.find((game) => {
+    const away = slugPart(game.away_team);
+    const home = slugPart(game.home_team);
     const keys = [
       game.id,
       game.game_id,
-      slug(game.matchup),
-      slug(`${game.away_team}-${game.home_team}`),
-      slug(`${game.home_team}-${game.away_team}`),
-      slug(`${game.league}-${game.away_team}-${game.home_team}`),
-      slug(`${game.sport_key}-${game.away_team}-${game.home_team}`),
+      slugPart(game.matchup),
+      `${away}-${home}`,
+      `${home}-${away}`,
+      `${slugPart(game.league)}-${away}-${home}`,
+      `${slugPart(game.sport_key)}-${away}-${home}`,
+      trimmed,
+      id,
     ].map((value) => String(value || '').toLowerCase());
-    if (keys.includes(id)) return true;
-    return Boolean(slug(game.home_team) && slug(game.away_team) && id.includes(slug(game.home_team)) && id.includes(slug(game.away_team)));
+    if (keys.includes(raw) || keys.includes(trimmed) || keys.includes(id)) return true;
+    const tokens = id.split('-').filter(Boolean);
+    const haystack = `${away} ${home} ${expand(away)} ${expand(home)}`;
+    const wantsAway = tokens.some((token) => haystack.includes(token) && (away.includes(token) || expand(away).includes(token)));
+    const wantsHome = tokens.some((token) => haystack.includes(token) && (home.includes(token) || expand(home).includes(token)));
+    return Boolean(away && home && wantsAway && wantsHome);
   });
 }
 
@@ -41,7 +68,7 @@ export default async function GameDetailPage({ params }: { params: { gameId: str
 
       <section className="panel" style={{ marginBottom: 18 }}>
         <div className="game-topline"><span className="league-chip">{game?.league || 'SPORT'}</span><span>{start}</span><span className="data-status">{game ? (game.status_label || 'Live') : 'Waiting'}</span></div>
-        <h2 style={{ marginBottom: 12 }}>{game?.matchup || decodeURIComponent(params.gameId)}</h2>
+        <h2 style={{ marginBottom: 12 }}>{game?.matchup || decodeURIComponent(params.gameId).split('|')[0]}</h2>
         <p className="movement">
           {game?.favorite
             ? `Market favorite: ${game.favorite} ${formatAmericanOdds(favoriteOdds) || 'Waiting'}${implied ? ` · ${implied}% implied` : ''}`
