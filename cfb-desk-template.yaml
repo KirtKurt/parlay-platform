@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Isolated college public-score desk. Own table and functions. No market model and no other sport.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref CfbDeskTable
+
+Resources:
+  CfbDeskTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  CfbDeskTickFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: cfb_desk/
+      Handler: handler.tick_handler
+      Timeout: 180
+      MemorySize: 1024
+      Description: Refresh the isolated college public-score board.
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+              Resource: !GetAtt CfbDeskTable.Arn
+      Events:
+        EveryThirtyMinutes:
+          Type: Schedule
+          Properties:
+            Schedule: rate(30 minutes)
+            Input: '{"action":"tick"}'
+
+  CfbDeskStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: cfb_desk/
+      Handler: handler.status_handler
+      Timeout: 10
+      MemorySize: 256
+      Description: Public status for the isolated college desk.
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+              Resource: !GetAtt CfbDeskTable.Arn
+      FunctionUrlConfig:
+        AuthType: NONE
+        InvokeMode: BUFFERED
+
+  CfbDeskStatusUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CfbDeskStatusFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+Outputs:
+  CfbDeskStatusUrl:
+    Description: Public college desk status
+    Value: !GetAtt CfbDeskStatusFunctionUrl.FunctionUrl

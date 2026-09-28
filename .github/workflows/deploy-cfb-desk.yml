@@ -1,0 +1,72 @@
+name: Deploy isolated college desk
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: aws-actions/setup-sam@v2
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Check the college package stays isolated
+        run: |
+          set -euo pipefail
+          python3 -m py_compile cfb_desk/*.py
+          if grep -Ei 'nfl_auto|mlb_auto|soccer_auto|tennis' cfb_desk/*.py cfb-desk-template.yaml; then
+            echo 'college package references another sport' >&2
+            exit 1
+          fi
+          sam validate --template-file cfb-desk-template.yaml --lint
+      - name: Deploy the college stack only
+        run: |
+          set -euo pipefail
+          sam build --no-cached --template-file cfb-desk-template.yaml
+          stack=parlay-platform-cfb-desk
+          status=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$AWS_REGION" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo MISSING)
+          echo "STACK_STATUS=$status"
+          if [[ "$status" == "ROLLBACK_COMPLETE" || "$status" == "ROLLBACK_FAILED" ]]; then
+            aws cloudformation delete-stack --stack-name "$stack" --region "$AWS_REGION"
+            aws cloudformation wait stack-delete-complete --stack-name "$stack" --region "$AWS_REGION"
+          elif [[ "$status" == *_IN_PROGRESS ]]; then
+            echo "college stack busy: $status" >&2
+            exit 1
+          fi
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "$stack" \
+            --region "$AWS_REGION" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+      - name: Run one board refresh and read the public status
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-cfb-desk
+          tick=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id CfbDeskTickFunction --region "$AWS_REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          aws lambda invoke --function-name "$tick" --region "$AWS_REGION" --cli-read-timeout 200 --cli-binary-format raw-in-base64-out --payload '{"action":"tick"}' /tmp/tick.json >/tmp/tick-meta.json
+          python3 - << 'PY'
+          import json
+          meta = json.load(open("/tmp/tick-meta.json"))
+          body = json.load(open("/tmp/tick.json"))
+          print("TICK", meta.get("StatusCode"), meta.get("FunctionError"), body.get("mode"), body.get("authority"), body.get("games"), body.get("boardCount"), body.get("promotedResidual"))
+          if meta.get("FunctionError") or body.get("ok") is not True or not body.get("games"):
+              raise SystemExit(1)
+          PY
+          url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='CfbDeskStatusUrl'].OutputValue" --output text)
+          curl -fsS "$url" | python3 -c 'import json,sys; s=json.load(sys.stdin); print("PUBLIC", s.get("sport"), s.get("mode"), s.get("authority"), s.get("games"), s.get("boardCount"), s.get("season"), s.get("week"))'
+          echo "CFB_STATUS_URL=$url" >> "$GITHUB_STEP_SUMMARY"
