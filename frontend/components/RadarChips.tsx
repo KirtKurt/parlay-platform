@@ -1,7 +1,8 @@
 'use client';
 
 const REASON: Record<string, string> = {
-  EVENT_OR_MARKET_SCOPE_UNREVIEWED: 'Settlement rules on radar',
+  EVENT_OR_MARKET_SCOPE_UNREVIEWED: 'Event scope on radar',
+  UNREVIEWED_OR_MISSING_RULE: 'Settlement rules on radar',
   SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE: 'House rules under review',
   RULES_UNKNOWN: 'Rules status on radar',
   FRESHNESS: 'Quote freshness on radar',
@@ -12,6 +13,7 @@ function humanize(code?: string) {
   if (!code) return '';
   const key = String(code).trim().toUpperCase().replace(/\s+/g, '_');
   if (REASON[key]) return REASON[key];
+  if (/unreviewed|missing_rule/i.test(code)) return 'Settlement rules on radar';
   const clean = String(code).replace(/_/g, ' ').trim();
   if (!clean) return '';
   return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase() + ' on radar';
@@ -26,6 +28,7 @@ export function radarFromArb(row: {
   status?: string;
   market?: string;
   reason?: string;
+  qualification?: string;
   executable?: boolean;
   mathArb?: boolean;
   verifiedArb?: boolean;
@@ -42,8 +45,14 @@ export function radarFromArb(row: {
   if (row.executable === false) chips.push({ label: 'Not executable yet', tone: 'held' });
   const reason = humanize(row.reason);
   if (reason) chips.push({ label: reason, tone: 'held' });
+  const qualification = humanize(row.qualification);
+  if (qualification && qualification !== reason) chips.push({ label: qualification, tone: 'held' });
   if (row.books && row.books > 0) chips.push({ label: `${row.books} books on radar`, tone: 'live' });
-  return chips;
+  const unique = [] as typeof chips;
+  for (const chip of chips) {
+    if (!unique.some((item) => item.label === chip.label)) unique.push(chip);
+  }
+  return unique;
 }
 
 export function RadarStrip({ chips }: { chips: Array<{ label: string; tone?: 'live' | 'held' | 'wait' }> }) {
