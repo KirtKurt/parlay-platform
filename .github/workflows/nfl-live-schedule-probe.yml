@@ -28,26 +28,30 @@ jobs:
           }
           BUCKET=$(resource NflRawBucket)
           OPS=$(resource NflOpsTable)
-          KEY=$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "bbd/nfl/live-schedule/2026/offset-0/" --query 'sort_by(Contents, &LastModified)[-1].Key' --output text)
-          echo "KEY=$KEY"
-          aws s3 cp "s3://$BUCKET/$KEY" /tmp/sched.json
-          aws dynamodb query --table-name "$OPS" --region "$REGION" --key-condition-expression "PK = :pk" --expression-attribute-values '{":pk":{"S":"LIVE_SCHEDULE_EXCLUSION"}}' --limit 5 --output json > /tmp/ops.json
+          aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "bbd/nfl/live-schedule/2026/offset-0/" --output json > /tmp/keys.json
+          aws dynamodb query --table-name "$OPS" --region "$REGION" --key-condition-expression "PK = :pk" --expression-attribute-values '{":pk":{"S":"LIVE_SCHEDULE_EXCLUSION"}}' --limit 8 --output json > /tmp/ops.json
           python3 - << 'PY'
-          import json
+          import json, subprocess, os
+          listing = json.load(open("/tmp/keys.json"))
+          contents = listing.get("Contents") or []
+          contents.sort(key=lambda row: row.get("LastModified") or "")
+          key = contents[-1]["Key"]
+          bucket = os.environ["BUCKET"]
+          subprocess.check_call(["aws", "s3", "cp", f"s3://{bucket}/{key}", "/tmp/sched.json"])
           payload = json.load(open("/tmp/sched.json"))
           rows = payload.get("data") or []
-          print("rows", len(rows), "pagination", payload.get("pagination"))
+          print("objects", len(contents), "rows", len(rows), "pagination", payload.get("pagination"))
           row = rows[0] if rows else {}
           print("keys", sorted(row.keys()))
           interesting = ("game_id", "id", "season", "week", "week_number", "game_type", "season_type", "type", "game_date", "gameday", "kickoff_utc", "kickoff", "commence_time", "start_time", "gametime", "game_time", "home_team", "away_team", "home", "away", "home_score", "away_score", "status")
           sample = {}
-          for key in interesting:
-              if key in row:
-                  value = row[key]
+          for name in interesting:
+              if name in row:
+                  value = row[name]
                   if isinstance(value, dict):
-                      sample[key] = {child: value.get(child) for child in list(value)[:8]}
+                      sample[name] = {child: value.get(child) for child in list(value)[:8]}
                   else:
-                      sample[key] = value
+                      sample[name] = value
           print("sample", json.dumps(sample, default=str)[:2500])
           ops = json.load(open("/tmp/ops.json"))
           reasons = []
@@ -55,3 +59,5 @@ jobs:
               reasons.append({"sk": (item.get("SK") or {}).get("S"), "reason": (item.get("reason") or {}).get("S")})
           print("reasons", json.dumps(reasons)[:2000])
           PY
+        env:
+          BUCKET: ${{ env.BUCKET }}
