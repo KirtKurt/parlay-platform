@@ -32,9 +32,13 @@ jobs:
           if ! aws iam get-policy --policy-arn "$POLICY_ARN" >/dev/null 2>&1; then
             aws iam create-policy --policy-name "$POLICY_NAME" --policy-document "$DOC" >/dev/null
           fi
-          aws iam attach-user-policy --user-name "$USER" --policy-arn "$POLICY_ARN"
+          GROUP=ArbSmsDeliveryDiagnostics
+          aws iam get-group --group-name "$GROUP" >/dev/null 2>&1 || aws iam create-group --group-name "$GROUP" >/dev/null
+          aws iam attach-group-policy --group-name "$GROUP" --policy-arn "$POLICY_ARN"
+          aws iam add-user-to-group --group-name "$GROUP" --user-name "$USER" 2>/dev/null || true
           sleep 3
-          aws iam list-attached-user-policies --user-name "$USER" --query "AttachedPolicies[?PolicyArn=='$POLICY_ARN'].PolicyArn" --output text | grep -F "$POLICY_ARN"
+          aws iam list-attached-group-policies --group-name "$GROUP" --query "AttachedPolicies[?PolicyArn=='$POLICY_ARN'].PolicyArn" --output text | grep -F "$POLICY_ARN"
+          aws iam get-group --group-name "$GROUP" --query "Users[?UserName=='$USER'].UserName" --output text | grep -F "$USER"
           COUNT=$(aws sns list-sms-sandbox-phone-numbers --query "length(PhoneNumbers)" --output text)
           echo "SMS sandbox read verification succeeded; verified/pending destination count=$COUNT"
           echo "No SMS was sent."
