@@ -1,11 +1,12 @@
 'use client';
 import {useEffect,useMemo,useState} from 'react';
 import {GENERATED_ARB_WEBSOCKET_URL} from '@/lib/generatedArbApi';
+import {ArbSignals} from '@/components/ArbSignals';
 import './arb-v2.css';
 
 type Status='VERIFIED'|'HELD';
 type Leg={book:string;bet:string;odds:number;lastUpdate?:string;limit?:number;link?:string};
-type O={id:string;sport:string;event:string;market:string;roi:number;age:number;legs:Leg[];status:Status;reason?:string};
+type O={id:string;sport:string;event:string;market:string;roi:number;age:number;legs:Leg[];status:Status;reason?:string;start?:string;mathArb?:boolean;executable?:boolean;books?:number;validation?:any};
 const dec=(a:number)=>Math.abs(a)>=100?(a>0?1+a/100:1+100/Math.abs(a)):0;
 const american=(n:number)=>n>0?`+${n}`:String(n);
 const money=(n:number)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number.isFinite(n)?n:0);
@@ -38,6 +39,11 @@ function toRow(row:any,status:Status,fallbackMs?:number):O|null{
     legs,
     status,
     reason:row?.validation?.settlement_reason||row?.reason,
+    start:row?.commence_time||row?.start,
+    mathArb:Boolean(row?.math_arb),
+    executable:Boolean(row?.validation?.executable??row?.executable),
+    books:legs.length,
+    validation:row?.validation,
   };
 }
 
@@ -75,7 +81,6 @@ export default function Page(){
  const[sport,setSport]=useState('All Sports');
  const[market,setMarket]=useState('All Markets');
  const[verifiedOnly,setVerifiedOnly]=useState(false);
- const[tab,setTab]=useState('Market Details');
 
  useEffect(()=>{
   let active=true;
@@ -148,7 +153,7 @@ export default function Page(){
    </aside>
    <section className="command-main">
     <div className="command-heading"><div><h1>ARB Command Center</h1><p>Real-time sports arbitrage opportunities across top sportsbooks.</p></div><div className={'connection '+mode}><i/>{mode==='live'?'Live Data':mode==='loading'?'Connecting':'Unavailable'}</div></div>
-    <div className="kpis"><div><b>⚡ {rows.length}</b><span>Live Opportunities</span></div><div><b>▥ {rows.length?Math.max(...rows.map(x=>x.roi)).toFixed(1):'0.0'}%</b><span>Best ROI</span></div><div><b>◷ {avgAge}s</b><span>Avg. Freshness</span></div><div><b>◉ {Math.max(0,books.length-1)} / 11</b><span>Books Online</span></div></div>
+    <div className="kpis"><div><b>⚡ {rows.length}</b><span>Live Opportunities</span></div><div><b>◥ {rows.length?Math.max(...rows.map(x=>x.roi)).toFixed(1):'0.0'}%</b><span>Best ROI</span></div><div><b>◷ {avgAge}s</b><span>Avg. Freshness</span></div><div><b>◉ {Math.max(0,books.length-1)}</b><span>Books Online</span></div></div>
     <section className="feed">
     <div className="filters"><span className="opp-count">Opportunities ({filtered.length})</span><label className="toggle"><input type="checkbox" checked={verifiedOnly} onChange={e=>setVerifiedOnly(e.target.checked)}/><span/>Verified Only</label><button className="sort" type="button" onClick={()=>setSortDesc(v=>!v)}>ROI {sortDesc?'High → Low':'Low → High'}</button><div className={'connection '+mode}><i/>{mode==='live'?'Live':mode==='loading'?'Connecting':'Unavailable'}{mode==='live'&&updatedAt?' · refreshed just now':''}</div></div>
     <div className="head"><span>SPORT / MARKET</span><span>EVENT</span><span>SPORTSBOOKS (ODDS)</span><span>ROI</span><span>STATUS</span><span>LAST UPDATE</span></div>
@@ -161,7 +166,7 @@ export default function Page(){
    </section>
    <aside className={'detail '+(rows.length?'':'hidden')} id="arb-detail">
     <div className="detail-top"><div><small>{selected.sport}　·　{selected.market}</small><b>{selected.age}s ago <i/></b></div><div className="title-line"><h2>{selected.event}</h2><button className={'favorite '+(favorites.has(selected.id)?'on':'')} aria-label="Save opportunity" onClick={()=>setFavorites(prev=>{const next=new Set(prev);next.has(selected.id)?next.delete(selected.id):next.add(selected.id);return next})}>☆</button></div></div>
-    <div className="roi-hero"><div><strong>{selected.roi>=0?'+':''}{selected.roi.toFixed(2)}%</strong><small>Estimated ROI</small></div><em className={selected.status==='VERIFIED'?'verified':'held'}>● {selected.status==='VERIFIED'?'VERIFIED EXECUTABLE':'HELD BACK'}</em></div>
+    <div className="roi-hero"><div><strong>{selected.roi>=0?'+':''}{selected.roi.toFixed(2)}%</strong><small>Estimated ROI</small></div><em className={selected.status==='VERIFIED'?'verified':'held'}>{selected.status==='VERIFIED'?'VERIFIED EXECUTABLE':'HELD BACK'}</em></div>
     <div className={'quote-pair '+(selected.legs.length>2?'multi':'')}>{selected.legs.map((l,i)=><div key={i}><small>{l.book}</small><span>{l.bet}</span><b>{american(l.odds)}</b></div>)}</div>
     <label className="stake">Total Stake<div><span>$</span><input aria-label="Total stake" inputMode="decimal" value={bankText} onChange={e=>setBankText(e.target.value.replace(/[^0-9.,]/g,''))}/></div></label>
     <div className="presets">{[50,100,500,1000,2500].map(n=><button key={n} className={bank===n?'on':''} onClick={()=>setBankText(String(n))}>{money(n).replace('.00','')}</button>)}</div>
@@ -169,20 +174,19 @@ export default function Page(){
     <div className={'profit '+(!isArb?'invalid':'')}><div><span>{isArb?'Guaranteed Profit':'No guaranteed profit'}</span><strong>{isArb?money(calc.p):'—'}</strong></div><div><span>Return</span><strong>{calc.r.toFixed(2)}%</strong></div></div>
     {roiMismatch&&<div className="calc-warning">Displayed prices no longer reproduce the recorded ROI. Treat this opportunity as stale until refreshed.</div>}
     {overLimit&&<div className="calc-warning">Requested stake exceeds at least one known sportsbook limit.</div>}
-    <button className="details-button" onClick={()=>setDetailOpen(v=>!v)}>{detailOpen?'Hide Market Details　↑':'View Full Market Details　→'}</button>
-    {detailOpen&&<><div className="tabs">{['Market Details','Book Info','Settlement','Historical Odds'].map(x=><button onClick={()=>setTab(x)} className={tab===x?'active':''} key={x}>{x}</button>)}</div>
-    <div className="evidence">{tab==='Market Details'?<><p>✓ Quotes loaded from live ARB scan</p><p>✓ Displayed prices independently recalculated</p><p>✓ Status preserved from backend verification</p></>:<p>{tab} information remains secondary to the betting workflow.</p>}{selected.reason&&<p className="reason">Holdback: {selected.reason}</p>}</div></>}
+    <button className="details-button" onClick={()=>setDetailOpen(v=>!v)}>{detailOpen?'Hide Market Details ↑':'View Full Market Details →'}</button>
+    {detailOpen&&<div className="evidence"><ArbSignals row={selected}/></div>}
    </aside>
   </div>
   <section className={'execution-workspace '+(rows.length?'':'hidden')}>
-   <div className="execution-head"><a href="#arb-detail">← Back to Opportunities</a><div><h2>{selected.event}</h2><span>{selected.sport} · {selected.market}</span></div><strong>{selected.roi.toFixed(1)}% ARB<small>Estimated ROI</small></strong><span>● Last updated<br/><b>{selected.age} seconds ago</b></span></div>
+   <div className="execution-head"><a href="#arb-detail">← Back to Opportunities</a><div><h2>{selected.event}</h2><span>{selected.sport} · {selected.market}</span></div><strong>{selected.roi.toFixed(1)}% ARB<small>Estimated ROI</small></strong><span>Last updated<br/><b>{selected.age} seconds ago</b></span></div>
    <div className="execution-grid">
     <div className="leg-cards">{selected.legs.slice(0,2).map((l,i)=><div className={'leg '+(i?'blue':'green')} key={i}><small>Leg {i+1} · {l.book}</small><div><b>{l.bet}</b><strong>{american(l.odds)}</strong></div><div><span>Stake <b>{money(calc.stakes[i]||0)}</b></span><span>To Win <b>{money((calc.stakes[i]||0)*(dec(l.odds)-1))}</b></span><span>Total Payout <b>{money((calc.stakes[i]||0)*dec(l.odds))}</b></span></div>{l.link?<a className="book-link" href={l.link} target="_blank" rel="noreferrer">Open at {l.book} →</a>:<button type="button">Open at {l.book} →</button>}</div>)}</div>
     <div className="history-card"><b>Opportunity History</b><div className="spark"><i/><i/><i/><i/><i/><i/></div><small>Freshness from last live pull</small></div>
-    <div className="movement-card"><b>Market Movement</b>{selected.legs.slice(0,2).map((l,i)=><p key={i}><span>● {Math.max(1,selected.age+i*8)}s ago</span><strong>{american(l.odds)}</strong></p>)}</div>
+    <div className="movement-card"><b>Market Movement</b>{selected.legs.slice(0,2).map((l,i)=><p key={i}><span>{Math.max(1,selected.age+i*8)}s ago</span><strong>{american(l.odds)}</strong></p>)}</div>
    </div>
-   <div className="execution-bottom"><div className="mini-calc"><b>⚠ Arbitrage Calculator</b><div><label>Total Stake<input value={bankText} onChange={e=>setBankText(e.target.value.replace(/[^0-9.,]/g,''))}/></label><label>Odds Format<select><option>American</option></select></label><span>Guaranteed Profit<strong>{money(calc.p)}</strong></span><span>ROI<strong>{calc.r.toFixed(1)}%</strong></span></div></div><div className="steps"><b>Execution Steps</b><ol><li>Verify both prices</li><li>Open first book</li><li>Recheck second price</li><li>Complete second leg</li></ol></div></div>
-   <div className="safety-strip">⚠ Verify prices before placing either leg. InQsi does not place wagers. Odds can change at any time.</div>
+   <div className="execution-bottom"><div className="mini-calc"><b>Arbitrage Calculator</b><div><label>Total Stake<input value={bankText} onChange={e=>setBankText(e.target.value.replace(/[^0-9.,]/g,''))}/></label><label>Odds Format<select><option>American</option></select></label><span>Guaranteed Profit<strong>{money(calc.p)}</strong></span><span>ROI<strong>{calc.r.toFixed(1)}%</strong></span></div></div><div className="steps"><b>Execution Steps</b><ol><li>Verify both prices</li><li>Open first book</li><li>Recheck second price</li><li>Complete second leg</li></ol></div></div>
+   <div className="safety-strip">Verify prices before placing either leg. InQsi does not place wagers. Odds can change at any time.</div>
   </section>
   <section className="how">
     <article><b>1. Open InQsi</b><p>Live opportunities appear as soon as the ARB scan returns quotes.</p></article>
