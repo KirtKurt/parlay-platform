@@ -36,7 +36,7 @@ export default function Page(){
    <div className="hero-actions"><Link className="primary-button large" href="/arbitrage-v2">Open ARB Finder</Link><Link className="ghost-button large" href="/arbitrage-v2/calculator">Open Live Calculator</Link></div>
   </section>
   <section className="status-row" style={{flexWrap:'wrap'}}>
-   {pages.map(([slug,title,detail])=><article className="status-card" key={slug} style={{minWidth:260,flex:'1 1 300px'}}><span>Guide / Tool</span><strong>{title}</strong><p>{detail}</p><Link href={`/learn/arbitrage/${slug}`}>Read more →</Link></article>)}
+   {pages.map(([slug,title,detail])=><article className="status-card" key={slug} style={{minWidth:260,flex:'1 1 300px'}}><span>Guide / Tool</span><strong>{title}</strong><p>{detail}</p><Link href={['arbitrage-calculator','surebet-calculator','implied-probability-calculator','american-odds-calculator','sportsbook-vig-calculator','middle-calculator'].includes(slug) ? `/learn/arbitrage/tools/${slug}` : `/learn/arbitrage/${slug}`}>Read more →</Link></article>)}
   </section>
  </main>;
 }
