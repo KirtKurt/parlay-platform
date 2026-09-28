@@ -29,9 +29,6 @@ type GameLike = {
   primary_signal?: string;
   dataStatus?: string;
   marketNote?: string;
-  predicted_winner?: string;
-  predicted_side?: string;
-  prediction_confidence?: number | string;
   bookCount?: number;
 };
 
@@ -49,7 +46,6 @@ export function GameCard({ game }: { game: GameLike }) {
   const dataStatus = game.dataStatus || game.status_label || 'Pending';
   const favoriteOdds = game.favoriteMl ?? game.favorite_ml;
   const implied = impliedPercent(favoriteOdds);
-  const predicted = game.predicted_winner || game.predicted_side || '';
   const href = gamePath({ ...game, matchup });
   const radar = radarFromGame(game).slice(0, 4);
 
@@ -62,11 +58,9 @@ export function GameCard({ game }: { game: GameLike }) {
       </div>
       <h4><Link href={href} style={{ color: 'inherit', textDecoration: 'none' }}>{matchup}</Link></h4>
       <p className="movement">
-        {predicted
-          ? `InQsi lean: ${predicted}`
-          : game.favorite
-            ? `Market favorite: ${game.favorite} ${formatAmericanOdds(favoriteOdds) || 'Waiting'}${implied ? ` · ${implied}% implied` : ''}`
-            : 'Waiting for a market favorite or official lean.'}
+        {game.favorite
+          ? `Market favorite: ${game.favorite} ${formatAmericanOdds(favoriteOdds) || 'Waiting'}${implied ? ` · ${implied}% implied` : ''}`
+          : 'Waiting for a market favorite.'}
       </p>
       <div className="market-row">
         <div>
@@ -90,7 +84,7 @@ export function GameCard({ game }: { game: GameLike }) {
           <b>{game.total ?? 'Waiting'}</b>
         </div>
       </div>
-      <p className="movement">{game.movement || game.what_looks_wrong || 'Waiting on verified market movement.'}</p>
+      <p className="movement">{game.movement || 'Waiting on verified market movement.'}</p>
       <RadarStrip items={radar} title="On our radar" />
       {game.marketNote && <p className="movement">{game.marketNote}</p>}
     </article>
