@@ -25,7 +25,7 @@ export default function Page(){
  const filtered=rows.filter(o=>(sport==='All Sports'||o.sport===sport)&&(market==='All Markets'||o.market===market)&&(!verifiedOnly||o.status==='VERIFIED'));
  const sports=['All Sports',...Array.from(new Set(rows.map(x=>x.sport)))]; const markets=['All Markets',...Array.from(new Set(rows.map(x=>x.market)))];
  return <main className="arb2">
-  <header className="top"><a className="brand" href="/"><i/>InQsi</a><nav><a className="active">▣ Arbitrage</a><a>▦ Calculator</a><a href="/sports">⚑ Picks</a><a href="/parlay-scanner">☷ Slip Scanner</a></nav><label className="search">⌕ <input aria-label="Search opportunities" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search teams, sports, or books..."/></label><button className="avatar">JK</button></header>
+  <header className="top"><a className="brand" href="/"><i/>InQsi</a><nav><a className="active">▣ Arbitrage</a><a href="/arbitrage-v2/calculator">▦ Calculator</a><a href="/sports">⚑ Picks</a><a href="/parlay-scanner">☷ Slip Scanner</a></nav><label className="search">⌕ <input aria-label="Search opportunities" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search teams, sports, or books..."/></label><button className="avatar">JK</button></header>
   <div className="workspace">
    <section className="feed">
     <div className="filters"><select value={sport} onChange={e=>setSport(e.target.value)}>{sports.map(x=><option key={x}>{x}</option>)}</select><select value={market} onChange={e=>setMarket(e.target.value)}>{markets.map(x=><option key={x}>{x}</option>)}</select><select value={book} onChange={e=>setBook(e.target.value)}>{books.map(x=><option key={x}>{x}</option>)}</select><label className="toggle"><input type="checkbox" checked={verifiedOnly} onChange={e=>setVerifiedOnly(e.target.checked)}/><span/>Verified Only</label><button className="sort" type="button">Sort by ROI⌄</button><div className={'connection '+mode}><i/>{mode==='live'?'Live':mode==='loading'?'Connecting':'Preview'}{mode==='live'&&updatedAt?' · refreshed just now':''}</div></div>
@@ -49,6 +49,6 @@ export default function Page(){
     <div className="evidence">{tab==='Market Details'?<>{mode==='live'?<><p>✓ Opportunity loaded from ARB audit history</p><p>✓ Displayed prices independently recalculated</p><p>✓ Status preserved from backend verification</p></>:<p>Preview data — not a live betting opportunity.</p>}</>:<p>{tab} information remains secondary to the betting workflow.</p>}{selected.reason&&<p className="reason">Holdback: {selected.reason}</p>}</div>
    </aside>
   </div>
-  <nav className="mobile-nav"><a className="active">▣<small>Arb</small></a><a>▦<small>Calculator</small></a><a>⚑<small>Picks</small></a><a>•••<small>More</small></a></nav>
+  <nav className="mobile-nav"><a className="active">▣<small>Arb</small></a><a href="/arbitrage-v2/calculator">▦<small>Calculator</small></a><a>⚑<small>Picks</small></a><a>•••<small>More</small></a></nav>
  </main>
 }
