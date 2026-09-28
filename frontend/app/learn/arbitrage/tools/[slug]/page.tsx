@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import {notFound} from 'next/navigation';
 import {ProbabilityCalculator,AmericanCalculator,VigCalculator,SurebetCalculator,MiddleCalculator} from '@/components/SeoCalculators';
-import '../../../../arbitrage-v2/arb-v2.css';
+import '@/app/arbitrage-v2/arb-v2.css';
 
 const tools={
  'arbitrage-calculator':{title:'Sports Arbitrage Calculator',description:'Calculate whether two American odds create a sports arbitrage and see balanced stake allocation.',C:SurebetCalculator},

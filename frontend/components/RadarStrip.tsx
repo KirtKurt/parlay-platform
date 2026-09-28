@@ -7,13 +7,10 @@ export function RadarStrip({ items, title = 'On our radar' }: { items: RadarItem
       <div className="signal-row">
         {items.map((item) => (
           <span key={item.id} className={`signal signal-${item.tone === 'held' ? 'resistance' : item.tone === 'wait' ? 'waiting' : 'active_slate'}`}>
-            {item.tone === 'held' ? 'Hold' : item.tone === 'wait' ? 'Wait' : 'On radar'} · {item.label}
+            {item.label}
           </span>
         ))}
       </div>
-      <p className="movement" style={{ marginTop: 8, marginBottom: 0 }}>
-        These chips show which checks are on the radar. InQsi does not publish the scoring math.
-      </p>
     </div>
   );
 }
