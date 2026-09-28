@@ -7,6 +7,7 @@ import './inqsi.css';
 import './inqsi-compat.css';
 import './tracking.css';
 import './inqsi-final-fixes.css';
+import './tool-workspace.css';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://inqsi.app';
 const ogImage = '/og-inqsi.svg';

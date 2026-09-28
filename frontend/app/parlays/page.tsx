@@ -1,16 +1,21 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
-import { formatKickoff } from '@/lib/kickoff';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = {
+  title: 'Official Hourly Parlays',
+  description: 'Official InQsi 3-leg parlays with a per-leg breakdown. Combined odds stay hidden until the hourly builder publishes a live price.',
+  alternates: { canonical: '/parlays' }
+};
 
 function isSampleParlay(row: any) {
   const blob = JSON.stringify(row || {}).toLowerCase();
   return (
     blob.includes('+342') ||
     blob.includes('"342"') ||
-    blob.includes('342') ||
     /confidence"?:\s*(70|76|82)/.test(blob) ||
     blob.includes('celtics') ||
     blob.includes('dodgers') ||
@@ -20,61 +25,70 @@ function isSampleParlay(row: any) {
   );
 }
 
+function parlayLegs(row: any) {
+  const raw = Array.isArray(row?.legs) ? row.legs : Array.isArray(row?.picks) ? row.picks : [];
+  return raw.map((leg: any, index: number) => {
+    if (typeof leg === 'string') return { label: leg, why: '' };
+    return {
+      label: String(leg?.team || leg?.pick || leg?.selection || leg?.name || `Leg ${index + 1}`),
+      why: String(leg?.note || leg?.explanation || leg?.why || ''),
+    };
+  }).filter((leg: { label: string }) => leg.label);
+}
+
 export default async function ParlaysPage() {
-  const { games, rankings, apiStatus, apiDetail } = await getApiSnapshot();
-  const official = (Array.isArray(rankings) ? rankings : []).filter((row) => !isSampleParlay(row));
-  const liveCount = games.length;
+  const { rankings, apiStatus, apiDetail } = await getApiSnapshot();
+  const official = (Array.isArray(rankings) ? rankings : []).filter((row) => !isSampleParlay(row)).slice(0, 6);
 
   return (
-    <main className="shell">
+    <main className="inqsi-shell tool-shell">
       <AppHeader title="Official Hourly Parlays" apiStatus={apiStatus} apiDetail={apiDetail} />
-      <section className="panel" style={{ marginBottom: 18 }}>
-        <div className="panel-header compact">
-          <div>
-            <p className="eyebrow blue">Updated hourly</p>
-            <h2 style={{ margin: 0 }}>Official Hourly Parlays</h2>
-            <p className="movement" style={{ marginBottom: 0 }}>Built from live market structure. Combined odds stay hidden until the hourly builder publishes a real price.</p>
-          </div>
-          <Link className="ghost-button" href="/sports" style={{ textDecoration: 'none' }}>Markets</Link>
-        </div>
-      </section>
-      <nav className="inqsi-tabs" aria-label="Parlay filters">
-        <Link href="/sports">All Sports</Link>
-        <Link href="/sports/nba">NBA</Link>
-        <Link href="/sports/mlb">MLB</Link>
-        <Link href="/sports/nfl">NFL</Link>
-        <Link href="/sports/nhl">NHL</Link>
-        <Link href="/sports/soccer">Soccer</Link>
+      <nav className="tool-tabs" aria-label="InQsi tools">
+        <Link className="tool-tab" href="/">Games</Link>
+        <Link className="tool-tab" href="/arbitrage-v2">ARB</Link>
+        <Link className="tool-tab on" href="/parlays">3-Leg</Link>
+        <Link className="tool-tab" href="/game-leans">Leans</Link>
+        <Link className="tool-tab" href="/parlay-scanner">Scan</Link>
       </nav>
-      <section className="panel" style={{ marginBottom: 18 }}>
-        <div className="panel-header">
+      <section className="tool-feed">
+        <div className="tool-feed-head">
           <div>
-            <p className="eyebrow">Best Parlay Right Now</p>
-            <h3>{official.length ? 'Official structure available' : liveCount ? 'Waiting on official hourly odds' : 'Waiting for live board data'}</h3>
+            <p className="eyebrow">Official 3-leg</p>
+            <h2>Breakdown before the price</h2>
           </div>
-          <strong style={{ color: '#9fb0be', fontSize: 28 }}>Waiting</strong>
+          <span className="data-status">{official.length ? `${official.length} published` : 'Waiting'}</span>
         </div>
-        <p className="movement">{liveCount ? `${liveCount} live board games are available. Combined parlay odds are not estimated.` : 'Official parlay output appears after the board has enough live pull history.'}</p>
-      </section>
-      <section className="game-list">
-        {official.length ? official.slice(0, 3).map((row: any, index: number) => (
-          <article className="rank-card" key={row.id || index}>
-            <div className="rank-head"><span>PARLAY</span><b>Official</b></div>
-            <h4>{row.structure || row.title || '3-leg official structure'}</h4>
-            <p>{row.note || row.explanation || 'Published from hourly builder output.'}</p>
-          </article>
-        )) : games.slice(0, 8).map((game) => (
-          <article className="rank-card" key={game.id}>
-            <div className="rank-head"><span>{game.league}</span><b>{formatKickoff(game.start || game.commence_time) || 'Waiting'}</b></div>
-            <h4>{game.matchup}</h4>
-            <p>Market favorite: {game.favorite || 'Waiting'} {game.favoriteMl || game.favorite_ml || ''}.</p>
-          </article>
-        ))}
-        {!official.length && !games.length && (
-          <article className="rank-card">
-            <div className="rank-head"><span>PARLAY</span><b>Waiting</b></div>
-            <h4>No official 3-leg price yet</h4>
-            <p>InQsi does not invent parlay odds.</p>
+        <p className="movement">This page only shows hourly builder output. Combined odds stay hidden until a live price exists. InQsi does not fill the list with sportsbook favorites.</p>
+        {official.length ? official.map((row: any, index: number) => {
+          const legs = parlayLegs(row);
+          return (
+            <article className="tool-row" key={row.id || index}>
+              <div>
+                <small>{row.structure || '3-LEG'}</small>
+                <strong>{row.title || row.structure || 'Official hourly structure'}</strong>
+                <p>{row.note || row.explanation || 'Published from the hourly builder. Review each leg before lock-in.'}</p>
+                {legs.length > 0 && (
+                  <ol className="tool-legs">
+                    {legs.slice(0, 3).map((leg: { label: string; why: string }) => (
+                      <li key={leg.label}>{leg.label}{leg.why ? ` — ${leg.why}` : ''}</li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+              <b className="tool-edge">{row.american || row.combined_odds || 'Waiting'}</b>
+            </article>
+          );
+        }) : (
+          <article className="tool-row">
+            <div>
+              <small>WAITING</small>
+              <strong>No official 3-leg price yet</strong>
+              <p>When the hourly builder publishes, each slip shows three legs and why they were grouped. Until then this stays empty instead of copying a sportsbook board.</p>
+            </div>
+            <span className="tool-badges">
+              <Link href="/parlay-scanner">Scan</Link>
+              <Link href="/game-leans">Leans</Link>
+            </span>
           </article>
         )}
       </section>
