@@ -1,0 +1,11 @@
+'use client';
+import {useMemo,useState} from 'react';
+import '../arb-v2.css';
+const dec=(a:number)=>a>0?1+a/100:1+100/Math.abs(a);
+const money=(n:number)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number.isFinite(n)?n:0);
+export default function CalculatorPage(){
+ const[stake,setStake]=useState('1000'); const[a,setA]=useState('115'); const[b,setB]=useState('102');
+ const total=Math.max(0,Number(stake.replace(/,/g,''))||0),oa=Number(a)||0,ob=Number(b)||0;
+ const c=useMemo(()=>{if(!oa||!ob)return{x:0,y:0,p:0,r:0};const d1=dec(oa),d2=dec(ob),x=total*d2/(d1+d2),y=total-x,p=Math.min(x*d1,y*d2)-total;return{x,y,p,r:total?100*p/total:0}},[total,oa,ob]);
+ return <main className="arb2 standalone"><header className="top"><a className="brand" href="/arbitrage-v2"><i/>InQsi</a><nav><a href="/arbitrage-v2">▣ Arbitrage</a><a className="active">▦ Calculator</a><a href="/sports">⚑ Picks</a><a href="/parlay-scanner">☷ Slip Scanner</a></nav></header><section className="standalone-card"><p className="eyebrow">ARB CALCULATOR</p><h1>Enter any stake and American odds</h1><p className="intro">Use the calculator independently or select a live opportunity to have these values filled automatically.</p><label className="stake">Total Stake<div><span>$</span><input inputMode="decimal" value={stake} onChange={e=>setStake(e.target.value.replace(/[^0-9.,]/g,''))}/></div></label><div className="manual-odds"><label>Side A<input inputMode="numeric" value={a} onChange={e=>setA(e.target.value.replace(/[^0-9+-]/g,''))}/></label><label>Side B<input inputMode="numeric" value={b} onChange={e=>setB(e.target.value.replace(/[^0-9+-]/g,''))}/></label></div><div className="allocations"><div><small>Stake on Side A</small><strong>{money(c.x)}</strong></div><div><small>Stake on Side B</small><strong>{money(c.y)}</strong></div></div><div className={'profit '+(c.p<=0?'invalid':'')}><div><span>{c.p>0?'Guaranteed Profit':'No guaranteed profit'}</span><strong>{c.p>0?money(c.p):'—'}</strong></div><div><span>Return</span><strong>{c.r.toFixed(2)}%</strong></div></div></section></main>
+}
