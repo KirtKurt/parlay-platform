@@ -23,10 +23,13 @@ export async function GET() {
     );
   }
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
     const upstream = await fetch(base + '/v1/arb/history?limit=25', {
       cache: 'no-store',
       headers: { accept: 'application/json' },
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeout));
     const body = await upstream.json().catch(() => ({}));
     if (!upstream.ok || body?.ok === false) {
       return NextResponse.json(
