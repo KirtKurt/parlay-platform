@@ -1,0 +1,40 @@
+name: Inqsi ARB SMS Delivery Diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Diagnose SNS SMS delivery without sending
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOPIC_ARN=$(aws cloudformation describe-stacks --stack-name inqsi-arb-prod --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ArbOpportunityTopicArn'].OutputValue" --output text)
+          test -n "$TOPIC_ARN"; test "$TOPIC_ARN" != "None"
+          echo "AWS caller:"
+          aws sts get-caller-identity --query '{Account:Account,Arn:Arn}' --output json
+          echo "SMS subscription count:"
+          aws sns list-subscriptions-by-topic --topic-arn "$TOPIC_ARN" --query "length(Subscriptions[?Protocol=='sms'])" --output text
+          echo "SMS subscription status:"
+          aws sns list-subscriptions-by-topic --topic-arn "$TOPIC_ARN" --query "Subscriptions[?Protocol=='sms'].{Protocol:Protocol,SubscriptionArn:SubscriptionArn}" --output json
+          echo "SNS SMS account attributes:"
+          aws sns get-sms-attributes --output json
+          echo "SNS SMS sandbox status (phone numbers intentionally not printed):"
+          if OUT=$(aws sns list-sms-sandbox-phone-numbers --output json 2>&1); then
+            COUNT=$(printf '%s' "$OUT" | python -c 'import json,sys; print(len(json.load(sys.stdin).get("PhoneNumbers", [])))')
+            echo "Sandbox API accessible; verified/pending sandbox entries=$COUNT"
+          else
+            echo "Sandbox API unavailable: $OUT"
+          fi
+          echo "No SMS was sent by this diagnostic."
