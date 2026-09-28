@@ -26,3 +26,9 @@ from validation import validate_events
 
 VERSION = "INQSI-ARB-v3"
 DEFAULT_MARKETS = "h2h,spreads,totals"
+
+
+def _bool_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes"}
