@@ -14,6 +14,7 @@ from constraints import apply_book_constraints, optimize_equal_payout
 from lifecycle import outcome_pnl, recommend_two_leg_completion, record_leg
 from market_catalog import MARKET_FAMILY_KEYS, expand_market_families
 from market_discovery import discover_event_market_keys, discover_events, fetch_all_discovered_markets
+from margin_engine import analyze_payload as analyze_margin_payload, analyze_snapshots as analyze_margin_snapshots
 from position_store import get as get_position, list_for_user, put as put_position
 from provider import MARKET_FAMILIES, list_sports, scan_sport_payload
 from quote_store import get_checkpoint, get_snapshot, list_snapshot_sports
@@ -389,6 +390,7 @@ def lambda_handler(event, context):
             "required_outcome_universe_preserved": True,
             "exchange_lay_routed": True,
             "middle_detection": True,
+            "sportsbook_margin_analysis": True,
             "executable_rounding": True,
             "user_book_filter": True,
             "book_first_desk": True,
@@ -402,6 +404,33 @@ def lambda_handler(event, context):
             "collector_checkpoint_error": checkpoint_error,
             "default_regions": _regions(_default_jurisdiction()).split(","),
         })
+
+    if path == "/v1/arb/margins" and method in {"GET", "POST"}:
+        source = (query.get("source") or ("payload" if method == "POST" else "store")).strip().lower()
+        if source not in {"payload", "store"}:
+            return response(400, {"ok": False, "error": "INVALID_SOURCE", "version": VERSION})
+        if source == "payload":
+            report = analyze_margin_payload(_body(event))
+            return response(200, {"version": VERSION, "source": "payload", **report})
+
+        sport = (query.get("sport") or "all").strip() or "all"
+        sports = list_snapshot_sports() if sport == "all" else [sport]
+        snapshots = []
+        unavailable = []
+        for sport_key in sports:
+            snap = get_snapshot(sport_key, max_age_seconds=_fresh_seconds())
+            if not snap or not snap.get("ok"):
+                unavailable.append(sport_key)
+                continue
+            snapshots.append({"sport": sport_key, "events": snap.get("events") or []})
+        if not snapshots:
+            return response(503, {
+                "ok": False, "error": "QUOTE_SNAPSHOT_UNAVAILABLE", "version": VERSION,
+                "source": "store", "sport": sport, "unavailable_sports": unavailable,
+            })
+        report = analyze_margin_snapshots(snapshots)
+        report["unavailable_sports"] = unavailable
+        return response(200, {"version": VERSION, "source": "store", **report})
 
     if method == "GET" and path == "/v1/arb/history":
         if not audit_enabled():

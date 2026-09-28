@@ -175,6 +175,9 @@ Resources:
         Books:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/books, Method: GET}
+        Margins:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/margins, Method: ANY}
         CollectorStatus:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/collector, Method: GET}
