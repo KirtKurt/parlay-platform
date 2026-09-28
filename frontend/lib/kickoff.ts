@@ -1,5 +1,6 @@
 export function formatKickoff(value?: string | null) {
   if (!value || value === 'TBD' || value === 'Waiting') return 'Waiting';
+  if (/\.\d{3}Z$/.test(value)) return 'Waiting';
   const stamp = Date.parse(value);
   if (!Number.isFinite(stamp)) return 'Waiting';
   return new Intl.DateTimeFormat('en-US', {
@@ -38,6 +39,7 @@ export function gamePath(game: { id?: string; game_id?: string; league?: string;
   if (league && away && home) return `/game/${league}-${away}-${home}`;
   const matchup = slugPart(game.matchup);
   if (matchup) return `/game/${matchup}`;
-  const id = encodeURIComponent(String(game.id || game.game_id || ''));
+  const raw = String(game.id || game.game_id || '').split('|')[0];
+  const id = slugPart(raw);
   return id ? `/game/${id}` : '/sports';
 }
