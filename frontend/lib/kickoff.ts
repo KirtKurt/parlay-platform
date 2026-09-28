@@ -26,3 +26,18 @@ export function formatAmericanOdds(value?: number | string | null) {
   if (!Number.isFinite(n)) return String(value);
   return n > 0 ? `+${n}` : String(n);
 }
+
+export function slugPart(value?: string | null) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+export function gamePath(game: { id?: string; game_id?: string; league?: string; sport_key?: string; away_team?: string; home_team?: string; matchup?: string }) {
+  const league = slugPart(game.league || game.sport_key || 'sport');
+  const away = slugPart(game.away_team);
+  const home = slugPart(game.home_team);
+  if (league && away && home) return `/game/${league}-${away}-${home}`;
+  const matchup = slugPart(game.matchup);
+  if (matchup) return `/game/${matchup}`;
+  const id = encodeURIComponent(String(game.id || game.game_id || ''));
+  return id ? `/game/${id}` : '/sports';
+}
