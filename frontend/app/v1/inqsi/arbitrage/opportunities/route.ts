@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
       fetchedAt:new Date().toISOString(), nArbs:Number(body?.n_arbs||0),
       hits:Array.isArray(body?.hits)?body.hits:[],
       held:Array.isArray(body?.detected_unverified)?body.detected_unverified:[],
-      status:body?.status||null,
+      status:body?.status||null, history:[{created_at_ms:Date.now(),payload:{sport:'all',hits:Array.isArray(body?.hits)?body.hits:[],detected_unverified:Array.isArray(body?.detected_unverified)?body.detected_unverified:[]}}],
     }, {headers:{'cache-control':'no-store'}});
   } catch {
     return NextResponse.json({ok:false,mode:'unavailable',error:'ARB_SCAN_UNAVAILABLE'}, {status:502});
