@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { GENERATED_ARB_API_URL } from '@/lib/generatedArbApi';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,7 @@ function apiBase() {
     process.env.NEXT_PUBLIC_INQSI_API_URL ||
     process.env.NEXT_PUBLIC_INQSI_API_BASE_URL ||
     process.env.NEXT_PUBLIC_API_BASE_URL ||
+    GENERATED_ARB_API_URL ||
     ''
   ).trim().replace(/\/$/, '');
 }
