@@ -382,32 +382,6 @@ jobs:
           print(json.dumps(payload, indent=2, default=decimal_to_native))
           PY
 
-      - name: Commit complete daily card
-        run: |
-          set -euo pipefail
-          cp runtime/tennis_daily_card.json /tmp/tennis_daily_card.json
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          published=false
-          for attempt in $(seq 1 20); do
-            git fetch origin main
-            git reset --hard origin/main
-            mkdir -p runtime
-            cp /tmp/tennis_daily_card.json runtime/tennis_daily_card.json
-            git add runtime/tennis_daily_card.json
-            if git diff --cached --quiet; then
-              published=true
-              break
-            fi
-            git commit -m 'Publish complete tennis daily card [skip ci]'
-            if git push origin HEAD:main; then
-              published=true
-              break
-            fi
-            sleep 3
-          done
-          test "$published" = true
-
       - name: Enforce complete all-match card
         run: |
           set -euo pipefail
@@ -434,3 +408,30 @@ jobs:
           assert int(card.get('coverage_failure_count') or 0) == 0, card
           print(json.dumps(card, indent=2, sort_keys=True))
           PY
+
+      - name: Commit complete daily card
+        run: |
+          set -euo pipefail
+          cp runtime/tennis_daily_card.json /tmp/tennis_daily_card.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          published=false
+          for attempt in $(seq 1 20); do
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p runtime
+            cp /tmp/tennis_daily_card.json runtime/tennis_daily_card.json
+            git add runtime/tennis_daily_card.json
+            if git diff --cached --quiet; then
+              published=true
+              break
+            fi
+            git commit -m 'Publish complete tennis daily card [skip ci]'
+            if git push origin HEAD:main; then
+              published=true
+              break
+            fi
+            sleep 3
+          done
+          test "$published" = true
+
