@@ -4,7 +4,7 @@ import { AppHeader } from '@/components/AppHeader';
 import { LoginForm } from '@/components/LoginForm';
 
 export const metadata: Metadata = {
-  title: 'Login | InQsi',
+  title: 'Login',
   description: 'Log in to InQsi to return to your saved slips, watchlists, alerts, and market review tools.',
   alternates: { canonical: '/login' }
 };

@@ -9,9 +9,11 @@ export type AppHeaderProps = {
 
 const menuLinks = [
   { href: '/', label: 'Home' },
-  { href: '/sports/mlb', label: 'Markets' },
+  { href: '/sports', label: 'Markets' },
   { href: '/parlays', label: 'Parlays' },
   { href: '/parlay-scanner', label: 'Scan' },
+  { href: '/arbitrage-v2', label: 'Arbitrage' },
+  { href: '/arbitrage-v2/calculator', label: 'Calculator' },
   { href: '/account', label: 'Account' },
   { href: '/login', label: 'Login' },
   { href: '/register', label: 'Start Membership' }
@@ -19,7 +21,7 @@ const menuLinks = [
 
 const bottomLinks = [
   { href: '/', label: 'Home', icon: 'H' },
-  { href: '/sports/mlb', label: 'Markets', icon: 'M' },
+  { href: '/sports', label: 'Markets', icon: 'M' },
   { href: '/parlays', label: 'Parlays', icon: 'P' },
   { href: '/parlay-scanner', label: 'Scan', icon: 'S' },
   { href: '/account', label: 'Account', icon: 'A' }
@@ -39,7 +41,7 @@ export function AppHeader({ eyebrow = 'InQsi', title = 'Sports market intelligen
     <>
       <header className="inqsi-topbar inqsi-mobile-header">
         <Link className="inqsi-menu-button" href="/account" aria-label="Open menu">Menu</Link>
-        <Link className="inqsi-wordmark" href="/" aria-label="InQsi home"><span>IN</span><b>Q</b><span>IS</span></Link>
+        <Link className="inqsi-wordmark" href="/" aria-label="InQsi home"><span>IN</span><b>Q</b><span>SI</span></Link>
         <Link className="inqsi-bell" href="/alerts" aria-label="Alerts">Alerts</Link>
       </header>
       <nav className="inqsi-desktop-links" aria-label="Site navigation">
