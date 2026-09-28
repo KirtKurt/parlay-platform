@@ -1,0 +1,12 @@
+/* Hide Market Details was a no-op on the command desk: tabs/evidence were display:none
+   and the desktop execution header sat under the phone tab bar. */
+.command-shell .presets{display:grid !important}
+.execution-head h2,.execution-head h2 a{color:#f5f8fb !important;text-decoration:none}
+@media(max-width:720px){
+  .execution-workspace{display:none !important}
+  .command-shell .tabs{display:flex !important;margin-bottom:8px}
+  .command-shell .evidence{display:block !important;padding-bottom:24px}
+  .details-button{margin:12px 0 16px}
+  .arb2{padding-bottom:84px}
+  .detail{padding-bottom:88px}
+}
