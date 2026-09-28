@@ -1,7 +1,8 @@
 'use client';
 
 const REASON: Record<string, string> = {
-  EVENT_OR_MARKET_SCOPE_UNREVIEWED: 'Settlement rules on radar',
+  EVENT_OR_MARKET_SCOPE_UNREVIEWED: 'Event scope on radar',
+  UNREVIEWED_OR_MISSING_RULE: 'Settlement rules on radar',
   SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE: 'House rules under review',
   RULES_UNKNOWN: 'Rules status on radar',
   FRESHNESS: 'Quote freshness on radar',
@@ -41,7 +42,7 @@ export function radarFromArb(row: {
   if (row.mathArb && row.verifiedArb === false) chips.push({ label: 'Cross-book mismatch on radar', tone: 'held' });
   if (row.executable === false) chips.push({ label: 'Not executable yet', tone: 'held' });
   const reason = humanize(row.reason);
-  if (reason) chips.push({ label: reason, tone: 'held' });
+  if (reason && !chips.some((chip) => chip.label === reason)) chips.push({ label: reason, tone: 'held' });
   if (row.books && row.books > 0) chips.push({ label: `${row.books} books on radar`, tone: 'live' });
   return chips;
 }
