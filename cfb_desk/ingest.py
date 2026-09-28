@@ -6,12 +6,12 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.request import Request, urlopen
 
 
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+USER_AGENT = "cfb-desk/1.0"
 ERRORS: list[str] = []
 
 
 def fetch_json(url: str) -> dict | None:
-    request = Request(url, headers={"accept": "application/json", "user-agent": USER_AGENT})
+    request = Request(url, headers={"accept": "application/json", "user-agent": USER_AGENT, "referer": "https://www.espn.com/college-football/scoreboard"})
     try:
         with urlopen(request, timeout=20) as response:
             if response.status != 200:
