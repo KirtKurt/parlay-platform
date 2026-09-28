@@ -70,35 +70,36 @@ def test_incomplete_outcome_universe_rejected():
     assert row["validation"]["outcome_coverage"] == "incomplete"
 
 
-def test_unknown_rules_never_labelled_arb():
+def test_unknown_rules_are_displayed_with_advisory():
     row = scan_market(
         market_id="bad-rules", event="A v B", market="x", bankroll=100,
         expected_outcomes=["A", "B"], rules_status="unknown",
         quotes=[{"outcome": "A", "book": "one", "decimal": 2.2}, {"outcome": "B", "book": "two", "decimal": 2.2}],
     )
-    assert row and not row["arb"]
+    assert row and row["arb"] is True
     assert row["math_arb"] is True
-    assert row["validation"]["qualification_reason"] == "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
+    assert row["validation"]["settlement_advisory"] == "SPORTSBOOK_RULES_MAY_AFFECT_SETTLEMENT"
 
 
-def test_provider_identity_only_is_unverified_not_arb():
+def test_provider_identity_only_can_surface_math_arb_with_advisory():
     row = scan_market(
         market_id="provider-only", event="A v B", market="h2h", bankroll=100,
         expected_outcomes=["A", "B"], rules_status="provider_identity_only",
         quotes=[{"outcome": "A", "book": "one", "decimal": 2.2}, {"outcome": "B", "book": "two", "decimal": 2.2}],
     )
     assert row and row["math_arb"] is True
-    assert row["arb"] is False
+    assert row["arb"] is True
     assert row["validation"]["rules_compatible"] is False
+    assert row["validation"]["settlement_advisory"] == "SPORTSBOOK_RULES_MAY_AFFECT_SETTLEMENT"
 
 
-def test_default_rules_are_fail_closed():
+def test_default_unknown_rules_do_not_hide_current_price_arb():
     row = scan_market(
         market_id="default-rules", event="A v B", market="h2h", bankroll=100,
         expected_outcomes=["A", "B"],
         quotes=[{"outcome": "A", "book": "one", "decimal": 2.2}, {"outcome": "B", "book": "two", "decimal": 2.2}],
     )
-    assert row and row["math_arb"] is True and row["arb"] is False
+    assert row and row["math_arb"] is True and row["arb"] is True
 
 
 def test_normalizer_groups_opposing_spreads_together():
@@ -140,10 +141,10 @@ def test_scan_all_separates_verified_from_unverified_math_arbs():
             {"outcome": "1", "book": "b1", "decimal": 2.05}, {"outcome": "2", "book": "b2", "decimal": 2.05}]},
     ]}
     result = scan_all(payload)
-    assert result["n_arbs"] == 1
-    assert result["n_detected_unverified"] == 1
-    assert result["hits"][0]["market_id"] == "a"
-    assert result["detected_unverified"][0]["market_id"] == "b"
+    assert result["n_arbs"] == 2
+    assert result["n_detected_unverified"] == 0
+    assert [row["market_id"] for row in result["hits"]] == ["a", "b"]
+    assert result["hits"][1]["validation"]["settlement_advisory"] == "SPORTSBOOK_RULES_MAY_AFFECT_SETTLEMENT"
 
 
 def test_american_conversion():
