@@ -49,7 +49,7 @@ def test_reviewed_registry_is_versioned_and_sourced():
     assert {r["book"] for r in rows} >= {"draftkings", "fanduel"}
 
 
-def test_unknown_settlement_rules_fail_closed():
+def test_unknown_settlement_rules_are_advisory():
     ts = fresh_ts()
     event = {
         "sport": "baseball_mlb", "market": "h2h",
@@ -59,8 +59,9 @@ def test_unknown_settlement_rules_fail_closed():
     validated = validate_event(event)
     assert len(validated) == 1 and validated[0]["rules_status"] == "unknown"
     result = scan_all({"bankroll": 100, "events": validated})
-    assert result["n_arbs"] == 0
-    assert result["n_detected_unverified"] == 1
+    assert result["n_arbs"] == 1
+    assert result["n_detected_unverified"] == 0
+    assert result["hits"][0]["validation"]["settlement_advisory"] == "SPORTSBOOK_RULES_MAY_AFFECT_SETTLEMENT"
 
 
 def test_unreviewed_book_does_not_poison_reviewed_pair():
@@ -127,7 +128,7 @@ def test_incompatible_profile_does_not_duplicate_verified_candidate():
         },
     ]
     result = scan_all({"bankroll": 100, "events": events})
-    assert result["n_arbs"] == 1
+    assert result["n_arbs"] == 2
     assert result["n_rejected"] == 0
 
 
@@ -147,9 +148,9 @@ def test_deduplication_keeps_distinct_events_without_ids():
             "quotes": quotes, "rules_status": "incompatible",
         },
     ]})
-    assert result["n_arbs"] == 1
-    assert result["n_rejected"] == 1
-    assert result["n_held_unverified"] == 1
+    assert result["n_arbs"] == 2
+    assert result["n_rejected"] == 0
+    assert result["n_held_unverified"] == 0
 
 
 def test_held_total_is_not_limited_by_detail_slice():
@@ -166,9 +167,10 @@ def test_held_total_is_not_limited_by_detail_slice():
         for i in range(101)
     ]
     result = scan_all({"bankroll": 100, "events": events})
-    assert result["n_held_unverified"] == 101
-    assert result["n_detected_unverified"] == 101
-    assert len(result["detected_unverified"]) == 100
+    assert result["n_arbs"] == 101
+    assert result["n_held_unverified"] == 0
+    assert result["n_detected_unverified"] == 0
+    assert len(result["hits"]) == 101
 
 
 def test_stale_quotes_are_excluded_from_verified_arb():
