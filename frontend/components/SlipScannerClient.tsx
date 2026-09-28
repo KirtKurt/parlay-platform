@@ -222,6 +222,17 @@ export function SlipScannerClient() {
         oddsAmerican: quote.odds,
         line: quote.line,
         matchup: game?.matchup || '',
+        marketSnapshots: game ? game.books.map((book) => {
+          const pricedDraft = { ...leg, book: book.book };
+          const priced = quoteFor(game, pricedDraft);
+          return {
+            book: book.book,
+            oddsAmerican: priced.odds,
+            line: priced.line,
+            observedAt: new Date().toISOString(),
+            source: 'LIVE_MARKET_BOARD',
+          };
+        }).filter((snapshot) => snapshot.oddsAmerican && snapshot.oddsAmerican !== 'Waiting') : [],
       };
     }).filter((leg) => leg.sport && leg.selection && leg.book);
     if (!payload.length) {
@@ -279,6 +290,15 @@ export function SlipScannerClient() {
         <div className="slip-action-bar"><div><small>3-LEG SLIP</small><strong>{completed}/3 ready</strong></div><button className="inqsi-primary" type="submit" disabled={state.loading||!games.length||completed===0}>{state.loading?'Analyzing…':'Analyze slip'}</button></div>
       </form>
       {state.error && <p className="movement slip-message">{state.error}</p>}
+      {state.result && (() => {
+        const scan = (state.result as any)?.scan || state.result as any;
+        const reads = Array.isArray(scan?.legReads) ? scan.legReads : [];
+        return <div className="slip-analysis">
+          <div className="slip-analysis-head"><div><small>INQSI ANALYSIS</small><strong>{scan?.overallRead || 'Analysis complete'}</strong></div><b>{scan?.overallScore != null ? `${scan.overallScore}/100` : 'Live data'}</b></div>
+          <div className="slip-read-grid">{reads.map((read:any,index:number)=><div key={read.legId || index}><small>LEG {index+1}</small><strong>{read.selection || `Leg ${index+1}`}</strong><span>{read.riskLevel || read.confidenceBand || 'Reviewed'}{read.score != null ? ` · ${read.score}/100` : ''}</span></div>)}</div>
+          {scan?.weakestLeg && <p className="movement"><b>Weakest leg:</b> {scan.weakestLeg.selection} · {scan.weakestLeg.riskLevel || scan.weakestLeg.confidenceBand}</p>}
+        </div>;
+      })()}
     </section>
   );
 }

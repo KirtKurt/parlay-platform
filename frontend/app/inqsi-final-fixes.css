@@ -106,3 +106,8 @@
  .slip-fields{grid-template-columns:minmax(0,.58fr) minmax(0,1fr)}
  .best-price-row{align-items:center}.best-price-row label{width:44%}
 }
+
+.slip-analysis{display:grid;gap:12px;margin-top:14px;padding:14px;border-radius:18px;border:1px solid rgba(38,243,124,.25);background:rgba(38,243,124,.055)}
+.slip-analysis-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.slip-analysis-head>div{display:grid;gap:3px}.slip-analysis-head small,.slip-read-grid small{color:#8299b4;font-size:.65rem;font-weight:900;letter-spacing:.08em}.slip-analysis-head>b{color:#26f37c}
+.slip-read-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.slip-read-grid>div{min-width:0;display:grid;gap:3px;padding:10px;border-radius:13px;background:rgba(255,255,255,.04)}.slip-read-grid strong{font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.slip-read-grid span{color:#9eb1c9;font-size:.7rem}
+@media(max-width:640px){.slip-read-grid{grid-template-columns:1fr}.slip-read-grid>div{grid-template-columns:52px minmax(0,1fr) auto;align-items:center}.slip-read-grid span{text-align:right}}
