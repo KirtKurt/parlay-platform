@@ -1,19 +1,48 @@
 'use client';
 
-function go(provider: 'google' | 'apple') {
-  const base = process.env.NEXT_PUBLIC_INQSI_API_URL;
-  if (!base) {
-    alert('Working on it. OAuth API URL is not configured yet.');
-    return;
-  }
-  window.location.href = `${base}/v1/oauth/${provider}/start`;
-}
+import {useEffect, useState} from 'react';
+import {signIn} from 'next-auth/react';
+
+const LABELS: Record<string, string> = {
+  google: 'Continue with Google',
+  apple: 'Continue with Apple',
+  twitter: 'Continue with X',
+  reddit: 'Continue with Reddit',
+  discord: 'Continue with Discord',
+};
 
 export function OAuthButtons() {
+  const [configured, setConfigured] = useState<string[]>([]);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/auth/status', {cache: 'no-store'})
+      .then((r) => r.json())
+      .then((data) => {
+        setConfigured(Array.isArray(data?.configured) ? data.configured : []);
+        setReady(true);
+      })
+      .catch(() => setReady(true));
+  }, []);
+
+  const all = ['google', 'apple', 'twitter', 'reddit', 'discord'];
+
   return (
     <div className="inqsi-oauth-actions">
-      <button type="button" onClick={() => go('google')}>Continue with Google</button>
-      <button type="button" onClick={() => go('apple')}>Continue with Apple</button>
+      {all.map((id) => {
+        const on = configured.includes(id);
+        return (
+          <button
+            key={id}
+            type="button"
+            disabled={!on}
+            onClick={() => on && signIn(id, {callbackUrl: '/arbitrage-v2'})}
+          >
+            {LABELS[id]}
+            {!on && ready ? ' · needs console credentials' : ''}
+          </button>
+        );
+      })}
     </div>
   );
 }
