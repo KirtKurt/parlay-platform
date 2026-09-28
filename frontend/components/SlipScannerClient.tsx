@@ -39,6 +39,32 @@ const markets = [
   { value: 'total', label: 'Total' },
 ];
 
+const sportAlias: Record<string, string> = {
+  MLB: 'MLB',
+  BASEBALL_MLB: 'MLB',
+  AMERICANFOOTBALL_NFL: 'NFL',
+  NFL: 'NFL',
+  NBA: 'NBA',
+  BASKETBALL_NBA: 'NBA',
+  WNBA: 'WNBA',
+  BASKETBALL_WNBA: 'WNBA',
+  NHL: 'NHL',
+  ICEHOCKEY_NHL: 'NHL',
+  NCAAM: 'NCAAM',
+  BASKETBALL_NCAAB: 'NCAAM',
+  CFB: 'CFB',
+  AMERICANFOOTBALL_NCAAF: 'CFB',
+  SOCCER: 'SOCCER',
+  SOCCER_EPL: 'SOCCER',
+  SOCCER_USA_MLS: 'SOCCER',
+  TENNIS: 'TENNIS',
+};
+
+function normalizeSport(value: unknown) {
+  const raw = String(value || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+  return sportAlias[raw] || raw.split('_').pop() || raw;
+}
+
 function numberOrUndef(value: unknown) {
   const n = Number(value);
   return Number.isFinite(n) ? n : undefined;
@@ -49,15 +75,34 @@ function formatAmerican(value?: number) {
   return Number(value) > 0 ? `+${value}` : String(value);
 }
 
+function mergeBook(current: BookQuote | undefined, incoming: BookQuote): BookQuote {
+  if (!current) return incoming;
+  return {
+    book: current.book,
+    homeMl: incoming.homeMl ?? current.homeMl,
+    awayMl: incoming.awayMl ?? current.awayMl,
+    homeSpread: incoming.homeSpread ?? current.homeSpread,
+    awaySpread: incoming.awaySpread ?? current.awaySpread,
+    homeSpreadPrice: incoming.homeSpreadPrice ?? current.homeSpreadPrice,
+    awaySpreadPrice: incoming.awaySpreadPrice ?? current.awaySpreadPrice,
+    totalPoint: incoming.totalPoint ?? current.totalPoint,
+    overPrice: incoming.overPrice ?? current.overPrice,
+    underPrice: incoming.underPrice ?? current.underPrice,
+  };
+}
+
 function parseBoard(payload: any): BoardGame[] {
   const boards = Array.isArray(payload?.boards) ? payload.boards : [];
-  return boards.flatMap((board: any) => {
-    const sport = String(board?.sport || board?.providerSportKey || 'sport').toUpperCase();
-    return (board?.games || []).map((game: any) => {
-      const away = String(game.awayTeam || game.away_team || 'Away');
-      const home = String(game.homeTeam || game.home_team || 'Home');
-      const books: BookQuote[] = (game.books || []).map((book: any) => ({
-        book: String(book.book || book.bookmaker || 'Book'),
+  const merged = new Map<string, BoardGame>();
+  for (const board of boards) {
+    const sport = normalizeSport(board?.sport || board?.providerSportKey);
+    for (const game of board?.games || []) {
+      const away = String(game.awayTeam || game.away_team || '');
+      const home = String(game.homeTeam || game.home_team || '');
+      if (!away || !home) continue;
+      const key = `${sport}|${away}|${home}`;
+      const incomingBooks: BookQuote[] = (game.books || []).map((book: any) => ({
+        book: String(book.book || book.bookmaker || '').trim(),
         homeMl: numberOrUndef(book?.moneyline?.home),
         awayMl: numberOrUndef(book?.moneyline?.away),
         homeSpread: numberOrUndef(book?.spread?.home_point),
@@ -67,17 +112,32 @@ function parseBoard(payload: any): BoardGame[] {
         totalPoint: numberOrUndef(book?.total?.over_point ?? book?.total?.point),
         overPrice: numberOrUndef(book?.total?.over_price),
         underPrice: numberOrUndef(book?.total?.under_price),
-      }));
-      return {
-        key: `${sport}|${away}|${home}`,
+      })).filter((book: BookQuote) => book.book);
+      const prior = merged.get(key);
+      const booksByName = new Map<string, BookQuote>();
+      for (const book of [...(prior?.books || []), ...incomingBooks]) {
+        booksByName.set(book.book, mergeBook(booksByName.get(book.book), book));
+      }
+      merged.set(key, {
+        key,
         sport,
         away,
         home,
         matchup: `${away} @ ${home}`,
-        books,
-      } as BoardGame;
-    });
-  }).filter((game: BoardGame) => game.away !== 'Away' && game.home !== 'Home');
+        books: Array.from(booksByName.values()),
+      });
+    }
+  }
+  return Array.from(merged.values());
+}
+
+function booksForMarket(game: BoardGame | undefined, market: string) {
+  if (!game) return [];
+  return game.books.filter((book) => {
+    if (market === 'spread') return book.homeSpread != null || book.awaySpread != null;
+    if (market === 'total') return book.totalPoint != null || book.overPrice != null || book.underPrice != null;
+    return book.homeMl != null || book.awayMl != null;
+  }).map((book) => book.book);
 }
 
 function quoteFor(game: BoardGame | undefined, draft: LegDraft) {
@@ -85,7 +145,7 @@ function quoteFor(game: BoardGame | undefined, draft: LegDraft) {
   const book = game.books.find((item) => item.book === draft.book) || game.books[0];
   if (!book) return { selection: draft.selection, odds: 'Waiting', line: '' };
   if (draft.market === 'total') {
-    const over = draft.selection.toLowerCase().startsWith('under') ? false : true;
+    const over = !draft.selection.toLowerCase().startsWith('under');
     return {
       selection: over ? `Over ${book.totalPoint ?? ''}`.trim() : `Under ${book.totalPoint ?? ''}`.trim(),
       odds: formatAmerican(over ? book.overPrice : book.underPrice),
@@ -131,7 +191,7 @@ export function SlipScannerClient() {
     return () => { active = false; };
   }, []);
 
-  const sports = useMemo(() => Array.from(new Set(games.map((game) => game.sport))), [games]);
+  const sports = useMemo(() => Array.from(new Set(games.map((game) => game.sport))).sort(), [games]);
 
   function updateLeg(index: number, patch: Partial<LegDraft>) {
     setLegs((current) => current.map((leg, i) => {
@@ -143,11 +203,14 @@ export function SlipScannerClient() {
         next.book = '';
       }
       if (patch.gameKey && patch.gameKey !== leg.gameKey) {
-        const game = games.find((item) => item.key === patch.gameKey);
-        next.selection = game?.away || '';
-        next.book = game?.books[0]?.book || '';
+        next.selection = '';
+        next.book = '';
       }
-      if (patch.market === 'total') next.selection = 'Over';
+      if (patch.market && patch.market !== leg.market) {
+        next.book = '';
+        if (patch.market === 'total') next.selection = 'Over';
+        else next.selection = '';
+      }
       return next;
     }));
   }
@@ -166,9 +229,9 @@ export function SlipScannerClient() {
         line: quote.line,
         matchup: game?.matchup || '',
       };
-    }).filter((leg) => leg.sport && leg.selection && leg.selection !== 'Waiting');
+    }).filter((leg) => leg.sport && leg.selection && leg.book);
     if (!payload.length) {
-      setState({ loading: false, error: 'Choose a live team from each dropdown before scanning.' });
+      setState({ loading: false, error: 'Choose sport, game, side, and book from the dropdowns before scanning.' });
       return;
     }
     setState({ loading: true });
@@ -192,13 +255,13 @@ export function SlipScannerClient() {
         <h2>Live scanner input</h2>
         <span className="data-status">{mode === 'live' ? 'Live board' : mode === 'loading' ? 'Connecting' : 'Waiting'}</span>
       </div>
-      <p className="movement">Pick sport, game, market, team, and book from the live board. Team names are not typed.</p>
+      <p className="movement">Pick sport first. Game lists only that sport. Book lists every sportsbook quoting the selected game.</p>
       {!games.length && <p className="movement">Waiting on live board games before dropdowns can fill.</p>}
       <form onSubmit={onSubmit} className="inqsi-game-list" style={{ marginTop: 14 }}>
         {legs.map((leg, index) => {
-          const sportGames = games.filter((game) => !leg.sport || game.sport === leg.sport);
-          const game = games.find((item) => item.key === leg.gameKey);
-          const bookNames = game?.books.map((book) => book.book) || [];
+          const sportGames = leg.sport ? games.filter((game) => game.sport === leg.sport) : [];
+          const game = games.find((item) => item.key === leg.gameKey && (!leg.sport || item.sport === leg.sport));
+          const bookNames = booksForMarket(game, leg.market);
           const selections = leg.market === 'total'
             ? ['Over', 'Under']
             : game ? [game.away, game.home] : [];
@@ -214,8 +277,8 @@ export function SlipScannerClient() {
                   </select>
                 </label>
                 <label><span>Game</span>
-                  <select value={leg.gameKey} onChange={(event) => updateLeg(index, { gameKey: event.target.value })}>
-                    <option value="">{sportGames.length ? 'Select game' : 'Waiting'}</option>
+                  <select value={leg.gameKey} onChange={(event) => updateLeg(index, { gameKey: event.target.value })} disabled={!leg.sport}>
+                    <option value="">{!leg.sport ? 'Pick a sport first' : sportGames.length ? 'Select game' : 'Waiting on games'}</option>
                     {sportGames.map((item) => <option key={item.key} value={item.key}>{item.matchup}</option>)}
                   </select>
                 </label>
@@ -225,14 +288,14 @@ export function SlipScannerClient() {
                   </select>
                 </label>
                 <label><span>Team / side</span>
-                  <select value={leg.selection} onChange={(event) => updateLeg(index, { selection: event.target.value })}>
-                    <option value="">{selections.length ? 'Select side' : 'Waiting'}</option>
+                  <select value={leg.selection} onChange={(event) => updateLeg(index, { selection: event.target.value })} disabled={!game}>
+                    <option value="">{game ? 'Select side' : 'Pick a game first'}</option>
                     {selections.map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </label>
                 <label><span>Book</span>
-                  <select value={leg.book} onChange={(event) => updateLeg(index, { book: event.target.value })}>
-                    <option value="">{bookNames.length ? 'Select book' : 'Waiting'}</option>
+                  <select value={leg.book} onChange={(event) => updateLeg(index, { book: event.target.value })} disabled={!game}>
+                    <option value="">{!game ? 'Pick a game first' : bookNames.length ? `Select book (${bookNames.length})` : 'Waiting on books'}</option>
                     {bookNames.map((book) => <option key={book} value={book}>{book}</option>)}
                   </select>
                 </label>
