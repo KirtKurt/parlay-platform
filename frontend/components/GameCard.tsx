@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { SignalPill } from '@/components/SignalPill';
 import { getSportSlugForLeague } from '@/lib/sports';
-import { formatAmericanOdds, formatKickoff, impliedPercent } from '@/lib/kickoff';
+import { formatAmericanOdds, formatKickoff, gamePath, impliedPercent } from '@/lib/kickoff';
 
 type GameLike = {
   id?: string;
@@ -50,6 +50,7 @@ export function GameCard({ game }: { game: GameLike }) {
   const favoriteOdds = game.favoriteMl ?? game.favorite_ml;
   const implied = impliedPercent(favoriteOdds);
   const predicted = game.predicted_winner || game.predicted_side || '';
+  const href = gamePath({ ...game, matchup });
 
   return (
     <article className="game-card">
@@ -58,7 +59,7 @@ export function GameCard({ game }: { game: GameLike }) {
         <span>{start}</span>
         <span className={`data-status ${String(dataStatus).toLowerCase()}`}>{dataStatus}</span>
       </div>
-      <h4><Link href={`/game/${id}`} style={{ color: 'inherit', textDecoration: 'none' }}>{matchup}</Link></h4>
+      <h4><Link href={href} style={{ color: 'inherit', textDecoration: 'none' }}>{matchup}</Link></h4>
       <p className="movement">
         {predicted
           ? `InQsi lean: ${predicted}${game.prediction_confidence ? ` · ${game.prediction_confidence}` : ''}`
