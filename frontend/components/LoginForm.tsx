@@ -31,7 +31,7 @@ export function LoginForm() {
       <div>
         <p className="eyebrow blue">Member login</p>
         <h3>Sign in to your market workspace</h3>
-        <p className="slip-note">Continue with Google if it is enabled, or use email to open the workspace.</p>
+        <p className="slip-note">Continue with Google, Apple, X, Reddit, or Discord. Providers without console credentials stay labeled until those apps are connected. Email still opens one InQsi identity.</p>
       </div>
       <OAuthButtons />
       <label className="field-card full-span">
