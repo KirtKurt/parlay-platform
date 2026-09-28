@@ -52,7 +52,7 @@ export default async function ParlaysPage() {
           <article className="rank-card" key={game.id}>
             <div className="rank-head"><span>{game.league}</span><b>{formatKickoff(game.start || game.commence_time) || 'Waiting'}</b></div>
             <h4>{game.matchup}</h4>
-            <p>Market favorite: {game.favorite || 'Waiting'} {game.favoriteMl || game.favorite_ml || ''}. Predicted winner: {game.predicted_winner || game.favorite || 'Waiting'}.</p>
+            <p>Market favorite: {game.favorite || 'Waiting'} {game.favoriteMl || game.favorite_ml || ''}.</p>
           </article>
         ))}
         {!official.length && !games.length && (
