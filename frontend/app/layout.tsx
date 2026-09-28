@@ -16,6 +16,9 @@ const bingVerification = process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION;
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   applicationName: 'InQsi',
+  category: 'sports analytics',
+  creator: 'InQsi',
+  publisher: 'InQsi',
   title: {
     default: 'InQsi | AI Slip Scanner, 3-Leg Builder & Sports Market Review',
     template: '%s | InQsi'
@@ -33,9 +36,14 @@ export const metadata: Metadata = {
     'best line warning',
     'parlay accuracy tracker',
     'post-game slip review',
-    'sports risk review'
+    'sports risk review',
+    'sports arbitrage',
+    'sports arbitrage finder',
+    'surebet scanner',
+    'arbitrage calculator',
+    'sportsbook odds comparison'
   ],
-  alternates: { canonical: '/' },
+  alternates: { canonical: '/', languages: { 'en-US': '/' } },
   verification: {
     google: googleVerification,
     other: bingVerification ? { 'msvalidate.01': bingVerification } : undefined
