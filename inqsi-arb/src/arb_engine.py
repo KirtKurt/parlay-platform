@@ -780,7 +780,7 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
             if math_arb:
                 settlement_state_reason = settlement_state_reason or "SETTLEMENT_STATE_NOT_STRICT"
             executable = False
-    is_arb = bool(math_arb and rules_compatible and executable)
+    # Product contract: surface a valid executable current-price arbitrage even\n    # when sportsbook house-rule metadata is unknown. Rule metadata remains an\n    # advisory disclosure; it is not a qualification gate.\n    is_arb = bool(math_arb and executable)
     settlement_proof_failed = bool(
         settlement_states is not None and settlement_states.get("ok") is False
     )
@@ -880,7 +880,7 @@ def scan_all(payload: Mapping[str, Any]) -> Dict[str, Any]:
                           _work_budget=work_budget)
         if row is None: continue
         rules_status = str(row["validation"]["rules_status"]).lower()
-        invalid = row["validation"]["outcome_coverage"] != "complete" or rules_status == "incompatible"
+        invalid = row["validation"]["outcome_coverage"] != "complete"
         if invalid: rejected.append(row)
         elif row["arb"]: hits.append(row)
         elif row["math_arb"]: detected.append(row)
