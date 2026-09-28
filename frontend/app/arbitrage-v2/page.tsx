@@ -22,8 +22,8 @@ export default function Page(){
  const bank=Math.max(0,Number(bankText.replace(/,/g,''))||0);
  const calc=useMemo(()=>{const d1=dec(selected.aOdds),d2=dec(selected.bOdds),x=bank*d2/(d1+d2),y=bank-x,p=Math.min(x*d1,y*d2)-bank;return{x,y,p,r:bank?100*p/bank:0,payout:bank+p}},[selected,bank]);
  const isArb=calc.p>0; const roiMismatch=mode==='live'&&Math.abs(calc.r-selected.roi)>.15;
- const filtered=rows.filter(o=>(sport==='All Sports'||o.sport===sport)&&(market==='All Markets'||o.market===market)&&(!verifiedOnly||o.status==='VERIFIED'));
- const sports=['All Sports',...Array.from(new Set(rows.map(x=>x.sport)))]; const markets=['All Markets',...Array.from(new Set(rows.map(x=>x.market)))];
+ const filtered=rows.filter(o=>{const q=query.trim().toLowerCase();const matchesQuery=!q||[o.event,o.sport,o.market,o.aBook,o.bBook,o.aBet,o.bBet].some(v=>v.toLowerCase().includes(q));return matchesQuery&&(sport==='All Sports'||o.sport===sport)&&(market==='All Markets'||o.market===market)&&(book==='All Books'||o.aBook===book||o.bBook===book)&&(!verifiedOnly||o.status==='VERIFIED')}).sort((a,b)=>b.roi-a.roi);
+ const sports=['All Sports',...Array.from(new Set(rows.map(x=>x.sport)))]; const markets=['All Markets',...Array.from(new Set(rows.map(x=>x.market)))]; const books=['All Books',...Array.from(new Set(rows.flatMap(x=>[x.aBook,x.bBook])))];
  return <main className="arb2">
   <header className="top"><a className="brand" href="/"><i/>InQsi</a><nav><a className="active">▣ Arbitrage</a><a href="/arbitrage-v2/calculator">▦ Calculator</a><a href="/sports">⚑ Picks</a><a href="/parlay-scanner">☷ Slip Scanner</a></nav><label className="search">⌕ <input aria-label="Search opportunities" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search teams, sports, or books..."/></label><button className="avatar">JK</button></header>
   <div className="workspace">
