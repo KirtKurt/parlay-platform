@@ -42,14 +42,14 @@ export function GameCard({ game }: { game: GameLike }) {
   const start = game.start || game.commence_time || 'TBD';
   const matchup = game.matchup || `${game.away_team || 'Away'} @ ${game.home_team || 'Home'}`;
   const dataStatus = game.dataStatus || game.status_label || 'Pending';
-  const signals = game.signals?.length ? game.signals : game.primary_signal ? [game.primary_signal] : ['MARKET_ANOMALY'];
+  const signals = game.signals?.length ? game.signals : game.primary_signal ? [game.primary_signal] : [];
 
   return (
     <article className="game-card">
       <div className="game-topline">
         <Link className="league-chip" href={`/sports/${getSportSlugForLeague(league)}`} style={{ textDecoration: 'none' }}>{league}</Link>
         <span>{start}</span>
-        <span className={`data-status ${dataStatus.toLowerCase()}`}>{dataStatus}</span>
+        <span className={`data-status ${String(dataStatus).toLowerCase()}`}>{dataStatus}</span>
       </div>
       <h4><Link href={`/game/${id}`} style={{ color: 'inherit', textDecoration: 'none' }}>{matchup}</Link></h4>
       <div className="market-row">
