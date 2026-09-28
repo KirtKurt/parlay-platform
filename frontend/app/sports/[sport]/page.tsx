@@ -5,6 +5,9 @@ import { AppHeader } from '@/components/AppHeader';
 import { GameCard } from '@/components/GameCard';
 import { getSportBySlug, getSportSlugForLeague, sports } from '@/lib/sports';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export function generateStaticParams() {
   return sports.map((sport) => ({ sport: sport.slug }));
 }
@@ -31,7 +34,7 @@ export default async function SportPage({ params }: { params: { sport: string } 
           <div>
             <p className="eyebrow blue">Live markets</p>
             <h2 style={{ margin: 0 }}>{sport.label} Market Board</h2>
-            <p className="movement" style={{ marginBottom: 0 }}>{hasMarketData ? `${visibleGames.length} active game${visibleGames.length === 1 ? '' : 's'} with ML, spread, and total.` : 'Waiting for active-slate games from the market board.'}</p>
+            <p className="movement" style={{ marginBottom: 0 }}>{hasMarketData ? `${visibleGames.length} active game${visibleGames.length === 1 ? '' : 's'} with ML, spread, and total.` : 'Waiting for live board games.'}</p>
           </div>
           <span className="data-status">Updated {nowLabel}</span>
         </div>
@@ -49,7 +52,7 @@ export default async function SportPage({ params }: { params: { sport: string } 
           <div className="panel-header">
             <div>
               <p className="eyebrow">Sports Market Board</p>
-              <h3>{hasMarketData ? 'Live Snapshot' : 'No active slate yet'}</h3>
+              <h3>{hasMarketData ? 'Live Snapshot' : 'Waiting'}</h3>
             </div>
             <Link className="ghost-button" href="/parlays" style={{ textDecoration: 'none' }}>Official Parlays</Link>
           </div>
@@ -57,8 +60,8 @@ export default async function SportPage({ params }: { params: { sport: string } 
             {hasMarketData ? visibleGames.map((game) => <GameCard game={game} key={game.id} />) : (
               <article className="game-card">
                 <div className="game-topline"><span className="league-chip">{sport.label}</span><span className="data-status">Syncing</span></div>
-                <h4>Waiting for active-slate data</h4>
-                <p className="movement">When the backend has games inside the active window, this page will show the teams, start time, moneyline, spread, total, book count, and market signal tags here.</p>
+                <h4>Waiting</h4>
+                <p className="movement">When the backend has games inside the live window, this page will show the teams, start time, moneyline, spread, total, book count, and radar tags here.</p>
               </article>
             )}
           </div>
