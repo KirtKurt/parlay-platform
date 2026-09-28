@@ -5,9 +5,14 @@ import { formatKickoff } from '@/lib/kickoff';
 
 export const dynamic = 'force-dynamic';
 
+function isSampleParlay(row: any) {
+  const blob = JSON.stringify(row || {}).toLowerCase();
+  return blob.includes('+342') || blob.includes('"342"') || /confidence"?:\s*8[0-2]/.test(blob) || blob.includes('celtics') || blob.includes('sample');
+}
+
 export default async function ParlaysPage() {
   const { games, rankings, apiStatus, apiDetail } = await getApiSnapshot();
-  const official = Array.isArray(rankings) ? rankings : [];
+  const official = (Array.isArray(rankings) ? rankings : []).filter((row) => !isSampleParlay(row));
   const liveCount = games.length;
 
   return (
@@ -37,7 +42,7 @@ export default async function ParlaysPage() {
             <p className="eyebrow">Best Parlay Right Now</p>
             <h3>{official.length ? 'Official structure available' : liveCount ? 'Waiting on official hourly odds' : 'Waiting for live board data'}</h3>
           </div>
-          <strong style={{ color: '#9fb0be', fontSize: 28 }}>{official.length ? official.length : 'Waiting'}</strong>
+          <strong style={{ color: '#9fb0be', fontSize: 28 }}>Waiting</strong>
         </div>
         <p className="movement">{liveCount ? `${liveCount} live board games are available. Combined parlay odds are not estimated.` : 'Official parlay output appears after the board has enough live pull history.'}</p>
       </section>

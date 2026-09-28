@@ -1,58 +1,12 @@
 import Link from 'next/link';
 import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
-import { SignalPill } from '@/components/SignalPill';
+import { RadarStrip } from '@/components/RadarStrip';
 import { LineMovementGraph } from '@/components/LineMovementGraph';
-import { formatAmericanOdds, formatKickoff, impliedPercent, slugPart } from '@/lib/kickoff';
+import { findGame } from '@/lib/findGame';
+import { formatAmericanOdds, formatKickoff, impliedPercent } from '@/lib/kickoff';
 import { getSportSlugForLeague } from '@/lib/sports';
-
-const NICK: Record<string, string> = {
-  cubs: 'chicago-cubs',
-  padres: 'san-diego-padres',
-  yankees: 'new-york-yankees',
-  'red-sox': 'boston-red-sox',
-  'white-sox': 'chicago-white-sox',
-  sox: 'boston-red-sox',
-  'blue-jays': 'toronto-blue-jays',
-  jays: 'toronto-blue-jays',
-  phillies: 'philadelphia-phillies',
-  braves: 'atlanta-braves',
-  astros: 'houston-astros',
-  dodgers: 'los-angeles-dodgers',
-  giants: 'san-francisco-giants',
-  mets: 'new-york-mets',
-};
-
-function expand(value: string) {
-  return NICK[value] || value;
-}
-
-function findGame(games: Awaited<ReturnType<typeof getApiSnapshot>>['games'], gameId: string) {
-  const raw = decodeURIComponent(gameId || '').toLowerCase();
-  const trimmed = raw.split('|')[0];
-  const id = slugPart(trimmed);
-  return games.find((game) => {
-    const away = slugPart(game.away_team);
-    const home = slugPart(game.home_team);
-    const keys = [
-      game.id,
-      game.game_id,
-      slugPart(game.matchup),
-      `${away}-${home}`,
-      `${home}-${away}`,
-      `${slugPart(game.league)}-${away}-${home}`,
-      `${slugPart(game.sport_key)}-${away}-${home}`,
-      trimmed,
-      id,
-    ].map((value) => String(value || '').toLowerCase());
-    if (keys.includes(raw) || keys.includes(trimmed) || keys.includes(id)) return true;
-    const tokens = id.split('-').filter(Boolean);
-    const haystack = `${away} ${home} ${expand(away)} ${expand(home)}`;
-    const wantsAway = tokens.some((token) => haystack.includes(token) && (away.includes(token) || expand(away).includes(token)));
-    const wantsHome = tokens.some((token) => haystack.includes(token) && (home.includes(token) || expand(home).includes(token)));
-    return Boolean(away && home && wantsAway && wantsHome);
-  });
-}
+import { radarFromGame } from '@/lib/radarSignals';
 
 export default async function GameDetailPage({ params }: { params: { gameId: string } }) {
   const { games, lineMovement, apiStatus, apiDetail } = await getApiSnapshot();
@@ -61,6 +15,7 @@ export default async function GameDetailPage({ params }: { params: { gameId: str
   const favoriteOdds = game?.favoriteMl ?? game?.favorite_ml;
   const implied = impliedPercent(favoriteOdds);
   const sportSlug = getSportSlugForLeague(game?.league || game?.sport_key || 'mlb');
+  const radar = radarFromGame(game || {});
 
   return (
     <main className="shell">
@@ -68,13 +23,14 @@ export default async function GameDetailPage({ params }: { params: { gameId: str
 
       <section className="panel" style={{ marginBottom: 18 }}>
         <div className="game-topline"><span className="league-chip">{game?.league || 'SPORT'}</span><span>{start}</span><span className="data-status">{game ? (game.status_label || 'Live') : 'Waiting'}</span></div>
-        <h2 style={{ marginBottom: 12 }}>{game?.matchup || decodeURIComponent(params.gameId).split('|')[0]}</h2>
+        <h2 style={{ marginBottom: 12 }}>{game?.matchup || 'Waiting on this matchup'}</h2>
         <p className="movement">
           {game?.favorite
             ? `Market favorite: ${game.favorite} ${formatAmericanOdds(favoriteOdds) || 'Waiting'}${implied ? ` · ${implied}% implied` : ''}`
             : 'Waiting for a live market favorite. InQsi is not inventing a winner.'}
         </p>
         <p className="movement">{game?.movement || 'This game is not on the current live board.'}</p>
+        <RadarStrip items={radar} title="On our radar" />
         <div className="hero-actions">
           <Link className="ghost-button" href={`/sports/${sportSlug}`} style={{ textDecoration: 'none' }}>Back to Market Board</Link>
           <Link className="inqsi-primary" href="/parlays" style={{ textDecoration: 'none' }}>Build With This Game</Link>
@@ -100,10 +56,8 @@ export default async function GameDetailPage({ params }: { params: { gameId: str
 
       <section className="content-grid" style={{ marginTop: 18 }}>
         <div className="panel">
-          <div className="panel-header"><div><p className="eyebrow">Market Signals</p><h3>Signal types detected</h3></div></div>
-          <div className="signal-row" style={{ marginBottom: 14 }}>
-            {(game?.signals || []).map((signal) => <SignalPill signal={signal} key={signal} />)}
-          </div>
+          <div className="panel-header"><div><p className="eyebrow">Market Signals</p><h3>On our radar</h3></div></div>
+          <RadarStrip items={radar} />
           <p className="movement">{game?.marketNote ?? 'Signals reflect market movement only. They do not guarantee outcomes.'}</p>
         </div>
         <aside className="panel">
