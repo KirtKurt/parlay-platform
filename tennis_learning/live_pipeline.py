@@ -84,14 +84,13 @@ def _discover_tennis_keys() -> list[str]:
     if configured:
         return sorted(set(configured))
 
-    sports = _get("/sports/", {"all": "false"})
+    sports = _get("/sports/", {"all": "true"})
     keys: list[str] = []
     for sport in sports if isinstance(sports, list) else []:
         key = str(sport.get("key") or "")
         if (
             key.startswith("tennis_")
             and str(sport.get("group") or "").lower() == "tennis"
-            and bool(sport.get("active", False))
             and not bool(sport.get("has_outrights", False))
         ):
             keys.append(key)
@@ -173,7 +172,7 @@ def _merge_odds_event(target: Dict[str, Any], source: Mapping[str, Any]) -> None
 def collect_live() -> Dict[str, Any]:
     discovered = _discover_tennis_keys()
     if not discovered:
-        raise RuntimeError("no active non-outright tennis sport keys discovered")
+        raise RuntimeError("no provider-listed non-outright tennis sport keys discovered")
 
     request_errors: Dict[str, str] = {}
     inventory: Dict[str, Dict[str, Any]] = {}
@@ -421,7 +420,7 @@ def collect_live() -> Dict[str, Any]:
     )
 
     summary = {
-        "coverage_contract": "ALL_ACTIVE_NON_OUTRIGHT_MATCHES_ALL_H2H_BOOKMAKER_REGIONS",
+        "coverage_contract": "ALL_PROVIDER_LISTED_NON_OUTRIGHT_MATCHES_ALL_H2H_BOOKMAKER_REGIONS",
         "h2h_regions": list(REGIONS),
         "non_h2h_provider_regions": list(NON_H2H_PROVIDER_REGIONS),
         "sport_keys_truncated": 0,

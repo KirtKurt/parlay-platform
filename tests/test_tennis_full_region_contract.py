@@ -96,3 +96,10 @@ def test_daily_card_enforces_all_h2h_regions_and_zero_coverage_failures():
 def test_deployment_acceptance_requires_authoritative_model():
     assert "status['authority'] == 'AUTHORITATIVE'" in DEPLOY
     assert "status.get('automatic_prediction_allowed') is True" in DEPLOY
+
+
+def test_every_provider_listed_non_outright_tennis_key_is_inventoried():
+    assert 'sports = _get("/sports/", {"all": "true"})' in PIPELINE
+    assert 'and bool(sport.get("active", False))' not in PIPELINE
+    assert ('ALL_PROVIDER_LISTED_NON_OUTRIGHT_MATCHES_' 'ALL_H2H_BOOKMAKER_REGIONS') in PIPELINE
+    assert 'f"/sports/{sport_key}/events"' in PIPELINE

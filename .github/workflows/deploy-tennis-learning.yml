@@ -210,7 +210,7 @@ jobs:
           assert payload.get('statusCode') == 200, payload
           body=json.loads(payload['body'])
           assert body['coverage_contract'] == (
-              'ALL_ACTIVE_NON_OUTRIGHT_MATCHES_'
+              'ALL_PROVIDER_LISTED_NON_OUTRIGHT_MATCHES_'
               'ALL_H2H_BOOKMAKER_REGIONS'
           ), body
           assert body['h2h_regions'] == [
