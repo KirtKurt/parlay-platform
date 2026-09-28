@@ -9,16 +9,19 @@ function apiBase() {
 
 function makeGame(id: string, sport: string, awayTeam: string, homeTeam: string, hourOffset: number, homeMl: number, awayMl: number, spread: number, total: number) {
   const start = new Date(Date.now() + hourOffset * 60 * 60 * 1000).toISOString();
-  return { gameId: id, sport, awayTeam, homeTeam, commenceTime: start, bookCount: 1, books: [{ book: 'market board', moneyline: { home: homeMl, away: awayMl }, spread: { home_point: spread, home_price: -110, away_point: spread * -1, away_price: -110 }, total: { over_point: total, over_price: -110, under_point: total, under_price: -110 } }] };
+  return { gameId: id, sport, awayTeam, homeTeam, commenceTime: start, bookCount: 0, books: [{ book: 'sample-not-live', moneyline: { home: homeMl, away: awayMl }, spread: { home_point: spread, home_price: -110, away_point: spread * -1, away_price: -110 }, total: { over_point: total, over_price: -110, under_point: total, under_price: -110 } }] };
 }
 
 function visibleBoard() {
   const date = new Date().toISOString().slice(0, 10);
   const pulledAt = new Date().toISOString();
-  const board = (sport: string, providerSportKey: string, games: any[]) => ({ ok: true, sport, slate_date: date, pullCount: 12, latestPulledAt: pulledAt, source: 'inqsi_site_market_board', providerSportKey, gameCount: games.length, games });
+  const board = (sport: string, providerSportKey: string, games: any[]) => ({ ok: true, sport, slate_date: date, pullCount: 0, latestPulledAt: pulledAt, source: 'SAMPLE_NOT_LIVE', mode: 'sample', providerSportKey, gameCount: games.length, games });
   return {
     ok: true,
-    board: 'market_board_active_slate_latest_pull',
+    mode: 'sample',
+    source: 'SAMPLE_NOT_LIVE',
+    warning: 'NOT LIVE SPORTSBOOK DATA',
+    board: 'sample_fallback_not_live',
     sportsChecked: ['mlb', 'wnba', 'nba', 'ncaam', 'nhl', 'nfl', 'cfb', 'soccer', 'tennis'],
     sportsWithGames: 9,
     memberSlipsIncluded: false,
@@ -38,10 +41,14 @@ function visibleBoard() {
 
 export async function GET() {
   const base = apiBase();
-  if (base) {
+  const self = /inqsi\.app$/i.test(base.replace(/^https?:\/\//, '').split('/')[0] || '');
+  if (base && !self) {
     try {
       const res = await fetch(`${base}/v1/inqsi/markets/board`, { cache: 'no-store' });
-      if (res.ok) return NextResponse.json(await res.json());
+      if (res.ok) {
+        const body = await res.json();
+        if (body?.ok !== false) return NextResponse.json(body);
+      }
     } catch {}
   }
   return NextResponse.json(visibleBoard());
