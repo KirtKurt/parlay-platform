@@ -1,0 +1,78 @@
+name: Verify Vercel ARB Live Proxy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/vercel-arb-live-smoke.yml'
+  workflow_run:
+    workflows: ['Sync Vercel ARB Endpoint']
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-vercel-arb-live-proxy
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    if: github.event_name == 'push' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+      - name: Validate ARB calculator contracts
+        run: npm run test:arb
+      - name: Build production frontend
+        run: npm run build
+      - name: Start production frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup npm run start -- -p 3000 > /tmp/inqsi-next.log 2>&1 &
+          echo $! > /tmp/inqsi-next.pid
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:3000/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/inqsi-next.log
+          exit 1
+      - name: Verify live AWS ARB history through frontend proxy
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error             http://127.0.0.1:3000/v1/inqsi/arbitrage/history             --output /tmp/arb-history.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("/tmp/arb-history.json").read_text())
+          assert payload.get("ok") is True, payload
+          assert payload.get("mode") == "live", payload
+          history = payload.get("history")
+          assert isinstance(history, list), payload
+          print(json.dumps({"ok": True, "mode": "live", "history_count": len(history)}))
+          PY
+      - name: Show server log on failure
+        if: failure()
+        run: cat /tmp/inqsi-next.log || true
+      - name: Stop production frontend
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/inqsi-next.pid ]; then
+            kill "$(cat /tmp/inqsi-next.pid)" 2>/dev/null || true
+          fi
