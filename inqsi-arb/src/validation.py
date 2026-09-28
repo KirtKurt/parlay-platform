@@ -13,6 +13,7 @@ from typing import Any, Dict, Iterable, List
 
 from freshness import assess_quote
 from rules import UNKNOWN, compatibility, lookup
+from provider_books import CATALOG
 import rules_bootstrap  # noqa: F401  # canonical supplemental registrations
 
 
@@ -149,6 +150,18 @@ def validate_event(event: Dict[str, Any], *, jurisdiction: str = "*") -> List[Di
     freshness_evidence: List[Dict[str, Any]] = []
     for quote in raw_quotes:
         q = dict(quote)
+        book_key = str(q.get("book") or "").strip().lower()
+        # Exchange/event-contract venues require contract-, fee-, liquidity-, and
+        # liability-aware evaluation. Never feed their quotes into sportsbook
+        # surebet qualification merely because the provider expresses a price
+        # in sportsbook-like odds.
+        if (CATALOG.get(book_key) or {}).get("kind") == "exchange":
+            freshness_evidence.append({
+                "book": book_key, "outcome": q.get("outcome"),
+                "last_update": q.get("last_update"), "fresh": False,
+                "reason": "EXCHANGE_REQUIRES_DEDICATED_ENGINE",
+            })
+            continue
         assessment = assess_quote(q)
         evidence = {
             "book": str(q.get("book") or "").strip().lower(),
