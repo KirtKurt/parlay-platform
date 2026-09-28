@@ -8,7 +8,7 @@ import { sports as sportNav } from '@/lib/sports';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'InQsi | Live Markets, Official Parlays & AI Slip Scanner',
+  title: 'Live Markets, Official Parlays & AI Slip Scanner',
   description: 'InQsi shows live market data, moneyline, spread, over/under, official parlay structure, and AI slip scanning across supported sports.',
   alternates: { canonical: '/' }
 };
@@ -31,8 +31,8 @@ function EmptyMarketCard() {
 
 export default async function Home() {
   const { games, apiStatus, apiDetail } = await getApiSnapshot();
-  const activeGames = games.slice(0, 6);
-  const hasMarketData = activeGames.length > 0;
+  const previewGames = games.slice(0, 6);
+  const hasMarketData = previewGames.length > 0;
   const nowLabel = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date());
 
   return (
@@ -46,7 +46,7 @@ export default async function Home() {
           <p>Live market intelligence, official 3-leg parlays, smarter slip building, and AI slip scanning across every supported sport.</p>
           <div className="hero-actions">
             <Link className="inqsi-primary" href="/register">Start Membership</Link>
-            <Link className="ghost-button" href="/sports/mlb">View Market Board</Link>
+            <Link className="ghost-button" href="/sports">View Market Board</Link>
           </div>
         </div>
         <aside className="inqsi-signup-card">
@@ -62,8 +62,8 @@ export default async function Home() {
       </nav>
 
       <section className="status-row">
-        <article className="status-card"><span>Active Games</span><strong>{activeGames.length}</strong><p>Showing live active-slate board games.</p></article>
-        <article className="status-card"><span>Sports Live</span><strong>{new Set(activeGames.map((g) => g.sport_key)).size}</strong><p>Sports with visible board data.</p></article>
+        <article className="status-card"><span>Active Games</span><strong>{games.length}</strong><p>Full board count. Home preview shows six.</p></article>
+        <article className="status-card"><span>Sports Live</span><strong>{new Set(games.map((g) => g.sport_key)).size}</strong><p>Sports with visible board data.</p></article>
         <article className="status-card"><span>Fresh Pull</span><strong>{nowLabel}</strong><p>Frontend render time.</p></article>
         <article className="status-card"><span>Status</span><strong>{apiStatus === 'CONNECTED' ? 'Live' : 'Syncing'}</strong><p>{apiDetail}</p></article>
       </section>
@@ -73,10 +73,10 @@ export default async function Home() {
           <section className="inqsi-panel">
             <div className="inqsi-section-head">
               <div><p className="eyebrow">Live Snapshot</p><h2>Sports Market Board</h2></div>
-              <Link className="ghost-button" href="/sports/mlb">View All</Link>
+              <Link className="ghost-button" href="/sports">View All</Link>
             </div>
             <div className="inqsi-game-list">
-              {hasMarketData ? activeGames.map((game) => <GameCard game={game} key={game.id} />) : <EmptyMarketCard />}
+              {hasMarketData ? previewGames.map((game) => <GameCard game={game} key={game.id} />) : <EmptyMarketCard />}
             </div>
           </section>
         </div>
