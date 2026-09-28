@@ -22,7 +22,7 @@ const pages = [
 export const metadata: Metadata = {
  title:'Sports Arbitrage Guides, Calculators & Research',
  description:'Free InQsi guides and calculators for sports arbitrage, surebets, implied probability, American odds, sportsbook vig, line movement, middles and market research.',
- alternates:{canonical:'/learn/arbitrage'}
+ alternates:{canonical:'/learn/arbitrage'},openGraph:{title:'Sports Arbitrage Guides, Calculators & Research | InQsi',description:'Free InQsi guides and calculators for sports arbitrage, surebets, implied probability, American odds, sportsbook vig, line movement, middles and market research.',url:'/learn/arbitrage',type:'website'},twitter:{card:'summary_large_image',title:'Sports Arbitrage Guides, Calculators & Research | InQsi',description:'Free InQsi sports arbitrage guides, calculators and market research.'}
 };
 
 const schema={'@context':'https://schema.org','@type':'CollectionPage',name:'InQsi Sports Arbitrage Learning Center',description:'Sports arbitrage guides, calculators and market research.',hasPart:pages.map(([slug,title])=>({'@type':'WebPage',name:title,url:`https://inqsi.app/learn/arbitrage/${slug}`}))};
