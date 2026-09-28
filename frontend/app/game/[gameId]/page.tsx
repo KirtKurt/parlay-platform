@@ -14,16 +14,17 @@ export default async function GameDetailPage({ params }: { params: { gameId: str
     row.game_id === game?.game_id ||
     (row.home_team === game?.home_team && row.away_team === game?.away_team)
   );
+  const extra = pred as { predicted_team?: string; primary_signal?: string; signal_score?: number; stability_classification?: string } | undefined;
   const merged = game
     ? {
         ...game,
-        predicted_winner: pred?.predicted_winner || (pred as { predicted_team?: string } | undefined)?.predicted_team || game.predicted_winner,
+        predicted_winner: pred?.predicted_winner || extra?.predicted_team || game.predicted_winner,
         predicted_side: pred?.predicted_side || game.predicted_side,
         short_explanation: pred?.short_explanation,
         confidence: pred?.confidence_score ?? game.confidence,
-        primary_signal: pred?.primary_signal || game.primary_signal,
-        signal_score: pred?.signal_score ?? game.signal_score,
-        stability_classification: pred?.stability_classification || game.stability_classification,
+        primary_signal: extra?.primary_signal || game.primary_signal,
+        signal_score: extra?.signal_score ?? game.signal_score,
+        stability_classification: extra?.stability_classification || game.stability_classification,
       }
     : game;
   const start = formatKickoff(game?.start || game?.commence_time);
