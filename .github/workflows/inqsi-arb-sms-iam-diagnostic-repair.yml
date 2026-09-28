@@ -2,6 +2,10 @@ name: Inqsi ARB SMS IAM Diagnostic Repair
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/inqsi-arb-sms-iam-diagnostic-repair.yml'
 
 permissions:
   contents: read
