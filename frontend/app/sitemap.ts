@@ -22,6 +22,8 @@ const routes = [
   '/sports/soccer',
   '/game-leans',
   '/best-lines',
+  '/arbitrage-v2',
+  '/arbitrage-v2/calculator',
   '/parlay-scanner',
   '/ai-slip-scanner',
   '/ai-slip-builder',
@@ -74,7 +76,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return routes.map((route) => ({
     url: `${baseUrl}${route}`,
     lastModified: new Date(),
-    changeFrequency: route === '' || route === '/picks-audit' || route === '/game-leans' || route === '/live-market' ? 'daily' : 'weekly',
-    priority: route === '' ? 1 : route === '/picks-audit' ? 0.95 : route === '/game-leans' ? 0.9 : route.includes('scanner') || route.includes('guide') || route.includes('accuracy') || route.includes('inqsi') ? 0.88 : 0.75
+    changeFrequency: route === '' || route === '/picks-audit' || route === '/game-leans' || route === '/live-market' || route === '/arbitrage-v2' ? 'daily' : 'weekly',
+    priority: route === '' ? 1 : route === '/picks-audit' ? 0.95 : route === '/game-leans' ? 0.9 : route === '/arbitrage-v2' ? 0.94 : route.includes('scanner') || route.includes('guide') || route.includes('accuracy') || route.includes('inqsi') ? 0.88 : 0.75
   }));
 }
