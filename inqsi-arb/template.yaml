@@ -12,6 +12,10 @@ Parameters:
     Type: String
     Default: '+15859573962'
     Description: E.164 SMS endpoint for immediate ARB opportunity alerts
+  ArbSendSmsTest:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
 Globals:
   Function:
     Runtime: python3.11
@@ -42,6 +46,8 @@ Globals:
         ARB_OPPORTUNITY_ALERT_DEDUPE_SECONDS: '21600'
         ARB_WEBSOCKET_MANAGEMENT_ENDPOINT: !Sub 'https://${ArbWebSocketApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod'
         ARB_WEBSOCKET_PUBLIC_URL: !Sub 'wss://${ArbWebSocketApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod'
+Conditions:
+  SendArbSmsTest: !Equals [!Ref ArbSendSmsTest, 'true']
 Resources:
   ArbAuditTable:
     Type: AWS::DynamoDB::Table
@@ -103,6 +109,28 @@ Resources:
       Protocol: sms
       Endpoint: !Ref ArbOpportunitySmsEndpoint
       TopicArn: !Ref ArbOpportunityTopic
+
+  ArbOpportunitySmsTestFunction:
+    Type: AWS::Serverless::Function
+    Condition: SendArbSmsTest
+    Properties:
+      InlineCode: |
+        import boto3
+        import os
+        def handler(event, context):
+            response = boto3.client('sns').publish(
+                TopicArn=os.environ['TOPIC_ARN'],
+                Subject='Inqsi ARB SMS test',
+                Message='Inqis ARB notification test - SMS delivery path is working.'
+            )
+            return {'published': True, 'message_id': response.get('MessageId')}
+      Handler: index.handler
+      Environment:
+        Variables:
+          TOPIC_ARN: !Ref ArbOpportunityTopic
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt ArbOpportunityTopic.TopicName
 
   ArbApi:
     Type: AWS::Serverless::Api
