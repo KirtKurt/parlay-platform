@@ -1,7 +1,7 @@
 'use client';
 import {useMemo,useState} from 'react';
 import '../arb-v2.css';
-const dec=(a:number)=>a>0?1+a/100:a<0?1+100/Math.abs(a):0;
+const dec=(a:number)=>Math.abs(a)>=100?(a>0?1+a/100:1+100/Math.abs(a)):0;
 const money=(n:number)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number.isFinite(n)?n:0);
 export default function CalculatorPage(){
  const[stake,setStake]=useState('1000'); const[a,setA]=useState('115'); const[b,setB]=useState('102');
