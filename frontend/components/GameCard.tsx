@@ -39,9 +39,13 @@ function formatOdds(value: number | string | undefined) {
   return String(value);
 }
 
+function isActiveSlateCopy(value?: string) {
+  return /active[\s_]?slate/i.test(String(value || ''));
+}
+
 function customerMovement(game: GameLike) {
   const raw = String(game.movement || game.what_looks_wrong || '');
-  if (!raw || /active[\s_]?slate/i.test(raw) || raw.toUpperCase() === 'ACTIVE_SLATE') {
+  if (!raw || isActiveSlateCopy(raw)) {
     return game.bookCount
       ? `Live board · ${game.bookCount} books quoting`
       : 'Waiting on verified market movement.';
@@ -53,7 +57,8 @@ export function GameCard({ game }: { game: GameLike }) {
   const league = game.league || game.sport_key || 'SPORT';
   const start = formatKickoff(game.start || game.commence_time);
   const matchup = game.matchup || `${game.away_team || 'Away'} @ ${game.home_team || 'Home'}`;
-  const dataStatus = game.dataStatus || game.status_label || 'Pending';
+  const rawStatus = game.dataStatus || game.status_label || 'Pending';
+  const dataStatus = isActiveSlateCopy(rawStatus) ? 'Live' : rawStatus;
   const favoriteOdds = game.favoriteMl ?? game.favorite_ml;
   const implied = impliedPercent(favoriteOdds);
   const href = gamePath({ ...game, matchup });
@@ -62,6 +67,7 @@ export function GameCard({ game }: { game: GameLike }) {
     signals: (game.signals || []).filter((s) => String(s).toUpperCase() !== 'ACTIVE_SLATE'),
     primary_signal: game.primary_signal === 'ACTIVE_SLATE' ? 'MARKET_BOARD' : game.primary_signal
   }).slice(0, 4);
+  const marketNote = game.marketNote && !isActiveSlateCopy(game.marketNote) ? game.marketNote : undefined;
 
   return (
     <article className="game-card">
@@ -100,7 +106,7 @@ export function GameCard({ game }: { game: GameLike }) {
       </div>
       <p className="movement">{customerMovement(game)}</p>
       <RadarStrip items={radar} title="On our radar" />
-      {game.marketNote && <p className="movement">{game.marketNote}</p>}
+      {marketNote && <p className="movement">{marketNote}</p>}
     </article>
   );
 }
