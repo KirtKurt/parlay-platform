@@ -1,6 +1,6 @@
 import { Signal } from '@/lib/mockData';
 
-const iconMap: Record<Signal, string> = {
+const iconMap: Record<string, string> = {
   STEAM: '▲',
   RESISTANCE: '▬',
   TRAP: '◆',
@@ -8,17 +8,24 @@ const iconMap: Record<Signal, string> = {
   COIN_FLIP: '⟳',
   CHAOS: '⬡',
   DAC: '✓',
-  MARKET_ANOMALY: '⚠'
+  MARKET_ANOMALY: '⚠',
+  ACTIVE_SLATE: '●',
+  MARKET_BOARD: '▣',
+  SAMPLE: '◇',
+  WAITING: '○',
+  NOT_LIVE: '◇'
 };
 
-const validSignals = Object.keys(iconMap) as Signal[];
+const validSignals = Object.keys(iconMap);
 
-function normalizeSignal(value: Signal | string): Signal {
-  const normalized = String(value).trim().toUpperCase().replace(/\s+/g, '_') as Signal;
-  return validSignals.includes(normalized) ? normalized : 'MARKET_ANOMALY';
+function normalizeSignal(value: Signal | string): string | null {
+  const normalized = String(value).trim().toUpperCase().replace(/\s+/g, '_');
+  if (!normalized) return null;
+  return validSignals.includes(normalized) ? normalized : null;
 }
 
 export function SignalPill({ signal }: { signal: Signal | string }) {
   const normalized = normalizeSignal(signal);
-  return <span className={`signal signal-${normalized.toLowerCase()}`}>{iconMap[normalized]} {normalized.replace('_', ' ')}</span>;
+  if (!normalized) return null;
+  return <span className={`signal signal-${normalized.toLowerCase()}`}>{iconMap[normalized]} {normalized.replace(/_/g, ' ')}</span>;
 }
