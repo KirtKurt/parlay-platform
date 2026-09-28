@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { MemberLanguageGuard } from '@/components/MemberLanguageGuard';
 import { PartnerCapture } from '@/components/PartnerCapture';
 import { TrackingConsent } from '@/components/TrackingConsent';
+import { ComplianceFooter } from '@/components/ComplianceFooter';
 import './globals.css';
 import './inqsi.css';
 import './inqsi-compat.css';
@@ -136,6 +137,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <MemberLanguageGuard />
         <PartnerCapture />
         {children}
+        <ComplianceFooter />
         <TrackingConsent />
       </body>
     </html>
