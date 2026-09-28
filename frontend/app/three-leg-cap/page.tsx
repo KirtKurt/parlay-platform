@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { InqsiSeoPage } from '@/components/InqsiSeoPage';
 
 export const metadata: Metadata = {
-  title: 'Three Leg Cap | InQsi',
+  title: 'Three Leg Cap',
   description: 'A plain-English answer explaining why InQsi keeps builder output capped at three legs.',
   alternates: { canonical: '/three-leg-cap' }
 };

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { InqsiSeoPage } from '@/components/InqsiSeoPage';
 
 export const metadata: Metadata = {
-  title: 'Line Movement Guide | InQsi',
+  title: 'Line Movement Guide',
   description: 'Learn what line movement means and how InQsi helps customers understand market changes before lock-in.',
   alternates: { canonical: '/line-movement-guide' }
 };

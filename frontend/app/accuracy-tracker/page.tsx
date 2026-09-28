@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { InqsiSeoPage } from '@/components/InqsiSeoPage';
 
 export const metadata: Metadata = {
-  title: 'Accuracy Tracker | InQsi',
+  title: 'Accuracy Tracker',
   description: 'Track slip accuracy by individual review, 1 day, 1 week, 1 month, 3 months, and 1 year.',
   alternates: { canonical: '/accuracy-tracker' }
 };

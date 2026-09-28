@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { InqsiSeoPage } from '@/components/InqsiSeoPage';
 
 export const metadata: Metadata = {
-  title: '3-Leg Parlay Guide | InQsi',
+  title: '3-Leg Parlay Guide',
   description: 'Learn why InQsi caps builder output at three legs and how a 3-leg slip creates eight possible outcome paths.',
   alternates: { canonical: '/3-leg-parlay-guide' }
 };
