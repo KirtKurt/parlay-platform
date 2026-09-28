@@ -290,7 +290,7 @@ export function SlipScannerClient() {
         <div className="slip-action-bar"><div><small>3-LEG SLIP</small><strong>{completed}/3 ready</strong></div><button className="inqsi-primary" type="submit" disabled={state.loading||!games.length||completed===0}>{state.loading?'Analyzing…':'Analyze slip'}</button></div>
       </form>
       {state.error && <p className="movement slip-message">{state.error}</p>}
-      {state.result && (() => {
+      {state.result ? (() => {
         const scan = (state.result as any)?.scan || state.result as any;
         const reads = Array.isArray(scan?.legReads) ? scan.legReads : [];
         return <div className="slip-analysis">
@@ -298,7 +298,7 @@ export function SlipScannerClient() {
           <div className="slip-read-grid">{reads.map((read:any,index:number)=><div key={read.legId || index}><small>LEG {index+1}</small><strong>{read.selection || `Leg ${index+1}`}</strong><span>{read.riskLevel || read.confidenceBand || 'Reviewed'}{read.score != null ? ` · ${read.score}/100` : ''}</span></div>)}</div>
           {scan?.weakestLeg && <p className="movement"><b>Weakest leg:</b> {scan.weakestLeg.selection} · {scan.weakestLeg.riskLevel || scan.weakestLeg.confidenceBand}</p>}
         </div>;
-      })()}
+      })() : null}
     </section>
   );
 }
