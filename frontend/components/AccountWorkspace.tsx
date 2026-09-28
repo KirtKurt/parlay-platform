@@ -26,7 +26,7 @@ function WorkspaceLinkCard({ href, chip, title, copy }: { href: string; chip: st
 function WelcomeFloat({ email, onClose }: { email?: string; onClose: () => void }) {
   return (
     <div role="dialog" aria-label="Welcome to InQsi" className="panel" style={{ position: 'fixed', left: '50%', bottom: 'max(96px, env(safe-area-inset-bottom))', transform: 'translateX(-50%)', zIndex: 70, width: 'min(720px, calc(100vw - 28px))', padding: 18 }}>
-      <button aria-label="Close welcome message" type="button" onClick={onClose} style={{ position: 'absolute', right: 14, top: 12, width: 34, height: 34, borderRadius: 999, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.08)', color: 'white', fontSize: 18, fontWeight: 900, cursor: 'pointer' }}>×</button>
+      <button aria-label="Close welcome message" type="button" onClick={onClose} style={{ position: 'absolute', right: 14, top: 12, width: 34, height: 34, borderRadius: 999, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.08)', color: 'white', fontSize: 18, fontWeight: 900, cursor: 'pointer' }}×</button>
       <p className="eyebrow blue">Welcome to InQsi</p>
       <h3 style={{ marginRight: 42 }}>Your account is active.</h3>
       <p className="movement">{email ? `You are signed in as ${email}. ` : ''}Start with the market board, official parlays, or scanner. One membership includes every supported sport.</p>
@@ -85,8 +85,8 @@ export function AccountWorkspace() {
       <section className="status-row">
         <article className="status-card"><span>Status</span><strong>Signed in</strong><p>Account workspace is active.</p></article>
         <article className="status-card"><span>Access</span><strong>{session.plan}</strong><p>{isFullAccess ? 'All supported sports, scanner, builder, slip scoring, and market review.' : 'Member workspace access.'}</p></article>
-        <article className="status-card"><span>Win Rate</span><strong>64.3%</strong><p>Profile mockup metric.</p></article>
-        <article className="status-card"><span>Confidence</span><strong>82</strong><p>Very strong profile mockup score.</p></article>
+        <article className="status-card"><span>Win Rate</span><strong>Waiting</strong><p>Shows after enough settled slips exist.</p></article>
+        <article className="status-card"><span>Confidence</span><strong>Waiting</strong><p>Shows after live scoring history exists.</p></article>
       </section>
 
       <section className="content-grid" style={{ marginTop: 20 }}>
