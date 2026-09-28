@@ -32,19 +32,19 @@ export function inqsiUserIdFrom(email?: string | null, provider?: string, subjec
 function providers() {
   const list = [];
   if (enabledProviders().includes('google')) {
-    list.push(GoogleProvider({ clientId: process.env.GOOGLE_CLIENT_ID!, clientSecret: process.env.GOOGLE_CLIENT_SECRET! }));
+    list.push(GoogleProvider({ clientId: process.env.GOOGLE_CLIENT_ID!, clientSecret: process.env.GOOGLE_CLIENT_SECRET!, allowDangerousEmailAccountLinking: true }));
   }
   if (enabledProviders().includes('apple')) {
-    list.push(AppleProvider({ clientId: process.env.APPLE_ID!, clientSecret: process.env.APPLE_SECRET! }));
+    list.push(AppleProvider({ clientId: process.env.APPLE_ID!, clientSecret: process.env.APPLE_SECRET!, allowDangerousEmailAccountLinking: true }));
   }
   if (enabledProviders().includes('twitter')) {
-    list.push(TwitterProvider({ clientId: process.env.TWITTER_CLIENT_ID!, clientSecret: process.env.TWITTER_CLIENT_SECRET!, version: '2.0' }));
+    list.push(TwitterProvider({ clientId: process.env.TWITTER_CLIENT_ID!, clientSecret: process.env.TWITTER_CLIENT_SECRET!, version: '2.0', allowDangerousEmailAccountLinking: true }));
   }
   if (enabledProviders().includes('reddit')) {
-    list.push(RedditProvider({ clientId: process.env.REDDIT_CLIENT_ID!, clientSecret: process.env.REDDIT_CLIENT_SECRET! }));
+    list.push(RedditProvider({ clientId: process.env.REDDIT_CLIENT_ID!, clientSecret: process.env.REDDIT_CLIENT_SECRET!, allowDangerousEmailAccountLinking: true }));
   }
   if (enabledProviders().includes('discord')) {
-    list.push(DiscordProvider({ clientId: process.env.DISCORD_CLIENT_ID!, clientSecret: process.env.DISCORD_CLIENT_SECRET! }));
+    list.push(DiscordProvider({ clientId: process.env.DISCORD_CLIENT_ID!, clientSecret: process.env.DISCORD_CLIENT_SECRET!, allowDangerousEmailAccountLinking: true }));
   }
   return list;
 }
@@ -54,7 +54,6 @@ export const authOptions: NextAuthOptions = {
   session: { strategy: 'jwt', maxAge: 30 * 24 * 60 * 60 },
   pages: { signIn: '/login', error: '/login' },
   providers: providers(),
-  allowDangerousEmailAccountLinking: true,
   callbacks: {
     async jwt({ token, account, user, profile }) {
       const email = String(user?.email || (profile as { email?: string } | undefined)?.email || token.email || '');
