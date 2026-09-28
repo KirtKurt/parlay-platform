@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { InqsiSeoPage } from '@/components/InqsiSeoPage';
 
 export const metadata: Metadata = {
-  title: 'Account Connection | InQsi',
+  title: 'Account Connection',
   description: 'A direct answer explaining that InQsi does not require customers to connect external accounts.',
   alternates: { canonical: '/account-connection' }
 };

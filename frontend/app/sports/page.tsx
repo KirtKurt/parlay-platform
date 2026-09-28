@@ -1,8 +1,15 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
 import { GameCard } from '@/components/GameCard';
 import { sports } from '@/lib/sports';
+
+export const metadata: Metadata = {
+  title: 'Sports Market Board',
+  description: 'Live sports market board with moneyline, spread, over/under, and kickoff times across every supported sport.',
+  alternates: { canonical: '/sports' }
+};
 
 export default async function SportsPage() {
   const { games, apiStatus, apiDetail } = await getApiSnapshot();
