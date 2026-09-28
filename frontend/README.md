@@ -74,3 +74,11 @@ npm run build
 ## Hosting
 
 The repo includes a frontend build workflow. Production hosting still needs the host provider to deploy the latest build from the GitHub repo and set the backend API URL where applicable.
+
+## ARB V2 prototype
+
+- `/arbitrage-v2` — opportunity-first ARB workspace matching the approved 16:9 desktop/mobile direction.
+- `/arbitrage-v2/calculator` — standalone American-odds arbitrage calculator with an unrestricted positive-dollar stake field.
+- `/v1/inqsi/arbitrage/history` — server-side, read-only proxy to the existing ARB history endpoint. Configure `INQSI_ARB_API_URL` (preferred) or one of the existing API base variables. The proxy fails closed and times out after 8 seconds.
+- If live ARB history is unavailable, the UI enters an explicit **DESIGN PREVIEW / SAMPLE OPPORTUNITIES / NOT LIVE SPORTSBOOK DATA** state. Sample rows must never be represented as live opportunities.
+- These routes are additive and do not replace the current production home route.
