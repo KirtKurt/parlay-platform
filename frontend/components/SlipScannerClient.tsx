@@ -116,6 +116,22 @@ function parseBoard(payload: any): BoardGame[] {
   return Array.from(unique.values());
 }
 
+function oddsFor(book: BookQuote, game: BoardGame, draft: LegDraft) {
+  if (draft.market === 'total') return draft.selection === 'Under' ? book.underPrice : book.overPrice;
+  const away = draft.selection === game.away;
+  if (draft.market === 'spread') return away ? book.awaySpreadPrice : book.homeSpreadPrice;
+  return away ? book.awayMl : book.homeMl;
+}
+
+function bestBookFor(game: BoardGame | undefined, draft: LegDraft) {
+  if (!game || !draft.selection) return '';
+  return game.books.reduce<{ book: string; odds: number } | null>((best, book) => {
+    const odds = oddsFor(book, game, draft);
+    if (!Number.isFinite(odds)) return best;
+    return !best || Number(odds) > best.odds ? { book: book.book, odds: Number(odds) } : best;
+  }, null)?.book || '';
+}
+
 function quoteFor(game: BoardGame | undefined, draft: LegDraft) {
   if (!game) return { selection: '', odds: '', line: '' };
   const book = game.books.find((item) => item.book === draft.book) || game.books[0];
@@ -185,6 +201,10 @@ export function SlipScannerClient() {
         next.sport = game?.sport || next.sport;
       }
       if (patch.market === 'total' && !['Over', 'Under'].includes(next.selection)) next.selection = '';
+      const selectedGame = games.find((item) => item.key === next.gameKey);
+      if ((patch.selection || patch.market) && selectedGame && next.selection) {
+        next.book = bestBookFor(selectedGame, next) || next.book;
+      }
       return next;
     }));
   }
@@ -223,66 +243,42 @@ export function SlipScannerClient() {
     }
   }
 
+  const completed = legs.filter((leg) => leg.gameKey && leg.selection && leg.book).length;
+
   return (
-    <section className="inqsi-panel">
-      <div className="inqsi-section-head">
-        <h2>Live scanner input</h2>
-        <span className="data-status">{mode === 'live' ? 'Live board' : mode === 'loading' ? 'Connecting' : 'Waiting'}</span>
+    <section className="inqsi-panel slip-builder">
+      <div className="slip-builder-head">
+        <div><p className="eyebrow blue">Build My Slip</p><h2>{completed}/3 legs selected</h2></div>
+        <span className="data-status">{mode === 'live' ? 'Live board' : mode === 'loading' ? 'Connecting' : 'Board syncing'}</span>
       </div>
-      <p className="movement">Pick sport first. Game lists only that sport. Book lists every sportsbook quoting that game.</p>
-      {!games.length && <p className="movement">Waiting on live board games before dropdowns can fill.</p>}
-      <form onSubmit={onSubmit} className="inqsi-game-list" style={{ marginTop: 14 }}>
+      {!games.length && <div className="slip-sync"><b>Live board is syncing</b><span>Selections unlock as verified sportsbook markets arrive. InQsi never fills a slip with invented odds.</span></div>}
+      <form onSubmit={onSubmit} className="slip-builder-form">
         {legs.map((leg, index) => {
           const sportGames = leg.sport ? games.filter((game) => game.sport === leg.sport) : [];
           const game = games.find((item) => item.key === leg.gameKey);
           const bookNames = game?.books.map((book) => book.book) || [];
           const selections = !game ? [] : leg.market === 'total' ? ['Over', 'Under'] : [game.away, game.home];
           const quote = quoteFor(game, leg);
+          const complete = Boolean(game && leg.selection && leg.book && quote.odds !== 'Waiting');
           return (
-            <article className="inqsi-game-card" key={index}>
-              <div className="inqsi-game-row"><b>Leg {index + 1}</b><span className="inqsi-score-chip">{quote.odds || 'Waiting'}</span></div>
-              <div className="inqsi-market-grid">
-                <label><span>Sport</span>
-                  <select value={leg.sport} onChange={(event) => updateLeg(index, { sport: event.target.value })}>
-                    <option value="">{sports.length ? 'Select sport' : 'Waiting'}</option>
-                    {sports.map((sport) => <option key={sport} value={sport}>{sport}</option>)}
-                  </select>
-                </label>
-                <label><span>Game</span>
-                  <select value={leg.gameKey} onChange={(event) => updateLeg(index, { gameKey: event.target.value })} disabled={!leg.sport}>
-                    <option value="">{!leg.sport ? 'Select sport first' : sportGames.length ? 'Select game' : 'Waiting'}</option>
-                    {sportGames.map((item) => <option key={item.key} value={item.key}>{item.matchup}</option>)}
-                  </select>
-                </label>
-                <label><span>Market</span>
-                  <select value={leg.market} onChange={(event) => updateLeg(index, { market: event.target.value })}>
-                    {markets.map((market) => <option key={market.value} value={market.value}>{market.label}</option>)}
-                  </select>
-                </label>
-                <label><span>Team / side</span>
-                  <select value={leg.selection} onChange={(event) => updateLeg(index, { selection: event.target.value })} disabled={!game}>
-                    <option value="">{game ? 'Select side' : 'Select game first'}</option>
-                    {selections.map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
-                </label>
-                <label><span>Book</span>
-                  <select value={leg.book} onChange={(event) => updateLeg(index, { book: event.target.value })} disabled={!game}>
-                    <option value="">{game ? (bookNames.length ? 'Select book' : 'Waiting') : 'Select game first'}</option>
-                    {bookNames.map((book) => <option key={book} value={book}>{book}</option>)}
-                  </select>
-                </label>
-                <label><span>Live quote</span>
-                  <select value={quote.odds} disabled>
-                    <option>{quote.odds && quote.odds !== 'Waiting' ? `${quote.selection} · ${quote.odds}` : 'Waiting'}</option>
-                  </select>
-                </label>
+            <article className={`slip-leg-card ${complete ? 'complete' : ''}`} key={index}>
+              <div className="slip-leg-head">
+                <div><small>LEG {index + 1}</small><strong>{complete ? quote.selection : game?.matchup || 'Choose a matchup'}</strong>{complete && <span>{game?.matchup}</span>}</div>
+                <b>{complete ? quote.odds : '—'}</b>
               </div>
+              <div className="slip-fields">
+                <label><span>Sport</span><select value={leg.sport} onChange={(e) => updateLeg(index,{sport:e.target.value})}><option value="">{sports.length?'Sport':'Waiting'}</option>{sports.map(s=><option key={s}>{s}</option>)}</select></label>
+                <label className="wide"><span>Game</span><select value={leg.gameKey} onChange={(e)=>updateLeg(index,{gameKey:e.target.value})} disabled={!leg.sport}><option value="">{!leg.sport?'Choose sport':sportGames.length?'Choose game':'Waiting'}</option>{sportGames.map(g=><option key={g.key} value={g.key}>{g.matchup}</option>)}</select></label>
+                <label><span>Market</span><select value={leg.market} onChange={(e)=>updateLeg(index,{market:e.target.value})}>{markets.map(m=><option key={m.value} value={m.value}>{m.label}</option>)}</select></label>
+                <label className="wide"><span>Pick</span><select value={leg.selection} onChange={(e)=>updateLeg(index,{selection:e.target.value})} disabled={!game}><option value="">{game?'Choose side':'Choose game'}</option>{selections.map(s=><option key={s}>{s}</option>)}</select></label>
+              </div>
+              {game && leg.selection && <div className="best-price-row"><div><small>BEST LIVE PRICE</small><strong>{quote.selection} · {quote.odds}</strong><span>{leg.book || 'Waiting for quoted book'}</span></div>{bookNames.length>1&&<label><span>Change book</span><select value={leg.book} onChange={(e)=>updateLeg(index,{book:e.target.value})}>{bookNames.map(b=><option key={b}>{b}</option>)}</select></label>}</div>}
             </article>
           );
         })}
-        <button className="inqsi-primary" type="submit" disabled={state.loading || !games.length}>{state.loading ? 'Scanning...' : 'Scan slip'}</button>
+        <div className="slip-action-bar"><div><small>3-LEG SLIP</small><strong>{completed}/3 ready</strong></div><button className="inqsi-primary" type="submit" disabled={state.loading||!games.length||completed===0}>{state.loading?'Analyzing…':'Analyze slip'}</button></div>
       </form>
-      {state.error ? <p className="movement" style={{ marginTop: 12 }}>{state.error}</p> : null}
+      {state.error && <p className="movement slip-message">{state.error}</p>}
     </section>
   );
 }
