@@ -7,7 +7,17 @@ export const dynamic = 'force-dynamic';
 
 function isSampleParlay(row: any) {
   const blob = JSON.stringify(row || {}).toLowerCase();
-  return blob.includes('+342') || blob.includes('"342"') || /confidence"?:\s*8[0-2]/.test(blob) || blob.includes('celtics') || blob.includes('sample');
+  return (
+    blob.includes('+342') ||
+    blob.includes('"342"') ||
+    blob.includes('342') ||
+    /confidence"?:\s*(70|76|82)/.test(blob) ||
+    blob.includes('celtics') ||
+    blob.includes('dodgers') ||
+    blob.includes('thunder') ||
+    blob.includes('sample') ||
+    blob.includes('preview slip')
+  );
 }
 
 export default async function ParlaysPage() {

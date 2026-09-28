@@ -27,5 +27,9 @@ function normalizeSignal(value: Signal | string): string | null {
 export function SignalPill({ signal }: { signal: Signal | string }) {
   const normalized = normalizeSignal(signal);
   if (!normalized) return null;
+  if (normalized === 'SAMPLE') return null;
+  if (normalized === 'ACTIVE_SLATE' || normalized === 'MARKET_BOARD') {
+    return <span className="signal signal-active_slate">Live board on radar</span>;
+  }
   return <span className={`signal signal-${normalized.toLowerCase()}`}>{iconMap[normalized]} {normalized.replace(/_/g, ' ')}</span>;
 }
