@@ -1,5 +1,6 @@
 'use client';
 import {useEffect,useMemo,useState} from 'react';
+import {GENERATED_ARB_WEBSOCKET_URL} from '@/lib/generatedArbApi';
 import './arb-v2.css';
 
 type Status='VERIFIED'|'HELD';
@@ -90,7 +91,24 @@ export default function Page(){
   }).catch(()=>{if(active){setRows([]);setMode('preview');}});
   load();
   const id=setInterval(load,30000);
-  return()=>{active=false;clearInterval(id)};
+  let ws:WebSocket|null=null;
+  let reconnect:ReturnType<typeof setTimeout>|null=null;
+  const connect=()=>{
+    if(!active||!GENERATED_ARB_WEBSOCKET_URL.startsWith('wss://'))return;
+    try{
+      ws=new WebSocket(GENERATED_ARB_WEBSOCKET_URL);
+      ws.onmessage=(event)=>{
+        try{
+          const message=JSON.parse(String(event.data||'{}'));
+          if(message?.type==='ARB_SCAN_UPDATE') load();
+        }catch{}
+      };
+      ws.onclose=()=>{if(active)reconnect=setTimeout(connect,5000);};
+      ws.onerror=()=>ws?.close();
+    }catch{if(active)reconnect=setTimeout(connect,5000);}
+  };
+  connect();
+  return()=>{active=false;clearInterval(id);if(reconnect)clearTimeout(reconnect);ws?.close();};
  },[]);
 
  const bank=Math.max(0,Number(bankText.replace(/,/g,''))||0);
