@@ -50,6 +50,46 @@ jobs:
             echo '::error::Missing ODDS_API_KEY'
             exit 1
           }
+          python - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          key = os.environ["ODDS_API_KEY_VALUE"]
+          url = "https://api.the-odds-api.com/v4/sports/?" + urllib.parse.urlencode(
+              {"all": "true", "apiKey": key}
+          )
+          request = urllib.request.Request(
+              url, headers={"User-Agent": "inqis-tennis-learning/1.5"}
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=45) as response:
+                  sports = json.loads(response.read().decode("utf-8"))
+          except Exception as exc:
+              raise SystemExit(f"ODDS_API_KEY rejected by The Odds API: {exc}")
+          if not isinstance(sports, list):
+              raise SystemExit(f"unexpected Odds API sports payload: {type(sports)}")
+          tennis = [
+              sport
+              for sport in sports
+              if str(sport.get("key") or "").startswith("tennis_")
+              and str(sport.get("group") or "").lower() == "tennis"
+              and not bool(sport.get("has_outrights", False))
+          ]
+          print(
+              json.dumps(
+                  {
+                      "odds_api_ok": True,
+                      "sports": len(sports),
+                      "provider_listed_tennis_keys": len(tennis),
+                  },
+                  sort_keys=True,
+              )
+          )
+          if not tennis:
+              raise SystemExit("Odds API key accepted but returned no tennis keys")
+          PY
           python -m py_compile \
             tennis_learning/handler.py \
             tennis_learning/backfill.py \
@@ -84,13 +124,28 @@ jobs:
           import json
           status=json.load(open('/tmp/tennis-autonomy-before.json'))
           assert status['service'] == 'tennis-autonomy', status
-          assert status['authority'] == 'AUTHORITATIVE', status
-          assert status.get('automatic_prediction_allowed') is True, status
-          assert int(status.get('consecutive_failures') or 0) == 0, status
           assert int(status.get('training_samples') or 0) >= 100, status
           assert int(status.get('live_audit_count') or 0) >= 30, status
           assert float(status.get('live_accuracy') or 0) >= 0.55, status
           assert float(status.get('live_brier') or 1) <= 0.25, status
+          authority = status.get('authority')
+          failures = int(status.get('consecutive_failures') or 0)
+          last_error = str(status.get('last_error') or '')
+          unauthorized = ('401' in last_error) or ('Unauthorized' in last_error)
+          if (
+              authority == 'AUTHORITATIVE'
+              and status.get('automatic_prediction_allowed') is True
+              and failures == 0
+          ):
+              print('pre-deploy authority healthy')
+          elif (
+              authority == 'DEGRADED'
+              and status.get('reason') == 'pipeline_failure_circuit_breaker'
+              and unauthorized
+          ):
+              print('pre-deploy allowing 401 circuit-breaker recover deploy')
+          else:
+              raise AssertionError(status)
           print(json.dumps(status, indent=2, sort_keys=True))
           PY
 
@@ -274,9 +329,8 @@ jobs:
           assert health['service'] == 'tennis-learning', health
           assert health['persistence'] == 'dynamodb', health
           assert status['service'] == 'tennis-autonomy', status
-          assert before['authority'] == 'AUTHORITATIVE', before
+          assert before['service'] == 'tennis-autonomy', before
           assert status['authority'] == 'AUTHORITATIVE', status
-          assert before.get('automatic_prediction_allowed') is True, before
           assert status.get('automatic_prediction_allowed') is True, status
           assert int(status.get('training_samples') or 0) >= 100, status
           assert int(status.get('live_audit_count') or 0) >= 30, status
