@@ -20,17 +20,17 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Add missing SMS diagnostic read permission and verify
+      - name: Create separate bounded SMS diagnostic permission and verify
         shell: bash
         run: |
           set -euo pipefail
           USER=github-parlay-platform-deploy
-          POLICY=ArbOpportunitySms
-          CURRENT=$(aws iam get-user-policy --user-name "$USER" --policy-name "$POLICY" --query PolicyDocument --output json)
-          UPDATED=$(printf '%s' "$CURRENT" | python -c 'import json,sys; p=json.load(sys.stdin); target="sms-voice:DescribeVerifiedDestinationNumbers"; sts=p.get("Statement",[]); s=next((x for x in sts if x.get("Sid")=="AllowSmsDeliveryDiagnostics"),None); assert s is not None, "AllowSmsDeliveryDiagnostics statement missing"; a=s.get("Action",[]); a=[a] if isinstance(a,str) else a; s["Action"]=a if target in a else a+[target]; print(json.dumps(p,separators=(",",":")))')
-          aws iam put-user-policy --user-name "$USER" --policy-name "$POLICY" --policy-document "$UPDATED"
+          POLICY=ArbSmsDeliveryDiagnosticRead
+          DOC='{"Version":"2012-10-17","Statement":[{"Sid":"ReadVerifiedSmsDestinations","Effect":"Allow","Action":"sms-voice:DescribeVerifiedDestinationNumbers","Resource":"*"}]}'
+          aws iam put-user-policy --user-name "$USER" --policy-name "$POLICY" --policy-document "$DOC"
           sleep 3
           SAVED=$(aws iam get-user-policy --user-name "$USER" --policy-name "$POLICY" --query PolicyDocument --output json)
-          printf '%s' "$SAVED" | python -c 'import json,sys; p=json.load(sys.stdin); target="sms-voice:DescribeVerifiedDestinationNumbers"; assert any(target in ([s.get("Action")] if isinstance(s.get("Action"),str) else s.get("Action",[])) for s in p.get("Statement",[])), "permission not persisted"; print("IAM inline policy repair persisted")'
-          aws sns list-sms-sandbox-phone-numbers --query "length(PhoneNumbers)" --output text
-          echo "SMS sandbox read verification succeeded. No SMS was sent."
+          printf '%s' "$SAVED" | python -c 'import json,sys; p=json.load(sys.stdin); target="sms-voice:DescribeVerifiedDestinationNumbers"; assert any(target in ([s.get("Action")] if isinstance(s.get("Action"),str) else s.get("Action",[])) for s in p.get("Statement",[])), "permission not persisted"; print("Separate bounded IAM policy persisted")'
+          COUNT=$(aws sns list-sms-sandbox-phone-numbers --query "length(PhoneNumbers)" --output text)
+          echo "SMS sandbox read verification succeeded; verified/pending destination count=$COUNT"
+          echo "No SMS was sent."
