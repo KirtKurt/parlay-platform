@@ -66,45 +66,51 @@ function american(leg: any) {
   return Number.isFinite(value) ? value : undefined;
 }
 
-function toGame(sport: string, rows: any[]) {
-  const first = rows[0] || {};
-  const { awayTeam, homeTeam } = splitEvent(first.event || '');
-  const h2h = rows.filter((row) => String(row.market || '').toLowerCase() === 'h2h').flatMap((row) => row.legs || []);
-  const spreads = rows.filter((row) => String(row.market || '').includes('spread')).flatMap((row) => row.legs || []);
-  const totals = rows.filter((row) => String(row.market || '').includes('total')).flatMap((row) => row.legs || []);
+function quoteForBook(rows: any[], book: string, awayTeam: string, homeTeam: string) {
+  const legs = rows.flatMap((row) => (row.legs || []).filter((leg: any) => String(leg.book || '') === book));
+  const h2h = rows.filter((row) => String(row.market || '').toLowerCase() === 'h2h').flatMap((row) => (row.legs || []).filter((leg: any) => String(leg.book || '') === book));
+  const spreads = rows.filter((row) => String(row.market || '').includes('spread')).flatMap((row) => (row.legs || []).filter((leg: any) => String(leg.book || '') === book));
+  const totals = rows.filter((row) => String(row.market || '').includes('total')).flatMap((row) => (row.legs || []).filter((leg: any) => String(leg.book || '') === book));
   const homeMl = h2h.find((leg) => String(leg.outcome || '').includes(homeTeam));
   const awayMl = h2h.find((leg) => String(leg.outcome || '').includes(awayTeam));
   const homeSpread = spreads.find((leg) => String(leg.outcome || '').includes(homeTeam));
   const awaySpread = spreads.find((leg) => String(leg.outcome || '').includes(awayTeam));
   const over = totals.find((leg) => /over/i.test(String(leg.outcome || '')));
   const under = totals.find((leg) => /under/i.test(String(leg.outcome || '')));
-  const books = Array.from(new Set(rows.flatMap((row) => (row.legs || []).map((leg: any) => leg.book).filter(Boolean))));
-  const pulled = rows.flatMap((row) => (row.legs || []).map((leg: any) => leg.last_update).filter(Boolean)).sort().slice(-1)[0];
-  const book = books[0] || 'live-book';
   return {
-    gameId: first.market_id || `${sport}-${awayTeam}-${homeTeam}`.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    book,
+    moneyline: { home: american(homeMl), away: american(awayMl) },
+    spread: {
+      home_point: homeSpread?.point,
+      home_price: american(homeSpread),
+      away_point: awaySpread?.point,
+      away_price: american(awaySpread),
+    },
+    total: {
+      over_point: over?.point,
+      over_price: american(over),
+      under_point: under?.point,
+      under_price: american(under),
+    },
+    last_update: legs.map((leg: any) => leg.last_update).filter(Boolean).sort().slice(-1)[0],
+  };
+}
+
+function toGame(sport: string, rows: any[]) {
+  const first = rows[0] || {};
+  const { awayTeam, homeTeam } = splitEvent(first.event || '');
+  const bookNames = Array.from(new Set(rows.flatMap((row) => (row.legs || []).map((leg: any) => String(leg.book || '')).filter(Boolean))));
+  const books = bookNames.map((book) => quoteForBook(rows, book, awayTeam, homeTeam));
+  const pulled = books.map((book) => book.last_update).filter(Boolean).sort().slice(-1)[0];
+  return {
+    gameId: `${sport}-${awayTeam}-${homeTeam}`.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
     sport,
     awayTeam,
     homeTeam,
     commenceTime: first.commence_time,
     latestPulledAt: pulled,
     bookCount: books.length,
-    books: [{
-      book,
-      moneyline: { home: american(homeMl), away: american(awayMl) },
-      spread: {
-        home_point: homeSpread?.point,
-        home_price: american(homeSpread),
-        away_point: awaySpread?.point,
-        away_price: american(awaySpread),
-      },
-      total: {
-        over_point: over?.point,
-        over_price: american(over),
-        under_point: under?.point,
-        under_price: american(under),
-      },
-    }],
+    books,
   };
 }
 

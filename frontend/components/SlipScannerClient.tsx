@@ -39,32 +39,6 @@ const markets = [
   { value: 'total', label: 'Total' },
 ];
 
-const sportAlias: Record<string, string> = {
-  MLB: 'MLB',
-  BASEBALL_MLB: 'MLB',
-  AMERICANFOOTBALL_NFL: 'NFL',
-  NFL: 'NFL',
-  NBA: 'NBA',
-  BASKETBALL_NBA: 'NBA',
-  WNBA: 'WNBA',
-  BASKETBALL_WNBA: 'WNBA',
-  NHL: 'NHL',
-  ICEHOCKEY_NHL: 'NHL',
-  NCAAM: 'NCAAM',
-  BASKETBALL_NCAAB: 'NCAAM',
-  CFB: 'CFB',
-  AMERICANFOOTBALL_NCAAF: 'CFB',
-  SOCCER: 'SOCCER',
-  SOCCER_EPL: 'SOCCER',
-  SOCCER_USA_MLS: 'SOCCER',
-  TENNIS: 'TENNIS',
-};
-
-function normalizeSport(value: unknown) {
-  const raw = String(value || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_');
-  return sportAlias[raw] || raw.split('_').pop() || raw;
-}
-
 function numberOrUndef(value: unknown) {
   const n = Number(value);
   return Number.isFinite(n) ? n : undefined;
@@ -75,69 +49,71 @@ function formatAmerican(value?: number) {
   return Number(value) > 0 ? `+${value}` : String(value);
 }
 
-function mergeBook(current: BookQuote | undefined, incoming: BookQuote): BookQuote {
-  if (!current) return incoming;
-  return {
-    book: current.book,
-    homeMl: incoming.homeMl ?? current.homeMl,
-    awayMl: incoming.awayMl ?? current.awayMl,
-    homeSpread: incoming.homeSpread ?? current.homeSpread,
-    awaySpread: incoming.awaySpread ?? current.awaySpread,
-    homeSpreadPrice: incoming.homeSpreadPrice ?? current.homeSpreadPrice,
-    awaySpreadPrice: incoming.awaySpreadPrice ?? current.awaySpreadPrice,
-    totalPoint: incoming.totalPoint ?? current.totalPoint,
-    overPrice: incoming.overPrice ?? current.overPrice,
-    underPrice: incoming.underPrice ?? current.underPrice,
-  };
+function normSport(value?: string) {
+  const raw = String(value || '').toLowerCase();
+  if (raw.includes('baseball') || raw === 'mlb') return 'MLB';
+  if (raw.includes('ncaaf') || raw === 'cfb') return 'CFB';
+  if (raw.includes('nfl') || raw.includes('americanfootball_nfl')) return 'NFL';
+  if (raw.includes('wnba')) return 'WNBA';
+  if (raw.includes('ncaab') || raw === 'ncaam') return 'NCAAM';
+  if (raw.includes('nba') || raw.includes('basketball_nba')) return 'NBA';
+  if (raw.includes('nhl') || raw.includes('hockey')) return 'NHL';
+  if (raw.includes('soccer') || raw.includes('epl') || raw.includes('mls')) return 'Soccer';
+  if (raw.includes('tennis')) return 'Tennis';
+  return raw ? raw.toUpperCase() : '';
 }
 
 function parseBoard(payload: any): BoardGame[] {
   const boards = Array.isArray(payload?.boards) ? payload.boards : [];
-  const merged = new Map<string, BoardGame>();
+  const games: BoardGame[] = [];
   for (const board of boards) {
-    const sport = normalizeSport(board?.sport || board?.providerSportKey);
+    const sport = normSport(board?.sport || board?.providerSportKey);
     for (const game of board?.games || []) {
-      const away = String(game.awayTeam || game.away_team || '');
-      const home = String(game.homeTeam || game.home_team || '');
+      const away = String(game.awayTeam || game.away_team || '').trim();
+      const home = String(game.homeTeam || game.home_team || '').trim();
       if (!away || !home) continue;
-      const key = `${sport}|${away}|${home}`;
-      const incomingBooks: BookQuote[] = (game.books || []).map((book: any) => ({
-        book: String(book.book || book.bookmaker || '').trim(),
-        homeMl: numberOrUndef(book?.moneyline?.home),
-        awayMl: numberOrUndef(book?.moneyline?.away),
-        homeSpread: numberOrUndef(book?.spread?.home_point),
-        awaySpread: numberOrUndef(book?.spread?.away_point),
-        homeSpreadPrice: numberOrUndef(book?.spread?.home_price),
-        awaySpreadPrice: numberOrUndef(book?.spread?.away_price),
-        totalPoint: numberOrUndef(book?.total?.over_point ?? book?.total?.point),
-        overPrice: numberOrUndef(book?.total?.over_price),
-        underPrice: numberOrUndef(book?.total?.under_price),
-      })).filter((book: BookQuote) => book.book);
-      const prior = merged.get(key);
-      const booksByName = new Map<string, BookQuote>();
-      for (const book of [...(prior?.books || []), ...incomingBooks]) {
-        booksByName.set(book.book, mergeBook(booksByName.get(book.book), book));
+      const books: BookQuote[] = [];
+      const seen = new Set<string>();
+      for (const book of game.books || []) {
+        const name = String(book.book || book.bookmaker || '').trim();
+        if (!name || seen.has(name)) continue;
+        seen.add(name);
+        books.push({
+          book: name,
+          homeMl: numberOrUndef(book?.moneyline?.home),
+          awayMl: numberOrUndef(book?.moneyline?.away),
+          homeSpread: numberOrUndef(book?.spread?.home_point),
+          awaySpread: numberOrUndef(book?.spread?.away_point),
+          homeSpreadPrice: numberOrUndef(book?.spread?.home_price),
+          awaySpreadPrice: numberOrUndef(book?.spread?.away_price),
+          totalPoint: numberOrUndef(book?.total?.over_point ?? book?.total?.point),
+          overPrice: numberOrUndef(book?.total?.over_price),
+          underPrice: numberOrUndef(book?.total?.under_price),
+        });
       }
-      merged.set(key, {
-        key,
+      games.push({
+        key: `${sport}|${away}|${home}`,
         sport,
         away,
         home,
         matchup: `${away} @ ${home}`,
-        books: Array.from(booksByName.values()),
+        books,
       });
     }
   }
-  return Array.from(merged.values());
-}
-
-function booksForMarket(game: BoardGame | undefined, market: string) {
-  if (!game) return [];
-  return game.books.filter((book) => {
-    if (market === 'spread') return book.homeSpread != null || book.awaySpread != null;
-    if (market === 'total') return book.totalPoint != null || book.overPrice != null || book.underPrice != null;
-    return book.homeMl != null || book.awayMl != null;
-  }).map((book) => book.book);
+  const unique = new Map<string, BoardGame>();
+  for (const game of games) {
+    const prior = unique.get(game.key);
+    if (!prior) {
+      unique.set(game.key, game);
+      continue;
+    }
+    const seen = new Set(prior.books.map((book) => book.book));
+    for (const book of game.books) {
+      if (!seen.has(book.book)) prior.books.push(book);
+    }
+  }
+  return Array.from(unique.values());
 }
 
 function quoteFor(game: BoardGame | undefined, draft: LegDraft) {
@@ -191,7 +167,7 @@ export function SlipScannerClient() {
     return () => { active = false; };
   }, []);
 
-  const sports = useMemo(() => Array.from(new Set(games.map((game) => game.sport))).sort(), [games]);
+  const sports = useMemo(() => Array.from(new Set(games.map((game) => game.sport))), [games]);
 
   function updateLeg(index: number, patch: Partial<LegDraft>) {
     setLegs((current) => current.map((leg, i) => {
@@ -203,14 +179,12 @@ export function SlipScannerClient() {
         next.book = '';
       }
       if (patch.gameKey && patch.gameKey !== leg.gameKey) {
+        const game = games.find((item) => item.key === patch.gameKey);
         next.selection = '';
         next.book = '';
+        next.sport = game?.sport || next.sport;
       }
-      if (patch.market && patch.market !== leg.market) {
-        next.book = '';
-        if (patch.market === 'total') next.selection = 'Over';
-        else next.selection = '';
-      }
+      if (patch.market === 'total' && !['Over', 'Under'].includes(next.selection)) next.selection = '';
       return next;
     }));
   }
@@ -255,20 +229,18 @@ export function SlipScannerClient() {
         <h2>Live scanner input</h2>
         <span className="data-status">{mode === 'live' ? 'Live board' : mode === 'loading' ? 'Connecting' : 'Waiting'}</span>
       </div>
-      <p className="movement">Pick sport first. Game lists only that sport. Book lists every sportsbook quoting the selected game.</p>
+      <p className="movement">Pick sport first. Game lists only that sport. Book lists every sportsbook quoting that game.</p>
       {!games.length && <p className="movement">Waiting on live board games before dropdowns can fill.</p>}
       <form onSubmit={onSubmit} className="inqsi-game-list" style={{ marginTop: 14 }}>
         {legs.map((leg, index) => {
           const sportGames = leg.sport ? games.filter((game) => game.sport === leg.sport) : [];
-          const game = games.find((item) => item.key === leg.gameKey && (!leg.sport || item.sport === leg.sport));
-          const bookNames = booksForMarket(game, leg.market);
-          const selections = leg.market === 'total'
-            ? ['Over', 'Under']
-            : game ? [game.away, game.home] : [];
-          const quote = quoteFor(game, { ...leg, selection: leg.selection || selections[0] || '' });
+          const game = games.find((item) => item.key === leg.gameKey);
+          const bookNames = game?.books.map((book) => book.book) || [];
+          const selections = !game ? [] : leg.market === 'total' ? ['Over', 'Under'] : [game.away, game.home];
+          const quote = quoteFor(game, leg);
           return (
             <article className="inqsi-game-card" key={index}>
-              <div className="inqsi-game-row"><b>Leg {index + 1}</b><span className="inqsi-score-chip">{quote.odds}</span></div>
+              <div className="inqsi-game-row"><b>Leg {index + 1}</b><span className="inqsi-score-chip">{quote.odds || 'Waiting'}</span></div>
               <div className="inqsi-market-grid">
                 <label><span>Sport</span>
                   <select value={leg.sport} onChange={(event) => updateLeg(index, { sport: event.target.value })}>
@@ -278,7 +250,7 @@ export function SlipScannerClient() {
                 </label>
                 <label><span>Game</span>
                   <select value={leg.gameKey} onChange={(event) => updateLeg(index, { gameKey: event.target.value })} disabled={!leg.sport}>
-                    <option value="">{!leg.sport ? 'Pick a sport first' : sportGames.length ? 'Select game' : 'Waiting on games'}</option>
+                    <option value="">{!leg.sport ? 'Select sport first' : sportGames.length ? 'Select game' : 'Waiting'}</option>
                     {sportGames.map((item) => <option key={item.key} value={item.key}>{item.matchup}</option>)}
                   </select>
                 </label>
@@ -289,19 +261,19 @@ export function SlipScannerClient() {
                 </label>
                 <label><span>Team / side</span>
                   <select value={leg.selection} onChange={(event) => updateLeg(index, { selection: event.target.value })} disabled={!game}>
-                    <option value="">{game ? 'Select side' : 'Pick a game first'}</option>
+                    <option value="">{game ? 'Select side' : 'Select game first'}</option>
                     {selections.map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </label>
                 <label><span>Book</span>
                   <select value={leg.book} onChange={(event) => updateLeg(index, { book: event.target.value })} disabled={!game}>
-                    <option value="">{!game ? 'Pick a game first' : bookNames.length ? `Select book (${bookNames.length})` : 'Waiting on books'}</option>
+                    <option value="">{game ? (bookNames.length ? 'Select book' : 'Waiting') : 'Select game first'}</option>
                     {bookNames.map((book) => <option key={book} value={book}>{book}</option>)}
                   </select>
                 </label>
                 <label><span>Live quote</span>
                   <select value={quote.odds} disabled>
-                    <option>{quote.line ? `${quote.selection} · ${quote.odds}` : quote.odds}</option>
+                    <option>{quote.odds && quote.odds !== 'Waiting' ? `${quote.selection} · ${quote.odds}` : 'Waiting'}</option>
                   </select>
                 </label>
               </div>
