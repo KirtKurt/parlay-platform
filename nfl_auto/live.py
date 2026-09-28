@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
-from .canonical import digest, iso_utc, now_utc, strict_event_match
+from .canonical import digest, iso_utc, normalize_team, now_utc, strict_event_match
 from .config import (
     HISTORICAL_SNAPSHOT_HORIZONS_MINUTES,
     LIVE_SEASON,
@@ -68,11 +68,105 @@ def _stats_from_item(item: Mapping[str, Any]) -> dict[str, TeamGameStats]:
     return result
 
 
-def sync_regular_season_schedule(store: NflStore, bbd: BBDClient) -> dict[str, Any]:
+
+def _reason_key(reason: str) -> str:
+    return str(reason).split(":", 1)[0][:80]
+
+
+def _count_reason(counts: dict[str, int], reason: str) -> None:
+    key = _reason_key(reason)
+    counts[key] = counts.get(key, 0) + 1
+
+
+def _stored_kickoffs(store: NflStore) -> dict[str, str]:
+    found: dict[str, str] = {}
+    for item in store.list_games():
+        if int(item.get("season") or 0) != LIVE_SEASON:
+            continue
+        game_id = str(item.get("game_id") or "")
+        kickoff = str(item.get("kickoff_utc") or "")
+        if game_id and kickoff:
+            found[game_id] = kickoff
+    return found
+
+
+def _kickoff_state(store: NflStore) -> dict[str, Any]:
+    state = store.state_get("NFL_AUTO_KICKOFF_RESOLUTION") or {}
+    return state if isinstance(state, Mapping) else {}
+
+
+def _remembered_kickoffs(store: NflStore) -> dict[str, str]:
+    games = _kickoff_state(store).get("games")
+    if not isinstance(games, Mapping):
+        return {}
+    return {str(game_id): str(kickoff) for game_id, kickoff in games.items() if kickoff and kickoff != "UNRESOLVED"}
+
+
+def _schedule_game(row: Mapping[str, Any], kickoff_utc: str | None = None) -> tuple[Game | None, str | None]:
+    payload = dict(row)
+    if kickoff_utc and not payload.get("kickoff_utc"):
+        payload["kickoff_utc"] = kickoff_utc
+    try:
+        return parse_bbd_game(payload), None
+    except (KeyError, TypeError, ValueError) as exc:
+        return None, str(exc)
+
+
+def _matching_commence(home: Any, away: Any, events: list[Mapping[str, Any]]) -> str | None:
+    found: set[str] = set()
+    for event in events:
+        try:
+            if normalize_team(event.get("home_team")) != normalize_team(home):
+                continue
+            if normalize_team(event.get("away_team")) != normalize_team(away):
+                continue
+        except (TypeError, ValueError):
+            continue
+        commence = str(event.get("commence_time") or "")
+        if commence:
+            found.add(commence)
+    if len(found) == 1:
+        return next(iter(found))
+    return None
+
+
+def _events_for_weeks(odds: OddsApiClient, pending: list[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    events: list[Mapping[str, Any]] = []
+    by_week: dict[int, list[Mapping[str, Any]]] = {}
+    for row in pending:
+        try:
+            week = int(row.get("week") or 0)
+        except (TypeError, ValueError):
+            week = 0
+        by_week.setdefault(week, []).append(row)
+    for group in by_week.values():
+        dates = sorted(str(row.get("game_date") or "")[:10] for row in group if row.get("game_date"))
+        if not dates:
+            continue
+        try:
+            payload, _transport = odds.historical_events(snapshot_at=f"{dates[0]}T12:00:00Z")
+        except Exception:
+            continue
+        for event in payload.get("data") or []:
+            if isinstance(event, Mapping):
+                events.append(event)
+    try:
+        live_events, _transport = odds.live_odds()
+    except Exception:
+        live_events = []
+    events.extend(event for event in live_events if isinstance(event, Mapping))
+    return events
+
+
+def sync_regular_season_schedule(store: NflStore, bbd: BBDClient, odds: OddsApiClient | None = None) -> dict[str, Any]:
     accepted = 0
     rejected = 0
     pages = 0
     offset = 0
+    reasons: dict[str, int] = {}
+    stored = _stored_kickoffs(store)
+    remembered = _remembered_kickoffs(store)
+    pending: list[tuple[dict[str, Any], dict[str, str]]] = []
     while pages < 3:
         rows, pagination, transport = bbd.list_games_page(
             season=LIVE_SEASON,
@@ -92,18 +186,21 @@ def sync_regular_season_schedule(store: NflStore, bbd: BBDClient) -> dict[str, A
             },
         )
         for row in rows:
-            try:
-                game = parse_bbd_game(row)
-            except (KeyError, TypeError, ValueError) as exc:
+            game_id = str(row.get("game_id") or "")
+            known_kickoff = stored.get(game_id) or remembered.get(game_id)
+            game, reason = _schedule_game(row, known_kickoff)
+            if game is None and reason == "BBD_KICKOFF_MISSING":
+                pending.append((dict(row), raw_provenance))
+                continue
+            if game is None or game.season != LIVE_SEASON or game.game_type != "REG":
                 rejected += 1
+                exclusion = reason or "NOT_LIVE_REGULAR_SEASON"
+                _count_reason(reasons, exclusion)
                 store.put_op(
                     "LIVE_SCHEDULE_EXCLUSION",
                     f"{offset}#{rejected}",
-                    {"reason": str(exc), "row_digest": digest(row)},
+                    {"reason": exclusion, "row_digest": digest(row)},
                 )
-                continue
-            if game.season != LIVE_SEASON or game.game_type != "REG":
-                rejected += 1
                 continue
             store.put_game(game, raw_provenance={**raw_provenance, "row_digest": digest(row)})
             accepted += 1
@@ -112,7 +209,79 @@ def sync_regular_season_schedule(store: NflStore, bbd: BBDClient) -> dict[str, A
         total = int(pagination.get("total") or offset)
         if not rows or offset >= total:
             break
-    return {"accepted": accepted, "rejected": rejected, "pages": pages}
+    events: list[Mapping[str, Any]] = []
+    unmatched_sample: list[dict[str, Any]] = []
+    if pending and odds is not None:
+        now = datetime.now(timezone.utc)
+        attempted = _kickoff_state(store).get("attempted")
+        attempted = dict(attempted) if isinstance(attempted, Mapping) else {}
+        due: list[tuple[dict[str, Any], dict[str, str]]] = []
+        for row, raw_provenance in pending:
+            game_id = str(row.get("game_id") or "")
+            last = str(attempted.get(game_id) or "")
+            retry = True
+            if last:
+                try:
+                    retry = now - parse_utc(last) >= timedelta(hours=12)
+                except (TypeError, ValueError):
+                    retry = True
+            if not retry:
+                rejected += 1
+                _count_reason(reasons, "BBD_KICKOFF_RETRY_WAITING")
+                continue
+            due.append((row, raw_provenance))
+            if game_id:
+                attempted[game_id] = iso_utc(now)
+        events = _events_for_weeks(odds, [row for row, _provenance in due]) if due else []
+        pending = due
+        resolved: dict[str, str] = dict(remembered)
+        for row, raw_provenance in pending:
+            game_id = str(row.get("game_id") or "")
+            commence = _matching_commence(row.get("home_team"), row.get("away_team"), events)
+            game, reason = _schedule_game(row, commence)
+            if game is None or game.season != LIVE_SEASON or game.game_type != "REG":
+                rejected += 1
+                exclusion = reason or "NOT_LIVE_REGULAR_SEASON"
+                _count_reason(reasons, exclusion)
+                if game_id:
+                    resolved.pop(game_id, None)
+                if len(unmatched_sample) < 5:
+                    unmatched_sample.append(
+                        {
+                            "game_id": game_id,
+                            "home": row.get("home_team"),
+                            "away": row.get("away_team"),
+                            "game_date": row.get("game_date"),
+                            "week": row.get("week"),
+                            "reason": exclusion,
+                        }
+                    )
+                store.put_op(
+                    "LIVE_SCHEDULE_EXCLUSION",
+                    f"kickoff#{game_id or rejected}",
+                    {"reason": exclusion, "row_digest": digest(row)},
+                )
+                continue
+            store.put_game(
+                game,
+                raw_provenance={**raw_provenance, "row_digest": digest(row), "kickoff_source": "odds_api_commence_time"},
+            )
+            if game_id:
+                resolved[game_id] = game.kickoff_utc
+            accepted += 1
+        store.state_put("NFL_AUTO_KICKOFF_RESOLUTION", {"games": resolved, "attempted": attempted})
+    elif pending:
+        for row, _raw_provenance in pending:
+            rejected += 1
+            _count_reason(reasons, "BBD_KICKOFF_MISSING")
+    return {
+        "accepted": accepted,
+        "rejected": rejected,
+        "pages": pages,
+        "rejection_reasons": reasons,
+        "odds_event_count": len(events),
+        "unmatched_sample": unmatched_sample,
+    }
 
 
 def refresh_one_completed_game(store: NflStore, bbd: BBDClient, now: datetime) -> dict[str, Any] | None:
@@ -436,7 +605,7 @@ def live_tick(
     if not store.acquire_lease("LIVE_TICK", ttl_seconds=240):
         return {"ok": True, "status": "LEASE_HELD"}
     try:
-        schedule = sync_regular_season_schedule(store, bbd)
+        schedule = sync_regular_season_schedule(store, bbd, odds)
         games = [
             _game_from_item(row)
             for row in store.list_games()

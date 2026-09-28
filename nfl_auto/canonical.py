@@ -31,6 +31,7 @@ _TEAM_ALIASES = {
     "los angeles chargers": "LAC", "lac": "LAC", "sd": "LAC",
     "san diego chargers": "LAC",
     "los angeles rams": "LAR", "lar": "LAR", "stl": "LAR",
+    "la": "LAR",
     "st. louis rams": "LAR", "st louis rams": "LAR",
     "miami dolphins": "MIA", "mia": "MIA",
     "minnesota vikings": "MIN", "min": "MIN",

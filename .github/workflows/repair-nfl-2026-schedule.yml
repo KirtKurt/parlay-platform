@@ -1,0 +1,84 @@
+name: Repair NFL 2026 Schedule Feed
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Patch the live function and reload the 2026 schedule
+        run: |
+          set -euo pipefail
+          REGION="${AWS_REGION}"
+          STACK=parlay-platform-nfl-auto
+          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK" --logical-resource-id NflLiveFunction --region "$REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          TIMEOUT=$(aws lambda get-function-configuration --function-name "$FN" --region "$REGION" --query 'Timeout' --output text)
+          if [ "$TIMEOUT" -lt 180 ]; then
+            aws lambda update-function-configuration --function-name "$FN" --region "$REGION" --timeout 180 >/dev/null
+            aws lambda wait function-updated --function-name "$FN" --region "$REGION"
+          fi
+          CODE_URL=$(aws lambda get-function --function-name "$FN" --region "$REGION" --query 'Code.Location' --output text)
+          curl -fsSL "$CODE_URL" -o /tmp/fn.zip
+          rm -rf /tmp/fn
+          mkdir -p /tmp/fn
+          unzip -q /tmp/fn.zip -d /tmp/fn
+          find /tmp/fn -path '*/nfl_auto/live.py' -print
+          find /tmp/fn -path '*/nfl_auto/canonical.py' -print
+          test -n "$(find /tmp/fn -path '*/nfl_auto/live.py' -print -quit)"
+          test -n "$(find /tmp/fn -path '*/nfl_auto/canonical.py' -print -quit)"
+          find /tmp/fn -path '*/nfl_auto/live.py' -exec cp nfl_auto/live.py {} \;
+          find /tmp/fn -path '*/nfl_auto/canonical.py' -exec cp nfl_auto/canonical.py {} \;
+          python3 -m py_compile /tmp/fn/nfl_auto/live.py /tmp/fn/nfl_auto/canonical.py || python3 -m py_compile $(find /tmp/fn -path '*/nfl_auto/live.py' -print -quit) $(find /tmp/fn -path '*/nfl_auto/canonical.py' -print -quit)
+          grep -n "BBD_KICKOFF_RETRY_WAITING" "$(find /tmp/fn -path '*/nfl_auto/live.py' -print -quit)"
+          grep -n '"la": "LAR"' "$(find /tmp/fn -path '*/nfl_auto/canonical.py' -print -quit)"
+          (cd /tmp/fn && zip -qr /tmp/fn-patched.zip .)
+          aws lambda update-function-code --function-name "$FN" --region "$REGION" --zip-file fileb:///tmp/fn-patched.zip >/dev/null
+          aws lambda wait function-updated --function-name "$FN" --region "$REGION"
+          attempt=0
+          while true; do
+            aws lambda invoke --function-name "$FN" --region "$REGION" --cli-read-timeout 200 --cli-binary-format raw-in-base64-out --payload '{"action":"live_tick"}' /tmp/live.json >/tmp/meta.json
+            STATUS=$(python3 -c 'import json; print(json.load(open("/tmp/live.json")).get("status") or "")')
+            echo "ATTEMPT ${attempt} ${STATUS}"
+            if [ "$STATUS" != "LEASE_HELD" ]; then
+              break
+            fi
+            attempt=$((attempt + 1))
+            if [ "$attempt" -ge 8 ]; then
+              break
+            fi
+            sleep 35
+          done
+          python3 - << 'PY'
+          import json
+          meta = json.load(open("/tmp/meta.json"))
+          body = json.load(open("/tmp/live.json"))
+          schedule = body.get("schedule") or {}
+          print("INVOKE", meta.get("StatusCode"), meta.get("FunctionError"))
+          print("BODY_STATUS", body.get("status"), body.get("ok"), body.get("reason") or body.get("error_code"))
+          print("SCHEDULE", json.dumps({
+              "accepted": schedule.get("accepted"),
+              "rejected": schedule.get("rejected"),
+              "pages": schedule.get("pages"),
+              "odds_event_count": schedule.get("odds_event_count"),
+              "rejection_reasons": schedule.get("rejection_reasons"),
+              "unmatched_sample": schedule.get("unmatched_sample"),
+          }, default=str))
+          if meta.get("FunctionError") or body.get("status") in {"FAILED", "LEASE_HELD"}:
+              raise SystemExit(1)
+          if not schedule.get("accepted"):
+              raise SystemExit(3)
+          PY
+          STATUS_URL=$(aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='NflAutoStatusUrl'].OutputValue" --output text)
+          curl -fsS "$STATUS_URL" | python3 -c 'import json,sys; s=json.load(sys.stdin); print("PUBLIC", s.get("live_schedule_game_count"), s.get("mode"), s.get("historical_game_count"))'
