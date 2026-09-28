@@ -25,11 +25,16 @@ jobs:
         run: |
           set -euo pipefail
           USER=github-parlay-platform-deploy
-          POLICY_ARN=arn:aws:iam::aws:policy/AmazonPinpointSMSVoiceV2FullAccess
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          POLICY_NAME=ArbSmsDeliveryDiagnosticRead
+          POLICY_ARN="arn:aws:iam::$ACCOUNT:policy/$POLICY_NAME"
+          DOC='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sms-voice:DescribeVerifiedDestinationNumbers","Resource":"*"}]}'
+          if ! aws iam get-policy --policy-arn "$POLICY_ARN" >/dev/null 2>&1; then
+            aws iam create-policy --policy-name "$POLICY_NAME" --policy-document "$DOC" >/dev/null
+          fi
           aws iam attach-user-policy --user-name "$USER" --policy-arn "$POLICY_ARN"
           sleep 3
           aws iam list-attached-user-policies --user-name "$USER" --query "AttachedPolicies[?PolicyArn=='$POLICY_ARN'].PolicyArn" --output text | grep -F "$POLICY_ARN"
-          # managed policy avoids the per-user inline-policy 2048-byte aggregate ceiling
           COUNT=$(aws sns list-sms-sandbox-phone-numbers --query "length(PhoneNumbers)" --output text)
           echo "SMS sandbox read verification succeeded; verified/pending destination count=$COUNT"
           echo "No SMS was sent."
