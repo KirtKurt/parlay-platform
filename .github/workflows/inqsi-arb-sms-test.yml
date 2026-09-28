@@ -1,0 +1,49 @@
+name: Inqsi ARB SMS Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  send-one-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Verify and publish one harmless SMS test
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOPIC_ARN=$(aws cloudformation describe-stacks \
+            --stack-name inqsi-arb-prod \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='ArbOpportunityTopicArn'].OutputValue" \
+            --output text)
+          test -n "$TOPIC_ARN"
+          test "$TOPIC_ARN" != "None"
+          case "$TOPIC_ARN" in
+            arn:aws:sns:*:*:inqsi-arb-prod-ArbOpportunityTopic-*) ;;
+            *) echo "Unexpected ARB SNS topic ARN"; exit 1 ;;
+          esac
+          SUBS=$(aws sns list-subscriptions-by-topic \
+            --topic-arn "$TOPIC_ARN" \
+            --query "Subscriptions[?Protocol=='sms'] | length(@)" \
+            --output text)
+          test "$SUBS" -ge 1
+          MESSAGE_ID=$(aws sns publish \
+            --topic-arn "$TOPIC_ARN" \
+            --message "Welcome to Inqsi! Your real-time ARB opportunity alerts are now connected." \
+            --query MessageId \
+            --output text)
+          test -n "$MESSAGE_ID"
+          test "$MESSAGE_ID" != "None"
+          echo "ARB SMS test publish succeeded. MessageId=$MESSAGE_ID"
