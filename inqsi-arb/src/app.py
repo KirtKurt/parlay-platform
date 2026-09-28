@@ -453,7 +453,7 @@ def lambda_handler(event, context):
             "ok": True,
             "version": VERSION,
             "places_bets": False,
-            "schedule": "rate(2 minutes)",
+            "schedule": "rate(1 minute)",
             "checkpoint": checkpoint,
             "checkpoint_error": checkpoint_error,
             "fresh_seconds": _fresh_seconds(),
