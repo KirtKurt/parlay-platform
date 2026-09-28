@@ -169,3 +169,69 @@ def all_sport_winner_requirements() -> Dict[str, Any]:
         "parlays": "Excluded from this model. Parlays stay in separate sport-specific engines.",
         "sports": SPORT_CONFIG,
     }
+
+
+def slate_expected_miss_layer(predictions: List[Dict[str, Any]], sport: str) -> Dict[str, Any]:
+    """Rank likely misses without forcing a slate to contain a fixed number of losses.
+
+    Existing per-game probabilities remain authoritative.  The slate expectation
+    is E[misses] = sum(1-p_selected).  Fundamentals/context are used only as
+    independent risk evidence to rank which selections are most vulnerable.
+    """
+    sport = sport.lower()
+    rows: List[Dict[str, Any]] = []
+    expected_misses = 0.0
+    for row in predictions:
+        if row.get("prediction_status") != "PUBLISHED" or not row.get("predicted_team"):
+            continue
+        p = max(0.0, min(1.0, float(row.get("confidence", 50.0)) / 100.0))
+        miss_p = 1.0 - p
+        expected_misses += miss_p
+
+        features = row.get("raw_features") or {}
+        risk = miss_p
+        evidence: List[str] = []
+        # These are independent disagreement/context checks already produced by
+        # the existing engine.  They increase scrutiny; they never impose a flip.
+        if features.get("favorite_not_separating"):
+            risk += 0.04
+            evidence.append("favorite_not_separating")
+        if features.get("spread_disagreement"):
+            risk += 0.05
+            evidence.append("spread_disagreement")
+        if features.get("late_reversal"):
+            risk += 0.10
+            evidence.append("late_reversal")
+        if features.get("dog_tightening"):
+            risk += 0.03
+            evidence.append("dog_tightening")
+
+        rows.append({
+            "game_key": row.get("game_key"),
+            "predicted_team": row.get("predicted_team"),
+            "published_probability": round(p, 4),
+            "base_miss_probability": round(miss_p, 4),
+            "scrutiny_score": round(max(0.0, min(1.0, risk)), 4),
+            "risk_evidence": evidence,
+        })
+
+    rows.sort(key=lambda x: x["scrutiny_score"], reverse=True)
+    n = len(rows)
+    # A one-to-two-pick band around the expectation is descriptive only.  It is
+    # never a quota and never changes a pick by itself.
+    center = int(round(expected_misses))
+    likely_band = {
+        "low": max(0, center - 1),
+        "center": center,
+        "high": min(n, center + 1),
+    }
+    return {
+        "sport": sport,
+        "published_pick_count": n,
+        "expected_misses": round(expected_misses, 3),
+        "expected_hits": round(n - expected_misses, 3),
+        "likely_miss_count_band": likely_band,
+        "method": "sum_selected_miss_probabilities_plus_independent_risk_ranking",
+        "guardrail": "Expected misses are not a quota. Never flip picks merely to hit the slate miss estimate.",
+        "most_vulnerable_picks": rows,
+    }
