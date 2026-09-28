@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { InqsiSeoPage } from '@/components/InqsiSeoPage';
 
 export const metadata: Metadata = {
-  title: 'Post-Game Review | InQsi',
+  title: 'Post-Game Review',
   description: 'Review why a saved slip passed or failed after the games are final.',
   alternates: { canonical: '/post-game-review' }
 };

@@ -4,7 +4,7 @@ import { AppHeader } from '@/components/AppHeader';
 import { RegisterForm } from '@/components/RegisterForm';
 
 export const metadata: Metadata = {
-  title: 'Create Account | InQsi',
+  title: 'Create Account',
   description: 'Create an InQsi account and start the 5-day free promo.',
   alternates: { canonical: '/register' }
 };

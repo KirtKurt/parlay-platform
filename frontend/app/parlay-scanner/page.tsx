@@ -3,7 +3,7 @@ import { AppHeader } from '@/components/AppHeader';
 import { SlipScannerClient } from '@/components/SlipScannerClient';
 
 export const metadata: Metadata = {
-  title: 'Scan My Slip | InQsi',
+  title: 'Scan My Slip',
   description: 'Upload or enter a slip and let InQsi review line movement, weak-leg risk, signals, and market stability before lock-in.',
   alternates: { canonical: '/parlay-scanner' }
 };

@@ -19,6 +19,11 @@ const nextConfig = {
     dangerouslyAllowSVG: true,
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;"
   },
+  async redirects() {
+    return [
+      { source: '/predicted-winners', destination: '/game-leans', permanent: true }
+    ];
+  },
   async rewrites() {
     return [
       { source: '/ai-slip-builder', destination: '/parlays' },
@@ -30,7 +35,8 @@ const nextConfig = {
       { source: '/post-game-slip-autopsy', destination: '/post-game-review' },
       { source: '/how-inqsi-analyzes-a-slip', destination: '/how-it-works' },
       { source: accountConnectionRoute, destination: '/account-connection' },
-      { source: '/why-4-leg-parlays-are-risky', destination: '/four-leg-guide' }
+      { source: '/why-4-leg-parlays-are-risky', destination: '/four-leg-guide' },
+      { source: '/predicted-winners', destination: '/game-leans' }
     ];
   },
   async headers() {

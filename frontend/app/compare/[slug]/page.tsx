@@ -69,7 +69,7 @@ export function generateStaticParams() {
 export function generateMetadata({ params }: { params: { slug: string } }): Metadata {
   const page = pages[params.slug as PageKey] ?? pages[pickRoute];
   return {
-    title: `${page.title} | InQsi`,
+    title: page.title,
     description: page.intro,
     alternates: { canonical: `/compare/${params.slug}` }
   };

@@ -6,7 +6,7 @@ import { PaidPreviewGate } from '@/components/PaidPreviewGate';
 import { getApiSnapshot } from '@/lib/api';
 
 export const metadata: Metadata = {
-  title: 'Why Your Picks Go Wrong | InQsi Picks Audit',
+  title: 'Why Your Picks Go Wrong',
   description:
     'Run your picks through market movement, steam, resistance, risk signals, and weak-leg exposure before you lock in a parlay.',
   alternates: {

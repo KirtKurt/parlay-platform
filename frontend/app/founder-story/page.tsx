@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { InqsiSeoPage } from '@/components/InqsiSeoPage';
 
 export const metadata: Metadata = {
-  title: 'Founder Story | InQsi',
+  title: 'Founder Story',
   description: 'The founder story behind InQsi and the idea of slowing down before lock-in.',
   alternates: { canonical: '/founder-story' }
 };

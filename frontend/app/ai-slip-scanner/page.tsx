@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { InqsiSeoPage } from '@/components/InqsiSeoPage';
 
 export const metadata: Metadata = {
-  title: 'AI Slip Scanner | InQsi',
+  title: 'AI Slip Scanner',
   description: 'Use InQsi to scan a slip, review risk, check line movement, and find where a pick may be wrong before lock-in.',
   alternates: { canonical: '/ai-slip-scanner' }
 };

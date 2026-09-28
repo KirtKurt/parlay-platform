@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { InqsiSeoPage } from '@/components/InqsiSeoPage';
 
 export const metadata: Metadata = {
-  title: 'Why 4-Leg Parlays Are Harder | InQsi',
+  title: 'Why 4-Leg Parlays Are Harder',
   description: 'A plain-English explanation of why InQsi caps builder output at three legs.',
   alternates: { canonical: '/four-leg-guide' }
 };
