@@ -190,6 +190,9 @@ Resources:
         UI:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/ui, Method: GET}
+        Margins:
+          Type: Api
+          Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/margins, Method: ANY}
         Scan:
           Type: Api
           Properties: {RestApiId: !Ref ArbApi, Path: /v1/arb/scan, Method: ANY}
@@ -309,3 +312,5 @@ Outputs:
     Value: !Ref ArbOpportunityTopic
   ArbBooksUrl:
     Value: !Sub 'https://${ArbApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/v1/arb/books'
+  ArbMarginsUrl:
+    Value: !Sub 'https://${ArbApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/v1/arb/margins'

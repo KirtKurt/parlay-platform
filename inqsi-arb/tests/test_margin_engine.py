@@ -90,7 +90,7 @@ def test_line_buckets_do_not_mix_spreads():
     ]
     report = analyze_events(events, sport="americanfootball_nfl")
     assert report["n_complete"] == 2
-    points = sorted(row["point_bucket"][1] for row in report["tightest"] + report["juiciest"])
+    points = sorted({row["point_bucket"][1] for row in report["tightest"] + report["juiciest"]})
     assert points == [1.5, 2.5]
 
 
