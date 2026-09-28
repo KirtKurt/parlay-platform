@@ -62,14 +62,6 @@ def tick() -> dict[str, Any]:
             "errors": season.get("errors") or [],
         }
     report = run_cfb_engine(season["games"], {"season": season["season"], "week": season["week"]})
-        return {
-            "ok": False,
-            "sport": "CFB",
-            "mode": "INGEST_FAILED",
-            "at": _now(),
-            "games": len(season["games"]),
-            "errors": season.get("errors") or [],
-        }
     leans = [row for row in report["board"] if row["side"] != "pass"]
     payload = {
         "ok": True,
