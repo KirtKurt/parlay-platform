@@ -3,27 +3,36 @@ import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
 import { SignalPill } from '@/components/SignalPill';
 import { LineMovementGraph } from '@/components/LineMovementGraph';
-import { formatAmericanOdds, formatKickoff, impliedPercent } from '@/lib/kickoff';
+import { formatAmericanOdds, formatKickoff, impliedPercent, slugPart } from '@/lib/kickoff';
 import { getSportSlugForLeague } from '@/lib/sports';
 
-function slug(value?: string) {
-  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const STOP = new Set(['san', 'los', 'new', 'york', 'diego', 'city', 'bay', 'the', 'la']);
+
+function tokens(value?: string) {
+  return slugPart(value).split('-').filter((part) => part.length > 2 && !STOP.has(part));
 }
 
 function findGame(games: Awaited<ReturnType<typeof getApiSnapshot>>['games'], gameId: string) {
-  const id = decodeURIComponent(gameId).toLowerCase();
+  const raw = decodeURIComponent(gameId || '');
+  const id = slugPart(raw.split('|')[0]);
+  const idTokens = tokens(raw);
   return games.find((game) => {
+    const hash = String(game.id || game.game_id || '').split('|')[0].toLowerCase();
     const keys = [
-      game.id,
-      game.game_id,
-      slug(game.matchup),
-      slug(`${game.away_team}-${game.home_team}`),
-      slug(`${game.home_team}-${game.away_team}`),
-      slug(`${game.league}-${game.away_team}-${game.home_team}`),
-      slug(`${game.sport_key}-${game.away_team}-${game.home_team}`),
-    ].map((value) => String(value || '').toLowerCase());
-    if (keys.includes(id)) return true;
-    return Boolean(slug(game.home_team) && slug(game.away_team) && id.includes(slug(game.home_team)) && id.includes(slug(game.away_team)));
+      slugPart(game.id),
+      slugPart(String(game.id || '').split('|')[0]),
+      slugPart(game.game_id),
+      hash,
+      slugPart(game.matchup),
+      slugPart(`${game.away_team}-${game.home_team}`),
+      slugPart(`${game.home_team}-${game.away_team}`),
+      slugPart(`${game.league}-${game.away_team}-${game.home_team}`),
+      slugPart(`${game.sport_key}-${game.away_team}-${game.home_team}`),
+    ];
+    if (id && keys.includes(id)) return true;
+    const teamTokens = [...tokens(game.home_team), ...tokens(game.away_team), ...tokens(game.matchup)];
+    const hits = idTokens.filter((token) => teamTokens.includes(token));
+    return hits.length >= 2;
   });
 }
 
@@ -34,14 +43,15 @@ export default async function GameDetailPage({ params }: { params: { gameId: str
   const favoriteOdds = game?.favoriteMl ?? game?.favorite_ml;
   const implied = impliedPercent(favoriteOdds);
   const sportSlug = getSportSlugForLeague(game?.league || game?.sport_key || 'mlb');
+  const title = game?.matchup || slugPart(decodeURIComponent(params.gameId).split('|')[0]).replace(/-/g, ' ');
 
   return (
     <main className="shell">
-      <AppHeader title="Game Detail" apiStatus={apiStatus} apiDetail={apiDetail} />
+      <AppHeader title="Game Detail" apiStatus={apiStatus} apiDetail={apiStatus === 'CONNECTED' ? 'Live board connected' : apiDetail} />
 
       <section className="panel" style={{ marginBottom: 18 }}>
-        <div className="game-topline"><span className="league-chip">{game?.league || 'SPORT'}</span><span>{start}</span><span className="data-status">{game ? (game.status_label || 'Live') : 'Waiting'}</span></div>
-        <h2 style={{ marginBottom: 12 }}>{game?.matchup || decodeURIComponent(params.gameId)}</h2>
+        <div className="game-topline"><span className="league-chip">{game?.league || 'SPORT'}</span><span>{start}</span><span className={`data-status`}>{game ? (game.status_label || 'Live') : 'Waiting'}</span></div>
+        <h2 style={{ marginBottom: 12 }}>{title}</h2>
         <p className="movement">
           {game?.favorite
             ? `Market favorite: ${game.favorite} ${formatAmericanOdds(favoriteOdds) || 'Waiting'}${implied ? ` · ${implied}% implied` : ''}`
@@ -73,11 +83,11 @@ export default async function GameDetailPage({ params }: { params: { gameId: str
 
       <section className="content-grid" style={{ marginTop: 18 }}>
         <div className="panel">
-          <div className="panel-header"><div><p className="eyebrow">Market Signals</p><h3>Signal types detected</h3></div></div>
+          <div className="panel-header"><div><p className="eyebrow">Market Signals</p><h3>Signals on radar</h3></div></div>
           <div className="signal-row" style={{ marginBottom: 14 }}>
             {(game?.signals || []).map((signal) => <SignalPill signal={signal} key={signal} />)}
           </div>
-          <p className="movement">{game?.marketNote ?? 'Signals reflect market movement only. They do not guarantee outcomes.'}</p>
+          <p className="movement">{game?.marketNote ?? 'These flags tell you what InQsi is watching. The scoring math stays internal.'}</p>
         </div>
         <aside className="panel">
           <p className="eyebrow">Build Gate</p>
