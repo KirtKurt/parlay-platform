@@ -20,3 +20,37 @@
 @media(max-width:1180px){.command-shell{grid-template-columns:170px minmax(560px,1fr) 300px}.execution-workspace{margin-left:170px}.filter-rail{padding:12px 8px}.command-main{padding:10px 8px}.kpis b{font-size:17px}}
 @media(max-width:900px){.command-shell{display:block}.filter-rail{display:none}.command-main{padding:10px}.command-shell>.detail{position:relative;top:0;height:auto;border-left:0}.execution-workspace{margin-left:0}.execution-grid{grid-template-columns:1fr}.execution-bottom{grid-template-columns:1fr}.execution-head{grid-template-columns:1fr 1fr}.execution-head>a{display:none}.leg-cards{grid-template-columns:1fr 1fr}.kpis{grid-template-columns:1fr 1fr}}
 @media(max-width:720px){.command-main .filters{display:grid}.command-main .toggle{margin-left:0}.command-main .head{display:none}.command-main .row{grid-template-columns:1fr 80px}.execution-workspace{padding:10px}.execution-head{grid-template-columns:1fr}.execution-grid{display:block}.history-card,.movement-card{margin-top:9px}.leg-cards{grid-template-columns:1fr}.mini-calc>div{grid-template-columns:1fr 1fr}.kpis{grid-template-columns:1fr 1fr}.kpis>div{padding:8px}.command-heading h1{font-size:19px}}
+
+.detail.hidden,.execution-workspace.hidden{display:none}
+
+/* Mobile sizing: keep the command center inside the phone viewport. */
+@media(max-width:720px){
+  html,body{max-width:100%;overflow-x:hidden}
+  .arb2{width:100%;max-width:100vw;overflow-x:hidden;font-size:13px}
+  .top{width:100%;max-width:100vw}
+  .command-shell,.command-main,.feed,.rows,.row,.detail,.execution-workspace{width:100%;max-width:100%;min-width:0}
+  .command-main{padding:8px}
+  .row{grid-template-columns:minmax(0,1fr) 72px;gap:8px;padding:10px}
+  .row>*{min-width:0}
+  .books{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
+  .books>span{min-width:0;overflow:hidden}
+  .books small,.books b,.event b,.sport small{overflow-wrap:anywhere}
+  .detail{padding:12px 10px}
+  .detail-top h2{font-size:17px;overflow-wrap:anywhere}
+  .quote-pair,.quote-pair.multi{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .quote-pair>i{display:none}
+  .quote-pair>div{min-width:0;padding:10px}
+  .quote-pair small,.quote-pair span{overflow-wrap:anywhere}
+  .quote-pair b{font-size:18px}
+  .allocations,.allocations.multi{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .allocations>div{min-width:0;padding:10px}
+  .allocations small,.allocations span{overflow-wrap:anywhere}
+  .allocations strong{font-size:20px}
+  .stake input{font-size:18px}
+  .profit{gap:10px}
+  .profit strong{font-size:22px}
+  .mobile-nav{width:100%;max-width:100vw}
+}
+@media(max-width:390px){
+  .quote-pair,.quote-pair.multi,.allocations,.allocations.multi{grid-template-columns:1fr}
+}
