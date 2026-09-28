@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { hasInternalSession, isInternalPortalEnabled } from '@/lib/internal-access';
 
 export const metadata: Metadata = {
-  title: 'Internal Access | InQsi',
+  title: 'Internal Access',
   robots: { index: false, follow: false }
 };
 
