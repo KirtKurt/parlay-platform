@@ -63,7 +63,7 @@ jobs:
           import json
           meta = json.load(open("/tmp/tick-meta.json"))
           body = json.load(open("/tmp/tick.json"))
-          print("TICK", meta.get("StatusCode"), meta.get("FunctionError"), body.get("mode"), body.get("authority"), body.get("games"), body.get("boardCount"), body.get("promotedResidual"))
+          print("TICK", meta.get("StatusCode"), meta.get("FunctionError"), json.dumps({k: body.get(k) for k in ("ok", "mode", "authority", "games", "boardCount", "promotedResidual", "errors", "reason")}))
           if meta.get("FunctionError") or body.get("ok") is not True or not body.get("games"):
               raise SystemExit(1)
           PY

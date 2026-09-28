@@ -52,7 +52,24 @@ def status_payload() -> dict[str, Any]:
 
 def tick() -> dict[str, Any]:
     season = load_cfb_season()
+    if len(season["games"]) < 100:
+        return {
+            "ok": False,
+            "sport": "CFB",
+            "mode": "INGEST_FAILED",
+            "at": _now(),
+            "games": len(season["games"]),
+            "errors": season.get("errors") or [],
+        }
     report = run_cfb_engine(season["games"], {"season": season["season"], "week": season["week"]})
+        return {
+            "ok": False,
+            "sport": "CFB",
+            "mode": "INGEST_FAILED",
+            "at": _now(),
+            "games": len(season["games"]),
+            "errors": season.get("errors") or [],
+        }
     leans = [row for row in report["board"] if row["side"] != "pass"]
     payload = {
         "ok": True,
@@ -109,7 +126,6 @@ def tick_handler(event: Any, context: Any) -> dict[str, Any]:
     del context
     try:
         result = tick()
-        result["ok"] = True
         return result
     except Exception as exc:
         return {"ok": False, "sport": "CFB", "mode": "FAILED", "reason": str(exc)[:240]}

@@ -6,14 +6,22 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.request import Request, urlopen
 
 
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+ERRORS: list[str] = []
+
+
 def fetch_json(url: str) -> dict | None:
-    request = Request(url, headers={"accept": "application/json", "user-agent": "cfb-desk/1.0"})
+    request = Request(url, headers={"accept": "application/json", "user-agent": USER_AGENT})
     try:
         with urlopen(request, timeout=20) as response:
             if response.status != 200:
+                if len(ERRORS) < 3:
+                    ERRORS.append(f"HTTP_{response.status}")
                 return None
             payload = json.loads(response.read().decode("utf-8"))
-    except Exception:
+    except Exception as exc:
+        if len(ERRORS) < 3:
+            ERRORS.append(f"{type(exc).__name__}:{str(exc)[:160]}")
         return None
     return payload if isinstance(payload, dict) else None
 
@@ -63,6 +71,7 @@ def parse_payload(payload: dict | None) -> list[dict]:
 
 
 def load_cfb_season() -> dict:
+    ERRORS.clear()
     current = fetch_json("https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=80&limit=400")
     season = int(((current or {}).get("season") or {}).get("year") or 2026)
     week = int(((current or {}).get("week") or {}).get("number") or 1)
@@ -89,4 +98,4 @@ def load_cfb_season() -> dict:
                 continue
             seen.add(game["id"])
             games.append(game)
-    return {"games": games, "season": season, "week": week}
+    return {"games": games, "season": season, "week": week, "errors": list(ERRORS)}
