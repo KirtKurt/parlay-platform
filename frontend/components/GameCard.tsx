@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { RadarStrip } from '@/components/RadarStrip';
+import { KickoffLabel } from '@/components/KickoffLabel';
 import { getSportSlugForLeague } from '@/lib/sports';
-import { formatAmericanOdds, formatKickoff, gamePath, impliedPercent } from '@/lib/kickoff';
+import { formatAmericanOdds, gamePath, impliedPercent } from '@/lib/kickoff';
+import { visitorTimeZone } from '@/lib/visitorTimeZone';
 import { radarFromGame } from '@/lib/radarSignals';
 
 type GameLike = {
@@ -41,19 +43,19 @@ function formatOdds(value: number | string | undefined) {
 
 export function GameCard({ game }: { game: GameLike }) {
   const league = game.league || game.sport_key || 'SPORT';
-  const start = formatKickoff(game.start || game.commence_time);
   const matchup = game.matchup || `${game.away_team || 'Away'} @ ${game.home_team || 'Home'}`;
   const dataStatus = game.dataStatus || game.status_label || 'Pending';
   const favoriteOdds = game.favoriteMl ?? game.favorite_ml;
   const implied = impliedPercent(favoriteOdds);
   const href = gamePath({ ...game, matchup });
   const radar = radarFromGame(game).slice(0, 4);
+  const serverTimeZone = visitorTimeZone();
 
   return (
     <article className="game-card">
       <div className="game-topline">
         <Link className="league-chip" href={`/sports/${getSportSlugForLeague(league)}`} style={{ textDecoration: 'none' }}>{league}</Link>
-        <span>{start}</span>
+        <KickoffLabel value={game.start || game.commence_time} serverTimeZone={serverTimeZone} />
         <span className={`data-status ${String(dataStatus).toLowerCase()}`}>{dataStatus}</span>
       </div>
       <h4><Link href={href} style={{ color: 'inherit', textDecoration: 'none' }}>{matchup}</Link></h4>
