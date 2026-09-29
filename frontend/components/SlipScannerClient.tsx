@@ -248,7 +248,7 @@ export function SlipScannerClient() {
       };
     }).filter((leg) => leg.sport && leg.selection && leg.book);
     if (payload.length !== 3) {
-      setState({ loading: false, error: 'Complete all three legs before analyzing the slip.' });
+      setState({ loading: false, error: 'Complete all three selections before scanning.' });
       return;
     }
     setState({ loading: true });
@@ -272,12 +272,12 @@ export function SlipScannerClient() {
     <section className="mock-slip">
       <header className="mock-slip-title">
         <h1>Build My Slip</h1>
-        <p>Select 3 picks to analyze your parlay</p>
+        <p>Build up to 3 selections to analyze</p>
       </header>
       <div className="mock-slip-steps" aria-label={`${completed} of 3 picks selected`}>
         {[0,1,2].map((index) => <div className={index < completed ? 'done' : index === completed ? 'active' : ''} key={index}><i>{index+1}</i><span>Pick {index+1}</span></div>)}
       </div>
-      {!games.length && <div className="mock-sync"><b>{mode === 'loading' ? 'Connecting to live board' : 'Live board syncing'}</b><span>Verified sportsbook selections appear here as soon as they are available.</span></div>}
+      {!games.length && <div className="mock-sync"><b>{mode === 'loading' ? 'Connecting to live board' : 'Sportsbook feed unavailable'}</b><span>The scanner is wired and ready. Sports, games and prices will populate automatically when the sportsbook feed resumes.</span></div>}
       <form onSubmit={onSubmit} className="mock-slip-form">
         <div className="mock-sport-strip">
           <button type="button" className={!legs[completed]?.sport ? 'active' : ''}>All</button>
@@ -307,7 +307,7 @@ export function SlipScannerClient() {
             </article>
           })}
         </div>
-        <button className="mock-analyze" type="submit" disabled={state.loading||completed!==3}>{state.loading?'Analyzing…':'Analyze Parlay →'}</button>
+        <button className="mock-analyze" type="submit" disabled={state.loading||completed!==3}>{state.loading?'Scanning…':'Scan My Picks →'}</button>
       </form>
       {state.error&&<div className="mock-error">{state.error}</div>}
       {state.result ? (() => {
@@ -319,7 +319,7 @@ export function SlipScannerClient() {
           <div><b>{reads.length}/3</b><span>Legs Reviewed</span></div>
         </section>
       })():<section className="mock-summary muted"><div><b>—</b><span>Projected Odds</span></div><div><b>—</b><span>Implied Probability</span></div><div><b>—</b><span>Historical Edge</span></div></section>}
-      <button className="mock-clear" type="button" onClick={()=>{setLegs([{...emptyLeg},{...emptyLeg},{...emptyLeg}]);setState({loading:false})}}>⌫ Clear Slip</button>
+      <button className="mock-clear" type="button" onClick={()=>{setLegs([{...emptyLeg},{...emptyLeg},{...emptyLeg}]);setState({loading:false})}}>⌫ Clear Selections</button>
     </section>
   );
 }
