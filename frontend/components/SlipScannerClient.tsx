@@ -126,7 +126,7 @@ export function SlipScannerClient(){
   setState({loading:false});
  }
 
- async function scan(){
+ async function runScan(){
   if(!picks.length){setState({loading:false,error:'Add at least one selection before scanning.'});return;}
   const payload=picks.map(p=>{
    const g=games.find(x=>x.key===p.gameKey);
@@ -141,10 +141,10 @@ export function SlipScannerClient(){
   }catch(error){setState({loading:false,error:error instanceof Error?error.message:'Scanner intelligence is not ready.'});}
  }
 
- const scan=(state.result?.scan||state.result?.assessment||state.result)||null;
- const reads=Array.isArray(scan?.legReads)?scan.legReads:[];
- const overall=String(scan?.overallRead||scan?.risk_level||scan?.riskLevel||'Reviewed');
- const score=scan?.overallScore??scan?.risk_score??scan?.riskScore;
+ const scanResult=(state.result?.scan||state.result?.assessment||state.result)||null;
+ const reads=Array.isArray(scanResult?.legReads)?scanResult.legReads:[];
+ const overall=String(scanResult?.overallRead||scanResult?.risk_level||scanResult?.riskLevel||'Reviewed');
+ const score=scanResult?.overallScore??scanResult?.risk_score??scanResult?.riskScore;
 
  return <section className="scanner-grid">
   <div className="scanner-card">
@@ -158,16 +158,16 @@ export function SlipScannerClient(){
     <label className="scanner-field"><span>Market</span><select value={draft.market} onChange={e=>patch({market:e.target.value})} disabled={!game}><option value="moneyline">Moneyline</option><option value="spread">Spread</option><option value="total">Total</option></select></label>
     <label className="scanner-field"><span>Selection</span><select value={draft.selection} onChange={e=>patch({selection:e.target.value})} disabled={!game}><option value="">Select side</option>{selections.map(s=><option key={s}>{s}</option>)}</select></label>
     {ready&&<div className="scanner-current"><small>{game?.matchup} · {draft.market==='total'?'Total':draft.market==='spread'?'Spread':'Moneyline'}</small><strong>{currentQuote.display}</strong><b>{currentQuote.odds} · {effectiveDraft.book}</b></div>}
-    <div className="scanner-actions"><button className="scanner-add" type="button" disabled={!ready||picks.length>=3} onClick={addPick}>{picks.length?'Add Another Selection':'Add Selection'}</button><button className="scanner-scan" type="button" disabled={!picks.length||state.loading} onClick={scan}>{state.loading?'Scanning…':'Scan My Picks →'}</button></div>
+    <div className="scanner-actions"><button className="scanner-add" type="button" disabled={!ready||picks.length>=3} onClick={addPick}>{picks.length?'Add Another Selection':'Add Selection'}</button><button className="scanner-scan" type="button" disabled={!picks.length||state.loading} onClick={runScan}>{state.loading?'Scanning…':'Scan My Picks →'}</button></div>
    </div>
    {picks.length>0&&<div className="scanner-selected">{picks.map((pick,index)=><article key={pick.id}><div><small>{index+1} · {pick.sport} · {pick.matchup}</small><strong>{pick.displaySelection}</strong><b>{pick.odds} · {pick.book}</b></div><button aria-label="Remove selection" onClick={()=>setPicks(rows=>rows.filter(x=>x.id!==pick.id))}>×</button></article>)}</div>}
    {state.error&&<div className="mock-error">{state.error}</div>}
   </div>
   <div className="scanner-card scanner-result">
    <div className="scanner-result-head"><div><span className="mockup-eyebrow">Slip Scanner</span><h2>Your Analysis</h2></div>{picks.length>0&&<small>{picks.length} selection{picks.length===1?'':'s'}</small>}</div>
-   {!scan?<div className="scanner-no-result"><div><b>Find the risk before you bet.</b><p>Choose a sport, game and selection. Add up to three picks if you want to scan a small slip. InQsi will show concise risk first, with deeper market and model details only when qualified data exists.</p></div></div>:<>
+   {!scanResult?<div className="scanner-no-result"><div><b>Find the risk before you bet.</b><p>Choose a sport, game and selection. Add up to three picks if you want to scan a small slip. InQsi will show concise risk first, with deeper market and model details only when qualified data exists.</p></div></div>:<>
     <div className="scanner-risk-banner"><div><span>Overall risk</span><strong>{overall}</strong></div>{score!=null&&<strong>{score}/100</strong>}</div>
-    <div className="scanner-result-list">{reads.length?reads.map((read:any,index:number)=>{const risk=String(read?.risk||read?.read||'low').toLowerCase();const cls=risk.includes('high')?'high':risk.includes('moderate')||risk.includes('elevated')?'moderate':'low';return <article className={'scanner-result-row '+cls} key={index}><header><strong>{read?.selection||picks[index]?.displaySelection||`Selection ${index+1}`}</strong><span className={'risk-pill '+cls}>{String(read?.risk||read?.read||'LOW RISK').toUpperCase()}</span></header><p>{read?.summary||read?.explanation||'InQsi reviewed the available market and selection context.'}</p></article>}):<article className="scanner-result-row"><header><strong>{picks[0]?.displaySelection||'Selection reviewed'}</strong><span className="risk-pill low">REVIEWED</span></header><p>{scan?.consumer_message||scan?.message||'InQsi completed the available risk review for this selection.'}</p></article>}</div>
+    <div className="scanner-result-list">{reads.length?reads.map((read:any,index:number)=>{const risk=String(read?.risk||read?.read||'low').toLowerCase();const cls=risk.includes('high')?'high':risk.includes('moderate')||risk.includes('elevated')?'moderate':'low';return <article className={'scanner-result-row '+cls} key={index}><header><strong>{read?.selection||picks[index]?.displaySelection||`Selection ${index+1}`}</strong><span className={'risk-pill '+cls}>{String(read?.risk||read?.read||'LOW RISK').toUpperCase()}</span></header><p>{read?.summary||read?.explanation||'InQsi reviewed the available market and selection context.'}</p></article>}):<article className="scanner-result-row"><header><strong>{picks[0]?.displaySelection||'Selection reviewed'}</strong><span className="risk-pill low">REVIEWED</span></header><p>{scanResult?.consumer_message||scanResult?.message||'InQsi completed the available risk review for this selection.'}</p></article>}</div>
    </>}
   </div>
  </section>;
