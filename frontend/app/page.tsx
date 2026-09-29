@@ -1,108 +1,34 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { AppHeader } from '@/components/AppHeader';
-import { getApiSnapshot } from '@/lib/api';
-import { formatKickoff, gamePath } from '@/lib/kickoff';
-import { sports as sportNav } from '@/lib/sports';
-
-export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'ARB, Official 3-Legs, Game Leans & Slip Scanner',
-  description: 'InQsi tools for live arbitrage, official 3-leg parlays with breakdowns, per-game predicted winners, and AI slip scanning.',
-  alternates: { canonical: '/' }
+  title:'Sports Arbitrage & Bet Risk Intelligence',
+  description:'Find sports arbitrage opportunities and analyze wager risk with global sportsbook odds, market movement, price comparison and InQsi sports intelligence.',
+  alternates:{canonical:'/'}
 };
 
-function parlayLegs(row: any): string[] {
-  if (Array.isArray(row?.legs)) return row.legs.map((leg: any) => typeof leg === 'string' ? leg : String(leg?.team || leg?.pick || leg?.name || '')).filter(Boolean);
-  if (Array.isArray(row?.picks)) return row.picks.map((pick: any) => String(pick?.team || pick || '')).filter(Boolean);
-  return String(row?.structure || row?.title || '').split(/\s*[x×,]\s*/).map((part) => part.trim()).filter(Boolean).slice(0, 3);
-}
-
-export default async function Home() {
-  const { games, predictions, rankings, apiStatus, apiDetail } = await getApiSnapshot();
-  const official = (Array.isArray(rankings) ? rankings : []).slice(0, 2);
-  const leans = games.filter((game) => game.predicted_winner || game.predicted_side).slice(0, 8);
-  const board = (leans.length ? leans : games).slice(0, 8);
-
-  return (
-    <main className="inqsi-shell tool-shell">
-      <AppHeader eyebrow="InQsi" title="Tool Workspace" apiStatus={apiStatus} apiDetail={apiDetail} />
-
-      <nav className="inqsi-tabs" aria-label="Sports">
-        <Link href="/">All</Link>
-        {sportNav.map((sport) => <Link key={sport.slug} href={`/sports/${sport.slug}`}>{sport.label}</Link>)}
-      </nav>
-
-      <section className="tool-kpis">
-        <Link href="/parlay-scanner"><b>Build My Slip</b><span>Choose live games and automatically compare quoted books</span></Link>
-        <Link href="/parlays"><b>{official.length || '—'}</b><span>Published 3-leg slips</span></Link>
-        <Link href="/game-leans"><b>{predictions.length || leans.length || '—'}</b><span>Published game leans</span></Link>
-        <Link href="/arbitrage-v2"><b>ARB</b><span>Live arbitrage and stake math</span></Link>
-      </section>
-
-      {official.length > 0 && (
-        <section className="tool-feed">
-          <div className="tool-feed-head">
-            <h2>Official 3-leg</h2>
-            <Link href="/parlays">Open breakdown</Link>
-          </div>
-          {official.map((row: any, index: number) => {
-            const legs = parlayLegs(row);
-            return (
-              <article className="tool-row" key={row.id || index}>
-                <div>
-                  <small>3-LEG</small>
-                  <strong>{row.structure || row.title || 'Official hourly structure'}</strong>
-                  <p>{row.note || row.explanation || 'Published from the hourly builder. Combined odds stay hidden until a live price exists.'}</p>
-                  {legs.length > 0 && (
-                    <ol className="tool-legs">
-                      {legs.slice(0, 3).map((leg) => <li key={leg}>{leg}</li>)}
-                    </ol>
-                  )}
-                </div>
-                <b className="tool-edge">{row.american || row.combined_odds || 'Waiting'}</b>
-              </article>
-            );
-          })}
-        </section>
-      )}
-
-      <section className="tool-feed" id="main-content">
-        <div className="tool-feed-head">
-          <h2>{leans.length ? 'Predicted winners' : 'Live games'}</h2>
-          <Link href="/game-leans">All leans</Link>
-        </div>
-        {board.length ? board.map((game) => {
-          const lean = game.predicted_winner || game.predicted_side;
-          return (
-            <Link className="tool-row" href={gamePath(game)} key={game.id}>
-              <div>
-                <small>{game.league || game.sport_key} · {formatKickoff(game.start || game.commence_time)}</small>
-                <strong>{game.matchup}</strong>
-                <p>
-                  {lean
-                    ? `InQsi lean: ${lean}${game.confidence ? ` · ${game.confidence}` : ''}`
-                    : `Market favorite: ${game.favorite || 'Waiting'}. Waiting on a published prediction.`}
-                </p>
-              </div>
-              <span className="tool-badges">
-                {lean && <em>LEAN</em>}
-                <em className="muted">ARB</em>
-                <em className="muted">3-LEG</em>
-              </span>
-            </Link>
-          );
-        }) : (
-          <article className="tool-row">
-            <div>
-              <small>LIVE BOARD SYNCING</small>
-              <strong>Verified games are loading</strong>
-              <p>We’ll show games as soon as current market data is available. InQsi never substitutes sample picks or invented prices.</p>
-            </div>
-          </article>
-        )}
-      </section>
-    </main>
-  );
+export default function Home(){
+ return <main className="inqsi-shell tool-shell">
+  <AppHeader eyebrow="InQsi" title="Find Opportunity. Find Risk." />
+  <section className="tool-feed" id="main-content">
+   <div className="tool-feed-head"><h1>Global sports market intelligence</h1></div>
+   <article className="tool-row">
+    <div><small>ARB</small><strong>Find arbitrage opportunities</strong><p>Compare compatible sportsbook prices, identify mathematical arbitrage opportunities and calculate stake allocation across supported sports and competitions worldwide.</p></div>
+    <Link href="/arbitrage-v2">Open ARB</Link>
+   </article>
+   <article className="tool-row">
+    <div><small>SLIP SCANNER</small><strong>Find the risk before you bet</strong><p>Pick a sport, event and selection. InQsi analyzes available market movement, price quality and qualified sport-specific intelligence without publishing a public picks feed.</p></div>
+    <Link href="/parlay-scanner">Scan a pick</Link>
+   </article>
+  </section>
+  <section className="tool-feed">
+   <div className="tool-feed-head"><h2>Worldwide coverage, driven by current data</h2></div>
+   <article className="tool-row"><div><strong>Sport → country or region → competition → event → market</strong><p>InQsi is designed around the current normalized catalog supplied by authorized data providers rather than a fixed U.S.-league list. Capabilities are shown only when the required data exists.</p></div></article>
+  </section>
+  <section className="tool-feed">
+   <div className="tool-feed-head"><h2>Free market tools</h2><Link href="/learn/arbitrage">Learn arbitrage</Link></div>
+   <article className="tool-row"><div><strong>Arbitrage, implied probability, vig and odds tools</strong><p>Use practical calculators and guides to understand sportsbook pricing, line movement and arbitrage mathematics.</p></div><Link href="/arbitrage-v2/calculator">Open calculator</Link></article>
+  </section>
+ </main>;
 }

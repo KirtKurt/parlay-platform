@@ -1,97 +1,26 @@
 import type { MetadataRoute } from 'next';
+import { getApiSnapshot } from '@/lib/api';
+import { coveragePath,isIndexableCoverage } from '@/lib/globalSports';
 
-const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://inqsi.app';
-const movementRoute = '/line-' + 'movement-review';
-const lineGuideRoute = '/sports-' + 'betting-line-movement-guide';
-const accountConnectionRoute = '/does-inqsi-connect-to-sports' + 'books';
-const comparePicksRoute = '/compare/inqsi-vs-pick-' + 'sellers';
-const compareTrackingRoute = '/compare/inqsi-vs-bet-' + 'tracking-apps';
-
-const routes = [
-  '',
-  '/start-here',
-  '/picks-audit',
-  '/sports',
-  '/sports/nfl',
-  '/sports/cfb',
-  '/sports/nba',
-  '/sports/ncaam',
-  '/sports/nhl',
-  '/sports/mlb',
-  '/sports/tennis',
-  '/sports/soccer',
-  '/game-leans',
-  '/best-lines',
-  '/arbitrage-v2',
-  '/arbitrage-v2/calculator',
-  '/learn/arbitrage',
-  '/learn/arbitrage/sportsbook-odds-comparison',
-  '/learn/arbitrage/what-is-sports-arbitrage',
-  '/learn/arbitrage/arbitrage-examples',
-  '/learn/arbitrage/sports-betting-line-movement',
-  '/learn/arbitrage/mlb-arbitrage',
-  '/learn/arbitrage/nfl-arbitrage',
-  '/learn/arbitrage/nba-arbitrage',
-  '/learn/arbitrage/nhl-arbitrage',
-  '/learn/arbitrage/market-research',
-  '/learn/arbitrage/tools/arbitrage-calculator',
-  '/learn/arbitrage/tools/surebet-calculator',
-  '/learn/arbitrage/tools/implied-probability-calculator',
-  '/learn/arbitrage/tools/american-odds-calculator',
-  '/learn/arbitrage/tools/sportsbook-vig-calculator',
-  '/learn/arbitrage/tools/middle-calculator',
-  '/parlay-scanner',
-  '/ai-slip-scanner',
-  '/ai-slip-builder',
-  '/3-leg-parlay-guide',
-  '/three-leg-cap',
-  '/four-leg-guide',
-  '/why-4-leg-parlays-are-risky',
-  '/line-movement-guide',
-  lineGuideRoute,
-  '/accuracy-tracker',
-  '/parlay-accuracy-tracker',
-  '/accuracy-calculation',
-  '/post-game-review',
-  '/post-game-slip-autopsy',
-  '/what-is-inqsi',
-  '/how-it-works',
-  '/how-inqsi-analyzes-a-slip',
-  '/does-inqsi-place-bets',
-  '/account-connection',
-  accountConnectionRoute,
-  '/my-slips-and-scores',
-  '/followed-profiles',
-  comparePicksRoute,
-  compareTrackingRoute,
-  '/compare/tools',
-  '/founder-story',
-  '/live-market',
-  '/performance',
-  '/alerts',
-  movementRoute,
-  '/watchlist',
-  '/methodology',
-  '/pricing',
-  '/legal/privacy',
-  '/legal/cookies',
-  '/privacy-choices',
-  '/data-deletion',
-  '/data-export',
-  '/legal/disclaimer',
-  '/legal/site-terms',
-  '/legal/safe-use',
-  '/legal/accessibility',
-  '/contact',
-  '/u/inqsi-member',
-  '/u/buffalo-market',
-  '/u/three-leg-only'
+const baseUrl=(process.env.NEXT_PUBLIC_SITE_URL || 'https://inqsi.app').replace(/\/$/,'');
+const productRoutes=['','/arbitrage-v2','/arbitrage-v2/calculator','/parlay-scanner','/pricing'];
+const usefulRoutes=[
+ '/learn/arbitrage','/learn/arbitrage/sportsbook-odds-comparison','/learn/arbitrage/what-is-sports-arbitrage',
+ '/learn/arbitrage/arbitrage-examples','/learn/arbitrage/sports-betting-line-movement',
+ '/learn/arbitrage/tools/arbitrage-calculator','/learn/arbitrage/tools/surebet-calculator',
+ '/learn/arbitrage/tools/implied-probability-calculator','/learn/arbitrage/tools/american-odds-calculator',
+ '/learn/arbitrage/tools/sportsbook-vig-calculator','/learn/arbitrage/tools/middle-calculator',
+ '/methodology','/contact','/legal/privacy','/legal/site-terms','/legal/disclaimer'
 ];
 
-export default function sitemap(): MetadataRoute.Sitemap {
-  return routes.map((route) => ({
-    url: `${baseUrl}${route}`,
-    changeFrequency: route === '' || route === '/picks-audit' || route === '/game-leans' || route === '/live-market' || route === '/arbitrage-v2' ? 'daily' : 'weekly',
-    priority: route === '' ? 1 : route === '/picks-audit' ? 0.95 : route === '/game-leans' ? 0.9 : route === '/arbitrage-v2' ? 0.94 : route.includes('scanner') || route.includes('guide') || route.includes('accuracy') || route.includes('inqsi') ? 0.88 : 0.75
-  }));
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+ const {games}=await getApiSnapshot('all');
+ const grouped=new Map<string,{nEvents:number;bookCount:number}>();
+ for(const g of games){const row=grouped.get(g.sport_key)||{nEvents:0,bookCount:0};row.nEvents++;row.bookCount=Math.max(row.bookCount,Number(g.bookCount||0));grouped.set(g.sport_key,row);}
+ const coverage=Array.from(grouped.entries()).filter(([,v])=>isIndexableCoverage(v)).map(([key])=>coveragePath(key));
+ return [...productRoutes,...usefulRoutes,...coverage].map((route)=>({
+   url:`${baseUrl}${route}`,
+   changeFrequency:route===''||route==='/arbitrage-v2'||route==='/parlay-scanner'?'daily':'weekly',
+   priority:route===''?1:productRoutes.includes(route)?0.95:0.75
+ }));
 }

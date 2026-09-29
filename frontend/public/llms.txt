@@ -1,28 +1,23 @@
 # InQsi
 
-InQsi is a sports market intelligence web application.
+InQsi is a global sports market intelligence platform.
 
-Purpose:
-- Review sports market movement
-- Organize game signal context
-- Show market data availability clearly
-- Support watchlists and alerts
-- Provide review history when saved records are available
+## Public products
+- ARB: find mathematical sports arbitrage opportunities using compatible sportsbook prices.
+- Slip Scanner: analyze market, price and available sports-intelligence risk around a user-selected wager.
 
-Primary message:
-Find where your picks go wrong before you lock it in.
+## Product boundary
+InQsi does not publish its private prediction systems as a public picks product. Qualified private models may provide underlying intelligence to Slip Scanner.
 
-Public routes:
-- /
-- /sports
-- /picks-audit
-- /game-leans
-- /best-lines
+## Coverage
+Coverage is global and provider-driven. InQsi normalizes available sports, countries, competitions, events, markets and sportsbooks. A sport or competition should only be described as supported when current provider data confirms it.
+
+## Primary public routes
+- /arbitrage-v2
+- /arbitrage-v2/calculator
 - /parlay-scanner
-- /live-market
-- /performance
-- /methodology
 - /pricing
+- /learn/arbitrage
 
-Data policy:
-If verified market data is unavailable, InQsi uses a clear waiting state rather than artificial results.
+## Data integrity
+InQsi does not substitute sample opportunities, prices or model outputs for unavailable live data. Time-sensitive claims should be verified from current visible product data.
