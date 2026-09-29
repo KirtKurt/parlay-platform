@@ -1,5 +1,4 @@
 import { headers } from 'next/headers';
-import { identityFromProviderKey } from '@/lib/globalSports';
 
 export type InqsiGame = {
   id: string;
@@ -276,8 +275,7 @@ function gamesFromMarketBoard(boardPayload: any): InqsiGame[] {
   const boards = Array.isArray(boardPayload?.boards) ? boardPayload.boards : [];
   const rows = boards.flatMap((board: any) => {
     const providerKey=String(board?.providerSportKey || board?.sportKey || board?.sport_key || '');
-    const identity=identityFromProviderKey(providerKey,board?.sportTitle);
-    const sport = providerKey || board?.sport || identity.providerKey || 'sport';
+    const sport = providerKey || String(board?.sport || 'sport');
     return (board?.games || []).map((game: any) => normalizeMarketBoardGame(game, sport));
   });
   const seen = new Set<string>();
