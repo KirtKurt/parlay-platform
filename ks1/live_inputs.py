@@ -35,6 +35,17 @@ class ProviderFailure(ValueError):
         super().__init__(json.dumps(receipt, sort_keys=True))
 
 
+def odds_failure_is_isolatable(receipt):
+    """Auth failures leave markets unavailable; do not fail the official slate."""
+    return receipt.get('provider') == 'odds' and receipt.get('status') in (
+        401, 403, 'ODDS_API_KEY_MISSING')
+
+
+def empty_odds_capture(receipt):
+    isolated = {**receipt, 'isolated': 'odds_unavailable'}
+    return {'payload': [], 'receipt': isolated}
+
+
 def fetch(provider, base, path, params, *, key=None, opener=urlopen):
     headers = {'Accept': 'application/json', 'User-Agent': 'KS1-daily/1.0'}
     query = dict(params)
@@ -162,6 +173,11 @@ def capture(target_date, output):
             (output / (provider+'.json')).write_bytes(encode(value))
             print(json.dumps(value['receipt']))
         except ProviderFailure as exc:
+            if odds_failure_is_isolatable(exc.receipt):
+                value = empty_odds_capture(exc.receipt)
+                (output / 'odds.json').write_bytes(encode(value))
+                print(json.dumps(value['receipt']))
+                continue
             errors.append(exc.receipt)
             print(json.dumps(exc.receipt))
     # Existing repository source. One bulk schedule call supplies official IDs
