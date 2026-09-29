@@ -8,19 +8,23 @@ export type AppHeaderProps = {
 };
 
 const menuLinks = [
+  { href: '/', label: 'Games' },
+  { href: '/game-leans', label: 'Leans' },
+  { href: '/parlays', label: 'Parlays' },
+  { href: '/parlay-scanner', label: 'Scan' },
   { href: '/arbitrage-v2', label: 'ARB' },
-  { href: '/parlay-scanner', label: 'Slip Scanner' },
-  { href: '/sports', label: 'Sports' },
-  { href: '/arbitrage-v2/calculator', label: 'Calculators' },
-  { href: '/pricing', label: 'Pricing' },
-  { href: '/account', label: 'Account' }
+  { href: '/arbitrage-v2/calculator', label: 'Calculator' },
+  { href: '/sports', label: 'Markets' },
+  { href: '/account', label: 'Account' },
+  { href: '/login', label: 'Login' },
+  { href: '/register', label: 'Start Membership' }
 ];
 
 const bottomLinks = [
   { href: '/', label: 'Home', icon: '⌂' },
-  { href: '/arbitrage-v2', label: 'ARB', icon: 'ϟ' },
-  { href: '/parlay-scanner', label: 'Scan', icon: '▤' },
-  { href: '/sports', label: 'Sports', icon: '▥' },
+  { href: '/arbitrage-v2', label: 'Arb', icon: 'ϟ' },
+  { href: '/parlay-scanner', label: 'Slip', icon: '▤' },
+  { href: '/game-leans', label: 'Correlations', icon: '▥' },
   { href: '/account', label: 'More', icon: '•••' }
 ];
 
