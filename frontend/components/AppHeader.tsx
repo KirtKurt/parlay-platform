@@ -25,7 +25,7 @@ const bottomLinks = [
   { href: '/parlays', label: 'Parlays', icon: 'P' },
   { href: '/game-leans', label: 'Leans', icon: 'L' },
   { href: '/arbitrage-v2', label: 'ARB', icon: 'A' },
-  { href: '/parlay-scanner', label: 'Scan', icon: 'S' }
+  { href: '/parlay-scanner', label: 'Slip', icon: 'S' }
 ];
 
 function readableStatus(status?: string) {
@@ -42,7 +42,7 @@ export function AppHeader({ eyebrow = 'InQsi', title = 'Sports market intelligen
     <>
       <header className="inqsi-topbar inqsi-mobile-header">
         <Link className="inqsi-menu-button" href="/account" aria-label="Open menu">Menu</Link>
-        <Link className="inqsi-wordmark" href="/" aria-label="InQsi home"><span>IN</span><b>Q</b><span>SI</span></Link>
+        <Link className="inqsi-wordmark" href="/" aria-label="InQsi home"><span>In</span><b>Q<i aria-hidden="true">➤</i></b><span>si</span></Link>
         <Link className="inqsi-bell" href="/alerts" aria-label="Alerts">Alerts</Link>
       </header>
       <nav className="inqsi-desktop-links" aria-label="Site navigation">
