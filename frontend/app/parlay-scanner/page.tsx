@@ -3,15 +3,15 @@ import { AppHeader } from '@/components/AppHeader';
 import { SlipScannerClient } from '@/components/SlipScannerClient';
 
 export const metadata: Metadata = {
-  title: 'Build My Slip',
-  description: 'Build a 3-leg slip from verified live markets, compare sportsbook prices, and analyze the completed slip.',
+  title: 'Slip Scanner — Find Bet Risk',
+  description: 'Choose your sport, event and selection. InQsi analyzes market movement, price quality and available risk intelligence before you bet.',
   alternates: { canonical: '/parlay-scanner' }
 };
 
 export default function Page() {
   return (
     <main className="inqsi-shell slip-page">
-      <AppHeader eyebrow="InQsi" title="Build My Slip" />
+      <AppHeader eyebrow="InQsi" title="Slip Scanner" />
       <SlipScannerClient />
     </main>
   );
