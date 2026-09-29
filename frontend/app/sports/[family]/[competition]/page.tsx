@@ -8,7 +8,7 @@ export const dynamic='force-dynamic';
 export async function generateMetadata({params}:{params:{family:string;competition:string}}):Promise<Metadata>{
  const {events}=await getSeoCoverage(); const game=events.find(g=>identityFromProviderKey(g.sport_key).slug===params.competition);
  if(!game)return {title:'Sports market coverage',robots:{index:false,follow:true}};
- const id=identityFromProviderKey(game.sport_key); const related=games.filter(g=>g.sport_key===game.sport_key);
+ const id=identityFromProviderKey(game.sport_key); const related=events.filter(g=>g.sport_key===game.sport_key);
  const books=Math.max(0,...related.map(g=>Number(g.bookCount||0))); const index=isIndexableCoverage({nEvents:related.length,bookCount:books});
  return {title:id.label+' Odds, Arbitrage & Bet Risk',description:'Current '+id.label+' sportsbook market coverage for arbitrage discovery, odds comparison, market movement and wager risk analysis when sufficient live data is available.',alternates:{canonical:'/sports/'+params.family+'/'+params.competition},robots:{index,follow:true}};
 }
