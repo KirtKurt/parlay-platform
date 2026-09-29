@@ -3,6 +3,8 @@ import { getSeoCoverage } from '@/lib/seoCoverage';
 import { coveragePath,isIndexableCoverage } from '@/lib/globalSports';
 import { gamePath } from '@/lib/kickoff';
 
+export const dynamic='force-dynamic';
+
 const baseUrl=(process.env.NEXT_PUBLIC_SITE_URL || 'https://inqsi.app').replace(/\/$/,'');
 const productRoutes=['','/sports','/arbitrage-v2','/arbitrage-v2/calculator','/parlay-scanner','/pricing'];
 const usefulRoutes=[
