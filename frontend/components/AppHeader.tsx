@@ -1,6 +1,8 @@
 import Link from 'next/link';
 
 export type AppHeaderProps = {
+  eyebrow?: string;
+  title?: string;
   active?: 'home' | 'arb' | 'scanner' | 'sports' | 'calculator' | 'pricing';
   apiStatus?: 'CONNECTED' | 'WAITING' | 'FAILED' | 'MOCK';
   apiDetail?: string;
