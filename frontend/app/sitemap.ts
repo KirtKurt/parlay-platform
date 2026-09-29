@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { getApiSnapshot } from '@/lib/api';
 import { coveragePath,isIndexableCoverage } from '@/lib/globalSports';
+import { gamePath } from '@/lib/kickoff';
 
 const baseUrl=(process.env.NEXT_PUBLIC_SITE_URL || 'https://inqsi.app').replace(/\/$/,'');
 const productRoutes=['','/sports','/arbitrage-v2','/arbitrage-v2/calculator','/parlay-scanner','/pricing'];
@@ -18,7 +19,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
  const grouped=new Map<string,{nEvents:number;bookCount:number}>();
  for(const g of games){const row=grouped.get(g.sport_key)||{nEvents:0,bookCount:0};row.nEvents++;row.bookCount=Math.max(row.bookCount,Number(g.bookCount||0));grouped.set(g.sport_key,row);}
  const coverage=Array.from(grouped.entries()).filter(([,v])=>isIndexableCoverage(v)).map(([key])=>coveragePath(key));
- return [...productRoutes,...usefulRoutes,...coverage].map((route)=>({
+ const now=Date.now();
+ const events=games.filter(g=>{const stamp=Date.parse(String(g.start||g.commence_time||''));return Number.isFinite(stamp)&&stamp>now-36*60*60*1000&&isIndexableCoverage({nEvents:1,bookCount:Number(g.bookCount||0)});}).map(g=>gamePath(g));
+ return [...productRoutes,...usefulRoutes,...coverage,...events].map((route)=>({
    url:`${baseUrl}${route}`,
    changeFrequency:route===''||route==='/arbitrage-v2'||route==='/parlay-scanner'?'daily':'weekly',
    priority:route===''?1:productRoutes.includes(route)?0.95:0.75
