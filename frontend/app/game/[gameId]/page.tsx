@@ -21,7 +21,7 @@ export async function generateMetadata({params}:{params:{gameId:string}}):Promis
 export default async function GameDetailPage({params}:{params:{gameId:string}}){
  const {events,apiStatus,apiDetail}=await getSeoCoverage();const game=findGame(events,params.gameId);if(!game)notFound();
  const id=identityFromProviderKey(game.sport_key);const start=formatKickoff(game.start);const state=eventState(game.start);
- const favOdds=game.favoriteMl??game.favorite_ml;const dogOdds=game.underdogMl??game.underdog_ml;const implied=impliedPercent(favOdds);
+ const favOdds=game.favoriteMl;const dogOdds=game.underdogMl;const implied=impliedPercent(favOdds);
  const siteUrl=(process.env.NEXT_PUBLIC_SITE_URL||'https://inqsi.app').replace(/\/$/,'');
  const eventJsonLd={'@context':'https://schema.org','@type':'SportsEvent',name:game.matchup||game.away_team+' vs '+game.home_team,startDate:game.start,eventStatus:'https://schema.org/EventScheduled',url:siteUrl+gamePath(game),homeTeam:game.home_team?{'@type':'SportsTeam',name:game.home_team}:undefined,awayTeam:game.away_team?{'@type':'SportsTeam',name:game.away_team}:undefined};
  const crumbJsonLd={'@context':'https://schema.org','@type':'BreadcrumbList',itemListElement:[{'@type':'ListItem',position:1,name:'Sports',item:siteUrl+'/sports'},{'@type':'ListItem',position:2,name:id.label,item:siteUrl+coveragePath(game.sport_key)},{'@type':'ListItem',position:3,name:game.matchup||'Event',item:siteUrl+gamePath(game)}]};
