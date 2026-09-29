@@ -125,7 +125,19 @@ function oddsFor(book: BookQuote, game: BoardGame, draft: LegDraft) {
 
 function bestBookFor(game: BoardGame | undefined, draft: LegDraft) {
   if (!game || !draft.selection) return '';
+  // Only compare prices across books when the underlying line is identical.
+  // Moneyline is intrinsically comparable; spread/total prices are only
+  // comparable when books are quoting the same point.
+  const reference = game.books.find((book) => Number.isFinite(oddsFor(book, game, draft)));
+  if (!reference) return '';
+  const referencePoint = draft.market === 'spread'
+    ? (draft.selection === game.away ? reference.awaySpread : reference.homeSpread)
+    : draft.market === 'total' ? reference.totalPoint : undefined;
   return game.books.reduce<{ book: string; odds: number } | null>((best, book) => {
+    const point = draft.market === 'spread'
+      ? (draft.selection === game.away ? book.awaySpread : book.homeSpread)
+      : draft.market === 'total' ? book.totalPoint : undefined;
+    if (draft.market !== 'moneyline' && point !== referencePoint) return best;
     const odds = oddsFor(book, game, draft);
     if (!Number.isFinite(odds)) return best;
     return !best || Number(odds) > best.odds ? { book: book.book, odds: Number(odds) } : best;
@@ -235,8 +247,8 @@ export function SlipScannerClient() {
         }).filter((snapshot) => snapshot.oddsAmerican && snapshot.oddsAmerican !== 'Waiting') : [],
       };
     }).filter((leg) => leg.sport && leg.selection && leg.book);
-    if (!payload.length) {
-      setState({ loading: false, error: 'Choose sport, game, side, and book from the dropdowns before scanning.' });
+    if (payload.length !== 3) {
+      setState({ loading: false, error: 'Complete all three legs before analyzing the slip.' });
       return;
     }
     setState({ loading: true });
@@ -257,9 +269,9 @@ export function SlipScannerClient() {
   const completed = legs.filter((leg) => leg.gameKey && leg.selection && leg.book).length;
 
   return (
-    <section className="inqsi-panel slip-builder">
+    <section className="slip-builder">
       <div className="slip-builder-head">
-        <div><p className="eyebrow blue">Build My Slip</p><h2>{completed}/3 legs selected</h2></div>
+        <div><p className="eyebrow blue">LIVE BET BUILDER</p><h2>Build My Slip</h2><span className="slip-progress-copy">{completed}/3 selections ready</span></div>
         <span className="data-status">{mode === 'live' ? 'Live board' : mode === 'loading' ? 'Connecting' : 'Board syncing'}</span>
       </div>
       {!games.length && <div className="slip-sync"><b>Live board is syncing</b><span>Selections unlock as verified sportsbook markets arrive. InQsi never fills a slip with invented odds.</span></div>}
@@ -274,7 +286,7 @@ export function SlipScannerClient() {
           return (
             <article className={`slip-leg-card ${complete ? 'complete' : ''}`} key={index}>
               <div className="slip-leg-head">
-                <div><small>LEG {index + 1}</small><strong>{complete ? quote.selection : game?.matchup || 'Choose a matchup'}</strong>{complete && <span>{game?.matchup}</span>}</div>
+                <div><small><i>{complete ? '✓' : index + 1}</i> LEG {index + 1}</small><strong>{complete ? quote.selection : game?.matchup || 'Choose a matchup'}</strong>{complete && <span>{game?.matchup}</span>}</div>
                 <b>{complete ? quote.odds : '—'}</b>
               </div>
               <div className="slip-fields">
@@ -287,7 +299,7 @@ export function SlipScannerClient() {
             </article>
           );
         })}
-        <div className="slip-action-bar"><div><small>3-LEG SLIP</small><strong>{completed}/3 ready</strong></div><button className="inqsi-primary" type="submit" disabled={state.loading||!games.length||completed===0}>{state.loading?'Analyzing…':'Analyze slip'}</button></div>
+        <div className="slip-action-bar"><div><small>3-LEG SLIP</small><strong>{completed}/3 ready</strong></div><button className="inqsi-primary" type="submit" disabled={state.loading||!games.length||completed!==3}>{state.loading?'Analyzing…':'Analyze slip'}</button></div>
       </form>
       {state.error && <p className="movement slip-message">{state.error}</p>}
       {state.result ? (() => {
