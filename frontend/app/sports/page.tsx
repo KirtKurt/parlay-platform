@@ -1,16 +1,14 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { getApiSnapshot } from '@/lib/api';
-import { coveragePath,familyLabel,identityFromProviderKey,isIndexableCoverage } from '@/lib/globalSports';
+import { getSeoCoverage } from '@/lib/seoCoverage';
+import { coveragePath,familyLabel,isIndexableCoverage } from '@/lib/globalSports';
 
 export const dynamic='force-dynamic';
 export const metadata:Metadata={title:'Global Sports Odds, Arbitrage & Risk Coverage',description:'Browse current InQsi sports and competition coverage worldwide for sportsbook odds, arbitrage discovery and wager risk analysis.',alternates:{canonical:'/sports'}};
 
 export default async function SportsPage(){
- const {games,apiStatus}=await getApiSnapshot('all');
- const grouped=new Map<string,{key:string;events:number;books:number;family:string;geoLabel:string;label:string}>();
- for(const g of games){const id=identityFromProviderKey(g.sport_key);const row=grouped.get(g.sport_key)||{key:g.sport_key,events:0,books:0,family:id.family,geoLabel:id.geoLabel,label:id.label};row.events++;row.books=Math.max(row.books,Number(g.bookCount||0));grouped.set(g.sport_key,row);}
- const rows=Array.from(grouped.values()).filter(r=>isIndexableCoverage({nEvents:r.events,bookCount:r.books})).sort((a,b)=>a.family.localeCompare(b.family)||a.geoLabel.localeCompare(b.geoLabel)||a.label.localeCompare(b.label));
+ const {sports,apiStatus}=await getSeoCoverage();
+ const rows=sports.filter(r=>isIndexableCoverage({nEvents:r.eventCount,bookCount:r.bookCount})).map(r=>({key:r.providerKey,events:r.eventCount,books:r.bookCount,family:r.family,geoLabel:r.geoLabel,label:r.label})).sort((a,b)=>a.family.localeCompare(b.family)||a.geoLabel.localeCompare(b.geoLabel)||a.label.localeCompare(b.label));
  const families=Array.from(new Set(rows.map(r=>r.family)));
  return <main className="inqsi-shell tool-shell">
   <section className="tool-feed"><div className="tool-feed-head"><div><p>Worldwide coverage</p><h1>Global sports market coverage</h1><p>Current provider-driven competitions with sufficient live market depth. Coverage changes with the underlying sports calendar and provider inventory.</p></div><span>{apiStatus==='CONNECTED'?'Live':'Syncing'}</span></div></section>
