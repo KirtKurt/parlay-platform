@@ -189,12 +189,12 @@ export default function Page(){
    <div className="safety-strip">Verify prices before placing either leg. InQsi does not place wagers. Odds can change at any time.</div>
   </section>
   <section className="how">
-    <article><b>1. Open InQsi</b><p>Live opportunities appear as soon as the ARB scan returns quotes.</p></article>
+    <article><b>1. Open InQsi</b><p>Live opportunities appear automatically when the sportsbook feed returns quotes.</p></article>
     <article><b>2. Select opportunity</b><p>Click a row to load books, ROI, and stake math.</p></article>
     <article><b>3. Enter any amount</b><p>Type a stake or tap a preset. Allocations update instantly.</p></article>
     <article><b>4. Get instant results</b><p>See exact stakes and guaranteed profit from the live prices.</p></article>
     <article><b>5. View details</b><p>Check verification, limits, and book links before you act.</p></article>
   </section>
-  <nav className="mobile-nav"><a className="active">▣<small>Arb</small></a><a href="/arbitrage-v2/calculator">▦<small>Calculator</small></a><a href="/sports">⚑<small>Picks</small></a><a href="/parlay-scanner">•••<small>More</small></a></nav>
+  <nav className="mobile-nav"><a className="active">▣<small>Arb</small></a><a href="/arbitrage-v2/calculator">▦<small>Calculator</small></a><a href="/sports">⚑<small>Sports</small></a><a href="/parlay-scanner">•••<small>More</small></a></nav>
  </main>;
 }
