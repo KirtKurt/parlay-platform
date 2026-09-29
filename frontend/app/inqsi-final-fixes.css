@@ -111,3 +111,31 @@
 .slip-analysis-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.slip-analysis-head>div{display:grid;gap:3px}.slip-analysis-head small,.slip-read-grid small{color:#8299b4;font-size:.65rem;font-weight:900;letter-spacing:.08em}.slip-analysis-head>b{color:#26f37c}
 .slip-read-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.slip-read-grid>div{min-width:0;display:grid;gap:3px;padding:10px;border-radius:13px;background:rgba(255,255,255,.04)}.slip-read-grid strong{font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.slip-read-grid span{color:#9eb1c9;font-size:.7rem}
 @media(max-width:640px){.slip-read-grid{grid-template-columns:1fr}.slip-read-grid>div{grid-template-columns:52px minmax(0,1fr) auto;align-items:center}.slip-read-grid span{text-align:right}}
+
+
+/* Sportsbook ticket rebuild */
+.slip-page{max-width:760px!important;margin:0 auto}
+.slip-builder{margin:0 0 18px;padding:0;background:transparent}
+.slip-builder-head{margin:0;padding:16px 16px 14px;border:1px solid rgba(255,255,255,.1);border-bottom:0;border-radius:18px 18px 0 0;background:#07111f}
+.slip-builder-head>div{display:grid;gap:2px}.slip-builder-head h2{margin:0!important;font-size:1.35rem!important}.slip-progress-copy{color:#8fa3bb;font-size:.74rem;font-weight:700}
+.slip-builder-head .data-status{align-self:center;border:1px solid rgba(38,243,124,.25);background:rgba(38,243,124,.08);color:#26f37c}
+.slip-builder-form{gap:0;border:1px solid rgba(255,255,255,.1);border-radius:0 0 18px 18px;background:#050d19;overflow:hidden}
+.slip-leg-card{padding:13px 14px;border:0;border-bottom:1px solid rgba(255,255,255,.09);border-radius:0;background:transparent}
+.slip-leg-card.complete{border-color:rgba(255,255,255,.09);background:linear-gradient(90deg,rgba(38,243,124,.035),transparent 45%)}
+.slip-leg-head{margin-bottom:10px;align-items:center}.slip-leg-head div{gap:2px}.slip-leg-head small{display:flex;align-items:center;gap:6px}.slip-leg-head small i{display:inline-grid;place-items:center;width:19px;height:19px;border-radius:50%;background:#142236;color:#8fa3bb;font-style:normal;font-size:.62rem}.slip-leg-card.complete .slip-leg-head small i{background:#26f37c;color:#02120a}
+.slip-leg-head strong{font-size:.94rem}.slip-leg-head>b{min-width:58px;text-align:center;padding:7px 9px;border:1px solid rgba(32,229,255,.16);background:rgba(32,229,255,.06);font-size:.9rem}
+.slip-fields{grid-template-columns:92px minmax(0,1fr) 92px minmax(0,1fr);gap:7px}.slip-fields label.wide{grid-column:auto}
+.slip-fields label>span,.best-price-row label>span{font-size:.61rem;text-transform:uppercase;letter-spacing:.055em}.slip-fields select,.best-price-row select{height:38px;border-radius:9px;background-color:#0a1626;font-size:.75rem}
+.best-price-row{margin-top:9px;padding:9px 10px;border-radius:10px;background:rgba(38,243,124,.045)}.best-price-row strong{font-size:.84rem}
+.slip-action-bar{position:relative;bottom:auto;border:0;border-radius:0;padding:12px 14px;background:#07111f;box-shadow:none}.slip-action-bar .inqsi-primary{height:42px;border-radius:10px}.slip-action-bar button:disabled{opacity:.4}
+.slip-sync{margin:0;border-radius:0;border-left:1px solid rgba(255,255,255,.1);border-right:1px solid rgba(255,255,255,.1);border-top:1px solid rgba(32,229,255,.18);border-bottom:0;background:#07111f}
+.slip-analysis{margin:12px 0 0;border-radius:14px}
+@media(max-width:640px){
+ .slip-page{padding-left:10px!important;padding-right:10px!important}
+ .slip-builder-head{padding:13px 12px 11px}
+ .slip-leg-card{padding:11px 12px}
+ .slip-fields{grid-template-columns:82px minmax(0,1fr);gap:7px}
+ .slip-fields label.wide{grid-column:auto}
+ .best-price-row{padding:8px 9px}.best-price-row label{width:46%}
+ .slip-action-bar{padding:10px 12px}.slip-action-bar button{min-width:120px}
+}
