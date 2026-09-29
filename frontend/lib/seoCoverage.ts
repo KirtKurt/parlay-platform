@@ -43,7 +43,7 @@ export async function getSeoCoverage(){
       });
     }
   }
-  const sports=Array.from(new Map(events.map(e=>{const i=identityFromProviderKey(e.sport_key);return [e.sport_key,{...i,eventCount:0,bookCount:0}]})).values());
+  const sports=Array.from(new Map<string,ReturnType<typeof identityFromProviderKey>&{eventCount:number;bookCount:number}>(events.map(e=>{const i=identityFromProviderKey(e.sport_key);return [e.sport_key,{...i,eventCount:0,bookCount:0}] as const;})).values());
   for(const sport of sports){const rows=events.filter(e=>e.sport_key===sport.providerKey);sport.eventCount=rows.length;sport.bookCount=Math.max(0,...rows.map(e=>e.bookCount));}
   return {events,sports,apiStatus:snapshot.apiStatus,apiDetail:snapshot.apiDetail};
 }
