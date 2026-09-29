@@ -269,48 +269,57 @@ export function SlipScannerClient() {
   const completed = legs.filter((leg) => leg.gameKey && leg.selection && leg.book).length;
 
   return (
-    <section className="slip-builder">
-      <div className="slip-builder-head">
-        <div><p className="eyebrow blue">LIVE BET BUILDER</p><h2>Build My Slip</h2><span className="slip-progress-copy">{completed}/3 selections ready</span></div>
-        <span className="data-status">{mode === 'live' ? 'Live board' : mode === 'loading' ? 'Connecting' : 'Board syncing'}</span>
+    <section className="mock-slip">
+      <header className="mock-slip-title">
+        <h1>Build My Slip</h1>
+        <p>Select 3 picks to analyze your parlay</p>
+      </header>
+      <div className="mock-slip-steps" aria-label={`${completed} of 3 picks selected`}>
+        {[0,1,2].map((index) => <div className={index < completed ? 'done' : index === completed ? 'active' : ''} key={index}><i>{index+1}</i><span>Pick {index+1}</span></div>)}
       </div>
-      {!games.length && <div className="slip-sync"><b>Live board is syncing</b><span>Selections unlock as verified sportsbook markets arrive. InQsi never fills a slip with invented odds.</span></div>}
-      <form onSubmit={onSubmit} className="slip-builder-form">
-        {legs.map((leg, index) => {
-          const sportGames = leg.sport ? games.filter((game) => game.sport === leg.sport) : [];
-          const game = games.find((item) => item.key === leg.gameKey);
-          const bookNames = game?.books.map((book) => book.book) || [];
-          const selections = !game ? [] : leg.market === 'total' ? ['Over', 'Under'] : [game.away, game.home];
-          const quote = quoteFor(game, leg);
-          const complete = Boolean(game && leg.selection && leg.book && quote.odds !== 'Waiting');
-          return (
-            <article className={`slip-leg-card ${complete ? 'complete' : ''}`} key={index}>
-              <div className="slip-leg-head">
-                <div><small><i>{complete ? '✓' : index + 1}</i> LEG {index + 1}</small><strong>{complete ? quote.selection : game?.matchup || 'Choose a matchup'}</strong>{complete && <span>{game?.matchup}</span>}</div>
-                <b>{complete ? quote.odds : '—'}</b>
+      {!games.length && <div className="mock-sync"><b>{mode === 'loading' ? 'Connecting to live board' : 'Live board syncing'}</b><span>Verified sportsbook selections appear here as soon as they are available.</span></div>}
+      <form onSubmit={onSubmit} className="mock-slip-form">
+        <div className="mock-sport-strip">
+          <button type="button" className={!legs[completed]?.sport ? 'active' : ''}>All</button>
+          {sports.map((sport)=><button type="button" key={sport} className={legs[completed]?.sport===sport?'active':''} onClick={()=>completed<3&&updateLeg(completed,{sport})}>{sport}</button>)}
+        </div>
+        <div className="mock-picks">
+          {legs.map((leg,index)=>{
+            const game=games.find((item)=>item.key===leg.gameKey);
+            const sportGames=leg.sport?games.filter((item)=>item.sport===leg.sport):games;
+            const selections=!game?[]:leg.market==='total'?['Over','Under']:[game.away,game.home];
+            const quote=quoteFor(game,leg);
+            const bookNames=game?.books.map((book)=>book.book)||[];
+            const complete=Boolean(game&&leg.selection&&leg.book&&quote.odds!=='Waiting');
+            return <article className={`mock-pick-card ${complete?'complete':''}`} key={index}>
+              <div className="mock-pick-meta"><span className="mock-sport-badge">{leg.sport||`PICK ${index+1}`}</span><button type="button" onClick={()=>setLegs((rows)=>rows.map((row,i)=>i===index?{...emptyLeg}:row))}>×</button></div>
+              <div className="mock-pick-main">
+                <div><small>{game?game.matchup:'Choose your matchup'}</small><strong>{complete?quote.selection:'Select a live game'}</strong><span>{leg.market==='total'?'Total Points':leg.market==='spread'?'Spread':'Moneyline'}{complete?` · ${leg.book}`:''}</span></div>
+                <b>{complete?quote.odds:'—'}</b>
               </div>
-              <div className="slip-fields">
-                <label><span>Sport</span><select value={leg.sport} onChange={(e) => updateLeg(index,{sport:e.target.value})}><option value="">{sports.length?'Sport':'Waiting'}</option>{sports.map(s=><option key={s}>{s}</option>)}</select></label>
-                <label className="wide"><span>Game</span><select value={leg.gameKey} onChange={(e)=>updateLeg(index,{gameKey:e.target.value})} disabled={!leg.sport}><option value="">{!leg.sport?'Choose sport':sportGames.length?'Choose game':'Waiting'}</option>{sportGames.map(g=><option key={g.key} value={g.key}>{g.matchup}</option>)}</select></label>
-                <label><span>Market</span><select value={leg.market} onChange={(e)=>updateLeg(index,{market:e.target.value})}>{markets.map(m=><option key={m.value} value={m.value}>{m.label}</option>)}</select></label>
-                <label className="wide"><span>Pick</span><select value={leg.selection} onChange={(e)=>updateLeg(index,{selection:e.target.value})} disabled={!game}><option value="">{game?'Choose side':'Choose game'}</option>{selections.map(s=><option key={s}>{s}</option>)}</select></label>
-              </div>
-              {game && leg.selection && <div className="best-price-row"><div><small>BEST LIVE PRICE</small><strong>{quote.selection} · {quote.odds}</strong><span>{leg.book || 'Waiting for quoted book'}</span></div>{bookNames.length>1&&<label><span>Change book</span><select value={leg.book} onChange={(e)=>updateLeg(index,{book:e.target.value})}>{bookNames.map(b=><option key={b}>{b}</option>)}</select></label>}</div>}
+              {!complete&&<div className="mock-pick-controls">
+                <select value={leg.sport} onChange={(e)=>updateLeg(index,{sport:e.target.value})}><option value="">Sport</option>{sports.map((s)=><option key={s}>{s}</option>)}</select>
+                <select value={leg.gameKey} onChange={(e)=>updateLeg(index,{gameKey:e.target.value})}><option value="">Game</option>{sportGames.map((g)=><option key={g.key} value={g.key}>{g.matchup}</option>)}</select>
+                <select value={leg.market} onChange={(e)=>updateLeg(index,{market:e.target.value})}>{markets.map((m)=><option key={m.value} value={m.value}>{m.label}</option>)}</select>
+                <select value={leg.selection} onChange={(e)=>updateLeg(index,{selection:e.target.value})} disabled={!game}><option value="">Pick</option>{selections.map((s)=><option key={s}>{s}</option>)}</select>
+              </div>}
+              {complete&&bookNames.length>1&&<select className="mock-book" value={leg.book} onChange={(e)=>updateLeg(index,{book:e.target.value})}>{bookNames.map((book)=><option key={book}>{book}</option>)}</select>}
             </article>
-          );
-        })}
-        <div className="slip-action-bar"><div><small>3-LEG SLIP</small><strong>{completed}/3 ready</strong></div><button className="inqsi-primary" type="submit" disabled={state.loading||!games.length||completed!==3}>{state.loading?'Analyzing…':'Analyze slip'}</button></div>
+          })}
+        </div>
+        <button className="mock-analyze" type="submit" disabled={state.loading||completed!==3}>{state.loading?'Analyzing…':'Analyze Parlay →'}</button>
       </form>
-      {state.error && <p className="movement slip-message">{state.error}</p>}
+      {state.error&&<div className="mock-error">{state.error}</div>}
       {state.result ? (() => {
-        const scan = (state.result as any)?.scan || state.result as any;
-        const reads = Array.isArray(scan?.legReads) ? scan.legReads : [];
-        return <div className="slip-analysis">
-          <div className="slip-analysis-head"><div><small>INQSI ANALYSIS</small><strong>{scan?.overallRead || 'Analysis complete'}</strong></div><b>{scan?.overallScore != null ? `${scan.overallScore}/100` : 'Live data'}</b></div>
-          <div className="slip-read-grid">{reads.map((read:any,index:number)=><div key={read.legId || index}><small>LEG {index+1}</small><strong>{read.selection || `Leg ${index+1}`}</strong><span>{read.riskLevel || read.confidenceBand || 'Reviewed'}{read.score != null ? ` · ${read.score}/100` : ''}</span></div>)}</div>
-          {scan?.weakestLeg && <p className="movement"><b>Weakest leg:</b> {scan.weakestLeg.selection} · {scan.weakestLeg.riskLevel || scan.weakestLeg.confidenceBand}</p>}
-        </div>;
-      })() : null}
+        const scan=(state.result as any)?.scan||state.result as any;
+        const reads=Array.isArray(scan?.legReads)?scan.legReads:[];
+        return <section className="mock-summary">
+          <div><b>{scan?.overallScore!=null?`${scan.overallScore}/100`:'Complete'}</b><span>InQsi Score</span></div>
+          <div><b>{scan?.overallRead||'Reviewed'}</b><span>Overall Read</span></div>
+          <div><b>{reads.length}/3</b><span>Legs Reviewed</span></div>
+        </section>
+      })():<section className="mock-summary muted"><div><b>—</b><span>Projected Odds</span></div><div><b>—</b><span>Implied Probability</span></div><div><b>—</b><span>Historical Edge</span></div></section>}
+      <button className="mock-clear" type="button" onClick={()=>{setLegs([{...emptyLeg},{...emptyLeg},{...emptyLeg}]);setState({loading:false})}}>⌫ Clear Slip</button>
     </section>
   );
 }
