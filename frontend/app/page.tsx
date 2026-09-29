@@ -3,32 +3,47 @@ import Link from 'next/link';
 import { AppHeader } from '@/components/AppHeader';
 
 export const metadata: Metadata = {
-  title:'Sports Arbitrage & Bet Risk Intelligence',
-  description:'Find sports arbitrage opportunities and analyze wager risk with global sportsbook odds, market movement, price comparison and InQsi sports intelligence.',
-  alternates:{canonical:'/'}
+  title: 'Sports Arbitrage & Bet Risk Intelligence',
+  description: 'Find sports arbitrage opportunities and analyze wager risk with global sportsbook odds, market movement, price comparison and InQsi sports intelligence.',
+  alternates: { canonical: '/' }
 };
 
-export default function Home(){
- return <main className="inqsi-shell tool-shell">
-  <AppHeader eyebrow="InQsi" title="Find Opportunity. Find Risk." />
-  <section className="tool-feed" id="main-content">
-   <div className="tool-feed-head"><h1>Global sports market intelligence</h1></div>
-   <article className="tool-row">
-    <div><small>ARB</small><strong>Find arbitrage opportunities</strong><p>Compare compatible sportsbook prices, identify mathematical arbitrage opportunities and calculate stake allocation across supported sports and competitions worldwide.</p></div>
-    <Link href="/arbitrage-v2">Open ARB</Link>
-   </article>
-   <article className="tool-row">
-    <div><small>SLIP SCANNER</small><strong>Find the risk before you bet</strong><p>Pick a sport, event and selection. InQsi analyzes available market movement, price quality and qualified sport-specific intelligence without publishing a public picks feed.</p></div>
-    <Link href="/parlay-scanner">Scan a pick</Link>
-   </article>
-  </section>
-  <section className="tool-feed">
-   <div className="tool-feed-head"><h2>Worldwide coverage, driven by current data</h2></div>
-   <article className="tool-row"><div><strong>Sport → country or region → competition → event → market</strong><p>InQsi is designed around the current normalized catalog supplied by authorized data providers rather than a fixed U.S.-league list. Capabilities are shown only when the required data exists.</p></div></article>
-  </section>
-  <section className="tool-feed">
-   <div className="tool-feed-head"><h2>Free market tools</h2><Link href="/learn/arbitrage">Learn arbitrage</Link></div>
-   <article className="tool-row"><div><strong>Arbitrage, implied probability, vig and odds tools</strong><p>Use practical calculators and guides to understand sportsbook pricing, line movement and arbitrage mathematics.</p></div><Link href="/arbitrage-v2/calculator">Open calculator</Link></article>
-  </section>
- </main>;
+export default function Home() {
+  return (
+    <main className="mockup-site">
+      <AppHeader active="home" />
+      <section className="mockup-home">
+        <div className="mockup-home-hero">
+          <article className="mockup-hero-card">
+            <span className="mockup-eyebrow">Sports market intelligence</span>
+            <h1>FIND OPPORTUNITY.<br/><span>FIND RISK.</span></h1>
+            <p>InQsi compares sportsbook markets for mathematical arbitrage and helps you inspect the risk around the selections you are considering before you place a bet.</p>
+            <div className="mockup-hero-actions">
+              <Link className="mockup-cta" href="/arbitrage-v2">Open ARB →</Link>
+              <Link className="mockup-cta secondary" href="/parlay-scanner">Open Slip Scanner</Link>
+            </div>
+          </article>
+          <div className="mockup-products">
+            <article className="mockup-product-card">
+              <small>ARB</small>
+              <h2>Find Opportunity</h2>
+              <p>Compare compatible sportsbook prices, calculate the exact stake split, and surface mathematical arbitrage when live market data confirms it.</p>
+              <Link href="/arbitrage-v2">View opportunities →</Link>
+            </article>
+            <article className="mockup-product-card">
+              <small>SLIP SCANNER</small>
+              <h2>Find Risk</h2>
+              <p>Pick a sport, game, market and side. InQsi reviews available market movement, price quality and qualified sport-specific intelligence.</p>
+              <Link href="/parlay-scanner">Scan a selection →</Link>
+            </article>
+          </div>
+        </div>
+        <section className="mockup-market-strip" aria-label="InQsi product principles">
+          <article className="mockup-market-card"><b>Worldwide coverage</b><span>Provider-driven sports and competitions, not a fixed U.S.-league list.</span></article>
+          <article className="mockup-market-card"><b>Real data only</b><span>No fabricated prices, opportunities, picks or market status when a provider is unavailable.</span></article>
+          <article className="mockup-market-card"><b>You decide</b><span>InQsi surfaces opportunity and risk; it does not place wagers or promise outcomes.</span></article>
+        </section>
+      </section>
+    </main>
+  );
 }
