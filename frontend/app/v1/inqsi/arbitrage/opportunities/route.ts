@@ -18,7 +18,7 @@ function apiBase() {
 
 export async function GET(request: NextRequest) {
   const base = apiBase();
-  if (!base) return NextResponse.json({ok:false,mode:'unavailable',error:'ARB_API_UNCONFIGURED'}, {status:503});
+  if (!base) return NextResponse.json({ok:true,available:false,mode:'unavailable',error:'ARB_API_UNCONFIGURED',hits:[],held:[],nArbs:0}, {status:200,headers:{'cache-control':'no-store'}});
   const incoming = request.nextUrl.searchParams;
   const sport = String(incoming.get('sport') || '').trim();
   const params = new URLSearchParams({
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     }).finally(()=>clearTimeout(timeout));
     const body = await upstream.json().catch(()=>({}));
     if (!upstream.ok || body?.ok === false) {
-      return NextResponse.json({ok:false,mode:'unavailable',error:body?.error||'ARB_SCAN_UNAVAILABLE'}, {status:502});
+      return NextResponse.json({ok:true,available:false,mode:'unavailable',error:body?.error||'ARB_SCAN_UNAVAILABLE',hits:[],held:[],nArbs:0}, {status:200,headers:{'cache-control':'no-store'}});
     }
     return NextResponse.json({
       ok:true, mode:'live', source:body?.source || body?.status?.source || 'live',
@@ -50,6 +50,6 @@ export async function GET(request: NextRequest) {
       status:body?.status||null, history:[{created_at_ms:Date.now(),payload:{sport:sport || 'store',hits:Array.isArray(body?.hits)?body.hits:[],detected_unverified:Array.isArray(body?.detected_unverified)?body.detected_unverified:[]}}],
     }, {headers:{'cache-control':'no-store'}});
   } catch {
-    return NextResponse.json({ok:false,mode:'unavailable',error:'ARB_SCAN_UNAVAILABLE'}, {status:502});
+    return NextResponse.json({ok:true,available:false,mode:'unavailable',error:'ARB_SCAN_UNAVAILABLE',hits:[],held:[],nArbs:0}, {status:200,headers:{'cache-control':'no-store'}});
   }
 }
