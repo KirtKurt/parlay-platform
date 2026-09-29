@@ -3,7 +3,7 @@ import { getApiSnapshot } from '@/lib/api';
 import { coveragePath,isIndexableCoverage } from '@/lib/globalSports';
 
 const baseUrl=(process.env.NEXT_PUBLIC_SITE_URL || 'https://inqsi.app').replace(/\/$/,'');
-const productRoutes=['','/arbitrage-v2','/arbitrage-v2/calculator','/parlay-scanner','/pricing'];
+const productRoutes=['','/sports','/arbitrage-v2','/arbitrage-v2/calculator','/parlay-scanner','/pricing'];
 const usefulRoutes=[
  '/learn/arbitrage','/learn/arbitrage/sportsbook-odds-comparison','/learn/arbitrage/what-is-sports-arbitrage',
  '/learn/arbitrage/arbitrage-examples','/learn/arbitrage/sports-betting-line-movement',
