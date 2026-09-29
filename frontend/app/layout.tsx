@@ -29,15 +29,12 @@ export const metadata: Metadata = {
     'InQsi helps sports bettors find arbitrage opportunities and analyze wager risk using global sportsbook pricing, market movement, odds comparison, and independent sports intelligence.',
   keywords: [
     'InQsi',
-    'AI slip scanner',
     'bet risk scanner',
     'sports bet risk analysis',
     'global sportsbook odds',
     'line movement review',
     'sports market intelligence',
     'best line warning',
-    'parlay accuracy tracker',
-    'post-game slip review',
     'sports risk review',
     'sports arbitrage',
     'sports arbitrage finder',
@@ -96,11 +93,6 @@ const websiteJsonLd = {
   name: 'InQsi',
   url: siteUrl,
   description: 'Global sports market intelligence for arbitrage discovery, sportsbook odds comparison, line movement and wager risk analysis.',
-  potentialAction: {
-    '@type': 'SearchAction',
-    target: `${siteUrl}/sports?query={search_term_string}`,
-    'query-input': 'required name=search_term_string'
-  }
 };
 
 const softwareJsonLd = {
@@ -108,15 +100,9 @@ const softwareJsonLd = {
   '@type': 'SoftwareApplication',
   name: 'InQsi',
   applicationCategory: 'SportsApplication',
-  operatingSystem: 'Web, iOS, Android',
+  operatingSystem: 'Web',
   url: siteUrl,
   description: 'Sports market intelligence application for arbitrage discovery, sportsbook odds comparison, market movement and wager risk analysis.',
-  offers: {
-    '@type': 'Offer',
-    price: '0',
-    priceCurrency: 'USD',
-    description: '5-day free promo'
-  }
 };
 
 const productJsonLd = {
@@ -127,12 +113,6 @@ const productJsonLd = {
   category: 'Sports analytics software',
   url: siteUrl,
   description: 'InQsi helps users find sports arbitrage opportunities and analyze wager risk using sportsbook pricing, line movement and sports intelligence.',
-  offers: {
-    '@type': 'Offer',
-    priceCurrency: 'USD',
-    availability: 'https://schema.org/OnlineOnly',
-    url: `${siteUrl}/pricing`
-  }
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -1,5 +1,4 @@
 import { headers } from 'next/headers';
-import { identityFromProviderKey } from '@/lib/globalSports';
 
 export type InqsiGame = {
   id: string;
@@ -71,9 +70,9 @@ export type InqsiSnapshot = {
   rankings: any[];
 };
 
-const defaultSports: string[] = [];
+const defaultSports = ['nfl', 'cfb', 'nba', 'ncaam', 'mlb', 'wnba', 'nhl', 'soccer', 'tennis'];
 
-const legacyProviderAliases: Record<string, string> = {
+const providerToInqisSport: Record<string, string> = {
   americanfootball_nfl: 'nfl',
   americanfootball_ncaaf: 'cfb',
   basketball_nba: 'nba',
@@ -275,9 +274,7 @@ function normalizeLegacyGame(raw: any): InqsiGame {
 function gamesFromMarketBoard(boardPayload: any): InqsiGame[] {
   const boards = Array.isArray(boardPayload?.boards) ? boardPayload.boards : [];
   const rows = boards.flatMap((board: any) => {
-    const providerKey=String(board?.providerSportKey || board?.sportKey || board?.sport_key || '');
-    const identity=identityFromProviderKey(providerKey,board?.sportTitle);
-    const sport = providerKey || board?.sport || identity.providerKey || 'sport';
+    const sport = board?.sport || providerToInqisSport[String(board?.providerSportKey || '')] || 'sport';
     return (board?.games || []).map((game: any) => normalizeMarketBoardGame(game, sport));
   });
   const seen = new Set<string>();
@@ -294,7 +291,7 @@ function isSampleParlay(row: any) {
 }
 
 export async function getInqsiSnapshot(sportKey = process.env.NEXT_PUBLIC_DEFAULT_SPORT || 'nfl'): Promise<InqsiSnapshot> {
-  const selectedSport = legacyProviderAliases[sportKey] || sportKey || 'all';
+  const selectedSport = providerToInqisSport[sportKey] || sportKey || defaultSports[0];
 
   const [marketBoardPayload, predictionsPayload, parlayPayload, livePayload, alertsPayload, performancePayload] = await Promise.all([
     safeFetch<any>('/v1/inqsi/markets/board', { boards: [] }),
@@ -328,7 +325,7 @@ export async function getInqsiSnapshot(sportKey = process.env.NEXT_PUBLIC_DEFAUL
       : marketFetch.ok === false
         ? 'Live board unavailable'
         : 'Waiting on live board games',
-    sports: Array.from(new Set((Array.isArray(marketBoardPayload?.boards)?marketBoardPayload.boards:[]).map((b:any)=>String(b?.providerSportKey||b?.sportKey||b?.sport_key||'')).filter(Boolean))).sort(),
+    sports: defaultSports,
     selectedSport,
     games,
     predictions,
