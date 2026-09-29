@@ -117,6 +117,24 @@ jobs:
           audit_event_id = str(scan.get('audit_event_id') or '')
           assert audit_event_id, scan
 
+          # Prove the exact production web contract: all active sports from the
+          # collector-maintained snapshot, with the featured market set. This
+          # must fail visibly if any active snapshot is stale or incomplete.
+          all_store_query = urllib.parse.urlencode({
+              'sport': 'all',
+              'markets': 'h2h,spreads,totals',
+              'bankroll': '1000',
+              'source': 'store',
+          })
+          all_store_status, all_store = get('/v1/arb/scan?' + all_store_query, timeout=120)
+          assert all_store_status == 200 and isinstance(all_store, dict) and all_store.get('ok') is True, {
+              'error': 'ALL_STORE_PRODUCTION_CONTRACT_FAILED',
+              'status': all_store_status,
+              'body': all_store,
+          }
+          assert all_store.get('source') == 'store', all_store
+          assert isinstance(all_store.get('hits'), list), all_store
+
           history = None
           rows = []
           history_attempts = 0
@@ -150,6 +168,13 @@ jobs:
               'n_rejected': scan.get('n_rejected'),
               'n_exchange_pending': scan.get('n_exchange_pending'),
               'audit_event_id': audit_event_id,
+              'all_store_contract': {
+                  'ok': all_store.get('ok'),
+                  'source': all_store.get('source'),
+                  'n_sports_scanned': (all_store.get('status') or {}).get('n_sports_scanned'),
+                  'n_arbs': all_store.get('n_arbs'),
+                  'n_detected_unverified': all_store.get('n_detected_unverified'),
+              },
               'history_count': history.get('count'),
               'history_visibility_attempts': history_attempts,
               'selection_attempts': attempts,
