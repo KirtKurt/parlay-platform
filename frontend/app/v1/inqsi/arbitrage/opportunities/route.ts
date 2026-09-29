@@ -24,9 +24,12 @@ export async function GET(request: NextRequest) {
   const params = new URLSearchParams({
     markets: incoming.get('markets') || 'h2h,spreads,totals',
     bankroll: incoming.get('bankroll') || '1000',
-    source: 'auto',
+    // The production collector already maintains the multi-sport snapshot store.
+    // Read that snapshot instead of forcing the request path to fall through to
+    // a synchronous provider-wide live scan when one sport is not selected.
+    source: 'store',
   });
-  if (sport && sport.toLowerCase() !== 'all') params.set('sport', sport);
+  params.set('sport', sport && sport.toLowerCase() !== 'all' ? sport : 'all');
   const books = incoming.get('books');
   if (books) params.set('books', books);
   try {
