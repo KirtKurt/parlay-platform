@@ -183,6 +183,9 @@ def execute(source, output, *, s3=None, bucket=None, checkpoint=None, clock=None
     temperature, temperature_decision = fit_from_ledger(
         calibration_rows, previous=old_temperature, as_of=fitted_at,
         model_path=models/'temperature.json')
+    # fit_from_ledger may deliberately skip its own write when the ledger is
+    # unchanged; every disposable runner still needs a complete model bundle.
+    (models/'temperature.json').write_bytes(encode(temperature))
     platt, platt_decision = refit(calibration_rows, current_calibration_model(previous, 'platt'), fitted_at)
     state = {'system': 'KS1', 'status': 'completed', 'night_date': date,
              'completed_at': fitted_at, 'ledger': proof,
