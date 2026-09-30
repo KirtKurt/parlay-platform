@@ -1,17 +1,303 @@
 {
+  "allCurrentSlateCutoffsPassed": false,
   "blockers": [
-    "deploy_workflow_terminal_failure"
+    "scheduled_pull_observation_failed",
+    "timeout_not_600",
+    "memory_not_2048",
+    "deploy_sha_mismatch",
+    "lifecycle_storage_disposition_incomplete",
+    "new_scheduled_scoring_failure_after_deploy",
+    "scoring_guard_not_ready",
+    "qualified_champion_authority_not_verified"
   ],
-  "createdAtUtc": "2026-09-28T23:05:16.625277Z",
-  "deployWorkflowConclusion": "failure",
-  "deployWorkflowRunId": "36495810318",
-  "deployWorkflowRunUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/36495810318",
-  "deployedCommit": "f174abde7bc7fba976cebe3103291698d5267d3f",
-  "nonTerminalCancellationIsFailure": false,
+  "createdAtUtc": "2026-09-29T18:17:42.759446Z",
+  "deployedCommit": "deb30b1f32be5c244ed6ef5308ee4fedf1cf3605",
+  "deploymentBlockers": [
+    "scheduled_pull_observation_failed",
+    "timeout_not_600",
+    "memory_not_2048",
+    "deploy_sha_mismatch",
+    "lifecycle_storage_disposition_incomplete",
+    "new_scheduled_scoring_failure_after_deploy"
+  ],
+  "deploymentHealthy": false,
+  "deploymentSucceeded": true,
+  "historicalSlateAcceptedWithoutLateBackfill": false,
+  "lambdaConfiguration": {
+    "failure": {
+      "code": "fresh_scheduled_canonical_pull_missing",
+      "message": "fresh_scheduled_canonical_pull_missing",
+      "type": "RuntimeError"
+    },
+    "manualPullInvoked": false,
+    "ok": false,
+    "readOnly": true,
+    "secretExposed": false,
+    "status": "OBSERVATION_FAILED",
+    "targetDeploySha": "deb30b1f32be5c244ed6ef5308ee4fedf1cf3605",
+    "version": "MLB-POSTDEPLOY-SCHEDULED-PULL-OBSERVER-v1-no-manual-pull",
+    "winnerResults": []
+  },
+  "lifecycleSkippedCount": 0,
+  "lifecycleStorageDispositionComplete": false,
   "ok": false,
+  "openPreLockCandidateCount": 0,
+  "postDeployScheduledFailureCount": 24,
+  "postDeployScheduledFailures": [
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T16:30:26.469000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T16:31:23.685000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T16:32:23.704000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T16:45:26.477000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T16:46:24.722000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T16:47:23.874000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T17:00:26.611000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T17:01:24.837000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T17:02:23.652000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T17:15:26.616000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T17:16:23.853000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T17:17:23.750000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T17:30:26.452000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T17:31:20.673000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T17:32:23.714000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T17:45:26.540000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T17:46:24.768000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T17:47:23.635000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T18:00:26.401000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T18:01:30.612000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T18:02:23.660000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T18:15:26.487000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T18:16:32.705000+00:00"
+    },
+    {
+      "classifications": [
+        "PYTHON_TRACEBACK",
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-09-29T18:17:23.578000+00:00"
+    }
+  ],
+  "postDeployTimeoutCount": 0,
+  "postDeployTimeouts": [],
+  "productionAuthorityChanged": false,
+  "promotionReady": false,
   "proofType": "MLB_SCORING_FIX_POST_DEPLOY_ACCEPTANCE",
+  "readinessBlockers": [
+    "scoring_guard_not_ready",
+    "qualified_champion_authority_not_verified"
+  ],
+  "recoveredPostDeployScheduledFailureCount": 0,
+  "recoveredPostDeployScheduledFailures": [],
+  "runId": "36607810375",
+  "scheduledPullObservationFailure": {
+    "code": "fresh_scheduled_canonical_pull_missing",
+    "message": "fresh_scheduled_canonical_pull_missing",
+    "type": "RuntimeError"
+  },
+  "scoringBlockers": [
+    "OFFICIAL_ROSTER_NOT_RESOLVED",
+    "INSUFFICIENT_CANONICAL_PULL_HISTORY"
+  ],
   "scoringGuardPassed": false,
+  "scoringSummary": {
+    "canonicalPullCount": 0,
+    "fundamentalsAppliedCount": 0,
+    "fundamentalsNeutralOrSourceMissingCount": 0,
+    "fundamentalsNotActiveCount": 0,
+    "fundamentalsNotAppliedOrMissingCount": 0,
+    "fundamentalsShadowEvaluatedCount": 0,
+    "fundamentalsShadowInvalidCount": 0,
+    "fundamentalsShadowOnlyCount": 0,
+    "fundamentalsShadowOnlyNotActiveCount": 0,
+    "fundamentalsShadowWouldApplyCount": 0,
+    "fundamentalsSourceIncompleteCount": 0,
+    "fundamentalsUpstreamAppliedDetectedCount": 0,
+    "invalidMovementTeamCount": 0,
+    "invalidPredictionTeamCount": 0,
+    "latestCanonicalPullAtUtc": null,
+    "missingMovementCount": 0,
+    "missingPredictionCount": 0,
+    "movementFeatureGameCount": 0,
+    "officialGameCount": 0,
+    "persistedPredictionGameCount": 0,
+    "scoreableGameCount": 0
+  },
   "secretExposed": false,
-  "terminalDeployFailure": true,
-  "version": "MLB-SCORING-FIX-POST-DEPLOY-v2-terminal-failures-only"
+  "sourceDeployCreatedAtUtc": "2026-09-29T17:45:26Z",
+  "sourceDeployHeadBranch": "main",
+  "sourceDeployHeadSha": "deb30b1f32be5c244ed6ef5308ee4fedf1cf3605",
+  "sourceDeployRunAttempt": 1,
+  "sourceDeployRunId": "36607196160",
+  "sourceDeployRunNumber": 2789,
+  "sourceDeployRunUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/36607196160",
+  "sourceDeploySamCompletedAtUtc": "2026-09-29T17:50:15Z",
+  "sourceDeploySamStepConclusion": "success",
+  "sourceDeploySamStepName": "Deploy exact canonical source",
+  "sourceDeployWorkflowId": 231636316,
+  "sourceDeployWorkflowName": "Deploy SAM to AWS",
+  "sourceDeployWorkflowPath": ".github/workflows/deploy.yml",
+  "sourceSha": "ef5b8b74714b0cc0879ad21840ba00c46320341b",
+  "status": "DEPLOYMENT_UNHEALTHY",
+  "successfulScheduledObservationAtUtc": null,
+  "version": "MLB-SCORING-FIX-POST-DEPLOY-v3-health-readiness-separated"
 }

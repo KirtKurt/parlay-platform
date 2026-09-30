@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Analytics } from '@vercel/analytics/next';
 import { MemberLanguageGuard } from '@/components/MemberLanguageGuard';
 import { PartnerCapture } from '@/components/PartnerCapture';
 import { TrackingConsent } from '@/components/TrackingConsent';
@@ -8,6 +9,7 @@ import './inqsi-compat.css';
 import './tracking.css';
 import './inqsi-final-fixes.css';
 import './tool-workspace.css';
+import './approved-mockup.css';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://inqsi.app';
 const ogImage = '/og-inqsi.svg';
@@ -21,22 +23,19 @@ export const metadata: Metadata = {
   creator: 'InQsi',
   publisher: 'InQsi',
   title: {
-    default: 'InQsi | AI Slip Scanner, 3-Leg Builder & Sports Market Review',
+    default: 'InQsi | Sports Arbitrage & Bet Risk Intelligence',
     template: '%s | InQsi'
   },
   description:
-    'InQsi is a sports market review platform for members using an AI Slip Scanner, 3-leg slip builder, line movement review, best-line warnings, saved slips, and post-game accuracy scoring.',
+    'InQsi helps sports bettors find arbitrage opportunities and analyze wager risk using global sportsbook pricing, market movement, odds comparison, and independent sports intelligence.',
   keywords: [
     'InQsi',
-    'AI slip scanner',
-    'AI slip builder',
-    '3-leg parlay guide',
-    'parlay risk guide',
+    'bet risk scanner',
+    'sports bet risk analysis',
+    'global sportsbook odds',
     'line movement review',
     'sports market intelligence',
     'best line warning',
-    'parlay accuracy tracker',
-    'post-game slip review',
     'sports risk review',
     'sports arbitrage',
     'sports arbitrage finder',
@@ -53,15 +52,15 @@ export const metadata: Metadata = {
     type: 'website',
     url: siteUrl,
     siteName: 'InQsi',
-    title: 'InQsi | AI Slip Scanner & Sports Market Review',
+    title: 'InQsi | Find Opportunity. Find Risk.',
     description:
-      'Members can review slips before lock-in, cap builds at 3 legs, compare line movement, save slips, and track post-game accuracy.',
-    images: [{ url: ogImage, width: 1200, height: 630, alt: 'InQsi AI slip scanner and sports market review' }]
+      'Find sports arbitrage opportunities and scan selections for market, price and fundamentals risk across supported sports worldwide.',
+    images: [{ url: ogImage, width: 1200, height: 630, alt: 'InQsi sports arbitrage and bet risk intelligence' }]
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'InQsi | AI Slip Scanner & Sports Market Review',
-    description: 'AI slip scanner, 3-leg builder, line movement review, and post-game score tracking.',
+    title: 'InQsi | Find Opportunity. Find Risk.',
+    description: 'Global sports arbitrage, sportsbook odds comparison, market movement and bet risk intelligence.',
     images: [ogImage]
   },
   robots: {
@@ -94,12 +93,7 @@ const websiteJsonLd = {
   '@type': 'WebSite',
   name: 'InQsi',
   url: siteUrl,
-  description: 'Sports market review for AI slip scanning, 3-leg build discipline, line movement, best-line warnings, saved slips, and post-game scoring.',
-  potentialAction: {
-    '@type': 'SearchAction',
-    target: `${siteUrl}/sports?query={search_term_string}`,
-    'query-input': 'required name=search_term_string'
-  }
+  description: 'Global sports market intelligence for arbitrage discovery, sportsbook odds comparison, line movement and wager risk analysis.',
 };
 
 const softwareJsonLd = {
@@ -107,15 +101,9 @@ const softwareJsonLd = {
   '@type': 'SoftwareApplication',
   name: 'InQsi',
   applicationCategory: 'SportsApplication',
-  operatingSystem: 'Web, iOS, Android',
+  operatingSystem: 'Web',
   url: siteUrl,
-  description: 'Sports market review application for AI slip scanning, 3-leg slip building, line movement review, saved slips, best-line warnings, public score cards, and post-game accuracy tracking.',
-  offers: {
-    '@type': 'Offer',
-    price: '0',
-    priceCurrency: 'USD',
-    description: '5-day free promo'
-  }
+  description: 'Sports market intelligence application for arbitrage discovery, sportsbook odds comparison, market movement and wager risk analysis.',
 };
 
 const productJsonLd = {
@@ -125,13 +113,7 @@ const productJsonLd = {
   brand: { '@type': 'Brand', name: 'InQsi' },
   category: 'Sports analytics software',
   url: siteUrl,
-  description: 'InQsi helps members scan slips, build disciplined 3-leg slips, review line movement, check best-line warnings, save public or private slips, and track post-game score accuracy.',
-  offers: {
-    '@type': 'Offer',
-    priceCurrency: 'USD',
-    availability: 'https://schema.org/OnlineOnly',
-    url: `${siteUrl}/pricing`
-  }
+  description: 'InQsi helps users find sports arbitrage opportunities and analyze wager risk using sportsbook pricing, line movement and sports intelligence.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -151,6 +133,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <PartnerCapture />
         {children}
         <TrackingConsent />
+        <Analytics />
       </body>
     </html>
   );

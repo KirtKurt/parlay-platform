@@ -1,30 +1,33 @@
 import type { Metadata } from 'next';
-import { InqsiSeoPage } from '@/components/InqsiSeoPage';
+import Link from 'next/link';
+import { AppHeader } from '@/components/AppHeader';
 
 export const metadata: Metadata = {
   title: 'Pricing',
-  description: 'Start InQsi with 5 days free and one $38 monthly full-access membership.',
+  description: 'InQsi pricing for ARB and Slip Scanner.',
   alternates: { canonical: '/pricing' }
 };
 
 export default function PricingPage() {
   return (
-    <InqsiSeoPage
-      path="/pricing"
-      eyebrow="5 days free"
-      title="One package. Full access. $38/month."
-      intro="Start with 5 days free. After that, InQsi is one simple $38 monthly membership with access to the scanner, sports boards, alerts, watchlists, and market review tools."
-      sections={[
-        { title: '$38/month', copy: 'One full-access monthly membership. No confusing tiers.' },
-        { title: 'AI Slip Scanner', copy: 'Bring the picks you already like and check where the slip may be weaker than it feels.' },
-        { title: 'Market boards', copy: 'Review sports boards, game leans, market signals, best lines, and movement context.' },
-        { title: '5-day promo', copy: 'Try the workspace first, then decide whether InQsi earns a place in your routine.' }
-      ]}
-      faqs={[
-        { question: 'Are there multiple tiers?', answer: 'No. InQsi uses one full-access monthly package.' },
-        { question: 'What is the monthly price?', answer: '$38 per month after the 5-day promo.' },
-        { question: 'What should I try first?', answer: 'Start with the AI Slip Scanner, then review the sports board for the games you care about.' }
-      ]}
-    />
+    <main className="mockup-site">
+      <AppHeader active="pricing" />
+      <section className="pricing-approved">
+        <article className="pricing-card">
+          <span className="mockup-eyebrow">Simple membership</span>
+          <h1>One package.<br/><span>Full access.</span></h1>
+          <p>Use InQsi ARB to find mathematical pricing opportunities and Slip Scanner to inspect the risk around selections you are considering.</p>
+          <div className="pricing-price"><strong>$38</strong><span>/ month</span></div>
+          <div className="pricing-features">
+            <div><b>ARB</b><span>Live arbitrage discovery, stake allocation, sportsbook price comparison and market detail when qualifying live prices exist.</span></div>
+            <div><b>Slip Scanner</b><span>Structured sport → game → selection workflow with concise risk analysis and deeper context where qualified intelligence exists.</span></div>
+            <div><b>Worldwide coverage</b><span>Provider-driven sports and competition support rather than a fixed list of leagues.</span></div>
+            <div><b>One account</b><span>Access the public InQsi product suite from one membership.</span></div>
+          </div>
+          <Link className="mockup-cta" href="/register">Start membership →</Link>
+          <p className="pricing-note">InQsi does not place wagers or guarantee outcomes. Live features depend on current sportsbook/provider availability.</p>
+        </article>
+      </section>
+    </main>
   );
 }

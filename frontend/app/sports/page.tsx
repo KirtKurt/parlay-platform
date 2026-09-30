@@ -1,47 +1,33 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
-import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
-import { GameCard } from '@/components/GameCard';
-import { sports } from '@/lib/sports';
+import { getSeoCoverage } from '@/lib/seoCoverage';
+import { coveragePath,familyLabel,isIndexableCoverage } from '@/lib/globalSports';
 
-export default async function SportsPage() {
-  const { games, apiStatus, apiDetail } = await getApiSnapshot();
-  const activeGames = games.slice(0, 8);
+export const dynamic='force-dynamic';
+export const metadata:Metadata={
+  title:'Global Sports Odds, Arbitrage & Risk Coverage',
+  description:'Browse current InQsi sports and competition coverage worldwide for sportsbook odds, arbitrage discovery and wager risk analysis.',
+  alternates:{canonical:'/sports'}
+};
 
-  return (
-    <main className="shell">
-      <AppHeader title="Sports Market Board" apiStatus={apiStatus} apiDetail={apiDetail} />
-
-      <section className="panel" style={{ marginBottom: 18 }}>
-        <div className="panel-header compact">
-          <div>
-            <p className="eyebrow blue">All sports included</p>
-            <h2 style={{ margin: 0 }}>Sports Market Board</h2>
-            <p className="movement" style={{ marginBottom: 0 }}>One membership opens every supported sport.</p>
-          </div>
-          <span className="data-status">{apiStatus === 'CONNECTED' ? 'Live' : 'Syncing'}</span>
-        </div>
-      </section>
-
-      <nav className="inqsi-tabs" aria-label="Sports boards">
-        {sports.map((sport) => <Link href={`/sports/${sport.slug}`} key={sport.slug}>{sport.label}</Link>)}
-      </nav>
-
-      <section className="status-row">
-        <article className="status-card"><span>Active Games</span><strong>{activeGames.length}</strong><p>Visible games from the board feed.</p></article>
-        <article className="status-card"><span>Markets</span><strong>ML / Spread / O-U</strong><p>Core markets visible on every game card.</p></article>
-        <article className="status-card"><span>Sports</span><strong>{sports.length}</strong><p>Supported boards in one membership.</p></article>
-        <article className="status-card"><span>Status</span><strong>{apiStatus === 'CONNECTED' ? 'Live' : 'Syncing'}</strong><p>{apiDetail}</p></article>
-      </section>
-
-      <section className="panel">
-        <div className="panel-header"><div><p className="eyebrow">Live Snapshot</p><h3>All active markets</h3></div><Link className="ghost-button" href="/parlays">Parlays</Link></div>
-        <div className="game-list">
-          {activeGames.length ? activeGames.map((game) => <GameCard game={game} key={game.id} />) : (
-            <article className="game-card"><div className="game-topline"><span className="league-chip">SYNCING</span><span className="data-status">Waiting</span></div><h4>Waiting for market-board data</h4><p className="movement">Active games will show moneyline, spread, over/under, start time, and market signal status.</p></article>
-          )}
-        </div>
-      </section>
-    </main>
-  );
+export default async function SportsPage(){
+ const {sports,apiStatus}=await getSeoCoverage();
+ const rows=sports.filter(r=>isIndexableCoverage({nEvents:r.eventCount,bookCount:r.bookCount}))
+   .map(r=>({key:r.providerKey,events:r.eventCount,books:r.bookCount,family:r.family,geoLabel:r.geoLabel,label:r.label}))
+   .sort((a,b)=>a.family.localeCompare(b.family)||a.geoLabel.localeCompare(b.geoLabel)||a.label.localeCompare(b.label));
+ const families=Array.from(new Set(rows.map(r=>r.family)));
+ const waiting=apiStatus!=='CONNECTED';
+ return <main className="mockup-site">
+  <AppHeader active="sports" apiStatus={waiting?'WAITING':'CONNECTED'} apiDetail={waiting?'Live sports provider feed is syncing':'Live market coverage connected'} />
+  {waiting&&<div className="mockup-unavailable">Live odds temporarily unavailable · sports coverage will repopulate automatically when the provider feed returns</div>}
+  <section className="sports-approved">
+   <header className="mockup-section-head">
+    <div><span className="mockup-eyebrow">Worldwide coverage</span><h1>Global sports market coverage</h1><p>InQsi follows the current provider catalog instead of a fixed league list. Competitions appear here only when current normalized market data is available.</p></div>
+    <span className={'mockup-live-chip '+(waiting?'waiting':'')}>{waiting?'Syncing':'Live'}</span>
+   </header>
+   {families.map(f=><section className="sports-family" key={f}><h2>{familyLabel(f)}</h2><div className="sports-grid">{rows.filter(r=>r.family===f).map(r=><Link className="sports-link" href={coveragePath(r.key)} key={r.key}><small>{r.geoLabel}</small><strong>{r.label}</strong><span>{r.events} current event{r.events===1?'':'s'} · up to {r.books} books</span></Link>)}</div></section>)}
+   {!rows.length&&<div className="mockup-empty"><div><b>Coverage is syncing</b><span>No sample leagues or events are substituted while the provider feed is unavailable. The worldwide catalog will return here automatically when live data resumes.</span></div></div>}
+  </section>
+ </main>;
 }
