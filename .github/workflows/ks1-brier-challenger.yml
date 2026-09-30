@@ -1,0 +1,52 @@
+name: KS1 Brier challenger benchmark
+on:
+  pull_request:
+    paths:
+      - 'ks1/brier_objective.py'
+      - 'ks1/train_brier.py'
+      - 'tests/ks1/test_brier_objective.py'
+      - 'tests/ks1_brier/**'
+      - '.github/workflows/ks1-brier-challenger.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  challenger:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r ks1/requirements.txt lightgbm==4.6.0 scikit-learn==1.6.1 'pytest>=8,<9'
+      - run: python -m pytest -q tests/ks1/test_brier_objective.py tests/ks1_brier
+      - uses: actions/download-artifact@v4
+        with:
+          name: ks1-recent-34789382041
+          run-id: 34789382041
+          github-token: ${{ github.token }}
+          path: /tmp/ks1-brier-input
+      - uses: actions/download-artifact@v4
+        with:
+          name: ks1-phase2-34431359524
+          run-id: 34431359524
+          github-token: ${{ github.token }}
+          path: /tmp/ks1-brier-incumbent
+      - name: Verify frozen input and benchmark without AWS or serving writes
+        run: |
+          echo '799a2ac70d2102b7746afe91953042a86dca5bd07468626d4d10e2c95071e739  /tmp/ks1-brier-input/input_table.parquet' | sha256sum --check
+          python -m ks1.train_brier --input /tmp/ks1-brier-input/input_table.parquet --incumbent-model /tmp/ks1-brier-incumbent/model.txt --output /tmp/ks1-brier-result
+          git diff --exit-code
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ks1-brier-${{ github.event.pull_request.head.sha }}
+          path: /tmp/ks1-brier-result/
+          if-no-files-found: error
+          retention-days: 90
