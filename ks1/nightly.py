@@ -176,11 +176,13 @@ def execute(source, output, *, s3=None, bucket=None, checkpoint=None, clock=None
     fitted_at = (clock() if clock else datetime.now(timezone.utc)).isoformat()
     if utc(fitted_at) < utc(source['as_of']):
         raise ValueError('calibration clock precedes source capture')
+    models = output/'data/models'
+    models.mkdir(parents=True, exist_ok=True)
     old_temperature = current_calibration_model(previous, 'temperature')
     calibration_rows = [r for r in rows if r['raw_model_version'] == raw_model_version()]
     temperature, temperature_decision = fit_from_ledger(
         calibration_rows, previous=old_temperature, as_of=fitted_at,
-        model_path=output/'data/models/temperature.json')
+        model_path=models/'temperature.json')
     platt, platt_decision = refit(calibration_rows, current_calibration_model(previous, 'platt'), fitted_at)
     state = {'system': 'KS1', 'status': 'completed', 'night_date': date,
              'completed_at': fitted_at, 'ledger': proof,
@@ -189,7 +191,7 @@ def execute(source, output, *, s3=None, bucket=None, checkpoint=None, clock=None
     if publish:
         commit_json(s3, bucket, prefix+'calibration_state.json', state)
     (output/'calibration_state.json').write_bytes(encode(state))
-    (output/'data/models/platt.json').write_bytes(encode(platt))
+    (models/'platt.json').write_bytes(encode(platt))
     report = {'status': 'completed', 'published': publish, 'night_date': date,
               'ledger_rows': len(rows), 'new_grades': ledger['new_grades'],
               'ledger_readback_verified_before_fit': True,
