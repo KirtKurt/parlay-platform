@@ -22,4 +22,6 @@ Confirmed 2026-10-01T03:39Z run 36811490145 (schedule 965): ingest failed Refres
 
 Confirmed 2026-10-01T04:33Z run 36815700912 (schedule 967): ingest failed Refresh KS1 lineups (~10m); live_inputs ValueError provider capture failed; Odds 401; BBS 200 (2+2); nightly ks1-nightly-36815700912 present (status not_due_or_already_completed); loss_trace ledger 227 analyzed 179 wins 109 losses 70; no ks1-daily / predictions.parquet. No BBS-identity slate kill. Watchdog not started. No dispatch.
 
-Isolate lives on this branch only. Do not merge without Kurt. Do not patch main.
+Confirmed 2026-10-01T07:38Z run 36831494895 (schedule 974, ~8m46s, failure): ingest failed live_inputs ValueError provider capture failed; Odds 401 on baseball_mlb/odds; BBS 200 (3 matches, date window 2026-10-02); nightly ks1-nightly-36831494895 present (status no_new_final_grades, official Brier 0.235617813837353, n=227, new_grades=0, locked_rows=228, excluded 823490 no_bound_final); loss_trace already_published date=2026-10-01 (analyzed 179, wins 109, losses 70); ks1-daily missing (no predictions.parquet). No BBS-identity slate kill. Watchdog not started. No dispatch.
+
+Isolate lives on this branch only (odds_failure_is_isolatable 401/403/missing-key; empty odds.json; 429/5xx/BBS/official remain hard). Do not merge without Kurt. Do not patch main.
