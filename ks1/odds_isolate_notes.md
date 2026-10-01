@@ -16,4 +16,6 @@ Confirmed 2026-09-30T19:35Z run 36765663841 (schedule 950): ingest failed Refres
 
 Confirmed 2026-09-30T23:26Z run 36791080224 (schedule 958): ingest failed Refresh KS1 lineups; live_inputs ValueError provider capture failed; Odds 401; BBS 200 (6+2); nightly ks1-nightly-36791080224 present (Brier 0.235617813837353, n=227, new_grades=0, locked_rows=228, excluded 823490 no_bound_final); no ks1-daily / predictions.parquet. No BBS-identity slate kill.
 
+Confirmed 2026-10-01T02:46Z run 36807433185 (schedule 963): ingest failed Refresh KS1 lineups; live_inputs ValueError provider capture failed; Odds 401; BBS 200 (6+2); nightly ks1-nightly-36807433185 present; loss_trace already_published date=2026-09-30 (ledger 227, analyzed 179, wins 109, losses 70); no ks1-daily / predictions.parquet. No BBS-identity slate kill.
+
 Isolate lives on this branch only. Do not merge without Kurt. Do not patch main.
