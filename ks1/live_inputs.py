@@ -35,6 +35,19 @@ class ProviderFailure(ValueError):
         super().__init__(json.dumps(receipt, sort_keys=True))
 
 
+# Odds auth/quota misses must not kill the official slate. BBS schema,
+# truncation, duplicate identity, and non-odds provider failures stay fatal.
+DEGRADABLE_ODDS_STATUSES = {401, 403, "ODDS_API_KEY_MISSING"}
+
+
+def odds_degraded(receipt):
+    return isinstance(receipt, dict) and receipt.get("provider") == "odds" and receipt.get("status") in DEGRADABLE_ODDS_STATUSES
+
+
+def fatal_provider_errors(errors):
+    return [receipt for receipt in errors if not odds_degraded(receipt)]
+
+
 def fetch(provider, base, path, params, *, key=None, opener=urlopen):
     headers = {'Accept': 'application/json', 'User-Agent': 'KS1-daily/1.0'}
     query = dict(params)
@@ -164,6 +177,9 @@ def capture(target_date, output):
         except ProviderFailure as exc:
             errors.append(exc.receipt)
             print(json.dumps(exc.receipt))
+            if odds_degraded(exc.receipt):
+                # Empty market book. Daily may score official games and sit market gates.
+                (output / (provider+".json")).write_bytes(encode({"payload": [], "receipt": exc.receipt, "degraded": True}))
     # Existing repository source. One bulk schedule call supplies official IDs
     # and probable pitchers: the documented BBS stored lineup route is empty.
     _, s3, bucket = aws_clients('us-east-1', 'parlay-platform-dev')
@@ -238,7 +254,8 @@ def capture(target_date, output):
                           if p.is_file() and p.name != 'capture.json'}}
     (output / 'capture.json').write_bytes(encode(manifest))
     print(json.dumps(manifest))
-    if errors:
+    fatal = fatal_provider_errors(errors)
+    if fatal:
         raise ValueError('provider capture failed; see redacted receipts')
 
 
