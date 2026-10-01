@@ -231,6 +231,18 @@ def test_next_night_retains_grades_and_parameters_without_today_predictions(main
     assert len(captured['committed_ledger']['rows']) == 35
 
 
+def test_unchanged_ledger_creates_fresh_model_output_directory(main_job, tmp_path):
+    store = Store()
+    run(source(), tmp_path/'first', store)
+    old = checkpoint(store)
+    tomorrow = '2026-09-12T07:00:00+00:00'
+    output = tmp_path/'fresh-output'
+    report = run(source(0, tomorrow), output, store, old)
+    assert report['temperature_decision']['status'] == 'unchanged_ledger_no_refit'
+    assert (output/'data/models/temperature.json').is_file()
+    assert (output/'data/models/platt.json').is_file()
+
+
 def test_minimum_30_and_corrections_do_not_rewrite_grades(main_job, tmp_path):
     store = Store()
     run(source(29), tmp_path, store)
