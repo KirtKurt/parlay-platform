@@ -29,3 +29,14 @@ def test_bbs_truncation_and_identity_remain_fatal():
 def test_bbs_provider_failure_remains_fatal():
     errors = [{"provider": "bbs", "status": 401}]
     assert fatal_provider_errors(errors) == errors
+
+
+def test_degraded_odds_file_matches_daily_hash_contract():
+    from ks1.inventory import encode
+    import hashlib
+    from ks1.live_inputs import degraded_odds_file
+    record = degraded_odds_file({"provider": "odds", "status": 401, "endpoint": "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds", "body_shape": {"message": "str"}}, as_of="2026-10-01T14:37:54+00:00")
+    assert record["payload"] == []
+    assert record["receipt"]["sha256"] == hashlib.sha256(encode(record["payload"])).hexdigest()
+    assert record["receipt"]["as_of"] == "2026-10-01T14:37:54+00:00"
+    assert record["degraded"] is True

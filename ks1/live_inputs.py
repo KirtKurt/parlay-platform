@@ -48,6 +48,28 @@ def fatal_provider_errors(errors):
     return [receipt for receipt in errors if not odds_degraded(receipt)]
 
 
+
+def degraded_odds_file(receipt, as_of=None):
+    """Empty Odds book whose payload hash and as_of satisfy daily load_inputs."""
+    payload = []
+    body = encode(payload)
+    stamped = as_of or datetime.now(timezone.utc).isoformat()
+    return {
+        "payload": payload,
+        "degraded": True,
+        "receipt": {
+            "provider": "odds",
+            "endpoint": receipt.get("endpoint"),
+            "status": receipt.get("status"),
+            "as_of": stamped,
+            "sha256": hashlib.sha256(body).hexdigest(),
+            "body_shape": shape(payload),
+            "degraded": True,
+            "error_body_shape": receipt.get("body_shape"),
+        },
+    }
+
+
 def fetch(provider, base, path, params, *, key=None, opener=urlopen):
     headers = {'Accept': 'application/json', 'User-Agent': 'KS1-daily/1.0'}
     query = dict(params)
@@ -178,8 +200,9 @@ def capture(target_date, output):
             errors.append(exc.receipt)
             print(json.dumps(exc.receipt))
             if odds_degraded(exc.receipt):
-                # Empty market book. Daily may score official games and sit market gates.
-                (output / (provider+".json")).write_bytes(encode({"payload": [], "receipt": exc.receipt, "degraded": True}))
+                # Empty market book with a receipt that daily hash/age checks accept.
+                # Official games still score; market gates sit. No p_home rewrite.
+                (output / (provider+".json")).write_bytes(encode(degraded_odds_file(exc.receipt)))
     # Existing repository source. One bulk schedule call supplies official IDs
     # and probable pitchers: the documented BBS stored lineup route is empty.
     _, s3, bucket = aws_clients('us-east-1', 'parlay-platform-dev')
