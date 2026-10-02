@@ -29,6 +29,22 @@ def shape(value, depth=0):
     return type(value).__name__
 
 
+
+def odds_auth_unavailable(receipt):
+    """401/missing key cannot supply a market. Do not kill official scoring."""
+    return (isinstance(receipt, dict) and receipt.get("provider") == "odds"
+            and receipt.get("status") in (401, 403, "ODDS_API_KEY_MISSING"))
+
+
+def degraded_odds_capture(receipt):
+    """Empty odds catalogue. Daily already treats missing markets as unavailable."""
+    payload = []
+    stamped = {**receipt, "as_of": datetime.now(timezone.utc).isoformat(),
+               "sha256": hashlib.sha256(encode(payload)).hexdigest(),
+               "degraded": "odds_auth_unavailable", "market_status": "unavailable"}
+    return {"payload": payload, "receipt": stamped}
+
+
 class ProviderFailure(ValueError):
     def __init__(self, receipt):
         self.receipt = receipt
@@ -162,6 +178,11 @@ def capture(target_date, output):
             (output / (provider+'.json')).write_bytes(encode(value))
             print(json.dumps(value['receipt']))
         except ProviderFailure as exc:
+            if odds_auth_unavailable(exc.receipt):
+                value = degraded_odds_capture(exc.receipt)
+                (output / "odds.json").write_bytes(encode(value))
+                print(json.dumps(value["receipt"]))
+                continue
             errors.append(exc.receipt)
             print(json.dumps(exc.receipt))
     # Existing repository source. One bulk schedule call supplies official IDs
