@@ -91,8 +91,12 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
                 body_shape = 'non_json'
             receipt = {'provider': provider, 'endpoint': base+path, 'status': exc.code, 'body_shape': body_shape}
             # Never log URL/query/header strings: Odds credentials live in query.
-            if exc.code == 429:
-                raise ProviderFailure(receipt) from None
+            # One bounded retry. BBS 429 is retryable and was killing the slate
+            # before daily publish. A second 429 stays a hard capture error.
+            # Do not substitute a stale catalogue or rewrite p_home.
+            if exc.code == 429 and attempt == 0:
+                time.sleep(2)
+                continue
             if exc.code >= 500 and attempt == 0:
                 time.sleep(1)
                 continue
