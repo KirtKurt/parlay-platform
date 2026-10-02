@@ -2,13 +2,15 @@
 
 promoted=false. No official train. No KS1 p_home, lock, ledger, or SCHEMA write.
 
-Source: ks1-nightly-36969143101 loss_trace (diagnostic only) and committed ledger.
+Source: ks1-nightly-36995669166 loss_trace (diagnostic only) and committed ledger metrics. Did not rewrite the ledger.
 
-- Official ledger: Brier 0.235618, logloss 0.664471, n=227 graded. new_grades=0 this tick. locked_rows=228. excluded game 823490 no_bound_final.
-- Loss-trace sample (as_of 2026-10-01): 70 losses / 109 wins in contribution summary.
-- Decision influence on losses: starter 71.9%, team_form 16.0%, market 8.5%, bullpen 3.5%.
-- Same groups on wins: starter 66.8%, team_form 15.5%, market 13.9%, bullpen 3.7%. Market influence is weaker on losses than wins; starter remains the dominant miss channel.
-- Pattern SELECTED_STARTER_RECENT_DETERIORATION: support 72, loss rate 0.333, lift vs sample -0.058 (not a retrain signal).
-- Pattern OPPONENT_STARTER_RECENT_IMPROVEMENT: support 67, loss rate 0.358, lift vs sample -0.033 (not a retrain signal).
+- Official ledger (nightly report 36995669166, as_of 2026-10-02T10:33:37Z): Brier 0.235618, logloss 0.664471, n=227. new_grades=0. status=no_new_final_grades. published=false. trained_LightGBM=false.
+- Loss-trace sample (as_of 2026-10-02T06:34:10Z): 179 non-holdout rows, 70 losses / 109 wins. frozen holdout excluded=48. committed_ledger_rows=227.
+- Decision influence on losses: starter 71.9%, team_form 16.0%, market 8.5%, bullpen 3.5%. Market influence remains weaker on losses than wins. Not a retrain signal.
 
-Next shadow-only step: chronological walk-forward of Elo/Markov/market-prior vs frozen KS1 p_home on the graded ledger. Do not promote. Do not fit a new official model.
+Chronological split of the same 179 settled selected-side probabilities (shadow diagnostic, not a new model):
+- Early 2026-09-14 to 2026-09-20: n=89, selected-side Brier 0.228190, wins 56, loss starter influence 72.8%, market 7.6%.
+- Late 2026-09-20 to 2026-09-27: n=90, selected-side Brier 0.237397, wins 53, loss starter influence 71.2%, market 9.3%.
+- Late window is slightly worse. Starter remains the miss channel. Do not promote. Do not fit Elo/GLM on official labels this tick (graded row payloads are not in the hourly artifact).
+
+Next shadow-only step: attach Elo/Markov/market-prior to frozen KS1 p_home only after graded_ledger rows are read without write. Do not promote.
