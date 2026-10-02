@@ -45,6 +45,20 @@ def degraded_odds_capture(receipt):
     return {"payload": payload, "receipt": stamped}
 
 
+def bbs_rate_limited(receipt):
+    """429 cannot supply identities. Do not kill the official slate."""
+    return isinstance(receipt, dict) and receipt.get("provider") == "bbs" and receipt.get("status") == 429
+
+
+def degraded_bbs_capture(receipt):
+    """Empty BBS catalogue. Daily isolate path excludes official games as missing_bbs_identity."""
+    payload = {"data": []}
+    stamped = {**receipt, "as_of": datetime.now(timezone.utc).isoformat(),
+               "sha256": hashlib.sha256(encode(payload)).hexdigest(),
+               "degraded": "bbs_rate_limited", "identity_status": "missing_bbs_identity"}
+    return {"payload": payload, "receipt": stamped}
+
+
 class ProviderFailure(ValueError):
     def __init__(self, receipt):
         self.receipt = receipt
@@ -63,7 +77,7 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
             raise ProviderFailure({'provider': provider, 'status': 'ODDS_API_KEY_MISSING', 'body_shape': None})
         query['apiKey'] = key
     request = Request(base + path + '?' + urlencode(query), headers=headers)
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             with opener(request, timeout=25) as response:
                 body = response.read(30_000_001)
@@ -91,6 +105,9 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
                 body_shape = 'non_json'
             receipt = {'provider': provider, 'endpoint': base+path, 'status': exc.code, 'body_shape': body_shape}
             # Never log URL/query/header strings: Odds credentials live in query.
+            if exc.code == 429 and attempt < 2:
+                time.sleep(2 * (attempt + 1))
+                continue
             if exc.code == 429:
                 raise ProviderFailure(receipt) from None
             if exc.code >= 500 and attempt == 0:
@@ -169,7 +186,12 @@ def capture(target_date, output):
         bbs = bbs_catalogue(target_date, official_games, os.environ.get('BBS_API_KEY'))
         (output / 'bbs.json').write_bytes(encode(bbs)); print(json.dumps(bbs['receipt']))
     except ProviderFailure as exc:
-        errors.append(exc.receipt); print(json.dumps(exc.receipt))
+        if bbs_rate_limited(exc.receipt):
+            bbs = degraded_bbs_capture(exc.receipt)
+            (output / 'bbs.json').write_bytes(encode(bbs))
+            print(json.dumps(bbs['receipt']))
+        else:
+            errors.append(exc.receipt); print(json.dumps(exc.receipt))
     calls = [('odds', 'https://api.the-odds-api.com', '/v4/sports/baseball_mlb/odds',
               {'regions': 'us', 'markets': 'h2h,spreads,totals', 'oddsFormat': 'american'}, os.environ.get('ODDS_API_KEY'))]
     for provider, base, path, params, key in calls:
