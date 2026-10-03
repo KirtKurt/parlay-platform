@@ -51,7 +51,7 @@ class ProviderFailure(ValueError):
         super().__init__(json.dumps(receipt, sort_keys=True))
 
 
-def fetch(provider, base, path, params, *, key=None, opener=urlopen):
+def fetch(provider, base, path, params, *, key=None, opener=urlopen, sleeper=time.sleep):
     headers = {'Accept': 'application/json', 'User-Agent': 'KS1-daily/1.0'}
     query = dict(params)
     if provider == 'bbs':
@@ -91,15 +91,19 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
                 body_shape = 'non_json'
             receipt = {'provider': provider, 'endpoint': base+path, 'status': exc.code, 'body_shape': body_shape}
             # Never log URL/query/header strings: Odds credentials live in query.
+            # One bounded BBS retry. A second 429 still fails the capture.
+            if exc.code == 429 and provider == 'bbs' and attempt == 0:
+                sleeper(2)
+                continue
             if exc.code == 429:
                 raise ProviderFailure(receipt) from None
             if exc.code >= 500 and attempt == 0:
-                time.sleep(1)
+                sleeper(1)
                 continue
             raise ProviderFailure(receipt) from None
         except (URLError, TimeoutError, OSError):
             if attempt == 0:
-                time.sleep(1)
+                sleeper(1)
                 continue
             raise ProviderFailure({'provider': provider, 'status': 'NETWORK_ERROR', 'body_shape': None}) from None
 
