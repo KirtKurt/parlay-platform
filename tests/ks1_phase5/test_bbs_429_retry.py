@@ -1,4 +1,4 @@
-"""BBS 429 gets one retry. A second 429 still fails the capture."""
+"""BBS 429 gets two retries. A third 429 still fails the capture."""
 from io import BytesIO
 from urllib.error import HTTPError
 
@@ -34,21 +34,23 @@ class Scripted:
         return Response()
 
 
-def test_bbs_429_retries_once():
-    opener = Scripted([429, 200])
+def test_bbs_429_retries_twice():
+    opener = Scripted([429, 429, 200])
+    sleeps = []
     result = fetch('bbs', 'https://api.bigballsdata.com', '/v1/matches', {'date': '2026-10-03'},
-                   key='k', opener=opener, sleeper=lambda _seconds: None)
+                   key='k', opener=opener, sleeper=sleeps.append)
     assert result['receipt']['status'] == 200
-    assert opener.calls == 2
+    assert opener.calls == 3
+    assert sleeps == [15, 15]
 
 
-def test_second_bbs_429_still_fails():
-    opener = Scripted([429, 429])
+def test_third_bbs_429_still_fails():
+    opener = Scripted([429, 429, 429])
     with pytest.raises(ProviderFailure) as exc:
         fetch('bbs', 'https://api.bigballsdata.com', '/v1/matches', {'date': '2026-10-03'},
               key='k', opener=opener, sleeper=lambda _seconds: None)
     assert exc.value.receipt['status'] == 429
-    assert opener.calls == 2
+    assert opener.calls == 3
 
 
 def test_odds_429_does_not_retry():
