@@ -45,6 +45,27 @@ def degraded_odds_capture(receipt):
     return {"payload": payload, "receipt": stamped}
 
 
+def bbs_unavailable(receipt):
+    """429/transport/missing key is an empty catalogue, not an identity collision.
+
+    Truncation and schema errors set receipt['error'] and stay fatal.
+    """
+    return (isinstance(receipt, dict) and receipt.get("provider") == "bbs"
+            and not receipt.get("error")
+            and receipt.get("status") in (429, "NETWORK_ERROR", "BBS_API_KEY_MISSING"))
+
+
+def degraded_bbs_capture(receipt):
+    """Empty BBS data array. Daily isolate-skip records missing_bbs_identity."""
+    if not bbs_unavailable(receipt):
+        raise ValueError("refusing to degrade a non-unavailable BBS receipt")
+    payload = {"data": []}
+    stamped = {**receipt, "as_of": datetime.now(timezone.utc).isoformat(),
+               "sha256": hashlib.sha256(encode(payload)).hexdigest(),
+               "degraded": "bbs_unavailable", "match_catalogue": "empty"}
+    return {"payload": payload, "receipt": stamped}
+
+
 class ProviderFailure(ValueError):
     def __init__(self, receipt):
         self.receipt = receipt
@@ -169,7 +190,13 @@ def capture(target_date, output):
         bbs = bbs_catalogue(target_date, official_games, os.environ.get('BBS_API_KEY'))
         (output / 'bbs.json').write_bytes(encode(bbs)); print(json.dumps(bbs['receipt']))
     except ProviderFailure as exc:
-        errors.append(exc.receipt); print(json.dumps(exc.receipt))
+        if bbs_unavailable(exc.receipt):
+            bbs = degraded_bbs_capture(exc.receipt)
+            (output / 'bbs.json').write_bytes(encode(bbs))
+            print(json.dumps(bbs['receipt']))
+        else:
+            errors.append(exc.receipt)
+            print(json.dumps(exc.receipt))
     calls = [('odds', 'https://api.the-odds-api.com', '/v4/sports/baseball_mlb/odds',
               {'regions': 'us', 'markets': 'h2h,spreads,totals', 'oddsFormat': 'american'}, os.environ.get('ODDS_API_KEY'))]
     for provider, base, path, params, key in calls:
