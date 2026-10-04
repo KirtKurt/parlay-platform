@@ -112,6 +112,10 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
                 body_shape = 'non_json'
             receipt = {'provider': provider, 'endpoint': base+path, 'status': exc.code, 'body_shape': body_shape}
             # Never log URL/query/header strings: Odds credentials live in query.
+            if exc.code == 429 and provider == 'bbs' and attempt == 0:
+                # One bounded retry for a minute-bucket 429. Still degrade if it persists.
+                time.sleep(2)
+                continue
             if exc.code == 429:
                 raise ProviderFailure(receipt) from None
             if exc.code >= 500 and attempt == 0:

@@ -37,3 +37,5 @@ def test_capture_degrades_bbs_before_failing_the_slate():
     assert "if bbs_unavailable(exc.receipt):" in source
     assert "degraded_bbs_capture" in source
     assert "provider capture failed; see redacted receipts" in source
+    assert "exc.code == 429 and provider == 'bbs' and attempt == 0" in source
+    assert "time.sleep(2)" in source
