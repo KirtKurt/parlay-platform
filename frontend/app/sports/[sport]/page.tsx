@@ -19,11 +19,13 @@ export default async function SportPage({ params }: { params: { sport: string } 
   const { games, rankings, apiStatus, apiDetail } = await getApiSnapshot(sport.slug);
   const visibleGames = games.filter((game) => getSportSlugForLeague(game.league || game.sport_key) === sport.slug);
   const hasMarketData = visibleGames.length > 0;
-  const nowLabel = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date());
+  const hasRankings = Boolean(rankings?.length);
+  const nowLabel = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York', timeZoneName: 'short' }).format(new Date());
+  const statusDetail = apiDetail && /https?:\/\//.test(apiDetail) ? 'Waiting on live board games' : (apiDetail || 'Market board is loading.');
 
   return (
     <main className="shell">
-      <AppHeader title={sport.title} apiStatus={apiStatus} apiDetail={apiDetail} />
+      <AppHeader title={sport.title} apiStatus={apiStatus} apiDetail={statusDetail} />
 
       <nav className="inqsi-tabs" aria-label="Sports market navigation">
         {sports.map((item) => <Link className={item.slug === sport.slug ? 'active' : ''} href={`/sports/${item.slug}`} key={item.slug}>{item.label}</Link>)}
@@ -43,7 +45,7 @@ export default async function SportPage({ params }: { params: { sport: string } 
       <section className="status-row">
         <article className="status-card"><span>Active Games</span><strong>{visibleGames.length}</strong><p>Games currently available in this sport window.</p></article>
         <article className="status-card"><span>Markets</span><strong>ML / Spread / O-U</strong><p>Core markets are shown directly on each game card.</p></article>
-        <article className="status-card"><span>Data Status</span><strong>{apiStatus === 'CONNECTED' ? 'Live' : 'Syncing'}</strong><p>{apiDetail || 'Market board is loading.'}</p></article>
+        <article className="status-card"><span>Data Status</span><strong>{apiStatus === 'CONNECTED' ? 'Live' : 'Syncing'}</strong><p>{statusDetail}</p></article>
         <article className="status-card"><span>Membership</span><strong>All sports</strong><p>One membership includes every supported sport.</p></article>
       </section>
 
@@ -76,14 +78,14 @@ export default async function SportPage({ params }: { params: { sport: string } 
           </div>
           <div className="rank-list">
             <article className="rank-card top-zone">
-              <div className="rank-head"><span>Readiness</span><b>{rankings?.length ? 'READY' : 'WAITING'}</b></div>
-              <h4>{rankings?.length ? 'Ranked output available' : 'Waiting for 12-pull readiness'}</h4>
-              <p>{rankings?.[0]?.note ?? 'Official parlay builds wait for enough pull history. No forced picks.'}</p>
+              <div className="rank-head"><span>Readiness</span><b>{hasRankings ? 'READY' : 'WAITING'}</b></div>
+              <h4>{hasRankings ? 'Ranked output available' : 'Waiting for 12-pull readiness'}</h4>
+              <p>{hasRankings ? (rankings?.[0]?.note || 'Live ranking note') : 'Official parlay builds wait for enough pull history. No forced picks.'}</p>
             </article>
             <article className="rank-card">
-              <div className="rank-head"><span>Build Rule</span><b>TOP-3</b></div>
-              <h4>{rankings?.[0]?.structure ?? '2 Strong + 1 Coin Flip'}</h4>
-              <p>Inqis ranks all 8 three-leg outcomes and surfaces the cleanest structures only.</p>
+              <div className="rank-head"><span>Build Rule</span><b>{hasRankings ? 'TOP-3' : 'WAITING'}</b></div>
+              <h4>{hasRankings ? (rankings?.[0]?.structure || 'Waiting') : 'Waiting'}</h4>
+              <p>{hasRankings ? 'Structure comes from the hourly builder only.' : 'No sample structure until the hourly builder publishes.'}</p>
             </article>
           </div>
         </aside>
