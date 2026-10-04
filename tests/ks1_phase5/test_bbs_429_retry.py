@@ -59,3 +59,23 @@ def test_odds_429_does_not_retry():
         fetch('odds', 'https://api.the-odds-api.com', '/v4/sports/baseball_mlb/odds', {},
               key='k', opener=opener, sleeper=lambda _seconds: None)
     assert opener.calls == 1
+
+
+def test_third_bbs_429_degrades_to_empty_catalogue():
+    from ks1.live_inputs import degraded_bbs_capture, bbs_rate_limited
+    receipt = {"provider": "bbs", "status": 429, "body_shape": {"error": "dict"}}
+    assert bbs_rate_limited(receipt)
+    degraded = degraded_bbs_capture(receipt)
+    assert degraded["payload"] == {"data": []}
+    assert degraded["receipt"]["degraded"] == "bbs_rate_limited"
+    assert degraded["receipt"]["match_catalogue"] == "empty"
+
+
+def test_non_429_bbs_is_not_degraded():
+    from ks1.live_inputs import degraded_bbs_capture
+    try:
+        degraded_bbs_capture({"provider": "bbs", "status": 500})
+    except ValueError as exc:
+        assert "non-429" in str(exc)
+    else:
+        raise AssertionError("expected refusal")
