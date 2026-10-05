@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AppHeader } from '@/components/AppHeader';
 import { GENERATED_ARB_WEBSOCKET_URL } from '@/lib/generatedArbApi';
+import { radarFromArb } from '@/lib/radarSignals';
 
 type Status='VERIFIED'|'HELD';
 type Leg={book:string;bet:string;odds:number;lastUpdate?:string;limit?:number;link?:string};
@@ -13,6 +14,13 @@ const american=(n:number)=>n>0?`+${n}`:String(n);
 const money=(n:number)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number.isFinite(n)?n:0);
 const roiFrom=(legs:Leg[])=>{const s=legs.reduce((n,l)=>{const d=dec(l.odds);return n+(d?1/d:99)},0);return s>0?100*(1/s-1):0;};
 const ageFrom=(legs:any[],fallbackMs?:number)=>{const now=Date.now();const ages=legs.map(l=>Date.parse(String(l?.last_update||l?.lastUpdate||''))).filter(Number.isFinite).map(t=>Math.max(0,Math.floor((now-t)/1000)));if(ages.length)return Math.max(...ages);return fallbackMs?Math.max(0,Math.floor((now-fallbackMs)/1000)):0};
+const kickoffLabel=(start?:string)=>{
+  if(!start)return 'Waiting on kickoff';
+  const numeric=Number(start);
+  const date=Number.isFinite(numeric)&&numeric>1e11?new Date(numeric):new Date(start);
+  if(Number.isNaN(date.getTime()))return 'Waiting on kickoff';
+  return date.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+};
 
 function toLegs(raw:any[]):Leg[]{
   return raw.map((x:any)=>({
@@ -98,6 +106,7 @@ export default function ArbitragePage(){
   const sports=['All Sports',...Array.from(new Set(rows.map(x=>x.sport)))];
   const markets=['All Markets',...Array.from(new Set(rows.map(x=>x.market)))];
   const books=['All Books',...Array.from(new Set(rows.flatMap(x=>x.legs.map(l=>l.book))))];
+  const radar=selected?radarFromArb({...selected,commence_time:selected.start,books:selected.legs.length}):[];
 
   const filtered=rows.filter(o=>{
     const q=query.trim().toLowerCase();
@@ -147,15 +156,14 @@ export default function ArbitragePage(){
         {!selected?<div className="arb-empty-detail"><div><b>Opportunity details</b><span>Select a live opportunity when the market feed returns. Stake math and book allocations will calculate here instantly.</span></div></div>:<>
           <div className="detail-kicker"><span>{selected.sport} · {selected.market}</span><span>{selected.age}s ago ●</span></div>
           <h2>{selected.event}</h2>
-          <div className="detail-time">{selected.start||'Current market'}</div>
+          <div className="detail-time">{kickoffLabel(selected.start)}</div>
           <div className="arb-roi-hero"><div><strong>{selected.roi>=0?'+':''}{selected.roi.toFixed(2)}%</strong><small>Estimated ROI</small></div><em className={'arb-status '+(selected.status==='VERIFIED'?'verified':'held')}>{selected.status==='VERIFIED'?'VERIFIED EXECUTABLE':'HELD BACK'}</em></div>
           <div className="arb-quote-pair">{selected.legs.slice(0,2).map((l,i)=><div className="arb-quote-card" key={i}><small>{l.book}</small><span>{l.bet}</span><b>{american(l.odds)}</b></div>)}</div>
           <label className="arb-stake">Total Stake<div className="arb-stake-box"><span>$</span><input aria-label="Total stake" inputMode="decimal" value={bankText} onChange={e=>setBankText(e.target.value.replace(/[^0-9.,]/g,''))}/></div></label>
           <div className="arb-presets">{[50,100,500,1000,2500].map(n=><button key={n} className={bank===n?'on':''} onClick={()=>setBankText(String(n))}>{money(n).replace('.00','')}</button>)}</div>
           <div className="arb-alloc">{selected.legs.slice(0,2).map((l,i)=><div key={i}><small>Bet on {l.bet}<br/>at {l.book}</small><strong>{money(calc.stakes[i]||0)}</strong><span>Potential Payout<br/>{money((calc.stakes[i]||0)*dec(l.odds))}</span></div>)}</div>
           <div className="arb-profit"><div><span>Guaranteed Profit</span><strong>{calc.p>0?money(calc.p):'—'}</strong></div><div><span>Return</span><strong>{calc.r.toFixed(2)}%</strong></div></div>
-          <button className="arb-detail-button" type="button">View Full Market Details →</button>
-          <div className="arb-tabs"><span>Market Details</span><span>Book Info</span><span>Settlement</span><span>Historical Odds</span></div>
+          <div className="arb-tabs" aria-label="Signals on radar">{radar.map(item=><span key={item.id}>{item.label}</span>)}</div>
         </>}
       </aside>
     </section>
