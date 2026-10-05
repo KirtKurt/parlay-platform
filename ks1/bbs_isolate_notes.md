@@ -8,3 +8,5 @@ Status 2026-10-04 00:20 UTC operator cycle:
 - Did not patch main. Did not merge. Did not rewrite p_home, locks, or ledgers.
 
 Do not merge without Kurt approval.
+
+Status 2026-10-05 22:15 UTC: BBS 429 and Odds 401 both degrade. Truncation/schema/duplicate BBS stay hard errors. No p_home/lock/ledger rewrite. Not merged.
