@@ -29,7 +29,6 @@ def shape(value, depth=0):
     return type(value).__name__
 
 
-
 def odds_auth_unavailable(receipt):
     """401/missing key cannot supply a market. Do not kill official scoring."""
     return (isinstance(receipt, dict) and receipt.get("provider") == "odds"
@@ -42,6 +41,23 @@ def degraded_odds_capture(receipt):
     stamped = {**receipt, "as_of": datetime.now(timezone.utc).isoformat(),
                "sha256": hashlib.sha256(encode(payload)).hexdigest(),
                "degraded": "odds_auth_unavailable", "market_status": "unavailable"}
+    return {"payload": payload, "receipt": stamped}
+
+
+def bbs_rate_limited(receipt):
+    """429 cannot supply identities. Do not kill the slate or guess a match."""
+    return isinstance(receipt, dict) and receipt.get("provider") == "bbs" and receipt.get("status") == 429
+
+
+def degraded_bbs_capture(receipt):
+    """Empty catalogue. Daily isolate-skip excludes official games as missing_bbs_identity.
+
+    Truncation, schema drift, and duplicate BBS IDs stay hard errors in bbs_catalogue.
+    """
+    payload = {"data": []}
+    stamped = {**receipt, "as_of": datetime.now(timezone.utc).isoformat(),
+               "sha256": hashlib.sha256(encode(payload)).hexdigest(),
+               "degraded": "bbs_rate_limited", "identity_status": "unavailable_exclusions_only"}
     return {"payload": payload, "receipt": stamped}
 
 
@@ -90,7 +106,6 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
             except (ValueError, UnicodeError):
                 body_shape = 'non_json'
             receipt = {'provider': provider, 'endpoint': base+path, 'status': exc.code, 'body_shape': body_shape}
-            # Never log URL/query/header strings: Odds credentials live in query.
             if exc.code == 429:
                 raise ProviderFailure(receipt) from None
             if exc.code >= 500 and attempt == 0:
@@ -105,7 +120,6 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
 
 
 def bbs_catalogue(target_date, official_games, key, requester=fetch):
-    # Reuse the repo's official UTC-date union rule for Eastern MLB slates.
     dates = sorted({utc(g['gameDate']).astimezone(timezone.utc).date().isoformat() for g in official_games}) or [target_date]
     events, receipts = {}, []
     for value in dates:
@@ -114,7 +128,6 @@ def bbs_catalogue(target_date, official_games, key, requester=fetch):
         receipts.append(result['receipt'])
         data = result['payload'].get('data')
         if isinstance(data, dict) and set(data) == {'scores'}:
-            # Known provider schema drift: score envelopes cannot supply IDs.
             result = requester('bbs', 'https://api.bigballsdata.com', '/v1/stored/matches', params, key=key)
             receipts.append(result['receipt']); data = result['payload'].get('data')
         if not isinstance(data, list) or len(data) >= 200:
@@ -131,11 +144,6 @@ def bbs_catalogue(target_date, official_games, key, requester=fetch):
 
 
 def lineup_feeds(target_date, official_games, *, requester=fetch, now=None):
-    """One cached feed per eligible game; use the repo's existing MLB source.
-
-    BBS's stored lineups route is unpopulated. No per-player or archive calls.
-    Missing/failed feeds are optional and explicitly use projected team priors.
-    """
     at = now or datetime.now(timezone.utc)
     games = [g for g in official_games if str(day(g['gameDate'])) == target_date
              and pregame_status(g.get('status'))
@@ -169,7 +177,12 @@ def capture(target_date, output):
         bbs = bbs_catalogue(target_date, official_games, os.environ.get('BBS_API_KEY'))
         (output / 'bbs.json').write_bytes(encode(bbs)); print(json.dumps(bbs['receipt']))
     except ProviderFailure as exc:
-        errors.append(exc.receipt); print(json.dumps(exc.receipt))
+        if bbs_rate_limited(exc.receipt):
+            bbs = degraded_bbs_capture(exc.receipt)
+            (output / 'bbs.json').write_bytes(encode(bbs))
+            print(json.dumps(bbs['receipt']))
+        else:
+            errors.append(exc.receipt); print(json.dumps(exc.receipt))
     calls = [('odds', 'https://api.the-odds-api.com', '/v4/sports/baseball_mlb/odds',
               {'regions': 'us', 'markets': 'h2h,spreads,totals', 'oddsFormat': 'american'}, os.environ.get('ODDS_API_KEY'))]
     for provider, base, path, params, key in calls:
@@ -185,8 +198,6 @@ def capture(target_date, output):
                 continue
             errors.append(exc.receipt)
             print(json.dumps(exc.receipt))
-    # Existing repository source. One bulk schedule call supplies official IDs
-    # and probable pitchers: the documented BBS stored lineup route is empty.
     _, s3, bucket = aws_clients('us-east-1', 'parlay-platform-dev')
     try:
         import boto3
@@ -242,7 +253,7 @@ def capture(target_date, output):
     previous_etag = None
     previous_path = output/'previous.parquet'
     if previous_path.exists():
-        previous_path.unlink()  # only this job's disposable local cache
+        previous_path.unlink()
     try:
         previous = s3.get_object(Bucket=bucket, Key='mlb/ks1/predictions-v1/date='+target_date+'/predictions.parquet')
         previous_path.write_bytes(previous['Body'].read()); previous_etag = previous['ETag']
