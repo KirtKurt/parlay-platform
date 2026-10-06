@@ -63,7 +63,7 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
             raise ProviderFailure({'provider': provider, 'status': 'ODDS_API_KEY_MISSING', 'body_shape': None})
         query['apiKey'] = key
     request = Request(base + path + '?' + urlencode(query), headers=headers)
-    for attempt in range(2):
+    for attempt in range(4):
         try:
             with opener(request, timeout=25) as response:
                 body = response.read(30_000_001)
@@ -91,8 +91,10 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
                 body_shape = 'non_json'
             receipt = {'provider': provider, 'endpoint': base+path, 'status': exc.code, 'body_shape': body_shape}
             # Never log URL/query/header strings: Odds credentials live in query.
-            if exc.code == 429:
-                raise ProviderFailure(receipt) from None
+            # 429 is transient quota, not an identity failure. Still hard-fail after the budget.
+            if exc.code == 429 and attempt < 3:
+                time.sleep(min(8, 2 * (attempt + 1)))
+                continue
             if exc.code >= 500 and attempt == 0:
                 time.sleep(1)
                 continue
