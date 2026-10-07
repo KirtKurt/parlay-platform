@@ -3,7 +3,7 @@
 Empty data is a missing catalogue. Official games become missing_bbs_identity
 exclusions. Truncation, schema change, and duplicate BBS-to-one-game stay fatal.
 """
-from ks1.bbs_degrade import degraded_bbs_capture
+from ks1.bbs_degrade import degraded_bbs_capture, official_missing_bbs_exclusions
 from ks1.daily import Crosswalk, bbs_assignments
 
 
@@ -20,13 +20,16 @@ def _game(pk, home, away):
     }
 
 
-def test_degraded_429_catalogue_isolates_official_games():
+def test_degraded_429_catalogue_excludes_official_games():
     degraded = degraded_bbs_capture({'provider': 'bbs', 'status': 429, 'endpoint': 'https://api.bigballsdata.com/v1/matches'})
-    schedule = [_game(1, 147, 139)]
+    schedule = [_game(1, 147, 139), _game(2, 147, 111)]
     crosswalk = Crosswalk([], schedule)
     assigned = bbs_assignments(degraded['payload'], schedule, crosswalk, '2026-10-07', isolate_unmatched=True)
+    exclusions = official_missing_bbs_exclusions(schedule, assigned, degraded['receipt'])
     assert assigned == {}
     assert crosswalk.bbs_identity_exclusions == []
+    assert [row['game_id'] for row in exclusions] == ['1', '2']
+    assert {row['reason'] for row in exclusions} == {'missing_bbs_identity'}
     assert degraded['receipt']['degraded'] == 'bbs_unavailable'
 
 
