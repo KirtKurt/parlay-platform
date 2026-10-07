@@ -45,6 +45,23 @@ def degraded_odds_capture(receipt):
     return {"payload": payload, "receipt": stamped}
 
 
+def bbs_unavailable(receipt):
+    """429, transport, or missing key is an empty catalogue, not an identity collision."""
+    return (isinstance(receipt, dict) and receipt.get("provider") == "bbs"
+            and receipt.get("status") in (429, "NETWORK_ERROR", "BBS_API_KEY_MISSING"))
+
+
+def degraded_bbs_capture(receipt):
+    """Empty data array. Daily isolate-skip turns missing BBS rows into exclusions."""
+    if not bbs_unavailable(receipt):
+        raise ValueError("refusing to degrade a non-unavailable BBS receipt")
+    payload = {"data": []}
+    stamped = {**receipt, "as_of": datetime.now(timezone.utc).isoformat(),
+               "sha256": hashlib.sha256(encode(payload)).hexdigest(),
+               "degraded": "bbs_unavailable", "match_catalogue": "empty"}
+    return {"payload": payload, "receipt": stamped}
+
+
 class ProviderFailure(ValueError):
     def __init__(self, receipt):
         self.receipt = receipt
@@ -63,7 +80,7 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
             raise ProviderFailure({'provider': provider, 'status': 'ODDS_API_KEY_MISSING', 'body_shape': None})
         query['apiKey'] = key
     request = Request(base + path + '?' + urlencode(query), headers=headers)
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             with opener(request, timeout=25) as response:
                 body = response.read(30_000_001)
@@ -91,6 +108,9 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
                 body_shape = 'non_json'
             receipt = {'provider': provider, 'endpoint': base+path, 'status': exc.code, 'body_shape': body_shape}
             # Never log URL/query/header strings: Odds credentials live in query.
+            if exc.code == 429 and attempt < 2:
+                time.sleep(15)
+                continue
             if exc.code == 429:
                 raise ProviderFailure(receipt) from None
             if exc.code >= 500 and attempt == 0:
@@ -169,7 +189,12 @@ def capture(target_date, output):
         bbs = bbs_catalogue(target_date, official_games, os.environ.get('BBS_API_KEY'))
         (output / 'bbs.json').write_bytes(encode(bbs)); print(json.dumps(bbs['receipt']))
     except ProviderFailure as exc:
-        errors.append(exc.receipt); print(json.dumps(exc.receipt))
+        if bbs_unavailable(exc.receipt):
+            bbs = degraded_bbs_capture(exc.receipt)
+            (output / "bbs.json").write_bytes(encode(bbs))
+            print(json.dumps(bbs["receipt"]))
+        else:
+            errors.append(exc.receipt); print(json.dumps(exc.receipt))
     calls = [('odds', 'https://api.the-odds-api.com', '/v4/sports/baseball_mlb/odds',
               {'regions': 'us', 'markets': 'h2h,spreads,totals', 'oddsFormat': 'american'}, os.environ.get('ODDS_API_KEY'))]
     for provider, base, path, params, key in calls:
