@@ -23,7 +23,7 @@ def test_degraded_catalogue_is_empty_and_marked():
 
 
 def test_record_bbs_failure_does_not_kill_slate(tmp_path):
-    from ks1.live_inputs import record_bbs_failure
+    from ks1.bbs_degrade import record_bbs_failure
     errors = []
     kept = record_bbs_failure(errors, {"provider": "bbs", "status": 429, "endpoint": "https://api.bigballsdata.com/v1/matches"}, tmp_path)
     assert kept is True

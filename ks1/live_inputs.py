@@ -156,19 +156,6 @@ def lineup_feeds(target_date, official_games, *, requester=fetch, now=None):
     return {'games': entries}
 
 
-
-def record_bbs_failure(errors, receipt, output):
-    """Degrade 429/transport to an empty catalogue. Other BBS failures stay fatal."""
-    from ks1.bbs_degrade import bbs_unavailable, degraded_bbs_capture
-    if not bbs_unavailable(receipt):
-        errors.append(receipt)
-        return False
-    bbs = degraded_bbs_capture(receipt)
-    (output / 'bbs.json').write_bytes(encode(bbs))
-    print(json.dumps(bbs['receipt']))
-    return True
-
-
 def capture(target_date, output):
     date.fromisoformat(target_date)
     output.mkdir(parents=True, exist_ok=True)
@@ -182,6 +169,7 @@ def capture(target_date, output):
         bbs = bbs_catalogue(target_date, official_games, os.environ.get('BBS_API_KEY'))
         (output / 'bbs.json').write_bytes(encode(bbs)); print(json.dumps(bbs['receipt']))
     except ProviderFailure as exc:
+        from ks1.bbs_degrade import record_bbs_failure
         if not record_bbs_failure(errors, exc.receipt, output):
             print(json.dumps(exc.receipt))
     calls = [('odds', 'https://api.the-odds-api.com', '/v4/sports/baseball_mlb/odds',

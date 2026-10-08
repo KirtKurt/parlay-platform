@@ -25,3 +25,16 @@ def degraded_bbs_capture(receipt):
                "sha256": hashlib.sha256(encode(payload)).hexdigest(),
                "degraded": "bbs_unavailable", "match_catalogue": "empty"}
     return {"payload": payload, "receipt": stamped}
+
+
+def record_bbs_failure(errors, receipt, output):
+    """Degrade 429/transport to an empty catalogue. Other BBS failures stay fatal."""
+    import json
+    from ks1.inventory import encode
+    if not bbs_unavailable(receipt):
+        errors.append(receipt)
+        return False
+    bbs = degraded_bbs_capture(receipt)
+    (output / 'bbs.json').write_bytes(encode(bbs))
+    print(json.dumps(bbs['receipt']))
+    return True
