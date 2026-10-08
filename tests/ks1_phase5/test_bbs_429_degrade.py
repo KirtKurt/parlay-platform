@@ -20,3 +20,15 @@ def test_degraded_catalogue_is_empty_and_marked():
     except ValueError:
         return
     raise AssertionError("truncation must stay fatal")
+
+
+def test_record_bbs_failure_does_not_kill_slate(tmp_path):
+    from ks1.live_inputs import record_bbs_failure
+    errors = []
+    kept = record_bbs_failure(errors, {"provider": "bbs", "status": 429, "endpoint": "https://api.bigballsdata.com/v1/matches"}, tmp_path)
+    assert kept is True
+    assert errors == []
+    assert (tmp_path / "bbs.json").exists()
+    fatal = []
+    assert record_bbs_failure(fatal, {"provider": "bbs", "status": 500, "endpoint": "x"}, tmp_path) is False
+    assert fatal[0]["status"] == 500
