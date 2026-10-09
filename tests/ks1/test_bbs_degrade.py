@@ -1,10 +1,11 @@
 """BBS 429 must not kill the slate. Truncation stays fatal.
 
-Evidence: scheduled run 37980166607 (2026-10-09T19:25Z) failed
+Evidence: scheduled run 37993519681 (2026-10-09T21:27Z) failed
 ks1.live_inputs with BBS status 429 before daily isolate-skip.
-Same-cause failures: 37974119636 (18:33Z), 37966190603 (17:25Z),
-37959659707 (16:30Z), 37951972444 (15:28Z). Odds 401 already degrades;
-it is not this kill path.
+Odds 401 already degraded on that run and is not the kill path.
+Same-cause failures: 37987293195 (20:29Z), 37980166607 (19:25Z),
+37974119636 (18:33Z), 37966190603 (17:25Z), 37959659707 (16:30Z),
+37951972444 (15:28Z).
 """
 from ks1.bbs_degrade import UNAVAILABLE, bbs_unavailable, degraded_bbs_capture
 from ks1.live_inputs import ProviderFailure
@@ -20,7 +21,7 @@ def test_429_is_empty_catalogue_not_identity_error():
 
 
 def test_latest_scheduled_429_receipt_shape_degrades():
-    """Shape from run 37980166607 ingest log. Must not raise provider capture failed."""
+    """Shape from run 37993519681 ingest log. Must not raise provider capture failed."""
     receipt = {
         'provider': 'bbs',
         'endpoint': 'https://api.bigballsdata.com/v1/matches',
