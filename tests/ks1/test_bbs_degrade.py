@@ -1,8 +1,8 @@
 """BBS 429 must not kill the slate. Truncation stays fatal.
 
-Evidence: scheduled run 37959659707 (2026-10-09T16:30Z) failed
+Evidence: scheduled run 37966190603 (2026-10-09T17:25Z) failed
 ks1.live_inputs with BBS status 429 before daily isolate-skip.
-Prior same-cause failure: 37951972444 (2026-10-09T15:28Z).
+Same-cause failures: 37959659707 (16:30Z), 37951972444 (15:28Z).
 Odds 401 already degrades; it is not this kill path.
 """
 from ks1.bbs_degrade import UNAVAILABLE, bbs_unavailable, degraded_bbs_capture
@@ -19,7 +19,7 @@ def test_429_is_empty_catalogue_not_identity_error():
 
 
 def test_latest_scheduled_429_receipt_shape_degrades():
-    """Shape from run 37959659707 ingest log. Must not raise provider capture failed."""
+    """Shape from run 37966190603 ingest log. Must not raise provider capture failed."""
     receipt = {
         'provider': 'bbs',
         'endpoint': 'https://api.bigballsdata.com/v1/matches',
@@ -29,12 +29,26 @@ def test_latest_scheduled_429_receipt_shape_degrades():
             'suggested_fix': 'str',
             'docs_url': 'str',
             'support': {'discord': 'str', 'email': 'str'},
-            'meta': {'request_id': 'str', 'timestamp': 'str', 'limiting_bucket': 'str'},
+            'meta': {
+                'request_id': 'str',
+                'timestamp': 'str',
+                'limiting_bucket': 'str',
+                'current_usage': {'minute': 'dict', 'day': 'dict'},
+                'upgrade_path': {
+                    'current_tier': 'str',
+                    'recommended_tier': 'str',
+                    'price': 'str',
+                    'daily_limit': 'int',
+                    'minute_limit': 'int',
+                    'url': 'str',
+                },
+            },
         },
     }
     captured = degraded_bbs_capture(receipt)
     assert captured['payload'] == {'data': []}
     assert captured['receipt']['degraded'] == 'bbs_unavailable'
+    assert captured['receipt']['status'] == 429
     assert 'missing_bbs_identity' not in captured['receipt']
 
 
@@ -59,6 +73,11 @@ def test_truncation_receipt_is_not_degraded():
 
 def test_schema_status_is_not_degraded():
     receipt = {'provider': 'bbs', 'status': 200, 'error': 'MATCH_ID_MISSING'}
+    assert not bbs_unavailable(receipt)
+
+
+def test_duplicate_bbs_to_one_game_is_not_a_429_degrade():
+    receipt = {'provider': 'bbs', 'status': 200, 'error': 'multiple BBS IDs map to one official game'}
     assert not bbs_unavailable(receipt)
 
 
