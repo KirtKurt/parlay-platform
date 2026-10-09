@@ -1,7 +1,9 @@
 """BBS 429 must not kill the slate. Truncation stays fatal.
 
-Evidence: scheduled run 37951972444 (2026-10-09T15:28Z) failed
+Evidence: scheduled run 37959659707 (2026-10-09T16:30Z) failed
 ks1.live_inputs with BBS status 429 before daily isolate-skip.
+Prior same-cause failure: 37951972444 (2026-10-09T15:28Z).
+Odds 401 already degrades; it is not this kill path.
 """
 from ks1.bbs_degrade import UNAVAILABLE, bbs_unavailable, degraded_bbs_capture
 from ks1.live_inputs import ProviderFailure
@@ -14,6 +16,26 @@ def test_429_is_empty_catalogue_not_identity_error():
     assert captured['payload'] == {'data': []}
     assert captured['receipt']['degraded'] == 'bbs_unavailable'
     assert captured['receipt']['match_catalogue'] == 'empty'
+
+
+def test_latest_scheduled_429_receipt_shape_degrades():
+    """Shape from run 37959659707 ingest log. Must not raise provider capture failed."""
+    receipt = {
+        'provider': 'bbs',
+        'endpoint': 'https://api.bigballsdata.com/v1/matches',
+        'status': 429,
+        'body_shape': {
+            'error': {'code': 'str', 'message': 'str', 'retryable': 'bool'},
+            'suggested_fix': 'str',
+            'docs_url': 'str',
+            'support': {'discord': 'str', 'email': 'str'},
+            'meta': {'request_id': 'str', 'timestamp': 'str', 'limiting_bucket': 'str'},
+        },
+    }
+    captured = degraded_bbs_capture(receipt)
+    assert captured['payload'] == {'data': []}
+    assert captured['receipt']['degraded'] == 'bbs_unavailable'
+    assert 'missing_bbs_identity' not in captured['receipt']
 
 
 def test_network_and_missing_key_degrade_the_same_way():
