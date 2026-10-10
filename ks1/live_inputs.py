@@ -45,6 +45,21 @@ def degraded_odds_capture(receipt):
     return {"payload": payload, "receipt": stamped}
 
 
+def bbs_rate_limited(receipt):
+    """429 from BBS is transient. Do not kill the slate."""
+    return (isinstance(receipt, dict) and receipt.get("provider") == "bbs"
+            and receipt.get("status") == 429)
+
+
+def degraded_bbs_capture(receipt):
+    """Empty BBS catalogue. Daily uses official schedule and previous locks."""
+    payload = {'data': []}
+    stamped = {**receipt, "as_of": datetime.now(timezone.utc).isoformat(),
+               "sha256": hashlib.sha256(encode(payload)).hexdigest(),
+               "degraded": "bbs_rate_limited", "identity_status": "unavailable"}
+    return {"payload": payload, "receipt": stamped}
+
+
 class ProviderFailure(ValueError):
     def __init__(self, receipt):
         self.receipt = receipt
@@ -169,7 +184,12 @@ def capture(target_date, output):
         bbs = bbs_catalogue(target_date, official_games, os.environ.get('BBS_API_KEY'))
         (output / 'bbs.json').write_bytes(encode(bbs)); print(json.dumps(bbs['receipt']))
     except ProviderFailure as exc:
-        errors.append(exc.receipt); print(json.dumps(exc.receipt))
+        if bbs_rate_limited(exc.receipt):
+            bbs = degraded_bbs_capture(exc.receipt)
+            (output / 'bbs.json').write_bytes(encode(bbs))
+            print(json.dumps(bbs['receipt']))
+        else:
+            errors.append(exc.receipt); print(json.dumps(exc.receipt))
     calls = [('odds', 'https://api.the-odds-api.com', '/v4/sports/baseball_mlb/odds',
               {'regions': 'us', 'markets': 'h2h,spreads,totals', 'oddsFormat': 'american'}, os.environ.get('ODDS_API_KEY'))]
     for provider, base, path, params, key in calls:
