@@ -1148,12 +1148,24 @@ def api_handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
             from .kss1_picks import recorded_picks
             try:
                 read_context = None
+                goals_status = None
                 if params.get("context") is not None:
                     if params["context"] != "current":
                         raise ValueError("context must be current when supplied")
                     from .kss1_training_runtime import goals_status
                     read_context = goals_status(store).get("training_context") or {}
-                return _response(200, recorded_picks(store, params.get("date"), selection=params.get("selection"), trained_only=params.get("trained_only", "true") != "false", context=read_context))
+                result = recorded_picks(
+                    store,
+                    params.get("date"),
+                    selection=params.get("selection"),
+                    trained_only=params.get("trained_only", "true") != "false",
+                    context=read_context,
+                )
+                if goals_status is not None:
+                    after_context = goals_status(store).get("training_context") or {}
+                    if not after_context or after_context != read_context:
+                        raise ValueError("GOALS_CONTEXT_POINTER_MOVED_DURING_READBACK")
+                return _response(200, result)
             except ValueError as exc:
                 return _response(400, {"ok": False, "error": str(exc)})
         if path == "/v1/soccer-auto/kss1":
