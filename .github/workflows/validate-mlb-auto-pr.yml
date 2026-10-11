@@ -1,0 +1,47 @@
+name: Validate isolated MLB Auto changes
+
+on:
+  pull_request:
+    branches: [agent/mlb-auto-tennis-lifecycle-v1]
+    paths:
+      - 'mlb_auto/**'
+      - '.github/workflows/deploy-mlb-auto-v1.yml'
+      - '.github/workflows/validate-mlb-auto-pr.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-auto-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install validation dependencies
+        working-directory: mlb_auto
+        run: python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.40,<2' 'PyYAML>=6,<7'
+      - name: Run MLB Auto tests and isolation proof
+        working-directory: mlb_auto
+        env:
+          PYTHONPATH: src
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+          python scripts/verify_isolation.py
+          python -m compileall -q src
+      - uses: aws-actions/setup-sam@v2
+      - name: Validate and build MLB Auto SAM application
+        working-directory: mlb_auto
+        run: |
+          set -euo pipefail
+          sam validate --template-file template.yaml --lint
+          sam build --template-file template.yaml --no-cached
