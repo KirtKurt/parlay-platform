@@ -26,6 +26,7 @@ from ks1.historical_lineup_season_probe import enrich_frame as enrich_lineup
 from ks1.historical_starter_15d_enrichment import enrich_frame as enrich_starter_15d
 from ks1.inventory import encode
 from ks1.forensic_runtime import trace_development_run
+from ks1.proof_bound_statcast_replay import proof_bound_statcast_replay_s3
 from ks1.retrain_recent import qualified_training_population
 from ks1.sources import aws_clients
 from ks1.train import save_artifact
@@ -65,7 +66,7 @@ def run(input_path, proof_path, output):
     # game rows are removed before the point-in-time feature engine receives them.
     cf, s3, bucket = aws_clients("us-east-1", "parlay-platform-dev")
     statcast_context, statcast_replay = proof_bound_statcast_context(
-        cf, s3, bucket, proof)
+        cf, proof_bound_statcast_replay_s3(s3, proof), bucket, proof)
     statcast_context, statcast_replay = _exclude_reserved_holdout_pitches(
         statcast_context, statcast_replay, holdout)
     train, lineup_source_enrichment = enrich_lineup(train, s3)
