@@ -1,0 +1,40 @@
+name: Tail Tennis V2 deployment log
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/tail-tennis-v2-deploy-log.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  tail:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_JOB_ID: "89126802583"
+    steps:
+      - name: Download and print failing job tail
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/jobs/${TARGET_JOB_ID}/logs" > /tmp/job.log
+          file /tmp/job.log
+          if unzip -tq /tmp/job.log >/dev/null 2>&1; then
+            mkdir -p /tmp/joblogs
+            unzip -q /tmp/job.log -d /tmp/joblogs
+            cat /tmp/joblogs/* > /tmp/job-decoded.log
+          else
+            cp /tmp/job.log /tmp/job-decoded.log
+          fi
+          echo '--- LAST 320 LINES ---'
+          tail -n 320 /tmp/job-decoded.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tennis-v2-failing-job-log-${{ github.run_id }}
+          retention-days: 7
+          path: /tmp/job-decoded.log
