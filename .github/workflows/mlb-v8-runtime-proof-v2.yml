@@ -1,0 +1,358 @@
+name: MLB V8 Runtime Proof V2
+
+"on":
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/mlb-v8-runtime-proof-v2.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v8-runtime-proof-v2.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-odds-v8-shadow-deploy
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-mlb-odds-v8-shadow
+  AWS_EC2_METADATA_DISABLED: 'true'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - name: Validate V8 source and isolated stack
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: testing
+          AWS_SECRET_ACCESS_KEY: testing
+          AWS_SESSION_TOKEN: testing
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
+          grep -Fq 'MLB-ODDS-V8-SHADOW-COLLECTOR-v1.5' hello_world/mlb_odds_v8_shadow_collector.py
+          grep -Fq 'SHADOW_STATUS' hello_world/mlb_odds_v8_shadow_collector.py
+          python -m py_compile \
+            hello_world/mlb_odds_market_expansion_v8.py \
+            hello_world/mlb_odds_v8_shadow_collector.py
+          python -m pytest -q --tb=short tests/unit/test_mlb_odds_market_expansion_v8.py
+          sam validate --lint --template-file mlb_odds_v8_shadow/template.yaml
+          rm -rf .aws-sam-v8-proof-v2
+          sam build --no-cached --build-dir .aws-sam-v8-proof-v2 --template-file mlb_odds_v8_shadow/template.yaml
+          test -f .aws-sam-v8-proof-v2/ShadowCollectorFunction/mlb_odds_v8_shadow_collector.py
+
+  prove-runtime:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 58
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify credentials, secret, and build
+        id: prerequisites
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
+        run: |
+          set -euo pipefail
+          test -n "${ODDS_API_KEY_VALUE:-}"
+          aws sts get-caller-identity
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
+          python -m pytest -q --tb=short tests/unit/test_mlb_odds_market_expansion_v8.py
+          sam validate --lint --template-file mlb_odds_v8_shadow/template.yaml
+          rm -rf .aws-sam-v8-proof-v2
+          sam build --no-cached --build-dir .aws-sam-v8-proof-v2 --template-file mlb_odds_v8_shadow/template.yaml
+
+      - name: Wait for stack updateability
+        id: stack_wait
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 100); do
+            state=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "${{ secrets.AWS_REGION }}" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_MISSING)
+            case "$state" in
+              STACK_MISSING|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE) break ;;
+              *_IN_PROGRESS) sleep 15 ;;
+              *) echo "::error::CloudFormation is not updateable: $state"; exit 1 ;;
+            esac
+            test "$attempt" != 100 || { echo '::error::Stack wait timed out'; exit 1; }
+          done
+
+      - name: Deploy schedule-disabled recovery canary
+        id: deploy_canary
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          sam deploy \
+            --template-file .aws-sam-v8-proof-v2/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 --force-upload --no-confirm-changeset --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              "DeployGitSha=${GITHUB_SHA}" \
+              "V8Enabled=true" \
+              "V8ScheduleEnabled=false" \
+              "V8FeaturedRegions=us" \
+              "V8EventRegions=us,us2" \
+              "V8MaxEventsPerCycle=2" \
+              "V8MaxCreditsPerCycle=100"
+
+      - name: Resolve and verify deployed identity
+        id: identity
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          function_name=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ShadowCollectorFunctionName'].OutputValue" --output text)
+          authority=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='Authority'].OutputValue" --output text)
+          schedule=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ScheduleStatus'].OutputValue" --output text)
+          test -n "$function_name"; test "$function_name" != None
+          test "$authority" = SHADOW_ONLY
+          test "$schedule" = DISABLED
+          aws lambda wait function-active-v2 --function-name "$function_name" --region "${{ secrets.AWS_REGION }}"
+          aws lambda get-function-configuration --function-name "$function_name" --region "${{ secrets.AWS_REGION }}" > runtime_reports/mlb_v8_v2_function.json
+          test "$(jq -r '.Handler' runtime_reports/mlb_v8_v2_function.json)" = 'mlb_odds_v8_shadow_collector.lambda_handler'
+          test "$(jq -r '.Environment.Variables.MLB_V8_DEPLOY_GIT_SHA' runtime_reports/mlb_v8_v2_function.json)" = "$GITHUB_SHA"
+          test "$(jq -r '.Environment.Variables.MLB_V8_ENABLED' runtime_reports/mlb_v8_v2_function.json)" = true
+          test "$(jq -r '.Environment.Variables.MLB_V8_PLAYER_PROPS_ENABLED' runtime_reports/mlb_v8_v2_function.json)" = false
+          aws lambda get-function-concurrency --function-name "$function_name" --region "${{ secrets.AWS_REGION }}" > runtime_reports/mlb_v8_v2_concurrency.json
+          test "$(jq -r '.ReservedConcurrentExecutions' runtime_reports/mlb_v8_v2_concurrency.json)" = 1
+          echo "function_name=$function_name" >> "$GITHUB_OUTPUT"
+          jq -n --arg functionName "$function_name" --arg authority "$authority" --arg schedule "$schedule" --arg sourceSha "$GITHUB_SHA" '{functionName:$functionName,handler:"mlb_odds_v8_shadow_collector.lambda_handler",authority:$authority,scheduleStatus:$schedule,sourceSha:$sourceSha,reservedConcurrency:1}' > runtime_reports/mlb_v8_v2_identity.json
+
+      - name: Invoke manual canary and capture baseline status
+        id: baseline
+        env:
+          FUNCTION_NAME: ${{ steps.identity.outputs.function_name }}
+        run: |
+          set -euo pipefail
+          aws lambda invoke --function-name "$FUNCTION_NAME" --region "${{ secrets.AWS_REGION }}" --cli-read-timeout 360 --cli-binary-format raw-in-base64-out --payload '{"mode":"manual_recovery_v2"}' runtime_reports/mlb_v8_v2_canary.json > runtime_reports/mlb_v8_v2_canary_invocation.json
+          test "$(jq -r '.FunctionError // empty' runtime_reports/mlb_v8_v2_canary_invocation.json)" = ''
+          aws lambda invoke --function-name "$FUNCTION_NAME" --region "${{ secrets.AWS_REGION }}" --cli-read-timeout 120 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","limit":100}' runtime_reports/mlb_v8_v2_baseline.json > runtime_reports/mlb_v8_v2_baseline_invocation.json
+          test "$(jq -r '.FunctionError // empty' runtime_reports/mlb_v8_v2_baseline_invocation.json)" = ''
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          canary=json.loads(Path('runtime_reports/mlb_v8_v2_canary.json').read_text())
+          assert canary.get('ok') is True and canary.get('status')=='COLLECTED_SHADOW', canary
+          assert canary.get('triggerMode')=='manual_recovery_v2', canary
+          assert canary.get('productionAuthorityChanged') is False, canary
+          budget=canary.get('budget') or {}
+          assert budget.get('withinBudget') is True and int(budget.get('estimatedCredits') or 0)<=100, canary
+          artifact=canary.get('artifact') or {}
+          digest=str(artifact.get('sha256') or '')
+          assert len(digest)==64 and str(artifact.get('key') or '').endswith('/'+digest+'.json'), canary
+          baseline=json.loads(Path('runtime_reports/mlb_v8_v2_baseline.json').read_text())
+          assert baseline.get('ok') is True and baseline.get('status')=='SHADOW_STATUS', baseline
+          assert baseline.get('authority')=='SHADOW_ONLY' and baseline.get('productionAuthorityChanged') is False, baseline
+          assert all(item.get('parseError') is None for item in baseline.get('latestArtifacts') or []), baseline
+          PY
+
+      - name: Enable the controlled schedule
+        id: enable
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          enabled_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          sam deploy \
+            --template-file .aws-sam-v8-proof-v2/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 --force-upload --no-confirm-changeset --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              "DeployGitSha=${GITHUB_SHA}" \
+              "V8Enabled=true" \
+              "V8ScheduleEnabled=true" \
+              "V8FeaturedRegions=us" \
+              "V8EventRegions=us,us2" \
+              "V8MaxEventsPerCycle=2" \
+              "V8MaxCreditsPerCycle=100"
+          echo "enabled_at=$enabled_at" >> "$GITHUB_OUTPUT"
+
+      - name: Verify EventBridge and wait for genuine scheduled evidence
+        id: evidence
+        env:
+          FUNCTION_NAME: ${{ steps.identity.outputs.function_name }}
+          ENABLED_AT: ${{ steps.enable.outputs.enabled_at }}
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          function_arn=$(aws lambda get-function --function-name "$FUNCTION_NAME" --region "$REGION" --query 'Configuration.FunctionArn' --output text)
+          rules=$(aws events list-rule-names-by-target --target-arn "$function_arn" --region "$REGION" --query RuleNames --output json)
+          rule_name=$(RULES="$rules" python - <<'PY'
+          import json, os
+          rules=json.loads(os.environ['RULES'])
+          assert len(rules)==1, rules
+          print(rules[0])
+          PY
+          )
+          test "$(aws events describe-rule --name "$rule_name" --region "$REGION" --query State --output text)" = ENABLED
+          test "$(aws events describe-rule --name "$rule_name" --region "$REGION" --query ScheduleExpression --output text)" = 'rate(15 minutes)'
+          RULE_NAME="$rule_name" python - <<'PY'
+          import json, os, subprocess, tempfile, time
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          function=os.environ['FUNCTION_NAME']
+          region=os.environ['REGION']
+          enabled=datetime.fromisoformat(os.environ['ENABLED_AT'].replace('Z','+00:00'))
+          baseline=json.loads(Path('runtime_reports/mlb_v8_v2_baseline.json').read_text())
+          baseline_items=baseline.get('latestArtifacts') or []
+          baseline_keys={str(x.get('key') or '') for x in baseline_items}
+          deadline=time.monotonic()+1800
+          attempts=[]
+          accepted=None
+          latest=None
+          transient=('TooManyRequestsException','ResourceConflictException','ThrottlingException','Rate exceeded')
+          while time.monotonic()<deadline:
+              with tempfile.NamedTemporaryFile(suffix='.json',delete=False) as f:
+                  response=f.name
+              cmd=['aws','lambda','invoke','--function-name',function,'--region',region,'--cli-read-timeout','120','--cli-binary-format','raw-in-base64-out','--payload','{"mode":"status","limit":100}',response]
+              proc=subprocess.run(cmd,capture_output=True,text=True)
+              if proc.returncode:
+                  text=(proc.stdout or '')+(proc.stderr or '')
+                  Path(response).unlink(missing_ok=True)
+                  if any(token in text for token in transient):
+                      attempts.append({'checkedAtUtc':datetime.now(timezone.utc).isoformat(),'transientInvokeError':text[-500:]})
+                      time.sleep(10)
+                      continue
+                  raise RuntimeError(text)
+              meta=json.loads(proc.stdout or '{}')
+              if meta.get('FunctionError'):
+                  raise RuntimeError(meta)
+              latest=json.loads(Path(response).read_text())
+              Path(response).unlink(missing_ok=True)
+              if latest.get('ok') is not True or latest.get('status')!='SHADOW_STATUS':
+                  raise RuntimeError(latest)
+              items=latest.get('latestArtifacts') or []
+              attempts.append({'checkedAtUtc':datetime.now(timezone.utc).isoformat(),'artifactCountReturned':len(items),'latestKey':items[0].get('key') if items else None})
+              for item in items:
+                  key=str(item.get('key') or '')
+                  if not key or key in baseline_keys or item.get('triggerMode')!='scheduled_shadow':
+                      continue
+                  try:
+                      collected=datetime.fromisoformat(str(item.get('collectedAtUtc') or '').replace('Z','+00:00'))
+                  except ValueError:
+                      continue
+                  if collected<enabled: continue
+                  if item.get('authority')!='SHADOW_ONLY': continue
+                  if item.get('withinBudget') is not True or int(item.get('estimatedCredits') or 0)>100: continue
+                  if item.get('productionAuthorityChanged') is not False or item.get('parseError') is not None: continue
+                  accepted=item; break
+              if accepted: break
+              time.sleep(20)
+          if not accepted:
+              raise SystemExit('No genuine scheduled_shadow artifact advanced before the 30-minute deadline')
+          result={'advanced':True,'enabledAtUtc':os.environ['ENABLED_AT'],'ruleName':os.environ['RULE_NAME'],'scheduleRuleState':'ENABLED','scheduleExpression':'rate(15 minutes)','baselineObjectCount':len(baseline_items),'verifiedObjectCount':len((latest or {}).get('latestArtifacts') or []),'artifactKey':accepted.get('key'),'artifact':accepted,'pollAttemptCount':len(attempts),'pollAttempts':attempts[-15:]}
+          Path('runtime_reports/mlb_v8_v2_scheduled_evidence.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Disable schedule if verification fails after enable
+        if: always() && steps.enable.outcome == 'success' && steps.evidence.outcome != 'success'
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          sam deploy --template-file .aws-sam-v8-proof-v2/template.yaml --stack-name "$STACK_NAME" --region "${{ secrets.AWS_REGION }}" --capabilities CAPABILITY_IAM --resolve-s3 --force-upload --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}" "DeployGitSha=${GITHUB_SHA}" "V8Enabled=true" "V8ScheduleEnabled=false" "V8FeaturedRegions=us" "V8EventRegions=us,us2" "V8MaxEventsPerCycle=2" "V8MaxCreditsPerCycle=100"
+
+      - name: Write consolidated proof
+        id: report
+        if: always()
+        env:
+          PREREQUISITES: ${{ steps.prerequisites.outcome }}
+          STACK_WAIT: ${{ steps.stack_wait.outcome }}
+          DEPLOY_CANARY: ${{ steps.deploy_canary.outcome }}
+          IDENTITY: ${{ steps.identity.outcome }}
+          BASELINE: ${{ steps.baseline.outcome }}
+          ENABLE: ${{ steps.enable.outcome }}
+          EVIDENCE: ${{ steps.evidence.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          def read(path):
+              p=Path(path)
+              return json.loads(p.read_text()) if p.exists() else None
+          outcomes={k:os.environ[k] for k in ('PREREQUISITES','STACK_WAIT','DEPLOY_CANARY','IDENTITY','BASELINE','ENABLE','EVIDENCE')}
+          blockers=[k.lower()+'_not_successful' for k,v in outcomes.items() if v!='success']
+          identity=read('runtime_reports/mlb_v8_v2_identity.json')
+          canary=read('runtime_reports/mlb_v8_v2_canary.json')
+          evidence=read('runtime_reports/mlb_v8_v2_scheduled_evidence.json')
+          if identity and identity.get('authority')!='SHADOW_ONLY': blockers.append('authority_not_shadow_only')
+          if canary and canary.get('productionAuthorityChanged') is not False: blockers.append('canary_authority_changed')
+          if evidence and evidence.get('advanced') is not True: blockers.append('scheduled_evidence_not_advanced')
+          report={'proofType':'MLB_ODDS_V8_RUNTIME_PROOF_V2','createdAtUtc':datetime.now(timezone.utc).isoformat(),'sourceSha':os.environ['GITHUB_SHA'],'workflowRunId':os.environ['GITHUB_RUN_ID'],'identity':identity,'canary':canary,'scheduledEvidence':evidence,'stepOutcomes':outcomes,'blockers':sorted(set(blockers))}
+          report['ok']=not report['blockers']
+          Path('runtime_reports/mlb_v8_runtime_proof_v2_latest.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Upload all proof artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v8-runtime-proof-v2-${{ github.sha }}
+          path: runtime_reports/mlb_v8_v2_*.json
+          retention-days: 90
+
+      - name: Publish durable V2 proof
+        id: publish
+        if: always()
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          cp runtime_reports/mlb_v8_runtime_proof_v2_latest.json /tmp/mlb_v8_runtime_proof_v2_latest.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in $(seq 1 8); do
+            git fetch origin main
+            git checkout -B main origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb_v8_runtime_proof_v2_latest.json runtime_reports/mlb_v8_runtime_proof_v2_latest.json
+            git add runtime_reports/mlb_v8_runtime_proof_v2_latest.json
+            if git diff --cached --quiet; then exit 0; fi
+            git commit -m 'Publish MLB V8 runtime proof V2'
+            if git push origin HEAD:main; then exit 0; fi
+            sleep $((attempt*3))
+          done
+          exit 1
+
+      - name: Enforce V2 proof
+        if: always()
+        env:
+          PUBLISH: ${{ steps.publish.outcome }}
+        run: |
+          set -euo pipefail
+          test "$PUBLISH" = success
+          jq -e '.ok==true and (.blockers|length==0) and .identity.authority=="SHADOW_ONLY" and .scheduledEvidence.advanced==true and .scheduledEvidence.scheduleRuleState=="ENABLED" and .scheduledEvidence.artifact.triggerMode=="scheduled_shadow" and .scheduledEvidence.artifact.withinBudget==true and .scheduledEvidence.artifact.productionAuthorityChanged==false' runtime_reports/mlb_v8_runtime_proof_v2_latest.json >/dev/null
