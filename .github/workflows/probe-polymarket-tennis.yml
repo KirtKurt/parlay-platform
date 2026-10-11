@@ -1,0 +1,120 @@
+name: Probe public Polymarket Tennis markets
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/probe-polymarket-tennis.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Fetch active public Tennis markets and CLOB prices
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet requests
+          mkdir -p evidence/raw
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          from pathlib import Path
+          import requests
+
+          s=requests.Session(); s.headers.update({'user-agent':'parlay-platform-tennis-market-probe/1.0','accept':'application/json'})
+          base='https://gamma-api.polymarket.com'
+          report={'sports':None,'tennisSports':[],'events':[],'search':None}
+
+          r=s.get(base+'/sports',timeout=30); r.raise_for_status(); sports=r.json(); report['sportsType']=type(sports).__name__
+          candidates=[]
+          if isinstance(sports,list):
+              candidates=sports
+          elif isinstance(sports,dict):
+              for key in ('sports','data','items'):
+                  if isinstance(sports.get(key),list): candidates=sports[key]; break
+          report['tennisSports']=[x for x in candidates if 'tennis' in json.dumps(x).lower()]
+          tag_ids=[]
+          for x in report['tennisSports']:
+              for k in ('tagId','tag_id','id'):
+                  if x.get(k) not in (None,''): tag_ids.append(str(x[k]))
+          tag_ids=list(dict.fromkeys(tag_ids))
+
+          all_events=[]
+          for tag_id in tag_ids:
+              rr=s.get(base+'/events',params={'tag_id':tag_id,'active':'true','closed':'false','limit':500},timeout=45)
+              try:data=rr.json()
+              except Exception:data=None
+              Path(f'evidence/raw/events-tag-{tag_id}.json').write_text(json.dumps(data,indent=2,sort_keys=True) if data is not None else rr.text)
+              rows=data if isinstance(data,list) else ((data or {}).get('events') if isinstance(data,dict) else None)
+              if isinstance(rows,list): all_events.extend(rows)
+
+          sr=s.get(base+'/public-search',params={'q':'tennis','limit_per_type':100},timeout=45)
+          try:search=sr.json()
+          except Exception:search=None
+          report['searchStatus']=sr.status_code
+          report['search']=search
+          if isinstance(search,dict) and isinstance(search.get('events'),list): all_events.extend(search['events'])
+
+          seen=set(); normalized=[]
+          for e in all_events:
+              if not isinstance(e,dict): continue
+              eid=str(e.get('id') or e.get('eventId') or e.get('slug') or '')
+              if not eid or eid in seen: continue
+              text=json.dumps(e).lower()
+              if 'tennis' not in text and not any(token in text for token in ('atp','wta','generali open','estoril','prague open','hamburg ladies','palermo ladies')):
+                  continue
+              seen.add(eid)
+              markets=[]
+              for m in e.get('markets') or []:
+                  if not isinstance(m,dict): continue
+                  outcomes=m.get('outcomes'); prices=m.get('outcomePrices'); tokens=m.get('clobTokenIds')
+                  def parse(v):
+                      if isinstance(v,str):
+                          try:return json.loads(v)
+                          except Exception:return v
+                      return v
+                  outcomes=parse(outcomes); prices=parse(prices); tokens=parse(tokens)
+                  market={
+                      'id':m.get('id'),'slug':m.get('slug'),'question':m.get('question'),
+                      'active':m.get('active'),'closed':m.get('closed'),'acceptingOrders':m.get('acceptingOrders'),
+                      'outcomes':outcomes,'outcomePrices':prices,'clobTokenIds':tokens,
+                      'bestBid':m.get('bestBid'),'bestAsk':m.get('bestAsk'),'lastTradePrice':m.get('lastTradePrice'),
+                      'liquidity':m.get('liquidity'),'volume':m.get('volume'),'startDate':m.get('startDate'),'endDate':m.get('endDate'),
+                  }
+                  if isinstance(tokens,list):
+                      books=[]
+                      for token in tokens[:2]:
+                          try:
+                              br=s.get('https://clob.polymarket.com/book',params={'token_id':token},timeout=30)
+                              bd=br.json() if br.ok else None
+                              books.append({'token':str(token),'status':br.status_code,'book':bd})
+                          except Exception as exc:
+                              books.append({'token':str(token),'error':type(exc).__name__+': '+str(exc)[:200]})
+                      market['books']=books
+                  markets.append(market)
+              normalized.append({
+                  'id':e.get('id'),'slug':e.get('slug'),'ticker':e.get('ticker'),'title':e.get('title'),'subtitle':e.get('subtitle'),
+                  'startDate':e.get('startDate'),'endDate':e.get('endDate'),'active':e.get('active'),'closed':e.get('closed'),
+                  'liquidity':e.get('liquidity'),'volume':e.get('volume'),'category':e.get('category'),'markets':markets,
+              })
+          report['events']=normalized
+          report['eventCount']=len(normalized)
+          report['marketCount']=sum(len(e['markets']) for e in normalized)
+          report['twoOutcomeMarketCount']=sum(1 for e in normalized for m in e['markets'] if isinstance(m.get('outcomes'),list) and len(m['outcomes'])==2)
+          Path('evidence/polymarket-tennis.json').write_text(json.dumps(report,indent=2,sort_keys=True))
+          print(json.dumps(report,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: polymarket-tennis-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: evidence/
