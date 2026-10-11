@@ -1,0 +1,92 @@
+name: MLB AUTO Autonomy Finalize
+
+on:
+  push:
+    branches: ["agent/mlb-auto-autonomy-chain-20260814"]
+    paths:
+      - "scripts/finalize_mlb_auto_autonomy_chain.py"
+      - "scripts/verify_mlb_auto_autonomy_chain.py"
+      - ".github/workflows/mlb-auto-autonomy-finalize.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-auto-autonomy-finalize
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: ${{ !contains(github.event.head_commit.message || '', '[autonomy-finalized]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mlb-auto-autonomy-chain-20260814
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: aws-actions/setup-sam@v2
+      - name: Install dependencies
+        run: python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<9" "pyyaml>=6,<7"
+      - name: Finalize deterministic MLB autonomy source
+        run: |
+          PYTHONPATH=scripts python scripts/finalize_mlb_auto_autonomy_chain.py
+          PYTHONPATH=scripts python scripts/finalize_mlb_auto_autonomy_chain.py
+      - name: Verify complete autonomy contract
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: |
+          python scripts/verify_mlb_auto_autonomy_chain.py
+          pytest -q tests/unit/test_mlb_auto_autonomy_chain_v1.py
+      - name: Verify existing MLB safety contracts
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: |
+          python tests/unit/test_mlb_r7_recovery_contract.py
+          python tests/unit/test_mlb_trainer_continuity_compat_handler_v2.py
+          python tests/unit/test_mlb_trainer_table_wiring.py
+          python tests/unit/test_mlb_accuracy_target_separation.py
+          python tests/unit/test_mlb_ml_promotion_safety.py
+          python tests/unit/test_mlb_production_acceptance.py
+      - name: Validate SAM
+        run: sam validate
+      - name: Enforce isolation
+        run: |
+          if git diff --name-only | grep -E '^(tennis|soccer|tennis_auto|soccer_auto)/|^hello_world/(tennis|soccer)'; then
+            echo "::error::MLB AUTO finalizer modified Tennis or Soccer"
+            exit 1
+          fi
+      - name: Commit finalized autonomy chain
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            template.yaml \
+            hello_world/mlb_ml_aws_training_v1.py \
+            hello_world/mlb_ml_aws_training_v1_compat.py \
+            hello_world/mlb_ml_experiment_v2.py \
+            hello_world/mlb_ml_promotion_policy_v2.py \
+            hello_world/mlb_ml_runtime_install_v3.py \
+            tests/unit/test_mlb_r7_recovery_contract.py \
+            tests/unit/test_mlb_ml_promotion_safety.py \
+            tests/unit/test_mlb_accuracy_target_separation.py \
+            tests/unit/test_mlb_trainer_continuity_compat_handler_v2.py \
+            tests/unit/test_mlb_production_acceptance.py \
+            scripts/verify_mlb_accuracy_target_separation.py \
+            scripts/verify_mlb_ml_promotion_safety.py \
+            .github/workflows/deploy.yml \
+            .github/workflows/mlb-auto-autonomy-contract.yml
+          if git diff --cached --quiet; then
+            echo "No finalized changes to commit"
+            exit 0
+          fi
+          git commit -m "Finalize MLB AUTO autonomy chain [autonomy-finalized]"
+          git pull --rebase --autostash origin agent/mlb-auto-autonomy-chain-20260814
+          git push origin HEAD:agent/mlb-auto-autonomy-chain-20260814
