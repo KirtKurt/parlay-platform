@@ -14,6 +14,7 @@ import mlb_accuracy_target_policy_v1 as policy
 import mlb_ml_champion_challenger_v1 as legacy_champion
 import mlb_ml_promotion_policy_v2 as promotion_v2
 import mlb_official_lock_quality_gate as official_gate
+import mlb_precision_admission_gate_v1 as precision_gate
 
 
 def main() -> int:
@@ -31,12 +32,19 @@ def main() -> int:
     assert legacy_champion.AUTO_PROMOTE is False
     assert legacy_champion.AUTOMATIC_PROMOTION_SUPPORTED is False
 
-    # Every game keeps its immutable winner; the 60% classifier is only an
-    # audit/training-quality disposition and never suppresses display or lock.
+    # Every game keeps its immutable winner. The 60% classifier remains only a
+    # direction-quality check; recommendation admission separately requires a
+    # prospective signal-family precision lower bound of at least 70%.
     assert installed["everyGameRetainsOfficialPick"] is True
     assert installed["everyGameRetainsVisibleLockedPrediction"] is True
     assert installed["playabilitySeparateFromOfficialPick"] is True
+    assert installed["officialRecommendationRequiresPrecisionAdmission"] is True
+    assert installed["minimumOfficialSignalFamilyWilsonLowerBoundPct"] == 70.0
+    assert installed["minimumOfficialSignalFamilyHoldoutGames"] == 50
     assert official_gate.MIN_OFFICIAL_PROBABILITY_PCT == 60.0
+    assert official_gate.ENFORCE_PRECISION_ADMISSION is True
+    assert precision_gate.TARGET_PRECISION_PCT == 70.0
+    assert precision_gate.MIN_HOLDOUT_GAMES == 50
 
     # The new promotion contract is the production contract.
     assert promotion_v2.MIN_TOTAL_CLEAN_ROWS == 500
@@ -47,6 +55,7 @@ def main() -> int:
     assert promotion_v2.ASPIRATIONAL_ACCURACY_PCT == 90.0
 
     assert os.environ.get("INQSI_MLB_ROLLING_24H_ALL_GAMES_TARGET_ACCURACY") == "90.0"
+    assert os.environ.get("INQSI_MLB_ENFORCE_70_PRECISION_ADMISSION") == "true"
     workflow = (ROOT / ".github/workflows/mlb-rolling-24h-audit.yml").read_text(
         encoding="utf-8"
     )
@@ -56,7 +65,7 @@ def main() -> int:
 
     print(
         "MLB targets verified: every game retains a locked winner, 90% is dashboard-only, "
-        "legacy V1 is inert, and AWS V2 uses prospective market-skill/manual-first promotion."
+        "legacy V1 is inert, and official recommendations require prospective 70% precision admission."
     )
     return 0
 
