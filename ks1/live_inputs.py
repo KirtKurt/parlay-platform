@@ -45,13 +45,32 @@ def degraded_odds_capture(receipt):
     return {"payload": payload, "receipt": stamped}
 
 
+def bbs_rate_limited(receipt):
+    """429 after bounded retries is a missing catalogue, not an identity collision."""
+    return isinstance(receipt, dict) and receipt.get("provider") == "bbs" and receipt.get("status") == 429
+
+
+def degraded_bbs_capture(receipt):
+    """Empty data array. Daily isolate-skip must exclude official games as missing_bbs_identity.
+
+    Truncation and schema errors stay fatal in bbs_catalogue and are not handled here.
+    """
+    if not bbs_rate_limited(receipt):
+        raise ValueError("refusing to degrade a non-429 BBS receipt")
+    payload = {"data": []}
+    stamped = {**receipt, "as_of": datetime.now(timezone.utc).isoformat(),
+               "sha256": hashlib.sha256(encode(payload)).hexdigest(),
+               "degraded": "bbs_rate_limited", "match_catalogue": "empty"}
+    return {"payload": payload, "receipt": stamped}
+
+
 class ProviderFailure(ValueError):
     def __init__(self, receipt):
         self.receipt = receipt
         super().__init__(json.dumps(receipt, sort_keys=True))
 
 
-def fetch(provider, base, path, params, *, key=None, opener=urlopen):
+def fetch(provider, base, path, params, *, key=None, opener=urlopen, sleeper=time.sleep):
     headers = {'Accept': 'application/json', 'User-Agent': 'KS1-daily/1.0'}
     query = dict(params)
     if provider == 'bbs':
@@ -63,7 +82,7 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
             raise ProviderFailure({'provider': provider, 'status': 'ODDS_API_KEY_MISSING', 'body_shape': None})
         query['apiKey'] = key
     request = Request(base + path + '?' + urlencode(query), headers=headers)
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             with opener(request, timeout=25) as response:
                 body = response.read(30_000_001)
@@ -91,15 +110,19 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
                 body_shape = 'non_json'
             receipt = {'provider': provider, 'endpoint': base+path, 'status': exc.code, 'body_shape': body_shape}
             # Never log URL/query/header strings: Odds credentials live in query.
+            # Two bounded BBS retries (15s). A third 429 is returned to capture() to degrade.
+            if exc.code == 429 and provider == 'bbs' and attempt < 2:
+                sleeper(15)
+                continue
             if exc.code == 429:
                 raise ProviderFailure(receipt) from None
             if exc.code >= 500 and attempt == 0:
-                time.sleep(1)
+                sleeper(1)
                 continue
             raise ProviderFailure(receipt) from None
         except (URLError, TimeoutError, OSError):
             if attempt == 0:
-                time.sleep(1)
+                sleeper(1)
                 continue
             raise ProviderFailure({'provider': provider, 'status': 'NETWORK_ERROR', 'body_shape': None}) from None
 
@@ -169,7 +192,12 @@ def capture(target_date, output):
         bbs = bbs_catalogue(target_date, official_games, os.environ.get('BBS_API_KEY'))
         (output / 'bbs.json').write_bytes(encode(bbs)); print(json.dumps(bbs['receipt']))
     except ProviderFailure as exc:
-        errors.append(exc.receipt); print(json.dumps(exc.receipt))
+        if bbs_rate_limited(exc.receipt):
+            bbs = degraded_bbs_capture(exc.receipt)
+            (output / 'bbs.json').write_bytes(encode(bbs))
+            print(json.dumps(bbs['receipt']))
+        else:
+            errors.append(exc.receipt); print(json.dumps(exc.receipt))
     calls = [('odds', 'https://api.the-odds-api.com', '/v4/sports/baseball_mlb/odds',
               {'regions': 'us', 'markets': 'h2h,spreads,totals', 'oddsFormat': 'american'}, os.environ.get('ODDS_API_KEY'))]
     for provider, base, path, params, key in calls:
