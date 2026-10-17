@@ -1,0 +1,42 @@
+"""Odds 401/403 must not fail the KS1 slate. BBS hard errors stay fatal."""
+from ks1.live_inputs import fatal_provider_errors, odds_degraded
+
+
+def test_odds_401_is_not_fatal():
+    errors = [{"provider": "odds", "status": 401, "body_shape": {"error_code": "str"}}]
+    assert odds_degraded(errors[0])
+    assert fatal_provider_errors(errors) == []
+
+
+def test_odds_403_and_missing_key_are_not_fatal():
+    errors = [
+        {"provider": "odds", "status": 403},
+        {"provider": "odds", "status": "ODDS_API_KEY_MISSING"},
+    ]
+    assert fatal_provider_errors(errors) == []
+
+
+def test_bbs_truncation_and_identity_remain_fatal():
+    errors = [
+        {"provider": "odds", "status": 401},
+        {"provider": "bbs", "status": 200, "error": "MATCH_CATALOGUE_INVALID_OR_TRUNCATED"},
+    ]
+    fatal = fatal_provider_errors(errors)
+    assert len(fatal) == 1
+    assert fatal[0]["provider"] == "bbs"
+
+
+def test_bbs_provider_failure_remains_fatal():
+    errors = [{"provider": "bbs", "status": 401}]
+    assert fatal_provider_errors(errors) == errors
+
+
+def test_degraded_odds_file_matches_daily_hash_contract():
+    from ks1.inventory import encode
+    import hashlib
+    from ks1.live_inputs import degraded_odds_file
+    record = degraded_odds_file({"provider": "odds", "status": 401, "endpoint": "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds", "body_shape": {"message": "str"}}, as_of="2026-10-01T14:37:54+00:00")
+    assert record["payload"] == []
+    assert record["receipt"]["sha256"] == hashlib.sha256(encode(record["payload"])).hexdigest()
+    assert record["receipt"]["as_of"] == "2026-10-01T14:37:54+00:00"
+    assert record["degraded"] is True
