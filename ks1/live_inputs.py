@@ -63,7 +63,8 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
             raise ProviderFailure({'provider': provider, 'status': 'ODDS_API_KEY_MISSING', 'body_shape': None})
         query['apiKey'] = key
     request = Request(base + path + '?' + urlencode(query), headers=headers)
-    for attempt in range(2):
+    max_attempts = 4
+    for attempt in range(max_attempts):
         try:
             with opener(request, timeout=25) as response:
                 body = response.read(30_000_001)
@@ -91,14 +92,15 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
                 body_shape = 'non_json'
             receipt = {'provider': provider, 'endpoint': base+path, 'status': exc.code, 'body_shape': body_shape}
             # Never log URL/query/header strings: Odds credentials live in query.
-            if exc.code == 429:
-                raise ProviderFailure(receipt) from None
-            if exc.code >= 500 and attempt == 0:
+            if exc.code == 429 and attempt < max_attempts - 1:
+                time.sleep(2 ** attempt)
+                continue
+            if exc.code >= 500 and attempt < max_attempts - 1:
                 time.sleep(1)
                 continue
             raise ProviderFailure(receipt) from None
         except (URLError, TimeoutError, OSError):
-            if attempt == 0:
+            if attempt < max_attempts - 1:
                 time.sleep(1)
                 continue
             raise ProviderFailure({'provider': provider, 'status': 'NETWORK_ERROR', 'body_shape': None}) from None
