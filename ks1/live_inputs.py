@@ -92,6 +92,9 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
             receipt = {'provider': provider, 'endpoint': base+path, 'status': exc.code, 'body_shape': body_shape}
             # Never log URL/query/header strings: Odds credentials live in query.
             if exc.code == 429:
+                if provider == 'bbs' and attempt == 0:
+                    time.sleep(5)
+                    continue
                 raise ProviderFailure(receipt) from None
             if exc.code >= 500 and attempt == 0:
                 time.sleep(1)
