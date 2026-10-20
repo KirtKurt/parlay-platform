@@ -29,7 +29,6 @@ def shape(value, depth=0):
     return type(value).__name__
 
 
-
 def odds_auth_unavailable(receipt):
     """401/missing key cannot supply a market. Do not kill official scoring."""
     return (isinstance(receipt, dict) and receipt.get("provider") == "odds"
@@ -42,6 +41,21 @@ def degraded_odds_capture(receipt):
     stamped = {**receipt, "as_of": datetime.now(timezone.utc).isoformat(),
                "sha256": hashlib.sha256(encode(payload)).hexdigest(),
                "degraded": "odds_auth_unavailable", "market_status": "unavailable"}
+    return {"payload": payload, "receipt": stamped}
+
+
+def bbs_rate_limited(receipt):
+    """429 cannot supply BBS catalogue. Do not kill official scoring."""
+    return (isinstance(receipt, dict) and receipt.get("provider") == "bbs"
+            and receipt.get("status") == 429)
+
+
+def degraded_bbs_capture(receipt):
+    """Empty BBS catalogue. Official games without BBS become exclusions."""
+    payload = {"data": []}
+    stamped = {**receipt, "as_of": datetime.now(timezone.utc).isoformat(),
+               "sha256": hashlib.sha256(encode(payload)).hexdigest(),
+               "degraded": "bbs_rate_limited", "catalogue_status": "empty"}
     return {"payload": payload, "receipt": stamped}
 
 
@@ -169,7 +183,12 @@ def capture(target_date, output):
         bbs = bbs_catalogue(target_date, official_games, os.environ.get('BBS_API_KEY'))
         (output / 'bbs.json').write_bytes(encode(bbs)); print(json.dumps(bbs['receipt']))
     except ProviderFailure as exc:
-        errors.append(exc.receipt); print(json.dumps(exc.receipt))
+        if bbs_rate_limited(exc.receipt):
+            value = degraded_bbs_capture(exc.receipt)
+            (output / "bbs.json").write_bytes(encode(value))
+            print(json.dumps(value["receipt"]))
+        else:
+            errors.append(exc.receipt); print(json.dumps(exc.receipt))
     calls = [('odds', 'https://api.the-odds-api.com', '/v4/sports/baseball_mlb/odds',
               {'regions': 'us', 'markets': 'h2h,spreads,totals', 'oddsFormat': 'american'}, os.environ.get('ODDS_API_KEY'))]
     for provider, base, path, params, key in calls:
