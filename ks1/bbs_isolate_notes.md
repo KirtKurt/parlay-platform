@@ -2,13 +2,14 @@
 
 Unmatched/ambiguous BBS events continue; official games without BBS go to exclusions (`missing_bbs_identity`). Duplicate BBS-to-one-game, schema change, and truncation stay hard errors.
 
-Status 2026-10-17 12:30 UTC operator cycle:
-- Main already implements isolate-skip via `bbs_assignments(..., isolate_unmatched=True)` and `missing_bbs_identity` exclusions.
-- Latest scheduled runs (#1577 etc.) all success; no recent BBS identity failures killing slate.
-- No CRON_GAP (last schedule ~1h ago, next expected soon).
-- Did not patch main. Did not merge. Did not rewrite p_home, locks, or ledgers.
+Status 2026-10-20 15:20 UTC operator cycle:
+- Main runs failing on BBS 429 + Odds 401 in live_inputs.capture (raises ValueError if any errors).
+- Branch ks1-isolate-bbs-identity-20260911 already degrades BBS 429/NETWORK to empty catalogue via bbs_degrade.degraded_bbs_capture so isolate-skip applies; Odds 401 already degrades.
+- No CRON_GAP (latest schedule attempt ~15:10 UTC, within 70min).
+- PR 710 open (serving gates, SCHEMA changes). PR 711 draft (2stackMLB shadow). PR 712 merged (watchdog; do not activate).
+- Did not patch main. Did not merge. Did not rewrite p_home, locks, or ledgers. Did not dispatch workflow.
 - Champion remains KS1-LGB+dual-Poisson. 2stackMLB shadow-only.
+- ACCURACY=UNAVAILABLE (no new graded_ledger inspected; last success had nightly artifact).
+- Slate: daily failed this hour; prior success had predictions. NYY/NYM and CWS remain sits.
 
 Do not merge without Kurt approval.
-
-Previous: Status 2026-10-05 22:15 UTC: BBS 429 and Odds 401 both degrade. Truncation/schema/duplicate BBS stay hard errors. No p_home/lock/ledger rewrite. Not merged.
