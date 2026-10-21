@@ -169,7 +169,16 @@ def capture(target_date, output):
         bbs = bbs_catalogue(target_date, official_games, os.environ.get('BBS_API_KEY'))
         (output / 'bbs.json').write_bytes(encode(bbs)); print(json.dumps(bbs['receipt']))
     except ProviderFailure as exc:
-        errors.append(exc.receipt); print(json.dumps(exc.receipt))
+        # Rate-limit / transient BBS failures are isolate-skip: empty catalogue so
+        # daily excludes official games without BBS identity and continues.
+        # Hard schema/truncation/duplicate stay fatal inside bbs_catalogue / daily.
+        if exc.receipt.get('status') == 429 or exc.receipt.get('status') == 'BBS_API_KEY_MISSING':
+            empty = {'payload': {'data': []}, 'receipt': {**exc.receipt, 'degraded': 'bbs_unavailable_isolate_skip',
+                                                          'as_of': datetime.now(timezone.utc).isoformat()}}
+            (output / 'bbs.json').write_bytes(encode(empty))
+            print(json.dumps(empty['receipt']))
+        else:
+            errors.append(exc.receipt); print(json.dumps(exc.receipt))
     calls = [('odds', 'https://api.the-odds-api.com', '/v4/sports/baseball_mlb/odds',
               {'regions': 'us', 'markets': 'h2h,spreads,totals', 'oddsFormat': 'american'}, os.environ.get('ODDS_API_KEY'))]
     for provider, base, path, params, key in calls:
