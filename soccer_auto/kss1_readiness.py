@@ -82,11 +82,12 @@ def verify_rollout(training, status, picks):
         require(int(picks.get("count") or 0) == 0, "GOALS_PICK_COUNT_MISMATCH")
         recorded = 0
     else:
+        fixture_count = int(picks.get("fixture_count") or 0)
         safe_empty = (
             picks.get("reason") == "NO_MATCHING_RECORDED_PICKS"
             and published_any == 0
             and isinstance(picks.get("missing"), list)
-            and bool(picks["missing"])
+            and (bool(picks["missing"]) or fixture_count == 0)
             and int(picks.get("count") or 0) == 0
             and all(
                 row.get("reason") in {
@@ -99,7 +100,7 @@ def verify_rollout(training, status, picks):
                 int(published.get(key) or 0) == 0
                 for key in ("1x2", "double_chance", "ou25", "btts", "any")
             )
-            and len(picks["missing"]) == int(picks.get("fixture_count") or 0)
+            and len(picks["missing"]) == fixture_count
         )
         require(safe_empty, "NO_RECORDED_TRAINED_PUBLISHED_BOOKS")
         recorded = 0
