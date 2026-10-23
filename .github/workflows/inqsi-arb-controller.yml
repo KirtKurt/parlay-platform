@@ -83,9 +83,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # Never dispatch a repair when the controller explicitly withholds authority.
+          # Missing or invalid evidence also fails closed.
+          if ! python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("arb-controller-report.json").read_text())
+          assert report.get("repair_authorized") is True
+          PY
+          then
+            echo 'ARB repair dispatch withheld: no affirmative controller authorization.'
+            exit 0
+          fi
           gh workflow run inqsi-arb-repair.yml --ref main
       - name: Preserve failed health signal
         if: steps.inspect.outcome == 'failure'
         run: |
-          echo 'Production health failed; one bounded repair was dispatched. A later controller run will verify recovery.'
+          echo 'Production health failed; repair dispatch requires affirmative controller authorization.'
           exit 1
