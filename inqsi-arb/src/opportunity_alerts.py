@@ -112,13 +112,13 @@ def _message(status: str, row: Dict[str, Any], *, audit_event_id: str | None) ->
     }
 
 
-def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | None = None) -> Dict[str, int]:
+def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | None = None, sport: str | None = None) -> Dict[str, int]:
     if not enabled():
         return {"published": 0, "deduped": 0, "errors": 0}
 
     rows: Iterable[tuple[str, Dict[str, Any]]] = [
-        *((_status("hits", row), row) for row in (result.get("hits") or [])),
-        *((_status("detected_unverified", row), row) for row in (result.get("detected_unverified") or [])),
+        *((_status("hits", row), {**row, "sport": sport or row.get("sport")}) for row in (result.get("hits") or [])),
+        *((_status("detected_unverified", row), {**row, "sport": sport or row.get("sport")}) for row in (result.get("detected_unverified") or [])),
     ]
     client = boto3.client("sns")
     published = deduped = errors = 0
