@@ -200,3 +200,21 @@ def test_workflow_requires_tests_and_read_only_sns_proof_before_dispatch(monkeyp
     assert 'if ! python - "$RESULT_FILE"' in workflow
     assert 'decision != "allowed"' in workflow
     assert 'sns:Unsubscribe' in workflow
+
+
+def test_sns_authority_proofs_include_subscription_readback():
+    """The one-message SMS test reads subscriptions before publishing."""
+    workflows = ROOT.parent / ".github/workflows"
+    for filename in (
+        "inqsi-arb-sms-iam-diagnostic-repair.yml",
+        "inqsi-arb-deploy.yml",
+        "inqsi-arb-engineering-controller.yml",
+    ):
+        content = (workflows / filename).read_text()
+        assert "sns:ListSubscriptionsByTopic" in content
+        assert "sns:Subscribe sns:ListSubscriptionsByTopic sns:Unsubscribe" in content
+        assert '"sns:ListSubscriptionsByTopic"' in content
+        assert "assert set(decisions) == required" in content
+    sms_test = (workflows / "inqsi-arb-sms-test.yml").read_text()
+    assert "aws sns list-subscriptions-by-topic" in sms_test
+    assert "aws sns publish" in sms_test
