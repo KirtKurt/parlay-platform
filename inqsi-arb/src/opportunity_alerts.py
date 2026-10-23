@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable
 
 try:
@@ -87,8 +88,28 @@ def _identity(status: str, row: Dict[str, Any]) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+
+def _quote_ages_seconds(legs: list) -> list:
+    """Quote ages at publication time; unknown or naive timestamps remain unknown."""
+    now = datetime.now(timezone.utc)
+    ages = []
+    for leg in legs:
+        raw = leg.get("last_update")
+        age = None
+        if isinstance(raw, str):
+            try:
+                timestamp = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if timestamp.tzinfo is not None:
+                    age = max(0, int((now - timestamp.astimezone(timezone.utc)).total_seconds()))
+            except (ValueError, OverflowError):
+                pass
+        ages.append(age)
+    return ages
+
+
 def _message(status: str, row: Dict[str, Any], *, audit_event_id: str | None) -> Dict[str, Any]:
     legs = _legs(row)
+    ages = _quote_ages_seconds(legs)
     return {
         "type": "ARB_OPPORTUNITY",
         "status": status,
@@ -106,6 +127,8 @@ def _message(status: str, row: Dict[str, Any], *, audit_event_id: str | None) ->
         "stake_total": _first_present(row, "allocated_stake", "stake_total", "bankroll"),
         "detected_at": _first_present(row, "detected_at", "fetched_at", "timestamp"),
         "quote_timestamps": [leg.get("last_update") for leg in legs],
+        "quote_ages_seconds": ages,
+        "quote_age_seconds": max((age for age in ages if age is not None), default=None),
         "holdback_reason": _holdback_reason(row) if status == "HELD_BACK" else None,
         "legs": legs,
         "places_bets": False,
