@@ -1,17 +1,19 @@
-name: Inqsi ARB SMS IAM Diagnostic Repair
-
+name: Inqsi ARB SNS IAM Authority Proof (Read Only)
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '13 * * * *'
   push:
     branches: [main]
     paths:
       - '.github/workflows/inqsi-arb-sms-iam-diagnostic-repair.yml'
-
 permissions:
   contents: read
-
+concurrency:
+  group: inqsi-arb-sns-iam-authority-proof
+  cancel-in-progress: false
 jobs:
-  repair-and-verify:
+  prove-authority:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -20,29 +22,48 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Create separate bounded SMS diagnostic permission and verify
+      - name: Simulate existing SNS permissions without modifying AWS
         shell: bash
         run: |
           set -euo pipefail
-          USER=github-parlay-platform-deploy
-          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-          POLICY_NAME=ArbSmsDeliveryDiagnosticRead
-          POLICY_ARN="arn:aws:iam::$ACCOUNT:policy/$POLICY_NAME"
-          DOC='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sms-voice:DescribeVerifiedDestinationNumbers","Resource":"*"}]}'
-          if ! aws iam get-policy --policy-arn "$POLICY_ARN" >/dev/null 2>&1; then
-            aws iam create-policy --policy-name "$POLICY_NAME" --policy-document "$DOC" >/dev/null
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          PRINCIPAL_ARN=$(aws sts get-caller-identity --query Arn --output text)
+          REGION="${{ secrets.AWS_REGION }}"
+          TOPIC_ARN="arn:aws:sns:${REGION}:${ACCOUNT_ID}:inqsi-arb-prod-ArbOpportunityTopic-*"
+          RESULT_FILE=$(mktemp)
+          trap 'rm -f "$RESULT_FILE"' EXIT
+          if ! aws iam simulate-principal-policy \
+            --policy-source-arn "$PRINCIPAL_ARN" \
+            --action-names sns:CreateTopic sns:GetTopicAttributes sns:SetTopicAttributes sns:DeleteTopic sns:Subscribe sns:Unsubscribe sns:Publish \
+            --resource-arns "$TOPIC_ARN" \
+            --output json > "$RESULT_FILE" 2>/dev/null; then
+            echo 'ARB SNS authority UNPROVEN: read-only IAM simulation unavailable or denied.'
+            exit 1
           fi
-          GROUP=ArbSmsDeliveryDiagnostics
-          aws iam get-group --group-name "$GROUP" >/dev/null 2>&1 || aws iam create-group --group-name "$GROUP" >/dev/null
-          aws iam attach-group-policy --group-name "$GROUP" --policy-arn "$POLICY_ARN"
-          aws iam add-user-to-group --group-name "$GROUP" --user-name "$USER" 2>/dev/null || true
-          sleep 3
-          aws iam list-attached-group-policies --group-name "$GROUP" --query "AttachedPolicies[?PolicyArn=='$POLICY_ARN'].PolicyArn" --output text | grep -F "$POLICY_ARN"
-          aws iam get-group --group-name "$GROUP" --query "Users[?UserName=='$USER'].UserName" --output text | grep -F "$USER"
-          COUNT=$(aws sns list-sms-sandbox-phone-numbers --query "length(PhoneNumbers)" --output text)
-          echo "SMS sandbox read verification succeeded; verified/pending destination count=$COUNT"
-          echo "SMS Voice account attributes:"
-          aws pinpoint-sms-voice-v2 describe-account-attributes --query "AccountAttributes[].{Name:Name,Value:Value}" --output json
-          echo "SMS Voice account limits:"
-          aws pinpoint-sms-voice-v2 describe-account-limits --output json
-          echo "No SMS was sent."
+          python - "$RESULT_FILE" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          required = {
+              "sns:CreateTopic", "sns:GetTopicAttributes", "sns:SetTopicAttributes",
+              "sns:DeleteTopic", "sns:Subscribe", "sns:Unsubscribe", "sns:Publish",
+          }
+          try:
+              rows = json.loads(Path(sys.argv[1]).read_text())["EvaluationResults"]
+              assert isinstance(rows, list) and len(rows) == len(required)
+              decisions = {}
+              for row in rows:
+                  action = row["EvalActionName"]
+                  assert action in required and action not in decisions
+                  decisions[action] = row["EvalDecision"]
+              assert set(decisions) == required
+          except (OSError, ValueError, KeyError, TypeError, AssertionError):
+              print("ARB SNS authority UNPROVEN: incomplete or malformed simulation.")
+              sys.exit(1)
+          denied = sorted(a for a, decision in decisions.items() if decision != "allowed")
+          if denied:
+              print("ARB SNS authority DENIED: " + ", ".join(denied))
+              sys.exit(1)
+          print("ARB SNS authority SIMULATION ALLOWED: all seven actions.")
+          print("No deployment, subscription change, SNS publish, or SMS occurred.")
+          PY
