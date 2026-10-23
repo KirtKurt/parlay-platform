@@ -111,6 +111,64 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
+      - name: Fail-closed repair dispatch eligibility (read-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # AEC may still inspect/report, but cannot dispatch repairs unless both
+          # exact-checkout tests and existing AWS SNS authority are proven.
+          echo "ARB_AEC_ALLOW_DISPATCH=false" >> "$GITHUB_ENV"
+          if ! python -m pytest -q inqsi-arb/tests > "$RUNNER_TEMP/arb-aec-tests.log" 2>&1; then
+            echo 'ARB repair dispatch withheld: deterministic ARB suite is failing.'
+            tail -n 2 "$RUNNER_TEMP/arb-aec-tests.log" || true
+            exit 0
+          fi
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          PRINCIPAL_ARN=$(aws sts get-caller-identity --query Arn --output text)
+          REGION="${{ secrets.AWS_REGION }}"
+          TOPIC_ARN="arn:aws:sns:${REGION}:${ACCOUNT_ID}:inqsi-arb-prod-ArbOpportunityTopic-*"
+          RESULT_FILE=$(mktemp)
+          trap 'rm -f "$RESULT_FILE"' EXIT
+          if ! aws iam simulate-principal-policy \
+            --policy-source-arn "$PRINCIPAL_ARN" \
+            --action-names sns:CreateTopic sns:GetTopicAttributes sns:SetTopicAttributes sns:DeleteTopic sns:Subscribe sns:Unsubscribe sns:Publish \
+            --resource-arns "$TOPIC_ARN" \
+            --output json > "$RESULT_FILE" 2>/dev/null; then
+            echo 'ARB repair dispatch withheld: SNS IAM authority unproven.'
+            exit 0
+          fi
+          if ! python - "$RESULT_FILE" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          required = {
+              "sns:CreateTopic", "sns:GetTopicAttributes", "sns:SetTopicAttributes",
+              "sns:DeleteTopic", "sns:Subscribe", "sns:Unsubscribe", "sns:Publish",
+          }
+          try:
+              rows = json.loads(Path(sys.argv[1]).read_text())["EvaluationResults"]
+              assert isinstance(rows, list) and len(rows) == len(required)
+              decisions = {}
+              for row in rows:
+                  action = row["EvalActionName"]
+                  assert action in required and action not in decisions
+                  decisions[action] = row["EvalDecision"]
+              assert set(decisions) == required
+          except (OSError, ValueError, KeyError, TypeError, AssertionError):
+              print("ARB repair dispatch withheld: malformed or incomplete SNS IAM proof.")
+              sys.exit(1)
+          denied = sorted(action for action, decision in decisions.items() if decision != "allowed")
+          if denied:
+              print("ARB repair dispatch withheld: SNS IAM denied " + ", ".join(denied))
+              sys.exit(1)
+          print("ARB AEC SNS IAM simulation: all seven actions explicitly allowed.")
+          PY
+          then
+            exit 0
+          fi
+          echo "ARB_AEC_ALLOW_DISPATCH=true" >> "$GITHUB_ENV"
+          echo 'ARB repair dispatch eligibility proven for this run; repair workflow retains its own gates.'
       - name: Resolve isolated production endpoints
         id: endpoints
         shell: bash
