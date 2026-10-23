@@ -73,11 +73,12 @@ def test_unverified_engine_hit_is_held_back_not_claimed_verified(monkeypatch):
         "legs": [{"outcome": "A", "book": "draftkings", "american": 120, "last_update": "2026-10-23T09:00:00Z"}],
     }
     assert alerts._status("hits", row) == "HELD_BACK"
-    out = alerts.publish_scan_opportunities({"hits": [row]})
+    out = alerts.publish_scan_opportunities({"hits": [row]}, sport="baseball_mlb")
     assert out == {"published": 1, "deduped": 0, "errors": 0}
     import json
     msg = json.loads(sns.calls[0]["Message"])
     assert msg["classification"] == "HELD_BACK"
+    assert msg["sport"] == "baseball_mlb"
     assert msg["holdback_reason"] == "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
     assert msg["margin_pct"] == 2.34
     assert msg["profit"] == 2.34
