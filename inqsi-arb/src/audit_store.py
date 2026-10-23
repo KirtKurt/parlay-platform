@@ -104,11 +104,12 @@ def recent(kind: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
     return out[:wanted]
 
 
-def claim_once(namespace: str, identity: str, *, ttl_seconds: int = 21600) -> bool:
+def claim_once(namespace: str, identity: str, *, ttl_seconds: int = 21600, claim_token: str | None = None) -> bool:
     """Atomically claim an alert identity.
 
-    Returns True only for the first claimant during the TTL window. This keeps
-    Lambda retries and repeated scans from emitting duplicate notifications.
+    Returns True only for the first claimant during the TTL window. Expired
+    claims may be reclaimed even before DynamoDB asynchronous TTL deletion.
+    An optional token permits safe release after a failed downstream publish.
     """
     table = _table()
     if table is None:
@@ -118,16 +119,55 @@ def claim_once(namespace: str, identity: str, *, ttl_seconds: int = 21600) -> bo
     sk = str(identity).strip()
     if not sk:
         return False
+    item = {
+        "pk": pk,
+        "sk": sk,
+        "kind": "CLAIM",
+        "created_at_ms": now * 1000,
+        "ttl": now + max(60, int(ttl_seconds)),
+    }
+    if claim_token:
+        item["claim_token"] = str(claim_token)
+    try:
+        table.put_item(
+            Item=item,
+            ConditionExpression="attribute_not_exists(pk) OR #ttl < :now",
+            ExpressionAttributeNames={"#ttl": "ttl"},
+            ExpressionAttributeValues={":now": now},
+        )
+        return True
+    except Exception as exc:
+        response = getattr(exc, "response", {}) or {}
+        code = str((response.get("Error") or {}).get("Code") or "")
+        if code == "ConditionalCheckFailedException":
+            return False
+        raise
+
+
+def release_claim(namespace: str, identity: str, *, claim_token: str) -> bool:
+    """Expire only a claim owned by this caller after a failed notification.
+
+    Uses the existing PutItem permission rather than requiring DeleteItem.
+    A token-matched conditional write cannot release a newer caller\'s claim.
+    """
+    table = _table()
+    token = str(claim_token or "").strip()
+    sk = str(identity).strip()
+    if table is None or not token or not sk:
+        return False
+    now = int(time.time())
     try:
         table.put_item(
             Item={
-                "pk": pk,
+                "pk": "CLAIM#" + (str(namespace).strip().upper() or "DEFAULT"),
                 "sk": sk,
-                "kind": "CLAIM",
+                "kind": "CLAIM_RELEASED",
                 "created_at_ms": now * 1000,
-                "ttl": now + max(60, int(ttl_seconds)),
+                "ttl": now - 1,
+                "claim_token": token,
             },
-            ConditionExpression="attribute_not_exists(pk) AND attribute_not_exists(sk)",
+            ConditionExpression="claim_token = :token",
+            ExpressionAttributeValues={":token": token},
         )
         return True
     except Exception as exc:

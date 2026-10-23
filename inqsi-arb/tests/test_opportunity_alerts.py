@@ -159,3 +159,56 @@ def test_quote_age_unknown_without_aware_timestamp():
     message = alerts._message("HELD_BACK", row, audit_event_id=None)
     assert message["quote_ages_seconds"] == [None, None]
     assert message["quote_age_seconds"] is None
+
+
+def test_unacknowledged_publish_releases_only_owned_claim_and_retries(monkeypatch):
+    class FlakySns(FakeSns):
+        def publish(self, **kwargs):
+            self.calls.append(kwargs)
+            return {} if len(self.calls) == 1 else {"MessageId": "ack-2"}
+
+    sns = FlakySns()
+    claims = {}
+    releases = []
+
+    def claim(namespace, identity, *, ttl_seconds, claim_token):
+        assert namespace == "ARB_OPPORTUNITY"
+        assert ttl_seconds >= 60
+        if identity in claims:
+            return False
+        claims[identity] = claim_token
+        return True
+
+    def release(namespace, identity, *, claim_token):
+        releases.append((namespace, identity, claim_token))
+        if claims.get(identity) != claim_token:
+            return False
+        del claims[identity]
+        return True
+
+    monkeypatch.setenv("ARB_OPPORTUNITY_TOPIC_ARN", "arn:aws:sns:us-east-1:123:arb")
+    monkeypatch.setattr(alerts, "boto3", FakeBoto(sns))
+    monkeypatch.setattr(alerts, "claim_once", claim)
+    monkeypatch.setattr(alerts, "release_claim", release)
+    result = {"detected_unverified": [
+        {"event_id": "event-1", "market": "h2h", "margin_pct": 1.2}
+    ]}
+
+    assert alerts.publish_scan_opportunities(result) == {"published": 0, "deduped": 0, "errors": 1}
+    assert claims == {}
+    assert len(releases) == 1 and releases[0][2]
+    assert alerts.publish_scan_opportunities(result) == {"published": 1, "deduped": 0, "errors": 0}
+    assert len(claims) == 1
+    assert alerts.publish_scan_opportunities(result) == {"published": 0, "deduped": 1, "errors": 0}
+    assert len(sns.calls) == 2
+    assert len(releases) == 1
+
+
+def test_successful_publish_never_releases_claim(monkeypatch):
+    sns = FakeSns()
+    monkeypatch.setenv("ARB_OPPORTUNITY_TOPIC_ARN", "arn:aws:sns:us-east-1:123:arb")
+    monkeypatch.setattr(alerts, "boto3", FakeBoto(sns))
+    monkeypatch.setattr(alerts, "claim_once", lambda *args, **kwargs: True)
+    monkeypatch.setattr(alerts, "release_claim", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected release")))
+    result = {"detected_unverified": [{"event_id": "e", "market": "h2h"}]}
+    assert alerts.publish_scan_opportunities(result) == {"published": 1, "deduped": 0, "errors": 0}

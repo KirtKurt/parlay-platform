@@ -6,13 +6,14 @@ import json
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable
+from uuid import uuid4
 
 try:
     import boto3
 except ImportError:  # local tests
     boto3 = None
 
-from audit_store import claim_once
+from audit_store import claim_once, release_claim
 
 
 def _topic_arn() -> str:
@@ -148,10 +149,13 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
     ttl = int(os.environ.get("ARB_OPPORTUNITY_ALERT_DEDUPE_SECONDS", "21600"))
     for status, row in rows:
         identity = _identity(status, row)
+        token = uuid4().hex
+        claimed = False
         try:
-            if not claim_once("ARB_OPPORTUNITY", identity, ttl_seconds=ttl):
+            if not claim_once("ARB_OPPORTUNITY", identity, ttl_seconds=ttl, claim_token=token):
                 deduped += 1
                 continue
+            claimed = True
             message = _message(status, row, audit_event_id=audit_event_id)
             response = client.publish(
                 TopicArn=_topic_arn(),
@@ -167,4 +171,13 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
             published += 1
         except Exception:
             errors += 1
+            # A failed/unknown SNS acknowledgement must not suppress a genuine
+            # opportunity for the entire dedupe TTL. Release only our token.
+            # A lost acknowledgement may cause at-least-once retry, never a
+            # false claim of delivery or a release of another worker\'s claim.
+            if claimed:
+                try:
+                    release_claim("ARB_OPPORTUNITY", identity, claim_token=token)
+                except Exception:
+                    pass  # Original publication failure remains counted.
     return {"published": published, "deduped": deduped, "errors": errors}
