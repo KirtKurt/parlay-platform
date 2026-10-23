@@ -34,7 +34,7 @@ jobs:
           trap 'rm -f "$RESULT_FILE"' EXIT
           if ! aws iam simulate-principal-policy \
             --policy-source-arn "$PRINCIPAL_ARN" \
-            --action-names sns:CreateTopic sns:GetTopicAttributes sns:SetTopicAttributes sns:DeleteTopic sns:Subscribe sns:Unsubscribe sns:Publish \
+            --action-names sns:CreateTopic sns:GetTopicAttributes sns:SetTopicAttributes sns:DeleteTopic sns:Subscribe sns:ListSubscriptionsByTopic sns:Unsubscribe sns:Publish \
             --resource-arns "$TOPIC_ARN" \
             --output json > "$RESULT_FILE" 2>/dev/null; then
             echo 'ARB SNS authority UNPROVEN: read-only IAM simulation unavailable or denied.'
@@ -46,7 +46,7 @@ jobs:
           from pathlib import Path
           required = {
               "sns:CreateTopic", "sns:GetTopicAttributes", "sns:SetTopicAttributes",
-              "sns:DeleteTopic", "sns:Subscribe", "sns:Unsubscribe", "sns:Publish",
+              "sns:DeleteTopic", "sns:Subscribe", "sns:ListSubscriptionsByTopic", "sns:Unsubscribe", "sns:Publish",
           }
           try:
               rows = json.loads(Path(sys.argv[1]).read_text())["EvaluationResults"]
@@ -64,6 +64,6 @@ jobs:
           if denied:
               print("ARB SNS authority DENIED: " + ", ".join(denied))
               sys.exit(1)
-          print("ARB SNS authority SIMULATION ALLOWED: all seven actions.")
+          print("ARB SNS authority SIMULATION ALLOWED: all eight actions.")
           print("No deployment, subscription change, SNS publish, or SMS occurred.")
           PY
