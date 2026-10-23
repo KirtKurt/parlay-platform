@@ -131,7 +131,7 @@ jobs:
           trap 'rm -f "$RESULT_FILE"' EXIT
           if ! aws iam simulate-principal-policy \
             --policy-source-arn "$PRINCIPAL_ARN" \
-            --action-names sns:CreateTopic sns:GetTopicAttributes sns:SetTopicAttributes sns:DeleteTopic sns:Subscribe sns:Unsubscribe sns:Publish \
+            --action-names sns:CreateTopic sns:GetTopicAttributes sns:SetTopicAttributes sns:DeleteTopic sns:Subscribe sns:ListSubscriptionsByTopic sns:Unsubscribe sns:Publish \
             --resource-arns "$TOPIC_ARN" \
             --output json > "$RESULT_FILE" 2>/dev/null; then
             echo 'ARB repair dispatch withheld: SNS IAM authority unproven.'
@@ -144,7 +144,7 @@ jobs:
 
           required = {
               "sns:CreateTopic", "sns:GetTopicAttributes", "sns:SetTopicAttributes",
-              "sns:DeleteTopic", "sns:Subscribe", "sns:Unsubscribe", "sns:Publish",
+              "sns:DeleteTopic", "sns:Subscribe", "sns:ListSubscriptionsByTopic", "sns:Unsubscribe", "sns:Publish",
           }
           try:
               rows = json.loads(Path(sys.argv[1]).read_text())["EvaluationResults"]
@@ -162,7 +162,7 @@ jobs:
           if denied:
               print("ARB repair dispatch withheld: SNS IAM denied " + ", ".join(denied))
               sys.exit(1)
-          print("ARB AEC SNS IAM simulation: all seven actions explicitly allowed.")
+          print("ARB AEC SNS IAM simulation: all eight actions explicitly allowed.")
           PY
           then
             exit 0
