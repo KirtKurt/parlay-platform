@@ -128,3 +128,34 @@ def test_sns_publish_without_message_id_is_not_counted_as_delivered(monkeypatch)
     ]})
     assert out == {"published": 0, "deduped": 0, "errors": 1}
     assert len(sns.calls) == 1
+
+
+def test_quote_age_is_oldest_leg_age_with_unknowns(monkeypatch):
+    from datetime import datetime, timezone
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 23, 11, 0, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(alerts, "datetime", FrozenDatetime)
+    row = {"legs": [
+        {"last_update": "2026-10-23T10:59:00Z"},
+        {"last_update": "2026-10-23T10:58:30+00:00"},
+        {"last_update": "not-a-date"},
+        {"last_update": "2026-10-23T11:01:00Z"},
+    ]}
+    message = alerts._message("HELD_BACK", row, audit_event_id=None)
+    assert message["quote_timestamps"] == [
+        "2026-10-23T10:59:00Z", "2026-10-23T10:58:30+00:00",
+        "not-a-date", "2026-10-23T11:01:00Z",
+    ]
+    assert message["quote_ages_seconds"] == [60, 90, None, 0]
+    assert message["quote_age_seconds"] == 90
+
+
+def test_quote_age_unknown_without_aware_timestamp():
+    row = {"legs": [{"last_update": "2026-10-23T10:00:00"}, {}]}
+    message = alerts._message("HELD_BACK", row, audit_event_id=None)
+    assert message["quote_ages_seconds"] == [None, None]
+    assert message["quote_age_seconds"] is None
