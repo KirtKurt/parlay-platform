@@ -26,21 +26,58 @@ def _legs(row: Dict[str, Any]) -> list:
     return list(row.get("legs") or row.get("quotes") or [])
 
 
+def _first_present(row: Dict[str, Any], *keys: str) -> Any:
+    # A legitimate zero margin, profit, or American price must not disappear.
+    for key in keys:
+        if row.get(key) is not None:
+            return row[key]
+    return None
+
+
+def _status(bucket: str, row: Dict[str, Any]) -> str:
+    # Engine hits include executable mathematical arbs with *unknown* house
+    # rules. Do not describe those as verified opportunities in SMS.
+    if bucket != "hits":
+        return "HELD_BACK"
+    validation = row.get("validation") or {}
+    settlement = validation.get("settlement_states") or {}
+    verified = (
+        row.get("arb") is True
+        and row.get("executable") is True
+        and validation.get("outcome_coverage") == "complete"
+        and validation.get("rules_compatible") is True
+        and settlement.get("strict_arbitrage") is True
+    )
+    return "VERIFIED" if verified else "HELD_BACK"
+
+
+def _holdback_reason(row: Dict[str, Any]) -> str:
+    validation = row.get("validation") or {}
+    return str(
+        _first_present(validation, "qualification_reason", "settlement_state_reason", "settlement_reason")
+        or row.get("reason")
+        or "EXECUTION_OR_SETTLEMENT_NOT_VERIFIED"
+    )
+
+
 def _identity(status: str, row: Dict[str, Any]) -> str:
-    # Include material price/edge state so a changed opportunity can re-alert,
-    # while identical repeated scans and Lambda retries deduplicate.
+    # Actual engine fields are margin_pct and leg.american. Include price,
+    # edge, and classification to re-alert material changes while deduping
+    # unchanged scans regardless of their audit ID.
     material = {
         "status": status,
+        "reason": _holdback_reason(row) if status == "HELD_BACK" else None,
         "sport": row.get("sport"),
-        "event_id": row.get("event_id") or row.get("event"),
+        "event_id": _first_present(row, "event_id", "event"),
+        "market_id": row.get("market_id"),
         "market": row.get("market"),
-        "line": row.get("line") or row.get("point"),
-        "margin": row.get("margin") or row.get("edge") or row.get("arb_pct"),
+        "line": _first_present(row, "line", "point"),
+        "margin": _first_present(row, "margin_pct", "margin", "edge", "arb_pct"),
         "legs": [
             {
-                "outcome": leg.get("outcome") or leg.get("name"),
-                "book": leg.get("book") or leg.get("bookmaker"),
-                "price": leg.get("american_odds") or leg.get("price") or leg.get("odds"),
+                "outcome": _first_present(leg, "outcome", "name"),
+                "book": _first_present(leg, "book", "bookmaker"),
+                "price": _first_present(leg, "american", "american_odds", "price", "odds", "decimal"),
                 "point": leg.get("point"),
             }
             for leg in _legs(row)
@@ -51,19 +88,26 @@ def _identity(status: str, row: Dict[str, Any]) -> str:
 
 
 def _message(status: str, row: Dict[str, Any], *, audit_event_id: str | None) -> Dict[str, Any]:
+    legs = _legs(row)
     return {
         "type": "ARB_OPPORTUNITY",
         "status": status,
+        "classification": "VERIFIED_EXECUTABLE" if status == "VERIFIED" else "HELD_BACK",
         "audit_event_id": audit_event_id,
         "sport": row.get("sport"),
-        "event_id": row.get("event_id") or row.get("event"),
+        "event_id": _first_present(row, "event_id", "event"),
+        "event": row.get("event"),
+        "market_id": row.get("market_id"),
         "market": row.get("market"),
-        "margin": row.get("margin") or row.get("edge") or row.get("arb_pct"),
-        "profit": row.get("profit") or row.get("min_profit") or row.get("guaranteed_profit"),
-        "stake_total": row.get("stake_total") or row.get("bankroll"),
-        "detected_at": row.get("detected_at") or row.get("fetched_at") or row.get("timestamp"),
-        "holdback_reason": row.get("reason") if status == "HELD_BACK" else None,
-        "legs": _legs(row),
+        "commence_time": row.get("commence_time"),
+        "margin": _first_present(row, "margin_pct", "margin", "edge", "arb_pct"),
+        "margin_pct": _first_present(row, "margin_pct", "margin", "edge", "arb_pct"),
+        "profit": _first_present(row, "minimum_profit", "min_profit", "profit", "guaranteed_profit"),
+        "stake_total": _first_present(row, "allocated_stake", "stake_total", "bankroll"),
+        "detected_at": _first_present(row, "detected_at", "fetched_at", "timestamp"),
+        "quote_timestamps": [leg.get("last_update") for leg in legs],
+        "holdback_reason": _holdback_reason(row) if status == "HELD_BACK" else None,
+        "legs": legs,
         "places_bets": False,
     }
 
@@ -73,8 +117,8 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
         return {"published": 0, "deduped": 0, "errors": 0}
 
     rows: Iterable[tuple[str, Dict[str, Any]]] = [
-        *(("VERIFIED", row) for row in (result.get("hits") or [])),
-        *(("HELD_BACK", row) for row in (result.get("detected_unverified") or [])),
+        *((_status("hits", row), row) for row in (result.get("hits") or [])),
+        *((_status("detected_unverified", row), row) for row in (result.get("detected_unverified") or [])),
     ]
     client = boto3.client("sns")
     published = deduped = errors = 0
