@@ -111,3 +111,20 @@ def test_no_verification_without_explicit_proofs():
     assert alerts._status("hits", row) == "VERIFIED"
     row["validation"]["rules_compatible"] = False
     assert alerts._status("hits", row) == "HELD_BACK"
+
+
+def test_sns_publish_without_message_id_is_not_counted_as_delivered(monkeypatch):
+    class NoAckSns(FakeSns):
+        def publish(self, **kwargs):
+            self.calls.append(kwargs)
+            return {}
+
+    sns = NoAckSns()
+    monkeypatch.setenv("ARB_OPPORTUNITY_TOPIC_ARN", "arn:aws:sns:us-east-1:123:arb")
+    monkeypatch.setattr(alerts, "boto3", FakeBoto(sns))
+    monkeypatch.setattr(alerts, "claim_once", lambda *args, **kwargs: True)
+    out = alerts.publish_scan_opportunities({"detected_unverified": [
+        {"event_id": "e1", "market": "h2h", "margin_pct": 1.2}
+    ]})
+    assert out == {"published": 0, "deduped": 0, "errors": 1}
+    assert len(sns.calls) == 1
