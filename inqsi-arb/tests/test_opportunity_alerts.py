@@ -162,3 +162,21 @@ def test_zero_native_fields_are_not_discarded():
     assert msg["profit"] == 0
     assert msg["stake_total"] == 0
     assert alerts._identity("HELD_BACK", row) != alerts._identity("HELD_BACK", _verified_row())
+
+
+def test_scan_sport_and_detection_time_survive_alert_emission(monkeypatch):
+    """Engine rows omit sport; preserve scan context in SMS and dedupe identity."""
+    sns = _setup(monkeypatch)
+    row = _verified_row()
+    row.pop("sport")
+    row["legs"][0]["last_update"] = "2026-10-24T21:00:00Z"
+    out = alerts.publish_scan_opportunities({"hits": [row]}, sport="baseball_mlb")
+    assert out == {"published": 1, "deduped": 0, "errors": 0}
+    msg = json.loads(sns.calls[0]["Message"])
+    assert msg["sport"] == "baseball_mlb"
+    assert msg["detected_at"]
+    assert msg["quote_last_updates"] == ["2026-10-24T21:00:00Z"]
+    assert "sport" not in row  # no mutation of the auditable scan candidate
+    assert alerts._identity("VERIFIED", {**row, "sport": "baseball_mlb"}) != alerts._identity(
+        "VERIFIED", {**row, "sport": "tennis_atp"}
+    )
