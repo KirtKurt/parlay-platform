@@ -26,6 +26,37 @@ def _legs(row: Dict[str, Any]) -> list:
     return list(row.get("legs") or row.get("quotes") or [])
 
 
+def _is_verified_executable(row: Dict[str, Any]) -> bool:
+    """Do not trust membership in hits as proof of sportsbook-rule compatibility."""
+    validation = row.get("validation")
+    if not isinstance(validation, dict):
+        return False
+    settlement = validation.get("settlement_states")
+    return bool(
+        row.get("arb") is True
+        and row.get("math_arb") is True
+        and row.get("executable") is True
+        and validation.get("outcome_coverage") == "complete"
+        and validation.get("rules_compatible") is True
+        and validation.get("executable") is True
+        and isinstance(settlement, dict)
+        and settlement.get("strict_arbitrage") is True
+        and not validation.get("qualification_reason")
+    )
+
+
+def _holdback_reason(row: Dict[str, Any]) -> str:
+    validation = row.get("validation")
+    validation = validation if isinstance(validation, dict) else {}
+    return str(
+        row.get("reason")
+        or validation.get("qualification_reason")
+        or validation.get("settlement_reason")
+        or validation.get("settlement_state_reason")
+        or "EXECUTABLE_QUALIFICATION_NOT_PROVEN"
+    )
+
+
 def _identity(status: str, row: Dict[str, Any]) -> str:
     # Include material price/edge state so a changed opportunity can re-alert,
     # while identical repeated scans and Lambda retries deduplicate.
@@ -35,12 +66,12 @@ def _identity(status: str, row: Dict[str, Any]) -> str:
         "event_id": row.get("event_id") or row.get("event"),
         "market": row.get("market"),
         "line": row.get("line") or row.get("point"),
-        "margin": row.get("margin") or row.get("edge") or row.get("arb_pct"),
+        "margin": row.get("margin_pct") if row.get("margin_pct") is not None else (row.get("margin") or row.get("edge") or row.get("arb_pct")),
         "legs": [
             {
                 "outcome": leg.get("outcome") or leg.get("name"),
                 "book": leg.get("book") or leg.get("bookmaker"),
-                "price": leg.get("american_odds") or leg.get("price") or leg.get("odds"),
+                "price": leg.get("american") if leg.get("american") is not None else (leg.get("american_odds") or leg.get("price") or leg.get("odds") or leg.get("decimal")),
                 "point": leg.get("point"),
             }
             for leg in _legs(row)
@@ -58,11 +89,11 @@ def _message(status: str, row: Dict[str, Any], *, audit_event_id: str | None) ->
         "sport": row.get("sport"),
         "event_id": row.get("event_id") or row.get("event"),
         "market": row.get("market"),
-        "margin": row.get("margin") or row.get("edge") or row.get("arb_pct"),
-        "profit": row.get("profit") or row.get("min_profit") or row.get("guaranteed_profit"),
-        "stake_total": row.get("stake_total") or row.get("bankroll"),
+        "margin": row.get("margin_pct") if row.get("margin_pct") is not None else (row.get("margin") or row.get("edge") or row.get("arb_pct")),
+        "profit": row.get("minimum_profit") if row.get("minimum_profit") is not None else (row.get("profit") or row.get("min_profit") or row.get("guaranteed_profit")),
+        "stake_total": row.get("allocated_stake") if row.get("allocated_stake") is not None else (row.get("stake_total") or row.get("bankroll")),
         "detected_at": row.get("detected_at") or row.get("fetched_at") or row.get("timestamp"),
-        "holdback_reason": row.get("reason") if status == "HELD_BACK" else None,
+        "holdback_reason": _holdback_reason(row) if status == "HELD_BACK" else None,
         "legs": _legs(row),
         "places_bets": False,
     }
@@ -73,7 +104,7 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
         return {"published": 0, "deduped": 0, "errors": 0}
 
     rows: Iterable[tuple[str, Dict[str, Any]]] = [
-        *(("VERIFIED", row) for row in (result.get("hits") or [])),
+        *(("VERIFIED" if _is_verified_executable(row) else "HELD_BACK", row) for row in (result.get("hits") or [])),
         *(("HELD_BACK", row) for row in (result.get("detected_unverified") or [])),
     ]
     client = boto3.client("sns")
