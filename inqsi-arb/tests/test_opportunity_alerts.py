@@ -1,132 +1,164 @@
-"""Near-real-time ARB opportunity notification emission."""
-from __future__ import annotations
-
-import hashlib
+"""Regression tests for SNS opportunity qualification, identity, and deduplication."""
 import json
-import os
-from typing import Any, Dict, Iterable
+import sys
+from pathlib import Path
 
-try:
-    import boto3
-except ImportError:  # local tests
-    boto3 = None
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 
-from audit_store import claim_once
+import opportunity_alerts as alerts
 
 
-def _topic_arn() -> str:
-    return os.environ.get("ARB_OPPORTUNITY_TOPIC_ARN", "").strip()
+class FakeSns:
+    def __init__(self):
+        self.calls = []
+
+    def publish(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"MessageId": "harmless-test-id"}
 
 
-def enabled() -> bool:
-    return bool(_topic_arn() and boto3 is not None)
+class FakeBoto:
+    def __init__(self, client):
+        self._client = client
+
+    def client(self, name):
+        assert name == "sns"
+        return self._client
 
 
-def _legs(row: Dict[str, Any]) -> list:
-    return list(row.get("legs") or row.get("quotes") or [])
-
-
-def _is_verified_executable(row: Dict[str, Any]) -> bool:
-    """Do not trust membership in hits as proof of sportsbook-rule compatibility."""
-    validation = row.get("validation")
-    if not isinstance(validation, dict):
-        return False
-    settlement = validation.get("settlement_states")
-    return bool(
-        row.get("arb") is True
-        and row.get("math_arb") is True
-        and row.get("executable") is True
-        and validation.get("outcome_coverage") == "complete"
-        and validation.get("rules_compatible") is True
-        and validation.get("executable") is True
-        and isinstance(settlement, dict)
-        and settlement.get("strict_arbitrage") is True
-        and not validation.get("qualification_reason")
-    )
-
-
-def _holdback_reason(row: Dict[str, Any]) -> str:
-    validation = row.get("validation")
-    validation = validation if isinstance(validation, dict) else {}
-    return str(
-        row.get("reason")
-        or validation.get("qualification_reason")
-        or validation.get("settlement_reason")
-        or validation.get("settlement_state_reason")
-        or "EXECUTABLE_QUALIFICATION_NOT_PROVEN"
-    )
-
-
-def _identity(status: str, row: Dict[str, Any]) -> str:
-    # Include material price/edge state so a changed opportunity can re-alert,
-    # while identical repeated scans and Lambda retries deduplicate.
-    material = {
-        "status": status,
-        "sport": row.get("sport"),
-        "event_id": row.get("event_id") or row.get("event"),
-        "market": row.get("market"),
-        "line": row.get("line") or row.get("point"),
-        "margin": row.get("margin_pct") if row.get("margin_pct") is not None else (row.get("margin") or row.get("edge") or row.get("arb_pct")),
-        "legs": [
-            {
-                "outcome": leg.get("outcome") or leg.get("name"),
-                "book": leg.get("book") or leg.get("bookmaker"),
-                "price": leg.get("american") if leg.get("american") is not None else (leg.get("american_odds") or leg.get("price") or leg.get("odds") or leg.get("decimal")),
-                "point": leg.get("point"),
-            }
-            for leg in _legs(row)
-        ],
-    }
-    raw = json.dumps(material, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
-def _message(status: str, row: Dict[str, Any], *, audit_event_id: str | None) -> Dict[str, Any]:
+def _verified_row():
     return {
-        "type": "ARB_OPPORTUNITY",
-        "status": status,
-        "audit_event_id": audit_event_id,
-        "sport": row.get("sport"),
-        "event_id": row.get("event_id") or row.get("event"),
-        "market": row.get("market"),
-        "margin": row.get("margin_pct") if row.get("margin_pct") is not None else (row.get("margin") or row.get("edge") or row.get("arb_pct")),
-        "profit": row.get("minimum_profit") if row.get("minimum_profit") is not None else (row.get("profit") or row.get("min_profit") or row.get("guaranteed_profit")),
-        "stake_total": row.get("allocated_stake") if row.get("allocated_stake") is not None else (row.get("stake_total") or row.get("bankroll")),
-        "detected_at": row.get("detected_at") or row.get("fetched_at") or row.get("timestamp"),
-        "holdback_reason": _holdback_reason(row) if status == "HELD_BACK" else None,
-        "legs": _legs(row),
-        "places_bets": False,
+        "sport": "baseball_mlb",
+        "event_id": "event-1",
+        "market": "h2h",
+        "arb": True,
+        "math_arb": True,
+        "executable": True,
+        "margin_pct": 1.25,
+        "minimum_profit": 12.50,
+        "allocated_stake": 1000.00,
+        "legs": [
+            {"outcome": "home", "book": "book-a", "american": 115},
+            {"outcome": "away", "book": "book-b", "american": 105},
+        ],
+        "validation": {
+            "outcome_coverage": "complete",
+            "rules_compatible": True,
+            "executable": True,
+            "settlement_states": {"strict_arbitrage": True, "minimum_net_pnl": 12.50},
+        },
     }
 
 
-def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | None = None) -> Dict[str, int]:
-    if not enabled():
-        return {"published": 0, "deduped": 0, "errors": 0}
+def _setup(monkeypatch):
+    sns = FakeSns()
+    monkeypatch.setenv("ARB_OPPORTUNITY_TOPIC_ARN", "arn:aws:sns:us-east-1:123:arb")
+    monkeypatch.setattr(alerts, "boto3", FakeBoto(sns))
+    monkeypatch.setattr(alerts, "claim_once", lambda *args, **kwargs: True)
+    return sns
 
-    rows: Iterable[tuple[str, Dict[str, Any]]] = [
-        *(("VERIFIED" if _is_verified_executable(row) else "HELD_BACK", row) for row in (result.get("hits") or [])),
-        *(("HELD_BACK", row) for row in (result.get("detected_unverified") or [])),
-    ]
-    client = boto3.client("sns")
-    published = deduped = errors = 0
-    ttl = int(os.environ.get("ARB_OPPORTUNITY_ALERT_DEDUPE_SECONDS", "21600"))
-    for status, row in rows:
-        identity = _identity(status, row)
-        try:
-            if not claim_once("ARB_OPPORTUNITY", identity, ttl_seconds=ttl):
-                deduped += 1
-                continue
-            message = _message(status, row, audit_event_id=audit_event_id)
-            client.publish(
-                TopicArn=_topic_arn(),
-                Subject=f"Inqsi ARB {status}: {message.get('sport') or 'sport'} {message.get('market') or 'market'}"[:100],
-                Message=json.dumps(message, sort_keys=True, default=str),
-                MessageAttributes={
-                    "status": {"DataType": "String", "StringValue": status},
-                    "sport": {"DataType": "String", "StringValue": str(message.get("sport") or "unknown")},
-                },
-            )
-            published += 1
-        except Exception:
-            errors += 1
-    return {"published": published, "deduped": deduped, "errors": errors}
+
+def test_verified_and_held_candidates_publish_immediately(monkeypatch):
+    sns = _setup(monkeypatch)
+    held = {
+        "sport": "basketball_nba", "event_id": "event-2",
+        "market": "spreads", "reason": "RULE_UNKNOWN", "legs": [],
+    }
+    out = alerts.publish_scan_opportunities(
+        {"hits": [_verified_row()], "detected_unverified": [held]},
+        audit_event_id="audit-1",
+    )
+    assert out == {"published": 2, "deduped": 0, "errors": 0}
+    messages = [json.loads(call["Message"]) for call in sns.calls]
+    assert messages[0]["status"] == "VERIFIED"
+    assert messages[0]["audit_event_id"] == "audit-1"
+    assert messages[0]["margin"] == 1.25
+    assert messages[0]["profit"] == 12.50
+    assert messages[0]["stake_total"] == 1000.00
+    assert messages[1]["status"] == "HELD_BACK"
+    assert messages[1]["holdback_reason"] == "RULE_UNKNOWN"
+    assert all(msg["places_bets"] is False for msg in messages)
+
+
+def test_unverified_hit_is_held_even_if_math_positive(monkeypatch):
+    sns = _setup(monkeypatch)
+    row = _verified_row()
+    row["validation"]["rules_compatible"] = False
+    row["validation"]["qualification_reason"] = "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
+    out = alerts.publish_scan_opportunities({"hits": [row]})
+    assert out["published"] == 1
+    msg = json.loads(sns.calls[0]["Message"])
+    assert msg["status"] == "HELD_BACK"
+    assert msg["holdback_reason"] == "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
+
+
+def test_missing_settlement_proof_is_held(monkeypatch):
+    sns = _setup(monkeypatch)
+    row = _verified_row()
+    row["validation"].pop("settlement_states")
+    alerts.publish_scan_opportunities({"hits": [row]})
+    msg = json.loads(sns.calls[0]["Message"])
+    assert msg["status"] == "HELD_BACK"
+    assert msg["holdback_reason"] == "EXECUTABLE_QUALIFICATION_NOT_PROVEN"
+
+
+def test_non_executable_or_incomplete_proof_is_held():
+    for field, value in [
+        ("arb", False),
+        ("math_arb", False),
+        ("executable", False),
+    ]:
+        row = _verified_row()
+        row[field] = value
+        assert not alerts._is_verified_executable(row)
+    row = _verified_row()
+    row["validation"]["outcome_coverage"] = "incomplete"
+    assert not alerts._is_verified_executable(row)
+    row = _verified_row()
+    row["validation"]["executable"] = False
+    assert not alerts._is_verified_executable(row)
+    row = _verified_row()
+    row["validation"]["settlement_states"]["strict_arbitrage"] = False
+    assert not alerts._is_verified_executable(row)
+    row = _verified_row()
+    row["validation"]["qualification_reason"] = "RULE_UNKNOWN"
+    assert not alerts._is_verified_executable(row)
+
+
+def test_identical_opportunity_is_deduped(monkeypatch):
+    sns = _setup(monkeypatch)
+    monkeypatch.setattr(alerts, "claim_once", lambda *args, **kwargs: False)
+    out = alerts.publish_scan_opportunities({"hits": [_verified_row()]})
+    assert out == {"published": 0, "deduped": 1, "errors": 0}
+    assert sns.calls == []
+
+
+def test_status_transition_changes_alert_identity():
+    row = _verified_row()
+    assert alerts._identity("HELD_BACK", row) != alerts._identity("VERIFIED", row)
+
+
+def test_native_american_odds_and_margin_changes_realert():
+    original = _verified_row()
+    same = _verified_row()
+    assert alerts._identity("VERIFIED", original) == alerts._identity("VERIFIED", same)
+    price_changed = _verified_row()
+    price_changed["legs"][0]["american"] = 120
+    assert alerts._identity("VERIFIED", original) != alerts._identity("VERIFIED", price_changed)
+    margin_changed = _verified_row()
+    margin_changed["margin_pct"] = 1.5
+    assert alerts._identity("VERIFIED", original) != alerts._identity("VERIFIED", margin_changed)
+
+
+def test_zero_native_fields_are_not_discarded():
+    row = _verified_row()
+    row["margin_pct"] = 0
+    row["minimum_profit"] = 0
+    row["allocated_stake"] = 0
+    row["legs"][0]["american"] = 0
+    msg = alerts._message("HELD_BACK", row, audit_event_id=None)
+    assert msg["margin"] == 0
+    assert msg["profit"] == 0
+    assert msg["stake_total"] == 0
+    assert alerts._identity("HELD_BACK", row) != alerts._identity("HELD_BACK", _verified_row())
