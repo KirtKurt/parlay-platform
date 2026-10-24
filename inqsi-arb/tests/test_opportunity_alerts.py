@@ -180,3 +180,25 @@ def test_scan_sport_and_detection_time_survive_alert_emission(monkeypatch):
     assert alerts._identity("VERIFIED", {**row, "sport": "baseball_mlb"}) != alerts._identity(
         "VERIFIED", {**row, "sport": "tennis_atp"}
     )
+
+
+
+def test_sns_message_id_is_logged_as_publish_proof(monkeypatch, capsys):
+    sns = _setup(monkeypatch)
+    out = alerts.publish_scan_opportunities({"hits": [_verified_row()]})
+    assert out == {"published": 1, "deduped": 0, "errors": 0}
+    log = capsys.readouterr().out
+    proof = json.loads(log.strip().splitlines()[-1])
+    assert proof["event"] == "ARB_SNS_PUBLISH_CONFIRMED"
+    assert proof["message_id"] == "harmless-test-id"
+    assert proof["status"] == "VERIFIED"
+    assert len(proof["identity"]) == 64
+    assert len(sns.calls) == 1
+
+
+def test_missing_sns_message_id_is_not_reported_as_success(monkeypatch, capsys):
+    sns = _setup(monkeypatch)
+    sns.publish = lambda **kwargs: {}
+    out = alerts.publish_scan_opportunities({"hits": [_verified_row()]})
+    assert out == {"published": 0, "deduped": 0, "errors": 1}
+    assert "ARB_SNS_PUBLISH_CONFIRMED" not in capsys.readouterr().out
