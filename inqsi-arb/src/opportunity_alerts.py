@@ -122,7 +122,7 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
                 deduped += 1
                 continue
             message = _message(status, row, audit_event_id=audit_event_id)
-            client.publish(
+            response = client.publish(
                 TopicArn=_topic_arn(),
                 Subject=f"Inqsi ARB {status}: {message.get('sport') or 'sport'} {message.get('market') or 'market'}"[:100],
                 Message=json.dumps(message, sort_keys=True, default=str),
@@ -131,6 +131,17 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
                     "sport": {"DataType": "String", "StringValue": str(message.get("sport") or "unknown")},
                 },
             )
+            message_id = response.get("MessageId") if isinstance(response, dict) else None
+            if not isinstance(message_id, str) or not message_id.strip():
+                # A successful SNS publication must return a MessageId. Do not
+                # count an ambiguous response as delivery proof.
+                raise RuntimeError("SNS publish returned no MessageId")
+            print(json.dumps({
+                "event": "ARB_SNS_PUBLISH_CONFIRMED",
+                "message_id": message_id,
+                "identity": identity,
+                "status": status,
+            }, sort_keys=True))
             published += 1
         except Exception:
             errors += 1
