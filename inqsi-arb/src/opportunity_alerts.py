@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable
 
@@ -12,7 +13,7 @@ try:
 except ImportError:  # local tests
     boto3 = None
 
-from audit_store import claim_once
+from audit_store import claim_once, release_claim
 
 
 def _topic_arn() -> str:
@@ -117,10 +118,14 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
     ttl = int(os.environ.get("ARB_OPPORTUNITY_ALERT_DEDUPE_SECONDS", "21600"))
     for status, row in rows:
         identity = _identity(status, row)
+        claim_token = uuid.uuid4().hex
+        claimed = False
         try:
-            if not claim_once("ARB_OPPORTUNITY", identity, ttl_seconds=ttl):
+            if not claim_once("ARB_OPPORTUNITY", identity, ttl_seconds=ttl,
+                              claim_token=claim_token):
                 deduped += 1
                 continue
+            claimed = True
             message = _message(status, row, audit_event_id=audit_event_id)
             response = client.publish(
                 TopicArn=_topic_arn(),
@@ -143,6 +148,24 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
                 "status": status,
             }, sort_keys=True))
             published += 1
-        except Exception:
+        except Exception as exc:
+            # Only definitive SNS rejections may release the dedupe claim.
+            # Ambiguous network failures and missing MessageId keep the claim,
+            # avoiding duplicate SMS if SNS accepted the original request.
+            response = getattr(exc, "response", {}) or {}
+            code = str((response.get("Error") or {}).get("Code") or "")
+            rejected = code in {
+                "AuthorizationError", "AuthorizationErrorException",
+                "InvalidParameter", "InvalidParameterValue",
+                "NotFound", "NotFoundException", "TopicLimitExceeded",
+                "Throttling", "ThrottlingException", "TooManyRequestsException",
+            }
+            if claimed and rejected:
+                try:
+                    release_claim("ARB_OPPORTUNITY", identity, claim_token=claim_token)
+                except Exception:
+                    # Preserve the original publish failure; never pretend
+                    # the failed release proves the SMS was delivered.
+                    pass
             errors += 1
     return {"published": published, "deduped": deduped, "errors": errors}
