@@ -139,6 +139,25 @@ def test_status_transition_changes_alert_identity():
     assert alerts._identity("HELD_BACK", row) != alerts._identity("VERIFIED", row)
 
 
+
+def test_held_back_reason_change_realerts_without_price_change():
+    """New settlement evidence must not be silenced by a stale dedupe key."""
+    initial = _verified_row()
+    initial["validation"]["rules_compatible"] = False
+    initial["validation"]["qualification_reason"] = "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
+    changed = _verified_row()
+    changed["validation"]["rules_compatible"] = False
+    changed["validation"]["qualification_reason"] = "SETTLEMENT_STATE_MISMATCH"
+    assert alerts._identity("HELD_BACK", initial) != alerts._identity("HELD_BACK", changed)
+
+    same = _verified_row()
+    same["validation"]["rules_compatible"] = False
+    same["validation"]["qualification_reason"] = "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
+    same["detected_at"] = "2026-10-24T23:20:00Z"
+    assert alerts._identity("HELD_BACK", initial) == alerts._identity("HELD_BACK", same)
+
+
+
 def test_native_american_odds_and_margin_changes_realert():
     original = _verified_row()
     same = _verified_row()
