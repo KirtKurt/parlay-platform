@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable
 
 try:
@@ -92,20 +93,24 @@ def _message(status: str, row: Dict[str, Any], *, audit_event_id: str | None) ->
         "margin": row.get("margin_pct") if row.get("margin_pct") is not None else (row.get("margin") or row.get("edge") or row.get("arb_pct")),
         "profit": row.get("minimum_profit") if row.get("minimum_profit") is not None else (row.get("profit") or row.get("min_profit") or row.get("guaranteed_profit")),
         "stake_total": row.get("allocated_stake") if row.get("allocated_stake") is not None else (row.get("stake_total") or row.get("bankroll")),
-        "detected_at": row.get("detected_at") or row.get("fetched_at") or row.get("timestamp"),
+        "detected_at": row.get("detected_at") or row.get("fetched_at") or row.get("timestamp") or datetime.now(timezone.utc).isoformat(),
+        "quote_last_updates": [leg["last_update"] for leg in _legs(row) if leg.get("last_update")],
         "holdback_reason": _holdback_reason(row) if status == "HELD_BACK" else None,
         "legs": _legs(row),
         "places_bets": False,
     }
 
 
-def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | None = None) -> Dict[str, int]:
+def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | None = None,
+                               sport: str | None = None) -> Dict[str, int]:
     if not enabled():
         return {"published": 0, "deduped": 0, "errors": 0}
 
     rows: Iterable[tuple[str, Dict[str, Any]]] = [
-        *(("VERIFIED" if _is_verified_executable(row) else "HELD_BACK", row) for row in (result.get("hits") or [])),
-        *(("HELD_BACK", row) for row in (result.get("detected_unverified") or [])),
+        *(("VERIFIED" if _is_verified_executable(row) else "HELD_BACK",
+           {**row, "sport": row.get("sport") or sport}) for row in (result.get("hits") or [])),
+        *(("HELD_BACK", {**row, "sport": row.get("sport") or sport})
+          for row in (result.get("detected_unverified") or [])),
     ]
     client = boto3.client("sns")
     published = deduped = errors = 0
