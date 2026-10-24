@@ -202,3 +202,36 @@ def test_missing_sns_message_id_is_not_reported_as_success(monkeypatch, capsys):
     out = alerts.publish_scan_opportunities({"hits": [_verified_row()]})
     assert out == {"published": 0, "deduped": 0, "errors": 1}
     assert "ARB_SNS_PUBLISH_CONFIRMED" not in capsys.readouterr().out
+
+
+
+class DefiniteSnsRejection(Exception):
+    response = {"Error": {"Code": "AuthorizationError"}}
+
+
+def test_definite_sns_rejection_releases_only_own_claim(monkeypatch):
+    sns = _setup(monkeypatch)
+    releases = []
+    monkeypatch.setattr(alerts, "release_claim", lambda *args, **kwargs: releases.append((args, kwargs)))
+    def rejected(**kwargs):
+        raise DefiniteSnsRejection("SNS rejected")
+    sns.publish = rejected
+    out = alerts.publish_scan_opportunities({"hits": [_verified_row()]})
+    assert out == {"published": 0, "deduped": 0, "errors": 1}
+    assert len(releases) == 1
+    args, kwargs = releases[0]
+    assert args[0] == "ARB_OPPORTUNITY"
+    assert len(args[1]) == 64
+    assert len(kwargs["claim_token"]) == 32
+
+
+def test_ambiguous_sns_error_never_releases_claim(monkeypatch):
+    sns = _setup(monkeypatch)
+    releases = []
+    monkeypatch.setattr(alerts, "release_claim", lambda *args, **kwargs: releases.append((args, kwargs)))
+    def timeout(**kwargs):
+        raise TimeoutError("unknown whether SNS accepted")
+    sns.publish = timeout
+    out = alerts.publish_scan_opportunities({"hits": [_verified_row()]})
+    assert out == {"published": 0, "deduped": 0, "errors": 1}
+    assert releases == []
