@@ -64,6 +64,9 @@ def _identity(status: str, row: Dict[str, Any]) -> str:
     # while identical repeated scans and Lambda retries deduplicate.
     material = {
         "status": status,
+        # A new settlement/qualification holdback reason is a material status
+        # change even when the books, prices, and margin have not moved.
+        "holdback_reason": _holdback_reason(row) if status == "HELD_BACK" else None,
         "sport": row.get("sport"),
         "event_id": row.get("event_id") or row.get("event"),
         "market": row.get("market"),
