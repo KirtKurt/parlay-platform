@@ -141,15 +141,17 @@ def _probe_market_batch(
         books = payload.get("bookmakers") if isinstance(payload, dict) else None
         valid = isinstance(books, list) and all(
             isinstance(book, dict)
-            and isinstance(book.get("markets") or [], list)
+            and isinstance(book.get("markets"), list)
             and all(
                 isinstance(market, dict)
-                and isinstance(market.get("outcomes") or [], list)
-                and all(
-                    isinstance(outcome, dict)
-                    for outcome in (market.get("outcomes") or [])
+                and (
+                    "outcomes" not in market
+                    or (
+                        isinstance(market["outcomes"], list)
+                        and all(isinstance(outcome, dict) for outcome in market["outcomes"])
+                    )
                 )
-                for market in (book.get("markets") or [])
+                for market in book["markets"]
             )
             for book in books
         )
