@@ -128,7 +128,7 @@ def _probe_market_batch(
     # retrying them recursively amplifies requests without restoring coverage.
     status = meta.get("status")
     if (
-        status in (401, 403, 429)
+        status in (401, 403, 404, 408, 410, 429)
         or (isinstance(status, int) and status >= 500)
         or meta.get("error") == "PROVIDER_UNAVAILABLE"
     ):
@@ -140,6 +140,24 @@ def _probe_market_batch(
     right = _probe_market_batch(sport_key, event_id, markets[midpoint:], regions=regions, bookmakers=bookmakers, depth=depth + 1)
     accepted = list(dict.fromkeys(left[0] + right[0]))
     return accepted, left[1] + right[1], evidence + left[2] + right[2]
+
+
+
+def _primary_probe_failure(evidence: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Prefer a terminal provider error over an earlier unsupported-market 422.
+
+    A batch can fail with 422, then reveal a 401/429/outage in a child probe.
+    Reporting only the initial 422 would conceal the actionable failure.
+    """
+    for row in evidence:
+        status = row.get("status")
+        if (
+            status in (401, 403, 404, 408, 410, 429)
+            or (isinstance(status, int) and status >= 500)
+            or row.get("error") == "PROVIDER_UNAVAILABLE"
+        ):
+            return row
+    return evidence[0] if evidence else {}
 
 
 def discover_event_market_keys(
@@ -173,7 +191,7 @@ def discover_event_market_keys(
     )
     # A failed fallback must preserve the actionable provider error.  Without
     # these fields, callers see a failed discovery with error/status = None.
-    probe_failure = evidence[0] if evidence and not accepted else {}
+    probe_failure = _primary_probe_failure(evidence) if not accepted else {}
     return accepted, {
         "ok": bool(accepted),
         "error": probe_failure.get("error") or (observed_meta.get("error") if not accepted else None),
@@ -253,7 +271,7 @@ def fetch_all_discovered_markets(
             sport_key, event_id, candidates, regions=regions, bookmakers=bookmakers,
         ) if candidates else ([], [], [])
         normalized.extend(rows)
-        probe_failure = evidence[0] if evidence and not accepted else {}
+        probe_failure = _primary_probe_failure(evidence) if not accepted else {}
         details.append({
             "event_id": event_id,
             "ok": bool(accepted) or (not fallback_used and not candidates),
