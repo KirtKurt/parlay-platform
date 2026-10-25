@@ -405,3 +405,70 @@ def test_full_market_fetch_marks_failed_event_partial_despite_other_success(monk
     assert report["event_details"][1]["ok"] is False
     assert report["event_details"][1]["partial"] is True
     assert report["partial"] is True
+
+
+def test_aggregate_event_market_report_marks_fallback_partial(monkeypatch):
+    # A successful static-catalog fallback still cannot prove full live coverage.
+    monkeypatch.setattr(
+        discovery, "discover_event_market_keys",
+        lambda *_args, **_kwargs: (
+            ["h2h"], {"ok": True, "partial": True, "fallback_used": True}
+        ),
+    )
+    report = discovery.discover_sport_event_markets(
+        "baseball_mlb", [{"id": "event-1"}]
+    )
+    assert report["ok"] is True
+    assert report["events"] == {"event-1": ["h2h"]}
+    assert report["partial"] is True
+    assert report["fallback_events"] == ["event-1"]
+    assert report["n_events_available"] == 1
+    assert report["n_events_requested"] == 1
+
+
+def test_aggregate_event_market_report_marks_failed_event_partial(monkeypatch):
+    def fake_discover(_sport, event_id, **_kwargs):
+        if event_id == "event-good":
+            return ["h2h"], {"ok": True, "partial": False, "fallback_used": False}
+        return [], {"ok": False, "status": 401, "error": "PROVIDER_HTTP_401"}
+
+    monkeypatch.setattr(discovery, "discover_event_market_keys", fake_discover)
+    report = discovery.discover_sport_event_markets(
+        "baseball_mlb", [{"id": "event-good"}, {"id": "event-failed"}]
+    )
+    assert report["ok"] is True
+    assert report["events"] == {"event-good": ["h2h"]}
+    assert report["partial"] is True
+    assert report["errors"] == [{
+        "event_id": "event-failed",
+        "status": 401,
+        "error": "PROVIDER_HTTP_401",
+    }]
+
+
+def test_aggregate_event_market_report_respects_event_and_market_caps(monkeypatch):
+    def fake_discover(_sport, event_id, **_kwargs):
+        return ["h2h"], {
+            "ok": True,
+            "partial": event_id == "event-truncated-markets",
+            "fallback_used": False,
+        }
+
+    monkeypatch.setattr(discovery, "discover_event_market_keys", fake_discover)
+    events = [{"id": "event-good"}, {"id": "event-truncated-markets"}]
+    complete = discovery.discover_sport_event_markets(
+        "baseball_mlb", events[:1]
+    )
+    assert complete["partial"] is False
+    assert complete["fallback_events"] == []
+    capped = discovery.discover_sport_event_markets(
+        "baseball_mlb", events, max_events=1
+    )
+    assert capped["partial"] is True
+    assert capped["n_events_available"] == 2
+    assert capped["n_events_requested"] == 1
+    market_capped = discovery.discover_sport_event_markets(
+        "baseball_mlb", events
+    )
+    assert market_capped["partial"] is True
+    assert market_capped["n_events"] == 2
