@@ -80,8 +80,10 @@ def test_same_line_is_surebet_not_middle():
     }]
     result = scan_all({"bankroll": 100, "events": events})
     assert result["n_middles"] == 0
-    assert result["n_detected_unverified"] == 1
-    assert result["detected_unverified"][0]["math_arb"] is True
+    assert result["n_arbs"] == 1
+    assert result["n_detected_unverified"] == 0
+    assert result["hits"][0]["math_arb"] is True
+    assert result["hits"][0]["validation"]["settlement_advisory"] == "SPORTSBOOK_RULES_MAY_AFFECT_SETTLEMENT"
 
 
 def test_user_book_filter_limits_middle_and_surebet_books():
@@ -96,8 +98,8 @@ def test_user_book_filter_limits_middle_and_surebet_books():
     }]
     open_scan = scan_all({"bankroll": 100, "events": events})
     filtered = scan_all({"bankroll": 100, "events": events, "books": "draftkings,fanduel"})
-    assert open_scan["detected_unverified"][0]["legs"][1]["book"] == "pinnacle"
-    assert {leg["book"] for leg in filtered["detected_unverified"][0]["legs"]} == {"draftkings", "fanduel"}
+    assert open_scan["hits"][0]["legs"][1]["book"] == "pinnacle"
+    assert {leg["book"] for leg in filtered["hits"][0]["legs"]} == {"draftkings", "fanduel"}
 
 
 def test_normalizer_preserves_point_for_middle_detection():
