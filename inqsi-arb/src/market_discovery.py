@@ -133,9 +133,32 @@ def _probe_market_batch(
         return [], [], []
     payload, meta = _request_event_odds(sport_key, event_id, markets, regions=regions, bookmakers=bookmakers)
     evidence = [{"markets": list(markets), "ok": bool(meta.get("ok")), "status": meta.get("status"), "error": meta.get("error"), "depth": depth}]
-    if meta.get("ok") and isinstance(payload, dict):
+    if meta.get("ok"):
+        # A 200 response is not proof of usable odds. A malformed nested
+        # bookmaker/market/outcome structure can crash normalization or falsely
+        # certify provider-visible coverage. Preserve the failed probe as
+        # evidence and do not recursively split a malformed success response.
+        books = payload.get("bookmakers") if isinstance(payload, dict) else None
+        valid = isinstance(books, list) and all(
+            isinstance(book, dict)
+            and isinstance(book.get("markets") or [], list)
+            and all(
+                isinstance(market, dict)
+                and isinstance(market.get("outcomes") or [], list)
+                and all(
+                    isinstance(outcome, dict)
+                    for outcome in (market.get("outcomes") or [])
+                )
+                for market in (book.get("markets") or [])
+            )
+            for book in books
+        )
+        if not valid:
+            evidence[0]["ok"] = False
+            evidence[0]["error"] = "MALFORMED_PROVIDER_EVENT_ODDS"
+            return [], [], evidence
         returned = []
-        for book in payload.get("bookmakers") or []:
+        for book in books:
             for market in book.get("markets") or []:
                 key = str(market.get("key") or "").strip()
                 if key and key not in returned:
