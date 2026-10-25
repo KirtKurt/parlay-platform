@@ -880,3 +880,82 @@ def test_valid_market_inventory_still_reports_direct_complete_coverage(monkeypat
     assert keys == ["h2h"]
     assert meta["fallback_used"] is False
     assert meta["partial"] is False
+
+
+
+def test_http_200_market_without_usable_prices_does_not_prove_coverage(monkeypatch):
+    # A listed market with no valid outcomes is not an observed live quote.
+    # Avoid claiming complete coverage merely because its key is echoed back.
+    monkeypatch.setattr(
+        discovery, "_request_event_odds",
+        lambda *_args, **_kwargs: (
+            {
+                "id": "event-no-quotes",
+                "home_team": "Home",
+                "away_team": "Away",
+                "bookmakers": [{
+                    "key": "book_a",
+                    "markets": [{"key": "h2h", "outcomes": []}],
+                }],
+            },
+            {"ok": True, "status": 200},
+        ),
+    )
+    accepted, rows, evidence = discovery._probe_market_batch(
+        "baseball_mlb", "event-no-quotes", ["h2h"],
+        regions="us", bookmakers=None,
+    )
+    assert accepted == []
+    assert rows == []
+    assert len(evidence) == 1
+    assert evidence[0]["status"] == 200
+    assert evidence[0]["ok"] is False
+    assert evidence[0]["error"] == "NO_USABLE_PROVIDER_MARKET_ODDS"
+
+
+def test_partial_live_quotes_retain_good_market_but_not_empty_neighbor(monkeypatch):
+    # Preserve valid price data while reporting the missing observed market.
+    monkeypatch.setattr(
+        discovery, "discover_events",
+        lambda *_args, **_kwargs: (
+            [{"id": "event-partial"}], {"ok": True, "n_events": 1},
+        ),
+    )
+    monkeypatch.setattr(
+        discovery, "_discover_event_markets_direct",
+        lambda *_args, **_kwargs: (
+            ["h2h", "totals"], {"ok": True, "status": 200},
+        ),
+    )
+    monkeypatch.setattr(
+        discovery, "_request_event_odds",
+        lambda *_args, **_kwargs: (
+            {
+                "id": "event-partial",
+                "home_team": "Home",
+                "away_team": "Away",
+                "bookmakers": [{
+                    "key": "book_a",
+                    "markets": [
+                        {"key": "h2h", "outcomes": [
+                            {"name": "Home", "price": -110},
+                            {"name": "Away", "price": 110},
+                        ]},
+                        {"key": "totals", "outcomes": []},
+                    ],
+                }],
+            },
+            {"ok": True, "status": 200},
+        ),
+    )
+    rows, report = discovery.fetch_all_discovered_markets(
+        "baseball_mlb", regions="us"
+    )
+    assert [row["market"] for row in rows] == ["h2h"]
+    assert report["ok"] is True
+    assert report["n_events_succeeded"] == 1
+    assert report["event_details"][0]["markets"] == ["h2h"]
+    assert report["event_details"][0]["n_observed"] == 2
+    assert report["event_details"][0]["n_discovered"] == 1
+    assert report["event_details"][0]["partial"] is True
+    assert report["partial"] is True
