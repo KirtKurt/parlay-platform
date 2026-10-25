@@ -660,3 +660,69 @@ def test_valid_empty_live_inventory_does_not_invent_market_keys(monkeypatch):
     assert meta["ok"] is True
     assert meta["fallback_used"] is False
     assert meta["partial"] is False
+
+
+def test_malformed_successful_event_odds_fail_closed_without_fanout(monkeypatch):
+    # HTTP 200 alone must not crash normalization or certify malformed quotes.
+    malformed = (
+        None,
+        [],
+        {"bookmakers": None},
+        {"bookmakers": [None]},
+        {"bookmakers": [{"markets": {"key": "h2h"}}]},
+        {"bookmakers": [{"markets": [None]}]},
+        {"bookmakers": [{"markets": [{"key": "h2h", "outcomes": [None]}]}]},
+        {"bookmakers": [{"markets": [{"key": "h2h", "outcomes": {}}]}]},
+    )
+    for payload in malformed:
+        calls = []
+
+        def fake_request(_sport, _event, markets, *, regions, bookmakers=None):
+            calls.append(tuple(markets))
+            return payload, {"ok": True, "status": 200}
+
+        monkeypatch.setattr(discovery, "_request_event_odds", fake_request)
+        accepted, rows, evidence = discovery._probe_market_batch(
+            "baseball_mlb", "event-malformed", ["h2h", "totals"],
+            regions="us", bookmakers=None,
+        )
+        assert accepted == []
+        assert rows == []
+        assert calls == [("h2h", "totals")]
+        assert len(evidence) == 1
+        assert evidence[0]["ok"] is False
+        assert evidence[0]["error"] == "MALFORMED_PROVIDER_EVENT_ODDS"
+        assert evidence[0]["status"] == 200
+
+
+def test_full_market_fetch_reports_malformed_odds_as_partial(monkeypatch):
+    monkeypatch.setattr(
+        discovery, "discover_events",
+        lambda *_args, **_kwargs: (
+            [{"id": "event-malformed"}], {"ok": True, "n_events": 1}
+        ),
+    )
+    monkeypatch.setattr(
+        discovery, "_discover_event_markets_direct",
+        lambda *_args, **_kwargs: (["h2h"], {"ok": True, "status": 200}),
+    )
+    monkeypatch.setattr(
+        discovery, "_request_event_odds",
+        lambda *_args, **_kwargs: (
+            {"bookmakers": [{"markets": [None]}]},
+            {"ok": True, "status": 200},
+        ),
+    )
+    rows, report = discovery.fetch_all_discovered_markets(
+        "baseball_mlb", regions="us"
+    )
+    assert rows == []
+    assert report["ok"] is False
+    assert report["partial"] is True
+    assert report["n_events_succeeded"] == 0
+    detail = report["event_details"][0]
+    assert detail["ok"] is False
+    assert detail["partial"] is True
+    assert detail["error"] == "MALFORMED_PROVIDER_EVENT_ODDS"
+    assert detail["status"] == 200
+    assert detail["probe_requests"] == 1
