@@ -64,6 +64,55 @@ def test_catalog_probe_is_fail_closed_fallback_when_inventory_endpoint_fails(mon
     assert meta["fallback_used"] is True
     assert meta["discovery"] == "documented_catalog_runtime_probe_fallback"
     assert meta["event_markets_status"] == 503
+    # A catalog fallback is useful but cannot establish full provider coverage.
+    assert meta["partial"] is True
+
+
+def test_full_market_fetch_marks_static_fallback_coverage_partial(monkeypatch):
+    monkeypatch.setattr(
+        discovery, "discover_events",
+        lambda *_args, **_kwargs: ([{"id": "event-1"}], {"ok": True, "n_events": 1}),
+    )
+    monkeypatch.setattr(discovery, "candidate_markets_for_sport", lambda _sport: ["h2h"])
+    monkeypatch.setattr(
+        discovery, "_discover_event_markets_direct",
+        lambda *_args, **_kwargs: ([], {"ok": False, "status": 503, "error": "UPSTREAM"}),
+    )
+    monkeypatch.setattr(
+        discovery, "_probe_market_batch",
+        lambda *_args, **_kwargs: (
+            ["h2h"], [{"market": "h2h"}], [{"ok": True, "status": 200, "error": None}]
+        ),
+    )
+    rows, report = discovery.fetch_all_discovered_markets("baseball_mlb", regions="us")
+    assert rows == [{"market": "h2h"}]
+    assert report["ok"] is True
+    assert report["n_events_succeeded"] == 1
+    assert report["partial"] is True
+    assert report["event_details"][0]["fallback_used"] is True
+    assert report["event_details"][0]["partial"] is True
+
+
+def test_full_market_fetch_primary_inventory_can_be_complete(monkeypatch):
+    monkeypatch.setattr(
+        discovery, "discover_events",
+        lambda *_args, **_kwargs: ([{"id": "event-1"}], {"ok": True, "n_events": 1}),
+    )
+    monkeypatch.setattr(
+        discovery, "_discover_event_markets_direct",
+        lambda *_args, **_kwargs: (["h2h"], {"ok": True, "status": 200}),
+    )
+    monkeypatch.setattr(
+        discovery, "_probe_market_batch",
+        lambda *_args, **_kwargs: (
+            ["h2h"], [{"market": "h2h"}], [{"ok": True, "status": 200, "error": None}]
+        ),
+    )
+    _, report = discovery.fetch_all_discovered_markets("baseball_mlb", regions="us")
+    assert report["ok"] is True
+    assert report["partial"] is False
+    assert report["event_details"][0]["fallback_used"] is False
+    assert report["event_details"][0]["partial"] is False
 
 
 def test_all_sports_all_markets_fans_out_instead_of_scanning_literal_all(monkeypatch):
