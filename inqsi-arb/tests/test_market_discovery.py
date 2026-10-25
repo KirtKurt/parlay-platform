@@ -787,3 +787,48 @@ def test_aggregate_event_market_report_handles_invalid_event_objects(monkeypatch
     assert report["events"] == {"valid": ["h2h"]}
     assert report["n_events_available"] == 4
     assert report["partial"] is True
+
+
+def test_malformed_successful_event_catalog_fails_closed_without_market_requests(monkeypatch):
+    # A 200 with a non-list body must not be treated as a valid empty slate.
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+
+    def unexpected_market_request(*_args, **_kwargs):
+        raise AssertionError("malformed event catalog must not fan out to markets")
+
+    monkeypatch.setattr(discovery, "_discover_event_markets_direct", unexpected_market_request)
+    for payload in (None, {}, {"events": []}, "not-a-list"):
+        monkeypatch.setattr(
+            discovery, "_get",
+            lambda *_args, _payload=payload, **_kwargs: (
+                _payload, {"ok": True, "status": 200}
+            ),
+        )
+        events, meta = discovery.discover_events("baseball_mlb")
+        assert events == []
+        assert meta["ok"] is False
+        assert meta["status"] == 200
+        assert meta["error"] == "MALFORMED_PROVIDER_EVENT_CATALOG"
+        assert meta["partial"] is True
+
+        rows, report = discovery.fetch_all_discovered_markets(
+            "baseball_mlb", regions="us"
+        )
+        assert rows == []
+        assert report["ok"] is False
+        assert report["stage"] == "events"
+        assert report["events"]["error"] == "MALFORMED_PROVIDER_EVENT_CATALOG"
+
+
+def test_valid_empty_event_catalog_is_not_misclassified(monkeypatch):
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        discovery, "_get",
+        lambda *_args, **_kwargs: ([], {"ok": True, "status": 200}),
+    )
+    events, meta = discovery.discover_events("baseball_mlb")
+    assert events == []
+    assert meta["ok"] is True
+    assert meta["n_events"] == 0
+    assert meta["n_events_invalid"] == 0
+    assert meta["partial"] is False
