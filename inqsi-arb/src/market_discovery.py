@@ -178,13 +178,20 @@ def _probe_market_batch(
             evidence[0]["ok"] = False
             evidence[0]["error"] = "MALFORMED_PROVIDER_EVENT_ODDS"
             return [], [], evidence
-        returned = []
-        for book in books:
-            for market in book.get("markets") or []:
-                key = str(market.get("key") or "").strip()
-                if key and key not in returned:
-                    returned.append(key)
-        return returned, normalize_games([payload], sport_key=sport_key), evidence
+        # A market key in a successful HTTP response does not establish that
+        # any usable price was returned. Only count markets for which the
+        # normalizer retained actual numeric-price quotes; keep the complete
+        # normalized rows unchanged for the downstream ARB engine.
+        normalized = normalize_games([payload], sport_key=sport_key)
+        returned = list(dict.fromkeys(
+            str(row.get("market") or "").strip()
+            for row in normalized
+            if isinstance(row, dict) and str(row.get("market") or "").strip()
+        ))
+        if not returned:
+            evidence[0]["ok"] = False
+            evidence[0]["error"] = "NO_USABLE_PROVIDER_MARKET_ODDS"
+        return returned, normalized, evidence
     # Only malformed/unsupported market combinations can benefit from bisection.
     # Authentication, throttling and provider outages affect every sub-batch;
     # retrying them recursively amplifies requests without restoring coverage.
