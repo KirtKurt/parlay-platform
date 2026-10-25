@@ -7,6 +7,7 @@ keys are accepted; unsupported markets fail closed.
 from __future__ import annotations
 
 import json
+import math
 import os
 import urllib.error
 import urllib.parse
@@ -119,8 +120,14 @@ def normalize_games(games: Sequence[Mapping[str, Any]], *, sport_key: str, provi
                 for outcome in market.get("outcomes") or []:
                     price = outcome.get("price")
                     try:
-                        float(price)
+                        numeric_price = float(price)
                     except (TypeError, ValueError):
+                        continue
+                    # All ARB provider requests explicitly use American odds.
+                    # NaN/Infinity and decimal-sized or otherwise impossible
+                    # American prices cannot establish an executable quote.
+                    if (isinstance(price, bool) or not math.isfinite(numeric_price)
+                            or -100 < numeric_price < 100):
                         continue
                     name = str(outcome.get("name") or "").strip()
                     desc = str(outcome.get("description") or "").strip()
