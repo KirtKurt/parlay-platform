@@ -39,19 +39,39 @@ const contradictoryReason: ArbOpportunity = {
   validation: { ...verified.validation, qualification_reason: 'HOUSE_RULE_MISMATCH' },
 };
 const missingMathProof: ArbOpportunity = { ...verified, math_arb: false };
+const adverseSettlementReason: ArbOpportunity = {
+  ...verified,
+  validation: { ...verified.validation, settlement_reason: 'EVENT_OR_MARKET_SCOPE_UNREVIEWED' },
+};
+const adverseStateReason: ArbOpportunity = {
+  ...verified,
+  validation: { ...verified.validation, settlement_state_reason: 'SETTLEMENT_STATE_PROOF_FAILED' },
+};
+const advisoryOnly: ArbOpportunity = {
+  ...verified,
+  validation: { ...verified.validation, settlement_advisory: 'SPORTSBOOK_RULES_MAY_AFFECT_SETTLEMENT' },
+};
+const missingBookRules: ArbOpportunity = {
+  ...verified,
+  validation: { ...verified.validation, missing_books: ['book-a'] },
+};
 check(isVerifiedExecutable(verified), 'strict positive settlement proof must qualify');
-for (const row of [unreviewed, incomplete, unproven, noProfit, missingStatePnl, contradictoryReason, missingMathProof, { arb: true }, {}]) {
+for (const row of [unreviewed, incomplete, unproven, noProfit, missingStatePnl, contradictoryReason, missingMathProof, adverseSettlementReason, adverseStateReason, advisoryOnly, missingBookRules, { arb: true }, {}]) {
   check(!isVerifiedExecutable(row), 'missing or adverse proof must fail closed');
 }
 const partition = partitionScanRows({
-  hits: [verified, unreviewed, incomplete, unproven, noProfit, contradictoryReason, missingMathProof],
+  hits: [verified, unreviewed, incomplete, unproven, noProfit, contradictoryReason, missingMathProof, adverseSettlementReason, adverseStateReason, advisoryOnly, missingBookRules],
   detected_unverified: [verified],
 });
 check(partition.verified.length === 1, 'only one engine hit is verified');
-check(partition.held.length === 7, 'all other candidates are retained as held');
-check(partition.held[6] === verified, 'upstream detected_unverified must stay held');
+check(partition.held.length === 11, 'all other candidates are retained as held');
+check(partition.held[10] === verified, 'upstream detected_unverified must stay held');
 check(heldBackReason(unreviewed) === 'SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE', 'preserve upstream hold reason');
 check(heldBackReason(contradictoryReason) === 'HOUSE_RULE_MISMATCH', 'explicit adverse qualification must be visible');
 check(heldBackReason(unproven) === 'STRICT_EXECUTABLE_SETTLEMENT_PROOF_MISSING', 'missing proof reason');
+check(heldBackReason(adverseSettlementReason) === 'EVENT_OR_MARKET_SCOPE_UNREVIEWED', 'settlement reason must be shown');
+check(heldBackReason(adverseStateReason) === 'SETTLEMENT_STATE_PROOF_FAILED', 'state reason must be shown');
+check(heldBackReason(advisoryOnly) === 'SPORTSBOOK_RULES_MAY_AFFECT_SETTLEMENT', 'advisory must be shown');
+check(heldBackReason(missingBookRules) === 'SPORTSBOOK_SETTLEMENT_RULES_MISSING', 'missing book rules must be shown');
 check(partitionScanRows(null).verified.length === 0, 'empty scan safe');
 console.log('ARB console qualification checks passed');
