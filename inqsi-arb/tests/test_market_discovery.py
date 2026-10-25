@@ -142,6 +142,9 @@ def test_probe_does_not_fan_out_on_auth_throttle_or_outage(monkeypatch):
     for status, error in (
         (401, "PROVIDER_HTTP_401"),
         (403, "PROVIDER_HTTP_403"),
+        (404, "PROVIDER_HTTP_404"),
+        (408, "PROVIDER_HTTP_408"),
+        (410, "PROVIDER_HTTP_410"),
         (429, "PROVIDER_HTTP_429"),
         (500, "PROVIDER_HTTP_500"),
         (503, "PROVIDER_HTTP_503"),
@@ -267,3 +270,33 @@ def test_full_market_fetch_retains_per_event_failure_evidence(monkeypatch):
     assert detail["event_markets_error"] == "PROVIDER_HTTP_401"
     assert detail["event_markets_status"] == 401
     assert detail["probe_requests"] == 1
+
+
+def test_nested_auth_failure_not_masked_by_initial_unsupported_market(monkeypatch):
+    """A 422 parent must not hide a terminal 401 from a child batch."""
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        discovery, "candidate_markets_for_sport", lambda _sport: ["h2h", "spreads"]
+    )
+    monkeypatch.setattr(
+        discovery,
+        "_discover_event_markets_direct",
+        lambda *_args, **_kwargs: (
+            [], {"ok": False, "status": 422, "error": "PROVIDER_HTTP_422"}
+        ),
+    )
+    calls = []
+
+    def fake_request(_sport, _event, markets, *, regions, bookmakers=None):
+        calls.append(tuple(markets))
+        status = 401 if list(markets) == ["h2h"] else 422
+        return None, {"ok": False, "status": status, "error": f"PROVIDER_HTTP_{status}"}
+
+    monkeypatch.setattr(discovery, "_request_event_odds", fake_request)
+    keys, meta = discovery.discover_event_market_keys("baseball_mlb", "event-401")
+    assert keys == []
+    assert meta["ok"] is False
+    assert meta["status"] == 401
+    assert meta["error"] == "PROVIDER_HTTP_401"
+    assert meta["event_markets_status"] == 422
+    assert calls == [("h2h", "spreads"), ("h2h",), ("spreads",)]
