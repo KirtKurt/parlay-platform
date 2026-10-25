@@ -126,6 +126,50 @@ def test_non_executable_or_incomplete_proof_is_held():
     assert not alerts._is_verified_executable(row)
 
 
+def test_verified_alert_requires_positive_finite_profit_in_both_proofs():
+    assert alerts._is_verified_executable(_verified_row())
+    for value in (None, 0, -1, float("nan"), float("inf"), True, "12.5"):
+        row = _verified_row()
+        row["minimum_profit"] = value
+        assert not alerts._is_verified_executable(row), ("candidate_profit", value)
+        row = _verified_row()
+        row["validation"]["settlement_states"]["minimum_net_pnl"] = value
+        assert not alerts._is_verified_executable(row), ("settlement_profit", value)
+
+
+def test_contradictory_settlement_evidence_cannot_be_verified():
+    for field, value in (
+        ("settlement_reason", "BOOK_RULES_MISMATCH"),
+        ("settlement_state_reason", "PUSH_STATE_UNRESOLVED"),
+        ("settlement_advisory", "SPORTSBOOK_RULES_MAY_AFFECT_SETTLEMENT"),
+        ("missing_books", ["book-b"]),
+    ):
+        row = _verified_row()
+        row["validation"][field] = value
+        assert not alerts._is_verified_executable(row), field
+
+
+def test_sns_held_back_alert_preserves_contradictory_reason(monkeypatch):
+    sns = _setup(monkeypatch)
+    advisory = _verified_row()
+    advisory["validation"]["settlement_advisory"] = "SPORTSBOOK_RULES_MAY_AFFECT_SETTLEMENT"
+    missing = _verified_row()
+    missing["validation"]["missing_books"] = ["book-b"]
+    missing["event_id"] = "event-2"
+    zero_profit = _verified_row()
+    zero_profit["minimum_profit"] = 0
+    zero_profit["event_id"] = "event-3"
+    out = alerts.publish_scan_opportunities({"hits": [advisory, missing, zero_profit]})
+    assert out == {"published": 3, "deduped": 0, "errors": 0}
+    messages = [json.loads(call["Message"]) for call in sns.calls]
+    assert [m["status"] for m in messages] == ["HELD_BACK"] * 3
+    assert [m["holdback_reason"] for m in messages] == [
+        "SPORTSBOOK_RULES_MAY_AFFECT_SETTLEMENT",
+        "SPORTSBOOK_SETTLEMENT_RULES_MISSING",
+        "EXECUTABLE_QUALIFICATION_NOT_PROVEN",
+    ]
+
+
 def test_identical_opportunity_is_deduped(monkeypatch):
     sns = _setup(monkeypatch)
     monkeypatch.setattr(alerts, "claim_once", lambda *args, **kwargs: False)
