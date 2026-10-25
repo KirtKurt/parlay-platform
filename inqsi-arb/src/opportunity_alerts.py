@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import uuid
 from datetime import datetime, timezone
@@ -28,8 +29,13 @@ def _legs(row: Dict[str, Any]) -> list:
     return list(row.get("legs") or row.get("quotes") or [])
 
 
+def _positive_finite(value: Any) -> bool:
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value) and value > 0)
+
+
 def _is_verified_executable(row: Dict[str, Any]) -> bool:
-    """Do not trust membership in hits as proof of sportsbook-rule compatibility."""
+    """Require the same strict profit and settlement proof as the ARB console."""
     validation = row.get("validation")
     if not isinstance(validation, dict):
         return False
@@ -43,7 +49,13 @@ def _is_verified_executable(row: Dict[str, Any]) -> bool:
         and validation.get("executable") is True
         and isinstance(settlement, dict)
         and settlement.get("strict_arbitrage") is True
+        and _positive_finite(row.get("minimum_profit"))
+        and _positive_finite(settlement.get("minimum_net_pnl"))
         and not validation.get("qualification_reason")
+        and not validation.get("settlement_reason")
+        and not validation.get("settlement_state_reason")
+        and not validation.get("settlement_advisory")
+        and not validation.get("missing_books")
     )
 
 
@@ -55,6 +67,8 @@ def _holdback_reason(row: Dict[str, Any]) -> str:
         or validation.get("qualification_reason")
         or validation.get("settlement_reason")
         or validation.get("settlement_state_reason")
+        or validation.get("settlement_advisory")
+        or ("SPORTSBOOK_SETTLEMENT_RULES_MISSING" if validation.get("missing_books") else None)
         or "EXECUTABLE_QUALIFICATION_NOT_PROVEN"
     )
 
