@@ -119,6 +119,61 @@ def _message(status: str, row: Dict[str, Any], *, audit_event_id: str | None) ->
     }
 
 
+
+def _sms_text(status: str, row: Dict[str, Any], message: Dict[str, Any]) -> str:
+    """Readable, bounded SMS; the default SNS payload retains complete JSON."""
+    def clean(value: Any, limit: int = 80) -> str:
+        return " ".join(str(value if value is not None else "?").split())[:limit]
+
+    def american(leg: Dict[str, Any]) -> str:
+        # Never present decimal prices as American without conversion.
+        value = leg.get("american")
+        if value is None:
+            value = leg.get("american_odds")
+        if value is None:
+            value = leg.get("price")
+        if isinstance(value, str):
+            try:
+                value = float(value.strip())
+            except ValueError:
+                value = None
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and abs(value) >= 100:
+            return f"{value:+.0f}" if value > 0 else f"{value:.0f}"
+        decimal = leg.get("decimal")
+        if isinstance(decimal, (int, float)) and not isinstance(decimal, bool) and math.isfinite(decimal) and decimal > 1:
+            odds = 100 * (decimal - 1) if decimal >= 2 else -100 / (decimal - 1)
+            return f"{odds:+.0f}" if odds > 0 else f"{odds:.0f}"
+        return "odds?"
+
+    title = "Inqsi ARB VERIFIED EXECUTABLE" if status == "VERIFIED" else "Inqsi ARB HELD BACK"
+    event = row.get("event") or message.get("event_id") or "event?"
+    parts = [title, clean(message.get("sport"), 40), clean(event, 100), clean(message.get("market"), 60)]
+    legs = [
+        f"{clean(leg.get('book') or leg.get('bookmaker'), 30)} "
+        f"{clean(leg.get('outcome') or leg.get('name'), 30)} {american(leg)}"
+        for leg in _legs(row)[:6]
+        if isinstance(leg, dict)
+    ]
+    if legs:
+        parts.append(" / ".join(legs))
+    if message.get("margin") is not None:
+        unit = "%" if row.get("margin_pct") is not None else ""
+        parts.append(f"edge/margin {clean(message['margin'], 20)}{unit}")
+    if message.get("stake_total") is not None:
+        parts.append(f"stake {clean(message['stake_total'], 24)}")
+    if message.get("profit") is not None:
+        parts.append(f"profit {clean(message['profit'], 24)}")
+    parts.append(f"detected {clean(message.get('detected_at'), 40)}")
+    if message.get("quote_last_updates"):
+        parts.append(f"quote {clean(message['quote_last_updates'][0], 40)}")
+    if status != "VERIFIED":
+        parts.append(f"reason {clean(message.get('holdback_reason'), 120)}")
+    # SNS permits up to 1,600 characters for a single SMS publish; keep the
+    # readable text bounded while leaving full details in the default payload.
+    sms = " | ".join(parts)
+    return sms if len(sms) <= 1000 else sms[:997] + "..."
+
+
 def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | None = None,
                                sport: str | None = None) -> Dict[str, int]:
     if not enabled():
@@ -147,7 +202,11 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
             response = client.publish(
                 TopicArn=_topic_arn(),
                 Subject=f"Inqsi ARB {status}: {message.get('sport') or 'sport'} {message.get('market') or 'market'}"[:100],
-                Message=json.dumps(message, sort_keys=True, default=str),
+                MessageStructure="json",
+                Message=json.dumps({
+                    "default": json.dumps(message, sort_keys=True, default=str),
+                    "sms": _sms_text(status, row, message),
+                }, sort_keys=True),
                 MessageAttributes={
                     "status": {"DataType": "String", "StringValue": status},
                     "sport": {"DataType": "String", "StringValue": str(message.get("sport") or "unknown")},
