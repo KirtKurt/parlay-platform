@@ -286,7 +286,9 @@ def fetch_all_discovered_markets(
             "probe_requests": len(evidence),
             "discovery": discovery_meta.get("discovery"),
             "fallback_used": fallback_used,
-            "partial": fallback_used or len(observed) > len(candidates),
+            # An inventory response alone cannot prove full price coverage when
+            # one or more requested market keys failed to return usable odds.
+            "partial": fallback_used or len(observed) > len(candidates) or bool(set(candidates) - set(accepted)),
         })
     good = sum(1 for x in details if x.get("ok"))
     return normalized, {
