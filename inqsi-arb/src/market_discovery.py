@@ -143,7 +143,9 @@ def _probe_market_batch(
 
 
 
-def _primary_probe_failure(evidence: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _primary_probe_failure(
+    evidence: List[Dict[str, Any]], *, terminal_only: bool = False
+) -> Dict[str, Any]:
     """Prefer a terminal provider error over an earlier unsupported-market 422.
 
     A batch can fail with 422, then reveal a 401/429/outage in a child probe.
@@ -157,7 +159,7 @@ def _primary_probe_failure(evidence: List[Dict[str, Any]]) -> Dict[str, Any]:
             or row.get("error") == "PROVIDER_UNAVAILABLE"
         ):
             return row
-    return evidence[0] if evidence else {}
+    return {} if terminal_only else (evidence[0] if evidence else {})
 
 
 def discover_event_market_keys(
@@ -191,7 +193,7 @@ def discover_event_market_keys(
     )
     # A failed fallback must preserve the actionable provider error.  Without
     # these fields, callers see a failed discovery with error/status = None.
-    probe_failure = _primary_probe_failure(evidence) if not accepted else {}
+    probe_failure = _primary_probe_failure(evidence, terminal_only=bool(accepted))
     return accepted, {
         "ok": bool(accepted),
         "error": probe_failure.get("error") or (observed_meta.get("error") if not accepted else None),
@@ -284,7 +286,7 @@ def fetch_all_discovered_markets(
             sport_key, event_id, candidates, regions=regions, bookmakers=bookmakers,
         ) if candidates else ([], [], [])
         normalized.extend(rows)
-        probe_failure = _primary_probe_failure(evidence) if not accepted else {}
+        probe_failure = _primary_probe_failure(evidence, terminal_only=bool(accepted))
         details.append({
             "event_id": event_id,
             "ok": bool(accepted) or (not fallback_used and not candidates),

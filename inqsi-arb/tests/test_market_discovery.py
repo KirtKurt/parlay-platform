@@ -472,3 +472,89 @@ def test_aggregate_event_market_report_respects_event_and_market_caps(monkeypatc
     )
     assert market_capped["partial"] is True
     assert market_capped["n_events"] == 2
+
+
+
+def test_partial_fallback_preserves_terminal_provider_error_with_accepted_market(monkeypatch):
+    # A successful child market must not hide a 401 in a sibling probe.
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    monkeypatch.setattr(discovery, "candidate_markets_for_sport", lambda _sport: ["h2h", "totals"])
+    monkeypatch.setattr(
+        discovery, "_discover_event_markets_direct",
+        lambda *_args, **_kwargs: ([], {"ok": False, "status": 422, "error": "PROVIDER_HTTP_422"}),
+    )
+    monkeypatch.setattr(
+        discovery, "_probe_market_batch",
+        lambda *_args, **_kwargs: (
+            ["h2h"], [{"market": "h2h"}],
+            [
+                {"ok": False, "status": 422, "error": "PROVIDER_HTTP_422"},
+                {"ok": True, "status": 200, "error": None},
+                {"ok": False, "status": 401, "error": "PROVIDER_HTTP_401"},
+            ],
+        ),
+    )
+    keys, meta = discovery.discover_event_market_keys("baseball_mlb", "event-partial")
+    assert keys == ["h2h"]
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["status"] == 401
+    assert meta["error"] == "PROVIDER_HTTP_401"
+    assert meta["event_markets_status"] == 422
+
+
+def test_full_market_partial_success_preserves_terminal_provider_error(monkeypatch):
+    monkeypatch.setattr(
+        discovery, "discover_events",
+        lambda *_args, **_kwargs: ([{"id": "event-partial"}], {"ok": True, "n_events": 1}),
+    )
+    monkeypatch.setattr(
+        discovery, "_discover_event_markets_direct",
+        lambda *_args, **_kwargs: (["h2h", "totals"], {"ok": True, "status": 200}),
+    )
+    monkeypatch.setattr(
+        discovery, "_probe_market_batch",
+        lambda *_args, **_kwargs: (
+            ["h2h"], [{"market": "h2h"}],
+            [
+                {"ok": False, "status": 422, "error": "PROVIDER_HTTP_422"},
+                {"ok": True, "status": 200, "error": None},
+                {"ok": False, "status": 429, "error": "PROVIDER_HTTP_429"},
+            ],
+        ),
+    )
+    rows, report = discovery.fetch_all_discovered_markets("baseball_mlb", regions="us")
+    assert rows == [{"market": "h2h"}]
+    assert report["ok"] is True
+    assert report["partial"] is True
+    detail = report["event_details"][0]
+    assert detail["ok"] is True
+    assert detail["partial"] is True
+    assert detail["status"] == 429
+    assert detail["error"] == "PROVIDER_HTTP_429"
+
+
+def test_partial_success_with_only_unsupported_market_does_not_invent_terminal_error(monkeypatch):
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    monkeypatch.setattr(discovery, "candidate_markets_for_sport", lambda _sport: ["h2h", "bad"])
+    monkeypatch.setattr(
+        discovery, "_discover_event_markets_direct",
+        lambda *_args, **_kwargs: ([], {"ok": False, "status": 422, "error": "PROVIDER_HTTP_422"}),
+    )
+    monkeypatch.setattr(
+        discovery, "_probe_market_batch",
+        lambda *_args, **_kwargs: (
+            ["h2h"], [{"market": "h2h"}],
+            [
+                {"ok": False, "status": 422, "error": "PROVIDER_HTTP_422"},
+                {"ok": True, "status": 200, "error": None},
+                {"ok": False, "status": 422, "error": "PROVIDER_HTTP_422"},
+            ],
+        ),
+    )
+    keys, meta = discovery.discover_event_market_keys("baseball_mlb", "event-unsupported")
+    assert keys == ["h2h"]
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["status"] is None
+    assert meta["error"] is None
