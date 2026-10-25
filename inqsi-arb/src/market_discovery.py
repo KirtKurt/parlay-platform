@@ -171,8 +171,13 @@ def discover_event_market_keys(
     accepted, _rows, evidence = _probe_market_batch(
         sport_key, event_id, candidates, regions=regions, bookmakers=bookmakers,
     )
+    # A failed fallback must preserve the actionable provider error.  Without
+    # these fields, callers see a failed discovery with error/status = None.
+    probe_failure = evidence[0] if evidence and not accepted else {}
     return accepted, {
         "ok": bool(accepted),
+        "error": probe_failure.get("error") or (observed_meta.get("error") if not accepted else None),
+        "status": probe_failure.get("status") if probe_failure else (observed_meta.get("status") if not accepted else None),
         "discovery": "documented_catalog_runtime_probe_fallback",
         "n_candidates": len(candidates),
         "n_market_keys": len(accepted),
@@ -248,9 +253,14 @@ def fetch_all_discovered_markets(
             sport_key, event_id, candidates, regions=regions, bookmakers=bookmakers,
         ) if candidates else ([], [], [])
         normalized.extend(rows)
+        probe_failure = evidence[0] if evidence and not accepted else {}
         details.append({
             "event_id": event_id,
             "ok": bool(accepted) or (not fallback_used and not candidates),
+            "error": probe_failure.get("error") or (discovery_meta.get("error") if not accepted else None),
+            "status": probe_failure.get("status") if probe_failure else (discovery_meta.get("status") if not accepted else None),
+            "event_markets_error": discovery_meta.get("error"),
+            "event_markets_status": discovery_meta.get("status"),
             "n_candidates": len(candidates),
             "n_observed": len(observed),
             "n_discovered": len(accepted),
