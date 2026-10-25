@@ -627,6 +627,7 @@ def test_malformed_live_inventory_fails_closed_to_partial_fallback(monkeypatch):
         {"bookmakers": {"key": "book_a"}},
         {"bookmakers": [None]},
         {"bookmakers": [{"key": "book_a", "markets": None}]},
+        {"bookmakers": [{"key": "book_a", "markets": [None]}]},
     )
     for payload in malformed:
         monkeypatch.setattr(
