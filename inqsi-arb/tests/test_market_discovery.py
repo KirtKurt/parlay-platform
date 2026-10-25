@@ -196,3 +196,74 @@ def test_invalid_market_still_bisects_and_retains_supported_neighbors(monkeypatc
     assert rows and rows[0]["market"] == "h2h"
     assert calls == [("h2h", "invalid_market"), ("h2h",), ("invalid_market",)]
     assert len(evidence) == 3
+
+
+def test_failed_fallback_preserves_provider_error_for_event_discovery(monkeypatch):
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        discovery,
+        "_discover_event_markets_direct",
+        lambda *_args, **_kwargs: (
+            [], {"ok": False, "status": 401, "error": "PROVIDER_HTTP_401"}
+        ),
+    )
+    monkeypatch.setattr(
+        discovery,
+        "_probe_market_batch",
+        lambda *_args, **_kwargs: (
+            [], [], [{"ok": False, "status": 401, "error": "PROVIDER_HTTP_401", "depth": 0}]
+        ),
+    )
+    keys, meta = discovery.discover_event_market_keys("baseball_mlb", "event-401")
+    assert keys == []
+    assert meta["ok"] is False
+    assert meta["error"] == "PROVIDER_HTTP_401"
+    assert meta["status"] == 401
+    assert meta["event_markets_error"] == "PROVIDER_HTTP_401"
+
+    report = discovery.discover_sport_event_markets(
+        "baseball_mlb", [{"id": "event-401"}]
+    )
+    assert report["ok"] is False
+    assert report["errors"] == [{
+        "event_id": "event-401",
+        "error": "PROVIDER_HTTP_401",
+        "status": 401,
+    }]
+
+
+def test_full_market_fetch_retains_per_event_failure_evidence(monkeypatch):
+    monkeypatch.setattr(
+        discovery,
+        "discover_events",
+        lambda *_args, **_kwargs: (
+            [{"id": "event-401"}], {"ok": True, "n_events": 1}
+        ),
+    )
+    monkeypatch.setattr(
+        discovery,
+        "_discover_event_markets_direct",
+        lambda *_args, **_kwargs: (
+            [], {"ok": False, "status": 401, "error": "PROVIDER_HTTP_401"}
+        ),
+    )
+    monkeypatch.setattr(
+        discovery,
+        "_probe_market_batch",
+        lambda *_args, **_kwargs: (
+            [], [], [{"ok": False, "status": 401, "error": "PROVIDER_HTTP_401", "depth": 0}]
+        ),
+    )
+    rows, report = discovery.fetch_all_discovered_markets(
+        "baseball_mlb", regions="us"
+    )
+    assert rows == []
+    assert report["ok"] is False
+    assert report["n_events_succeeded"] == 0
+    detail = report["event_details"][0]
+    assert detail["event_id"] == "event-401"
+    assert detail["error"] == "PROVIDER_HTTP_401"
+    assert detail["status"] == 401
+    assert detail["event_markets_error"] == "PROVIDER_HTTP_401"
+    assert detail["event_markets_status"] == 401
+    assert detail["probe_requests"] == 1
