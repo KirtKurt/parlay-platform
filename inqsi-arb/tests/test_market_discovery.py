@@ -349,3 +349,59 @@ def test_nested_auth_failure_not_masked_by_initial_unsupported_market(monkeypatc
     assert meta["error"] == "PROVIDER_HTTP_401"
     assert meta["event_markets_status"] == 422
     assert calls == [("h2h", "spreads"), ("h2h",), ("spreads",)]
+
+
+def test_full_market_fetch_marks_missing_observed_market_odds_partial(monkeypatch):
+    # Successful inventory does not prove complete odds coverage if one of its
+    # observed market keys fails to return a price in the live odds probe.
+    monkeypatch.setattr(
+        discovery, "discover_events",
+        lambda *_args, **_kwargs: ([{"id": "event-1"}], {"ok": True, "n_events": 1}),
+    )
+    monkeypatch.setattr(
+        discovery, "_discover_event_markets_direct",
+        lambda *_args, **_kwargs: (["h2h", "totals"], {"ok": True, "status": 200}),
+    )
+    monkeypatch.setattr(
+        discovery, "_probe_market_batch",
+        lambda *_args, **_kwargs: (
+            ["h2h"], [{"market": "h2h"}], [{"ok": True, "status": 200}]
+        ),
+    )
+    rows, report = discovery.fetch_all_discovered_markets("baseball_mlb", regions="us")
+    assert rows == [{"market": "h2h"}]
+    assert report["ok"] is True
+    assert report["event_details"][0]["n_observed"] == 2
+    assert report["event_details"][0]["n_discovered"] == 1
+    assert report["event_details"][0]["fallback_used"] is False
+    assert report["event_details"][0]["partial"] is True
+    assert report["partial"] is True
+
+
+def test_full_market_fetch_marks_failed_event_partial_despite_other_success(monkeypatch):
+    monkeypatch.setattr(
+        discovery, "discover_events",
+        lambda *_args, **_kwargs: (
+            [{"id": "event-good"}, {"id": "event-failed"}],
+            {"ok": True, "n_events": 2},
+        ),
+    )
+    monkeypatch.setattr(
+        discovery, "_discover_event_markets_direct",
+        lambda *_args, **_kwargs: (["h2h"], {"ok": True, "status": 200}),
+    )
+
+    def fake_probe(_sport, event_id, _markets, **_kwargs):
+        if event_id == "event-good":
+            return ["h2h"], [{"market": "h2h"}], [{"ok": True, "status": 200}]
+        return [], [], [{"ok": False, "status": 503, "error": "PROVIDER_HTTP_503"}]
+
+    monkeypatch.setattr(discovery, "_probe_market_batch", fake_probe)
+    rows, report = discovery.fetch_all_discovered_markets("baseball_mlb", regions="us")
+    assert rows == [{"market": "h2h"}]
+    assert report["ok"] is True
+    assert report["n_events_requested"] == 2
+    assert report["n_events_succeeded"] == 1
+    assert report["event_details"][1]["ok"] is False
+    assert report["event_details"][1]["partial"] is True
+    assert report["partial"] is True
