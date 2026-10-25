@@ -76,12 +76,28 @@ def _discover_event_markets_direct(
         "bookmakers": bookmakers,
         "dateFormat": "iso",
     })
-    if not meta.get("ok") or not isinstance(payload, dict):
+    if not meta.get("ok"):
         return [], {**meta, "discovery": "event_markets_endpoint"}
+    # A successful HTTP response is not proof of complete provider inventory
+    # when the response schema is missing or malformed. Fall back to bounded
+    # market probes and mark coverage partial rather than silently returning
+    # an empty, supposedly complete inventory.
+    if (
+        not isinstance(payload, dict)
+        or not isinstance(payload.get("bookmakers"), list)
+        or any(
+            not isinstance(book, dict) or not isinstance(book.get("markets"), list)
+            for book in payload["bookmakers"]
+        )
+    ):
+        return [], {
+            **meta,
+            "ok": False,
+            "error": "MALFORMED_PROVIDER_MARKET_INVENTORY",
+            "discovery": "event_markets_endpoint",
+        }
     keys: List[str] = []
-    for book in payload.get("bookmakers") or []:
-        if not isinstance(book, dict):
-            continue
+    for book in payload["bookmakers"]:
         for market in book.get("markets") or []:
             if not isinstance(market, dict):
                 continue
