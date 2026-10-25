@@ -10,7 +10,7 @@ type Scan = { n_arbs?: number; n_detected_unverified?: number; n_markets?: numbe
 
 const API = (process.env.NEXT_PUBLIC_ARB_API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
 
-function money(value?: number) { return typeof value === 'number' ? `$${value.toFixed(2)}` : '—'; }
+function money(value?: number | null) { return typeof value === 'number' ? `$${value.toFixed(2)}` : '—'; }
 
 export default function ArbConsolePage() {
   const [sports, setSports] = useState<Sport[]>([]);
