@@ -17,6 +17,9 @@ export type ArbOpportunity = {
     executable?: boolean;
     qualification_reason?: string;
     settlement_reason?: string;
+    settlement_state_reason?: string;
+    settlement_advisory?: string;
+    missing_books?: string[];
     settlement_states?: {
       strict_arbitrage?: boolean;
       minimum_net_pnl?: number | null;
@@ -37,6 +40,10 @@ export function isVerifiedExecutable(row: ArbOpportunity): boolean {
     validation.rules_compatible === true &&
     validation.outcome_coverage === 'complete' &&
     !validation.qualification_reason &&
+    !validation.settlement_reason &&
+    !validation.settlement_state_reason &&
+    !validation.settlement_advisory &&
+    (!validation.missing_books || validation.missing_books.length === 0) &&
     states?.strict_arbitrage === true &&
     typeof minProfit === 'number' &&
     Number.isFinite(minProfit) &&
@@ -66,6 +73,9 @@ export function heldBackReason(row: ArbOpportunity): string {
   return (
     validation?.qualification_reason ||
     validation?.settlement_reason ||
+    validation?.settlement_state_reason ||
+    validation?.settlement_advisory ||
+    (validation?.missing_books?.length ? 'SPORTSBOOK_SETTLEMENT_RULES_MISSING' : '') ||
     (validation?.rules_compatible !== true
       ? 'SPORTSBOOK_RULES_NOT_VERIFIED_COMPATIBLE'
       : 'STRICT_EXECUTABLE_SETTLEMENT_PROOF_MISSING')
