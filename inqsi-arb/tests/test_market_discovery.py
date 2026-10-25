@@ -959,3 +959,76 @@ def test_partial_live_quotes_retain_good_market_but_not_empty_neighbor(monkeypat
     assert report["event_details"][0]["n_discovered"] == 1
     assert report["event_details"][0]["partial"] is True
     assert report["partial"] is True
+
+
+def test_nonfinite_or_nonamerican_prices_do_not_certify_live_coverage(monkeypatch):
+    # The provider request explicitly uses American odds; invalid numeric
+    # values must not become quote evidence or downstream ARB candidates.
+    invalid_prices = [float("nan"), float("inf"), -float("inf"), "NaN",
+                      "Infinity", 1.91, -50, 0, True, None, "bad"]
+    monkeypatch.setattr(
+        discovery,
+        "_request_event_odds",
+        lambda *_args, **_kwargs: (
+            {
+                "id": "event-prices",
+                "home_team": "Home",
+                "away_team": "Away",
+                "bookmakers": [{
+                    "key": "book_a",
+                    "markets": [{
+                        "key": "h2h",
+                        "outcomes": [
+                            {"name": f"invalid-{index}", "price": price}
+                            for index, price in enumerate(invalid_prices)
+                        ],
+                    }],
+                }],
+            },
+            {"ok": True, "status": 200},
+        ),
+    )
+    accepted, rows, evidence = discovery._probe_market_batch(
+        "baseball_mlb", "event-prices", ["h2h"], regions="us", bookmakers=None,
+    )
+    assert accepted == []
+    assert rows == []
+    assert evidence[0]["error"] == "NO_USABLE_PROVIDER_MARKET_ODDS"
+    assert evidence[0]["ok"] is False
+
+
+def test_valid_american_prices_survive_invalid_neighbor_prices(monkeypatch):
+    monkeypatch.setattr(
+        discovery,
+        "_request_event_odds",
+        lambda *_args, **_kwargs: (
+            {
+                "id": "event-mixed-prices",
+                "home_team": "Home",
+                "away_team": "Away",
+                "bookmakers": [{
+                    "key": "book_a",
+                    "markets": [
+                        {"key": "h2h", "outcomes": [
+                            {"name": "Home", "price": -110},
+                            {"name": "Away", "price": "+125"},
+                            {"name": "invalid", "price": float("nan")},
+                        ]},
+                        {"key": "totals", "outcomes": [
+                            {"name": "Over", "price": 1.91},
+                        ]},
+                    ],
+                }],
+            },
+            {"ok": True, "status": 200},
+        ),
+    )
+    accepted, rows, evidence = discovery._probe_market_batch(
+        "baseball_mlb", "event-mixed-prices", ["h2h", "totals"],
+        regions="us", bookmakers=None,
+    )
+    assert accepted == ["h2h"]
+    assert len(rows) == 1
+    assert len(rows[0]["quotes"]) == 2
+    assert {str(q["american"]) for q in rows[0]["quotes"]} == {"-110", "+125"}
+    assert evidence[0]["ok"] is True
