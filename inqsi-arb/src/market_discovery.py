@@ -26,7 +26,13 @@ def discover_events(sport_key: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any
     if not meta.get("ok") or not isinstance(payload, list):
         return [], meta
     rows = [x for x in payload if isinstance(x, dict) and x.get("id")]
-    return rows, {**meta, "n_events": len(rows)}
+    # Never certify full provider-visible coverage after silently discarding
+    # malformed event records from an otherwise successful response.
+    invalid = len(payload) - len(rows)
+    return rows, {
+        **meta, "n_events": len(rows), "n_events_received": len(payload),
+        "n_events_invalid": invalid, "partial": bool(invalid),
+    }
 
 
 def _event_odds_url(sport_key: str, event_id: str) -> str:
@@ -269,6 +275,9 @@ def discover_sport_event_markets(
     # was capped, failed, or relied on a static catalog instead of live inventory.
     partial = len(selected) < len(events or [])
     for event in selected:
+        if not isinstance(event, dict):
+            partial = True
+            continue
         event_id = str(event.get("id") or "").strip()
         if not event_id:
             partial = True
@@ -357,5 +366,6 @@ def fetch_all_discovered_markets(
         "n_events_succeeded": good,
         "n_normalized_markets": len(normalized),
         "event_details": details[:100],
-        "partial": len(selected) < len(events) or any(bool(x.get("partial")) for x in details),
+        "partial": bool(events_meta.get("partial")) or len(selected) < len(events) or any(bool(x.get("partial")) for x in details),
+        "n_events_invalid": events_meta.get("n_events_invalid", 0),
     }
