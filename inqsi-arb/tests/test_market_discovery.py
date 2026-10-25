@@ -726,3 +726,64 @@ def test_full_market_fetch_reports_malformed_odds_as_partial(monkeypatch):
     assert detail["error"] == "MALFORMED_PROVIDER_EVENT_ODDS"
     assert detail["status"] == 200
     assert detail["probe_requests"] == 1
+
+
+def test_discover_events_preserves_partial_coverage_for_malformed_provider_rows(monkeypatch):
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        discovery, "_get",
+        lambda *_args, **_kwargs: (
+            [{"id": "valid"}, None, {"name": "missing-id"}, "invalid"],
+            {"ok": True, "status": 200},
+        ),
+    )
+    events, meta = discovery.discover_events("baseball_mlb")
+    assert events == [{"id": "valid"}]
+    assert meta["n_events"] == 1
+    assert meta["n_events_received"] == 4
+    assert meta["n_events_invalid"] == 3
+    assert meta["partial"] is True
+
+
+def test_full_market_report_inherits_partial_event_catalog(monkeypatch):
+    monkeypatch.setattr(
+        discovery, "discover_events",
+        lambda *_args, **_kwargs: (
+            [{"id": "valid"}],
+            {"ok": True, "n_events": 1, "n_events_invalid": 2, "partial": True},
+        ),
+    )
+    monkeypatch.setattr(
+        discovery, "_discover_event_markets_direct",
+        lambda *_args, **_kwargs: (["h2h"], {"ok": True, "status": 200}),
+    )
+    monkeypatch.setattr(
+        discovery, "_probe_market_batch",
+        lambda *_args, **_kwargs: (
+            ["h2h"], [{"market": "h2h"}], [{"ok": True, "status": 200}],
+        ),
+    )
+    rows, report = discovery.fetch_all_discovered_markets(
+        "baseball_mlb", regions="us"
+    )
+    assert rows == [{"market": "h2h"}]
+    assert report["ok"] is True
+    assert report["n_events_invalid"] == 2
+    assert report["event_details"][0]["partial"] is False
+    assert report["partial"] is True
+
+
+def test_aggregate_event_market_report_handles_invalid_event_objects(monkeypatch):
+    monkeypatch.setattr(
+        discovery, "discover_event_market_keys",
+        lambda *_args, **_kwargs: (
+            ["h2h"], {"ok": True, "partial": False, "fallback_used": False},
+        ),
+    )
+    report = discovery.discover_sport_event_markets(
+        "baseball_mlb", [None, {"id": "valid"}, "invalid", {"name": "no-id"}]
+    )
+    assert report["ok"] is True
+    assert report["events"] == {"valid": ["h2h"]}
+    assert report["n_events_available"] == 4
+    assert report["partial"] is True
