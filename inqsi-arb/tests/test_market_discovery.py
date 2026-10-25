@@ -558,3 +558,52 @@ def test_partial_success_with_only_unsupported_market_does_not_invent_terminal_e
     assert meta["partial"] is True
     assert meta["status"] is None
     assert meta["error"] is None
+
+
+def test_probe_unknown_statuses_do_not_recursively_fan_out(monkeypatch):
+    # A failure of unknown cause is not evidence of an invalid market key.
+    # Do not amplify upstream requests or conceal the original failure.
+    for status in (None, 200, 302, 402, 409, 418, 451):
+        calls = []
+
+        def fake_request(_sport, _event, markets, *, regions, bookmakers=None):
+            calls.append(tuple(markets))
+            return None, {
+                "ok": status == 200,
+                "status": status,
+                "error": "MALFORMED_RESPONSE" if status == 200 else "UNEXPECTED_PROVIDER_STATUS",
+            }
+
+        monkeypatch.setattr(discovery, "_request_event_odds", fake_request)
+        accepted, rows, evidence = discovery._probe_market_batch(
+            "baseball_mlb", "event-1", ["h2h", "totals", "spreads"],
+            regions="us", bookmakers=None,
+        )
+        assert accepted == []
+        assert rows == []
+        assert calls == [("h2h", "totals", "spreads")]
+        assert len(evidence) == 1
+        assert evidence[0]["status"] == status
+
+
+def test_http_400_invalid_market_still_isolates_supported_neighbor(monkeypatch):
+    calls = []
+
+    def fake_request(_sport, _event, markets, *, regions, bookmakers=None):
+        calls.append(tuple(markets))
+        if list(markets) == ["h2h"]:
+            return {"bookmakers": [{"key": "book_a", "markets": [{"key": "h2h"}]}]}, {
+                "ok": True, "status": 200,
+            }
+        return None, {"ok": False, "status": 400, "error": "INVALID_MARKET"}
+
+    monkeypatch.setattr(discovery, "_request_event_odds", fake_request)
+    monkeypatch.setattr(discovery, "normalize_games", lambda *_args, **_kwargs: [{"market": "h2h"}])
+    accepted, rows, evidence = discovery._probe_market_batch(
+        "baseball_mlb", "event-1", ["h2h", "bad_market"],
+        regions="us", bookmakers=None,
+    )
+    assert accepted == ["h2h"]
+    assert rows == [{"market": "h2h"}]
+    assert calls == [("h2h", "bad_market"), ("h2h",), ("bad_market",)]
+    assert len(evidence) == 3
