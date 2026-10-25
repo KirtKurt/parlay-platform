@@ -832,3 +832,51 @@ def test_valid_empty_event_catalog_is_not_misclassified(monkeypatch):
     assert meta["n_events"] == 0
     assert meta["n_events_invalid"] == 0
     assert meta["partial"] is False
+
+
+def test_inventory_with_missing_market_keys_fails_closed_to_partial_fallback(monkeypatch):
+    # A successful inventory cannot prove complete coverage after silently
+    # dropping a market whose provider key is absent or malformed.
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    monkeypatch.setattr(discovery, "candidate_markets_for_sport", lambda _sport: ["h2h"])
+    monkeypatch.setattr(
+        discovery, "_probe_market_batch",
+        lambda *_args, **_kwargs: (
+            ["h2h"], [{"market": "h2h"}],
+            [{"ok": True, "status": 200, "error": None}],
+        ),
+    )
+    for invalid_market in ({}, {"key": None}, {"key": ""}, {"key": "  "}, {"key": 123}):
+        monkeypatch.setattr(
+            discovery, "_get",
+            lambda *_args, _invalid=invalid_market, **_kwargs: (
+                {"bookmakers": [{"key": "book_a", "markets": [
+                    {"key": "h2h"}, _invalid,
+                ]}]},
+                {"ok": True, "status": 200},
+            ),
+        )
+        keys, meta = discovery.discover_event_market_keys(
+            "baseball_mlb", "event-missing-market-key"
+        )
+        assert keys == ["h2h"]
+        assert meta["fallback_used"] is True
+        assert meta["partial"] is True
+        assert meta["event_markets_error"] == "MALFORMED_PROVIDER_MARKET_INVENTORY"
+
+
+def test_valid_market_inventory_still_reports_direct_complete_coverage(monkeypatch):
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        discovery, "_get",
+        lambda *_args, **_kwargs: (
+            {"bookmakers": [{"key": "book_a", "markets": [{"key": "h2h"}]}]},
+            {"ok": True, "status": 200},
+        ),
+    )
+    keys, meta = discovery.discover_event_market_keys(
+        "baseball_mlb", "event-valid-market-key"
+    )
+    assert keys == ["h2h"]
+    assert meta["fallback_used"] is False
+    assert meta["partial"] is False
