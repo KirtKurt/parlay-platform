@@ -34,18 +34,24 @@ const missingStatePnl: ArbOpportunity = {
   ...verified,
   validation: { ...verified.validation, settlement_states: { strict_arbitrage: true } },
 };
+const contradictoryReason: ArbOpportunity = {
+  ...verified,
+  validation: { ...verified.validation, qualification_reason: 'HOUSE_RULE_MISMATCH' },
+};
+const missingMathProof: ArbOpportunity = { ...verified, math_arb: false };
 check(isVerifiedExecutable(verified), 'strict positive settlement proof must qualify');
-for (const row of [unreviewed, incomplete, unproven, noProfit, missingStatePnl, { arb: true }, {}]) {
+for (const row of [unreviewed, incomplete, unproven, noProfit, missingStatePnl, contradictoryReason, missingMathProof, { arb: true }, {}]) {
   check(!isVerifiedExecutable(row), 'missing or adverse proof must fail closed');
 }
 const partition = partitionScanRows({
-  hits: [verified, unreviewed, incomplete, unproven, noProfit],
+  hits: [verified, unreviewed, incomplete, unproven, noProfit, contradictoryReason, missingMathProof],
   detected_unverified: [verified],
 });
 check(partition.verified.length === 1, 'only one engine hit is verified');
-check(partition.held.length === 5, 'all other candidates are retained as held');
-check(partition.held[4] === verified, 'upstream detected_unverified must stay held');
+check(partition.held.length === 7, 'all other candidates are retained as held');
+check(partition.held[6] === verified, 'upstream detected_unverified must stay held');
 check(heldBackReason(unreviewed) === 'SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE', 'preserve upstream hold reason');
+check(heldBackReason(contradictoryReason) === 'HOUSE_RULE_MISMATCH', 'explicit adverse qualification must be visible');
 check(heldBackReason(unproven) === 'STRICT_EXECUTABLE_SETTLEMENT_PROOF_MISSING', 'missing proof reason');
 check(partitionScanRows(null).verified.length === 0, 'empty scan safe');
 console.log('ARB console qualification checks passed');
