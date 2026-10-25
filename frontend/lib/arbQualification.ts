@@ -31,10 +31,12 @@ export function isVerifiedExecutable(row: ArbOpportunity): boolean {
   const stateProfit = states?.minimum_net_pnl;
   return (
     row.arb === true &&
+    row.math_arb === true &&
     row.executable === true &&
     validation?.executable === true &&
     validation.rules_compatible === true &&
     validation.outcome_coverage === 'complete' &&
+    !validation.qualification_reason &&
     states?.strict_arbitrage === true &&
     typeof minProfit === 'number' &&
     Number.isFinite(minProfit) &&
