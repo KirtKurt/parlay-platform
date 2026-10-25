@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { AppHeader } from '@/components/AppHeader';
 import { GENERATED_ARB_WEBSOCKET_URL } from '@/lib/generatedArbApi';
 import { radarFromArb } from '@/lib/radarSignals';
+import { heldBackReason, isVerifiedExecutable } from '@/lib/arbQualification';
 
 type Status='VERIFIED'|'HELD';
 type Leg={book:string;bet:string;odds:number;lastUpdate?:string;limit?:number;link?:string};
-type Opportunity={id:string;sport:string;event:string;market:string;roi:number;age:number;legs:Leg[];status:Status;start?:string};
+type Opportunity={id:string;sport:string;event:string;market:string;roi:number;age:number;legs:Leg[];status:Status;start?:string;holdReason?:string};
 
 const dec=(a:number)=>Math.abs(a)>=100?(a>0?1+a/100:1+100/Math.abs(a)):0;
 const american=(n:number)=>n>0?`+${n}`:String(n);
@@ -38,7 +39,7 @@ function toRow(row:any,status:Status,fallbackMs?:number):Opportunity|null{
   const legs=toLegs(raw);
   if(legs.length<2)return null;
   return {
-    id:String(row.market_id||row.event_id||row.event||`${status}-${legs[0].book}-${legs[1].book}`),
+    id:`${String(row.sport||row.league||'SPORT').toUpperCase()}::${String(row.market||'Market')}::${String(row.market_id||row.event_id||row.event||`${legs[0].book}-${legs[1].book}`)}`, 
     sport:String(row.sport||row.league||'SPORT').toUpperCase(),
     event:String(row.event||row.event_id||'Market opportunity'),
     market:String(row.market||'Market'),
@@ -46,13 +47,25 @@ function toRow(row:any,status:Status,fallbackMs?:number):Opportunity|null{
     age:ageFrom(raw,fallbackMs),
     legs,
     status,
+    holdReason:status==='HELD'?heldBackReason(row):undefined,
     start:row?.commence_time||row?.start,
   };
 }
 
 function collect(data:any):Opportunity[]{
-  const found:Opportunity[]=[]; const seen=new Set<string>();
-  const push=(row:any,status:Status,fallbackMs?:number)=>{const item=toRow(row,status,fallbackMs);if(!item||seen.has(item.id))return;seen.add(item.id);found.push(item);};
+  const found:Opportunity[]=[]; const byId=new Map<string,Opportunity>();
+  const push=(row:any,status:Status,fallbackMs?:number)=>{
+    const safeStatus:Status=status==='VERIFIED'&&isVerifiedExecutable(row)?'VERIFIED':'HELD';
+    const item=toRow(row,safeStatus,fallbackMs);
+    if(!item)return;
+    const prior=byId.get(item.id);
+    if(prior){
+      // A held classification always wins if duplicate records disagree.
+      if(item.status==='HELD'){prior.status='HELD';prior.holdReason=item.holdReason;}
+      return;
+    }
+    byId.set(item.id,item);found.push(item);
+  };
   for(const row of (Array.isArray(data?.hits)?data.hits:[])) push(row,'VERIFIED');
   for(const row of (Array.isArray(data?.held)?data.held:[])) push(row,'HELD');
   for(const scan of (Array.isArray(data?.history)?data.history:[])){
@@ -143,7 +156,7 @@ export default function ArbitragePage(){
     <section className="arb-grid">
       <div className="arb-board">
         <div className="arb-head"><span>SPORT / MARKET</span><span>EVENT</span><span>SPORTSBOOKS (ODDS)</span><span>ROI</span><span>STATUS</span><span>LAST UPDATE</span></div>
-        {filtered.length?<div className="arb-rows">{filtered.map(o=><button className={'arb-row '+(selectedId===o.id?'selected':'')} key={o.id} onClick={()=>setSelectedId(o.id)}>
+        {filtered.length?<div className="arb-rows">{filtered.map(o=><button className={'arb-row '+(selectedId===o.id?'selected':'')} key={o.id} onClick={()=>{setSelectedId(o.id);if(window.innerWidth<=980)document.getElementById('arb-detail')?.scrollIntoView({behavior:'smooth',block:'start'});}}>
           <span className="arb-sport"><b>{o.sport}</b><small>{o.market}</small></span>
           <span className="arb-event"><b>{o.event.includes(' @ ')?o.event.split(' @ ')[0]:o.event.split(' vs ')[0]}</b><b>{o.event.includes(' @ ')?o.event.split(' @ ')[1]:(o.event.split(' vs ')[1]||'')}</b></span>
           <span className="arb-books">{o.legs.slice(0,2).map((l,i)=><span className="arb-book" key={i}><small>{l.book}</small><b>{american(l.odds)}</b></span>)}</span>
@@ -162,7 +175,8 @@ export default function ArbitragePage(){
           <label className="arb-stake">Total Stake<div className="arb-stake-box"><span>$</span><input aria-label="Total stake" inputMode="decimal" value={bankText} onChange={e=>setBankText(e.target.value.replace(/[^0-9.,]/g,''))}/></div></label>
           <div className="arb-presets">{[50,100,500,1000,2500].map(n=><button key={n} className={bank===n?'on':''} onClick={()=>setBankText(String(n))}>{money(n).replace('.00','')}</button>)}</div>
           <div className="arb-alloc">{selected.legs.slice(0,2).map((l,i)=><div key={i}><small>Bet on {l.bet}<br/>at {l.book}</small><strong>{money(calc.stakes[i]||0)}</strong><span>Potential Payout<br/>{money((calc.stakes[i]||0)*dec(l.odds))}</span></div>)}</div>
-          <div className="arb-profit"><div><span>Guaranteed Profit</span><strong>{calc.p>0?money(calc.p):'—'}</strong></div><div><span>Return</span><strong>{calc.r.toFixed(2)}%</strong></div></div>
+          <div className="arb-profit"><div><span>{selected.status==='VERIFIED'?'Guaranteed Profit':'Illustrative Profit'}</span><strong>{selected.status==='VERIFIED'&&calc.p>0?money(calc.p):'—'}</strong></div><div><span>{selected.status==='VERIFIED'?'Return':'Illustrative Return'}</span><strong>{calc.r.toFixed(2)}%</strong></div></div>
+           <div className="arb-safety-note">{selected.status==='HELD'?`HELD BACK · ${selected.holdReason||'STRICT_EXECUTABLE_SETTLEMENT_PROOF_MISSING'}`:'VERIFIED EXECUTABLE · strict settlement checks passed'}. Check each known sportsbook limit, settlement rule and quote freshness at the book before acting.</div>
           <div className="arb-tabs" aria-label="Signals on radar">{radar.map(item=><span key={item.id}>{item.label}</span>)}</div>
         </>}
       </aside>
