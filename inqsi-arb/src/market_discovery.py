@@ -127,11 +127,10 @@ def _probe_market_batch(
     # Authentication, throttling and provider outages affect every sub-batch;
     # retrying them recursively amplifies requests without restoring coverage.
     status = meta.get("status")
-    if (
-        status in (401, 403, 404, 408, 410, 429)
-        or (isinstance(status, int) and status >= 500)
-        or meta.get("error") == "PROVIDER_UNAVAILABLE"
-    ):
+    # Only the provider's invalid-request/unsupported-market responses justify
+    # splitting market keys.  All other statuses (including unknown failures,
+    # redirects and malformed success bodies) must fail closed without fan-out.
+    if status not in (400, 422):
         return [], [], evidence
     if len(markets) == 1:
         return [], [], evidence
