@@ -134,3 +134,65 @@ def test_all_sports_all_markets_fans_out_instead_of_scanning_literal_all(monkeyp
     assert body["status"]["n_sports_scanned"] == 2
     assert body["status"]["partial"] is False
     assert all(call[1]["max_markets_per_event"] == 250 for call in calls)
+
+
+def test_probe_does_not_fan_out_on_auth_throttle_or_outage(monkeypatch):
+    # These errors are not evidence that any individual market key is invalid.
+    # In particular, a 401 must not trigger an exponential retry tree.
+    for status, error in (
+        (401, "PROVIDER_HTTP_401"),
+        (403, "PROVIDER_HTTP_403"),
+        (429, "PROVIDER_HTTP_429"),
+        (500, "PROVIDER_HTTP_500"),
+        (503, "PROVIDER_HTTP_503"),
+        (None, "PROVIDER_UNAVAILABLE"),
+    ):
+        calls = []
+
+        def fake_request(sport, event, markets, *, regions, bookmakers=None):
+            calls.append(tuple(markets))
+            return None, {"ok": False, "status": status, "error": error}
+
+        monkeypatch.setattr(discovery, "_request_event_odds", fake_request)
+        accepted, rows, evidence = discovery._probe_market_batch(
+            "baseball_mlb", "event-1", ["h2h", "spreads", "totals", "player_points"],
+            regions="us", bookmakers=None,
+        )
+        assert accepted == []
+        assert rows == []
+        assert len(calls) == 1
+        assert evidence == [{
+            "markets": ["h2h", "spreads", "totals", "player_points"],
+            "ok": False, "status": status, "error": error, "depth": 0,
+        }]
+
+
+def test_invalid_market_still_bisects_and_retains_supported_neighbors(monkeypatch):
+    calls = []
+
+    def fake_request(sport, event, markets, *, regions, bookmakers=None):
+        calls.append(tuple(markets))
+        if list(markets) == ["h2h"]:
+            return {
+                "id": event,
+                "home_team": "Home",
+                "away_team": "Away",
+                "bookmakers": [{
+                    "key": "book_a",
+                    "markets": [{"key": "h2h", "outcomes": [
+                        {"name": "Home", "price": -110},
+                        {"name": "Away", "price": 110},
+                    ]}],
+                }],
+            }, {"ok": True, "status": 200}
+        return None, {"ok": False, "status": 422, "error": "PROVIDER_HTTP_422"}
+
+    monkeypatch.setattr(discovery, "_request_event_odds", fake_request)
+    accepted, rows, evidence = discovery._probe_market_batch(
+        "baseball_mlb", "event-1", ["h2h", "invalid_market"],
+        regions="us", bookmakers=None,
+    )
+    assert accepted == ["h2h"]
+    assert rows and rows[0]["market"] == "h2h"
+    assert calls == [("h2h", "invalid_market"), ("h2h",), ("invalid_market",)]
+    assert len(evidence) == 3
