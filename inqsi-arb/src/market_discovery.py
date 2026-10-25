@@ -219,14 +219,23 @@ def discover_sport_event_markets(
 ) -> Dict[str, Any]:
     discovered: Dict[str, List[str]] = {}
     errors: List[Dict[str, Any]] = []
+    fallback_events: List[str] = []
     selected = (events or [])[:max(0, int(max_events))]
+    # This summary must not imply exhaustive provider coverage when an event
+    # was capped, failed, or relied on a static catalog instead of live inventory.
+    partial = len(selected) < len(events or [])
     for event in selected:
         event_id = str(event.get("id") or "").strip()
         if not event_id:
+            partial = True
             continue
         keys, meta = discover_event_market_keys(
             sport_key, event_id, regions=regions, bookmakers=bookmakers, max_markets=max_markets,
         )
+        if meta.get("fallback_used"):
+            fallback_events.append(event_id)
+        if not meta.get("ok") or meta.get("partial") or meta.get("fallback_used"):
+            partial = True
         if meta.get("ok"):
             discovered[event_id] = keys
         else:
@@ -236,6 +245,10 @@ def discover_sport_event_markets(
         "sport": sport_key,
         "events": discovered,
         "n_events": len(discovered),
+        "n_events_requested": len(selected),
+        "n_events_available": len(events or []),
+        "partial": partial,
+        "fallback_events": fallback_events[:20],
         "unique_markets": sorted({k for values in discovered.values() for k in values}),
         "errors": errors[:20],
     }
