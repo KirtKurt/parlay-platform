@@ -23,8 +23,16 @@ def discover_events(sport_key: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any
         f"{BASE}/sports/{urllib.parse.quote(str(sport_key), safe='')}/events/",
         {"apiKey": key, "dateFormat": "iso"},
     )
-    if not meta.get("ok") or not isinstance(payload, list):
+    if not meta.get("ok"):
         return [], meta
+    # A successful HTTP status with a non-list body cannot establish that the
+    # provider has no events. Fail closed instead of reporting empty coverage
+    # as a valid event catalog and skipping every downstream market request.
+    if not isinstance(payload, list):
+        return [], {
+            **meta, "ok": False, "error": "MALFORMED_PROVIDER_EVENT_CATALOG",
+            "partial": True,
+        }
     rows = [x for x in payload if isinstance(x, dict) and x.get("id")]
     # Never certify full provider-visible coverage after silently discarding
     # malformed event records from an otherwise successful response.
