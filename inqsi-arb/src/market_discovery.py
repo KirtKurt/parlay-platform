@@ -199,7 +199,7 @@ def discover_event_market_keys(
         "discovery": "documented_catalog_runtime_probe_fallback",
         "n_candidates": len(candidates),
         "n_market_keys": len(accepted),
-        "partial": len(candidate_markets_for_sport(sport_key)) > len(candidates),
+        "partial": True,  # A static fallback cannot prove exhaustive provider-visible coverage.
         "probe_requests": len(evidence),
         "evidence": evidence[:50],
         "fallback_used": True,
@@ -286,7 +286,7 @@ def fetch_all_discovered_markets(
             "probe_requests": len(evidence),
             "discovery": discovery_meta.get("discovery"),
             "fallback_used": fallback_used,
-            "partial": len(observed) > len(candidates) if not fallback_used else len(candidate_markets_for_sport(sport_key)) > len(candidates),
+            "partial": fallback_used or len(observed) > len(candidates),
         })
     good = sum(1 for x in details if x.get("ok"))
     return normalized, {
