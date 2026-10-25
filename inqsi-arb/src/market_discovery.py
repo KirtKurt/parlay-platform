@@ -123,6 +123,16 @@ def _probe_market_batch(
                 if key and key not in returned:
                     returned.append(key)
         return returned, normalize_games([payload], sport_key=sport_key), evidence
+    # Only malformed/unsupported market combinations can benefit from bisection.
+    # Authentication, throttling and provider outages affect every sub-batch;
+    # retrying them recursively amplifies requests without restoring coverage.
+    status = meta.get("status")
+    if (
+        status in (401, 403, 429)
+        or (isinstance(status, int) and status >= 500)
+        or meta.get("error") == "PROVIDER_UNAVAILABLE"
+    ):
+        return [], [], evidence
     if len(markets) == 1:
         return [], [], evidence
     midpoint = len(markets) // 2
