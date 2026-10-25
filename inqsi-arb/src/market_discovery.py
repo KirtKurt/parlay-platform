@@ -102,7 +102,12 @@ def _discover_event_markets_direct(
         or any(
             not isinstance(book, dict)
             or not isinstance(book.get("markets"), list)
-            or any(not isinstance(market, dict) for market in book["markets"])
+            or any(
+                not isinstance(market, dict)
+                or not isinstance(market.get("key"), str)
+                or not market["key"].strip()
+                for market in book["markets"]
+            )
             for book in payload["bookmakers"]
         )
     ):
