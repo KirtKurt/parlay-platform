@@ -607,3 +607,55 @@ def test_http_400_invalid_market_still_isolates_supported_neighbor(monkeypatch):
     assert rows == [{"market": "h2h"}]
     assert calls == [("h2h", "bad_market"), ("h2h",), ("bad_market",)]
     assert len(evidence) == 3
+
+
+def test_malformed_live_inventory_fails_closed_to_partial_fallback(monkeypatch):
+    # A 200 with a broken inventory shape must not certify zero missing markets.
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    monkeypatch.setattr(discovery, "candidate_markets_for_sport", lambda _sport: ["h2h"])
+    monkeypatch.setattr(
+        discovery, "_probe_market_batch",
+        lambda *_args, **_kwargs: (
+            ["h2h"], [{"market": "h2h"}],
+            [{"ok": True, "status": 200, "error": None}],
+        ),
+    )
+    malformed = (
+        None,
+        {},
+        {"bookmakers": None},
+        {"bookmakers": {"key": "book_a"}},
+        {"bookmakers": [None]},
+        {"bookmakers": [{"key": "book_a", "markets": None}]},
+    )
+    for payload in malformed:
+        monkeypatch.setattr(
+            discovery, "_get",
+            lambda *_args, _payload=payload, **_kwargs: (
+                _payload, {"ok": True, "status": 200}
+            ),
+        )
+        keys, meta = discovery.discover_event_market_keys(
+            "baseball_mlb", "event-malformed"
+        )
+        assert keys == ["h2h"]
+        assert meta["fallback_used"] is True
+        assert meta["partial"] is True
+        assert meta["event_markets_error"] == "MALFORMED_PROVIDER_MARKET_INVENTORY"
+
+
+def test_valid_empty_live_inventory_does_not_invent_market_keys(monkeypatch):
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        discovery, "_get",
+        lambda *_args, **_kwargs: (
+            {"bookmakers": []}, {"ok": True, "status": 200}
+        ),
+    )
+    keys, meta = discovery.discover_event_market_keys(
+        "baseball_mlb", "event-no-books"
+    )
+    assert keys == []
+    assert meta["ok"] is True
+    assert meta["fallback_used"] is False
+    assert meta["partial"] is False
