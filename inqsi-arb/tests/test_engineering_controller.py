@@ -165,3 +165,20 @@ def test_workflow_pins_and_verifies_controller_trigger_revision_before_setup():
     assert 'actual_sha=$(git rev-parse --verify HEAD)' in workflow
     assert 'test "$actual_sha" = "$GITHUB_SHA"' in workflow
     assert 'ref: main' not in workflow
+
+
+
+def test_sns_deploy_preflight_requires_subscription_readback():
+    """Deployment must prove every action needed by the one-message SMS test."""
+    workflows = ROOT.parent / ".github/workflows"
+    deploy = (workflows / "inqsi-arb-deploy.yml").read_text()
+    diagnostic = (workflows / "inqsi-arb-sms-iam-diagnostic-repair.yml").read_text()
+    sms_test = (workflows / "inqsi-arb-sms-test.yml").read_text()
+
+    for proof in (deploy, diagnostic):
+        assert "sns:Subscribe sns:ListSubscriptionsByTopic sns:Unsubscribe" in proof
+        assert '"sns:ListSubscriptionsByTopic"' in proof
+        assert "assert set(decisions) == required" in proof
+        assert 'decision != "allowed"' in proof
+    assert "aws sns list-subscriptions-by-topic" in sms_test
+    assert "aws sns publish" in sms_test
