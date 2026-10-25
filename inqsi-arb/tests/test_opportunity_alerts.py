@@ -70,7 +70,7 @@ def test_verified_and_held_candidates_publish_immediately(monkeypatch):
         audit_event_id="audit-1",
     )
     assert out == {"published": 2, "deduped": 0, "errors": 0}
-    messages = [json.loads(call["Message"]) for call in sns.calls]
+    messages = [json.loads(json.loads(call["Message"])["default"]) for call in sns.calls]
     assert messages[0]["status"] == "VERIFIED"
     assert messages[0]["audit_event_id"] == "audit-1"
     assert messages[0]["margin"] == 1.25
@@ -88,7 +88,7 @@ def test_unverified_hit_is_held_even_if_math_positive(monkeypatch):
     row["validation"]["qualification_reason"] = "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
     out = alerts.publish_scan_opportunities({"hits": [row]})
     assert out["published"] == 1
-    msg = json.loads(sns.calls[0]["Message"])
+    msg = json.loads(json.loads(sns.calls[0]["Message"])["default"])
     assert msg["status"] == "HELD_BACK"
     assert msg["holdback_reason"] == "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
 
@@ -98,7 +98,7 @@ def test_missing_settlement_proof_is_held(monkeypatch):
     row = _verified_row()
     row["validation"].pop("settlement_states")
     alerts.publish_scan_opportunities({"hits": [row]})
-    msg = json.loads(sns.calls[0]["Message"])
+    msg = json.loads(json.loads(sns.calls[0]["Message"])["default"])
     assert msg["status"] == "HELD_BACK"
     assert msg["holdback_reason"] == "EXECUTABLE_QUALIFICATION_NOT_PROVEN"
 
@@ -161,7 +161,7 @@ def test_sns_held_back_alert_preserves_contradictory_reason(monkeypatch):
     zero_profit["event_id"] = "event-3"
     out = alerts.publish_scan_opportunities({"hits": [advisory, missing, zero_profit]})
     assert out == {"published": 3, "deduped": 0, "errors": 0}
-    messages = [json.loads(call["Message"]) for call in sns.calls]
+    messages = [json.loads(json.loads(call["Message"])["default"]) for call in sns.calls]
     assert [m["status"] for m in messages] == ["HELD_BACK"] * 3
     assert [m["holdback_reason"] for m in messages] == [
         "SPORTSBOOK_RULES_MAY_AFFECT_SETTLEMENT",
@@ -235,7 +235,7 @@ def test_scan_sport_and_detection_time_survive_alert_emission(monkeypatch):
     row["legs"][0]["last_update"] = "2026-10-24T21:00:00Z"
     out = alerts.publish_scan_opportunities({"hits": [row]}, sport="baseball_mlb")
     assert out == {"published": 1, "deduped": 0, "errors": 0}
-    msg = json.loads(sns.calls[0]["Message"])
+    msg = json.loads(json.loads(sns.calls[0]["Message"])["default"])
     assert msg["sport"] == "baseball_mlb"
     assert msg["detected_at"]
     assert msg["quote_last_updates"] == ["2026-10-24T21:00:00Z"]
@@ -298,3 +298,46 @@ def test_ambiguous_sns_error_never_releases_claim(monkeypatch):
     out = alerts.publish_scan_opportunities({"hits": [_verified_row()]})
     assert out == {"published": 0, "deduped": 0, "errors": 1}
     assert releases == []
+
+
+def test_sns_sms_is_readable_and_default_remains_structured(monkeypatch):
+    sns = _setup(monkeypatch)
+    row = _verified_row()
+    row["event"] = "Home @ Away"
+    row["legs"][0]["last_update"] = "2026-10-25T19:00:00Z"
+    result = alerts.publish_scan_opportunities({"hits": [row]})
+    assert result == {"published": 1, "deduped": 0, "errors": 0}
+    request = sns.calls[0]
+    assert request["MessageStructure"] == "json"
+    protocol_payload = json.loads(request["Message"])
+    assert set(protocol_payload) == {"default", "sms"}
+    structured = json.loads(protocol_payload["default"])
+    assert structured["status"] == "VERIFIED"
+    assert structured["legs"] == row["legs"]
+    assert structured["places_bets"] is False
+    sms = protocol_payload["sms"]
+    assert "VERIFIED EXECUTABLE" in sms
+    assert "Home @ Away" in sms
+    assert "book-a home +115" in sms
+    assert "book-b away +105" in sms
+    assert "edge/margin 1.25%" in sms
+    assert "profit 12.5" in sms
+    assert "quote 2026-10-25T19:00:00Z" in sms
+    assert len(sms) <= 1000
+
+
+def test_held_back_sms_shows_reason_and_converts_decimal_odds(monkeypatch):
+    sns = _setup(monkeypatch)
+    row = _verified_row()
+    row["validation"]["rules_compatible"] = False
+    row["validation"]["qualification_reason"] = "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
+    row["legs"][1].pop("american")
+    row["legs"][1]["decimal"] = 1.91
+    result = alerts.publish_scan_opportunities({"hits": [row]})
+    assert result["published"] == 1
+    payload = json.loads(sns.calls[0]["Message"])
+    assert "HELD BACK" in payload["sms"]
+    assert "reason SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE" in payload["sms"]
+    assert "book-b away -110" in payload["sms"]
+    assert json.loads(payload["default"])["holdback_reason"] == "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
+
