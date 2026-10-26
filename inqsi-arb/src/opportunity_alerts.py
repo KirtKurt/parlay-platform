@@ -195,9 +195,17 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
     rows: list[tuple[str, Dict[str, Any]]] = []
     errors = 0
     for candidates, forced_status in (
-        (result.get("hits") or [], None),
-        (result.get("detected_unverified") or [], "HELD_BACK"),
+        (result.get("hits"), None),
+        (result.get("detected_unverified"), "HELD_BACK"),
     ):
+        if candidates is None:
+            continue
+        # An unexpected provider collection (integer, object, or string)
+        # must not crash the audited scan or suppress the other collection.
+        # Only arrays of individual candidates are accepted.
+        if not isinstance(candidates, list):
+            errors += 1
+            continue
         for candidate in candidates:
             if not isinstance(candidate, dict):
                 errors += 1
@@ -211,6 +219,18 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
     # scan into an API failure or acquire claims for messages never attempted.
     if not rows:
         return {"published": 0, "deduped": 0, "errors": errors}
+    # Invalid deduplication configuration must fail closed before acquiring
+    # any alert claims or attempting SNS publication.
+    try:
+        ttl = int(os.environ.get("ARB_OPPORTUNITY_ALERT_DEDUPE_SECONDS", "21600"))
+        if ttl <= 0:
+            raise ValueError("nonpositive dedupe TTL")
+    except (TypeError, ValueError, OverflowError):
+        print(json.dumps({
+            "event": "ARB_SNS_DEDUPE_CONFIG_INVALID",
+            "n_candidates": len(rows),
+        }, sort_keys=True))
+        return {"published": 0, "deduped": 0, "errors": errors + len(rows)}
     try:
         client = boto3.client("sns")
     except Exception as exc:
@@ -221,7 +241,6 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
         }, sort_keys=True))
         return {"published": 0, "deduped": 0, "errors": errors + len(rows)}
     published = deduped = 0
-    ttl = int(os.environ.get("ARB_OPPORTUNITY_ALERT_DEDUPE_SECONDS", "21600"))
     for status, row in rows:
         claim_token = uuid.uuid4().hex
         claimed = False
