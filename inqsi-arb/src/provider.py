@@ -61,21 +61,38 @@ def list_sports(*, all_sports: bool = False) -> Tuple[List[Dict[str, Any]], Dict
     if not key:
         return [], {"ok": False, "error": "ODDS_API_KEY_MISSING"}
     payload, meta = _get(f"{BASE}/sports/", {"apiKey": key, "all": "true" if all_sports else "false"})
-    if not meta.get("ok") or not isinstance(payload, list):
+    if not meta.get("ok"):
         return [], meta
+    # A successful HTTP status with a malformed catalog cannot prove that
+    # there are zero active sports. Preserve the upstream status as evidence,
+    # but fail closed instead of reporting a successful empty inventory.
+    if not isinstance(payload, list):
+        return [], {
+            **meta, "ok": False, "partial": True,
+            "error": "MALFORMED_PROVIDER_SPORT_CATALOG",
+        }
     sports = []
+    invalid = 0
     for s in payload:
-        if not isinstance(s, dict) or not s.get("key"):
+        if not isinstance(s, dict) or not isinstance(s.get("key"), str) or not s["key"].strip():
+            invalid += 1
             continue
         sports.append({
-            "key": str(s.get("key")),
+            "key": s["key"].strip(),
             "group": s.get("group"),
             "title": s.get("title"),
             "description": s.get("description"),
             "active": bool(s.get("active", True)),
             "has_outrights": bool(s.get("has_outrights", False)),
         })
-    return sports, meta
+    return sports, {
+        **meta,
+        "ok": bool(sports) or not payload,
+        "partial": bool(invalid),
+        "error": "MALFORMED_PROVIDER_SPORT_CATALOG" if invalid else meta.get("error"),
+        "n_sports_received": len(payload),
+        "n_sports_invalid": invalid,
+    }
 
 
 def _canon_number(value: Any) -> Optional[float]:
