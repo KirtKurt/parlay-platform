@@ -12,7 +12,7 @@ import urllib.parse
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from market_catalog import candidate_markets_for_sport
-from provider import BASE, _get, api_key, normalize_games
+from provider import BASE, _get, _invalid_point_count, _invalid_price_count, api_key, normalize_games
 
 
 def discover_events(sport_key: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -228,12 +228,27 @@ def _probe_market_batch(
             for row in normalized
             if isinstance(row, dict) and str(row.get("market") or "").strip()
         ))
+        # Quote normalization drops malformed explicit lines and prices.
+        # A surviving valid quote must not certify complete provider-visible
+        # coverage when neighboring requested quotes were discarded.
+        invalid_points = _invalid_point_count([payload], requested)
+        invalid_prices = _invalid_price_count([payload], requested)
+        if invalid_points:
+            evidence[0]["n_outcomes_invalid_point"] = invalid_points
+        if invalid_prices:
+            evidence[0]["n_outcomes_invalid_price"] = invalid_prices
         if unsolicited:
             evidence[0]["ok"] = False
             evidence[0]["error"] = "UNREQUESTED_PROVIDER_MARKET_ODDS"
         elif not returned:
             evidence[0]["ok"] = False
             evidence[0]["error"] = "NO_USABLE_PROVIDER_MARKET_ODDS"
+        elif invalid_points:
+            evidence[0]["ok"] = False
+            evidence[0]["error"] = "INVALID_PROVIDER_MARKET_POINT"
+        elif invalid_prices:
+            evidence[0]["ok"] = False
+            evidence[0]["error"] = "INVALID_PROVIDER_AMERICAN_ODDS"
         return returned, normalized, evidence
     # Only malformed/unsupported market combinations can benefit from bisection.
     # Authentication, throttling and provider outages affect every sub-batch;
