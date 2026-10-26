@@ -65,3 +65,11 @@ def test_claim_contention_dedupes(monkeypatch):
 
     monkeypatch.setattr(audit_store, "_table", lambda: ContendedTable())
     assert audit_store.claim_once("ARB_OPPORTUNITY", "identity", claim_token="new-token") is False
+
+
+def test_unavailable_claim_store_is_not_a_duplicate(monkeypatch):
+    """An absent audit table cannot masquerade as an existing alert claim."""
+    monkeypatch.setattr(audit_store, "_table", lambda: None)
+    import pytest
+    with pytest.raises(RuntimeError, match="ARB_OPPORTUNITY_CLAIM_STORE_UNAVAILABLE"):
+        audit_store.claim_once("ARB_OPPORTUNITY", "valid-identity", claim_token="token")
