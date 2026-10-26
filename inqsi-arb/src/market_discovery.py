@@ -285,7 +285,19 @@ def _primary_probe_failure(
             or row.get("error") == "PROVIDER_UNAVAILABLE"
         ):
             return row
-    return {} if terminal_only else (evidence[0] if evidence else {})
+    if terminal_only:
+        # A valid neighboring quote can coexist with malformed or unsolicited
+        # provider rows. Surface that integrity failure without turning an
+        # expected unsupported-market 400/422 into a terminal provider outage.
+        for row in evidence:
+            if row.get("error") in {
+                "INVALID_PROVIDER_MARKET_POINT",
+                "INVALID_PROVIDER_AMERICAN_ODDS",
+                "UNREQUESTED_PROVIDER_MARKET_ODDS",
+            }:
+                return row
+        return {}
+    return evidence[0] if evidence else {}
 
 
 def discover_event_market_keys(
