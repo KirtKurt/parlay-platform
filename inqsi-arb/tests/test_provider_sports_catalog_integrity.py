@@ -1,0 +1,68 @@
+"""Provider sports catalog integrity: valid peers retained, incomplete data not certified."""
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+import provider
+
+
+def _catalog(monkeypatch, payload, meta=None):
+    monkeypatch.setattr(provider, "api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        provider, "_get",
+        lambda *args, **kwargs: (
+            payload, meta if meta is not None else {"ok": True, "status": 200}
+        ),
+    )
+    return provider.list_sports()
+
+
+def test_non_list_http_200_catalog_fails_closed(monkeypatch):
+    sports, meta = _catalog(monkeypatch, {"sports": []})
+    assert sports == []
+    assert meta["ok"] is False
+    assert meta["partial"] is True
+    assert meta["error"] == "MALFORMED_PROVIDER_SPORT_CATALOG"
+    assert meta["status"] == 200
+
+
+def test_mixed_catalog_retains_valid_sports_and_reports_partial(monkeypatch):
+    sports, meta = _catalog(monkeypatch, [
+        {"key": "soccer_epl", "active": True},
+        {"key": " "},
+        {"title": "missing key"},
+        None,
+        {"key": True},
+    ])
+    assert [row["key"] for row in sports] == ["soccer_epl"]
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["n_sports_received"] == 5
+    assert meta["n_sports_invalid"] == 4
+    assert meta["error"] == "MALFORMED_PROVIDER_SPORT_CATALOG"
+
+
+def test_all_invalid_catalog_is_not_successful_empty_inventory(monkeypatch):
+    sports, meta = _catalog(monkeypatch, [{"title": "no sport key"}])
+    assert sports == []
+    assert meta["ok"] is False
+    assert meta["partial"] is True
+    assert meta["n_sports_invalid"] == 1
+
+
+def test_legitimate_empty_catalog_remains_successful(monkeypatch):
+    sports, meta = _catalog(monkeypatch, [])
+    assert sports == []
+    assert meta["ok"] is True
+    assert meta["partial"] is False
+    assert meta["n_sports_received"] == 0
+    assert meta["n_sports_invalid"] == 0
+
+
+def test_provider_authentication_failure_preserves_original_evidence(monkeypatch):
+    upstream = {"ok": False, "status": 401, "error": "PROVIDER_HTTP_401"}
+    sports, meta = _catalog(monkeypatch, None, upstream)
+    assert sports == []
+    assert meta == upstream
