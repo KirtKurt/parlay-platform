@@ -592,7 +592,7 @@ def test_http_400_invalid_market_still_isolates_supported_neighbor(monkeypatch):
     def fake_request(_sport, _event, markets, *, regions, bookmakers=None):
         calls.append(tuple(markets))
         if list(markets) == ["h2h"]:
-            return {"bookmakers": [{"key": "book_a", "markets": [{"key": "h2h"}]}]}, {
+            return {"id": "event-1", "bookmakers": [{"key": "book_a", "markets": [{"key": "h2h"}]}]}, {
                 "ok": True, "status": 200,
             }
         return None, {"ok": False, "status": 400, "error": "INVALID_MARKET"}
