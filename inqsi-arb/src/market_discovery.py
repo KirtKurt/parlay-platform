@@ -33,7 +33,14 @@ def discover_events(sport_key: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any
             **meta, "ok": False, "error": "MALFORMED_PROVIDER_EVENT_CATALOG",
             "partial": True,
         }
-    rows = [x for x in payload if isinstance(x, dict) and x.get("id")]
+    # An event belonging to another sport must never be treated as a live
+    # event for this sport. Preserve correctly scoped peers and report partial
+    # coverage when a provider catalog mixes sports.
+    rows = [
+        x for x in payload
+        if isinstance(x, dict) and x.get("id")
+        and (not x.get("sport_key") or x.get("sport_key") == sport_key)
+    ]
     # Never certify full provider-visible coverage after silently discarding
     # malformed event records from an otherwise successful response.
     invalid = len(payload) - len(rows)
@@ -117,6 +124,15 @@ def _discover_event_markets_direct(
             "error": "MALFORMED_PROVIDER_MARKET_INVENTORY",
             "discovery": "event_markets_endpoint",
         }
+    # A provider inventory for a different event or sport cannot establish
+    # coverage for the requested event, even when its market list is valid.
+    if (payload.get("id") and str(payload["id"]).strip() != str(event_id).strip()) or (
+        payload.get("sport_key") and payload["sport_key"] != sport_key
+    ):
+        return [], {
+            **meta, "ok": False, "error": "MISMATCHED_PROVIDER_MARKET_INVENTORY_ID",
+            "discovery": "event_markets_endpoint",
+        }
     keys: List[str] = []
     for book in payload["bookmakers"]:
         for market in book.get("markets") or []:
@@ -183,6 +199,10 @@ def _probe_market_batch(
         if str(payload.get("id") or "").strip() != str(event_id).strip():
             evidence[0]["ok"] = False
             evidence[0]["error"] = "MISMATCHED_PROVIDER_EVENT_ID"
+            return [], [], evidence
+        if payload.get("sport_key") and payload["sport_key"] != sport_key:
+            evidence[0]["ok"] = False
+            evidence[0]["error"] = "MISMATCHED_PROVIDER_SPORT_KEY"
             return [], [], evidence
         # A market key in a successful HTTP response does not establish that
         # any usable price was returned. Only count markets for which the
