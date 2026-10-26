@@ -1032,3 +1032,80 @@ def test_valid_american_prices_survive_invalid_neighbor_prices(monkeypatch):
     assert len(rows[0]["quotes"]) == 2
     assert {str(q["american"]) for q in rows[0]["quotes"]} == {"-110", "+125"}
     assert evidence[0]["ok"] is True
+
+
+def test_all_sports_all_markets_propagates_partial_provider_coverage(monkeypatch):
+    # A successful sport can still have missing event/market/quote coverage.
+    # Do not hide that gap at the aggregate API boundary or discard good rows.
+    import json
+    import app
+
+    monkeypatch.setattr(app, "list_sports", lambda all_sports=False: (
+        [{"key": "baseball_mlb"}, {"key": "basketball_nba"}],
+        {"ok": True},
+    ))
+    monkeypatch.setattr(app, "fetch_all_discovered_markets", lambda sport, **kwargs: (
+        [{"id": sport, "quotes": []}],
+        {"ok": True, "partial": sport == "baseball_mlb", "n_events_succeeded": 1},
+    ))
+    monkeypatch.setattr(app, "validate_events", lambda rows, jurisdiction="*": rows)
+    monkeypatch.setattr(app, "scan_all", lambda payload: {
+        "hits": [], "detected_unverified": [], "n_arbs": 0,
+        "n_detected_unverified": 0, "n_markets": len(payload["events"]),
+    })
+    monkeypatch.setattr(app, "audit_enabled", lambda: False)
+
+    response = app.lambda_handler({
+        "httpMethod": "GET", "path": "/v1/arb/scan",
+        "queryStringParameters": {
+            "sport": "all", "markets": "all", "source": "live",
+        },
+    }, None)
+    body = json.loads(response["body"])
+    assert response["statusCode"] == 200
+    assert body["status"]["ok"] is True
+    assert body["status"]["partial"] is True
+    assert body["status"]["n_sports_scanned"] == 2
+    assert body["n_markets"] == 2
+
+
+def test_all_sports_featured_scan_reports_failed_sport_and_catalog_cap(monkeypatch):
+    import json
+    import app
+
+    monkeypatch.setattr(app, "list_sports", lambda all_sports=False: (
+        [{"key": "baseball_mlb"}, {"key": "basketball_nba"}],
+        {"ok": True},
+    ))
+    monkeypatch.setattr(app, "scan_sport_payload", lambda sport, **kwargs: {
+        "events": [{"id": sport, "quotes": []}] if sport == "baseball_mlb" else [],
+        "status": {"ok": sport == "baseball_mlb", "partial": False},
+    })
+    monkeypatch.setattr(app, "validate_events", lambda rows, jurisdiction="*": rows)
+    monkeypatch.setattr(app, "scan_all", lambda payload: {
+        "hits": [], "detected_unverified": [], "n_arbs": 0,
+        "n_detected_unverified": 0, "n_markets": len(payload["events"]),
+    })
+    monkeypatch.setattr(app, "audit_enabled", lambda: False)
+
+    event = {
+        "httpMethod": "GET", "path": "/v1/arb/scan",
+        "queryStringParameters": {
+            "sport": "all", "markets": "h2h", "source": "live",
+        },
+    }
+    response = app.lambda_handler(event, None)
+    body = json.loads(response["body"])
+    assert response["statusCode"] == 200
+    assert body["status"]["partial"] is True
+    assert body["status"]["n_sports_catalog"] == 2
+    assert body["n_markets"] == 1
+
+    # A configured sport cap also makes an otherwise healthy scan partial.
+    monkeypatch.setenv("ARB_MAX_SPORTS_PER_ALL_SCAN", "1")
+    response = app.lambda_handler(event, None)
+    body = json.loads(response["body"])
+    assert response["statusCode"] == 200
+    assert body["status"]["partial"] is True
+    assert body["status"]["n_sports_scanned"] == 1
+    assert body["status"]["n_sports_catalog"] == 2
