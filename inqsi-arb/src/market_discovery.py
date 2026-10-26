@@ -153,6 +153,13 @@ def _probe_market_batch(
     payload, meta = _request_event_odds(sport_key, event_id, markets, regions=regions, bookmakers=bookmakers)
     evidence = [{"markets": list(markets), "ok": bool(meta.get("ok")), "status": meta.get("status"), "error": meta.get("error"), "depth": depth}]
     if meta.get("ok"):
+        # Event-specific odds must belong to the event actually requested.
+        # A successful response for a different/missing event id cannot prove
+        # this event market coverage or feed its quotes to the ARB engine.
+        if not isinstance(payload, dict) or str(payload.get("id") or "").strip() != str(event_id).strip():
+            evidence[0]["ok"] = False
+            evidence[0]["error"] = "MISMATCHED_PROVIDER_EVENT_ID"
+            return [], [], evidence
         # A 200 response is not proof of usable odds. A malformed nested
         # bookmaker/market/outcome structure can crash normalization or falsely
         # certify provider-visible coverage. Preserve the failed probe as
