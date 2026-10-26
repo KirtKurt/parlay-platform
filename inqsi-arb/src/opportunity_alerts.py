@@ -179,14 +179,24 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
     if not enabled():
         return {"published": 0, "deduped": 0, "errors": 0}
 
-    rows: Iterable[tuple[str, Dict[str, Any]]] = [
-        *(("VERIFIED" if _is_verified_executable(row) else "HELD_BACK",
-           {**row, "sport": row.get("sport") or sport}) for row in (result.get("hits") or [])),
-        *(("HELD_BACK", {**row, "sport": row.get("sport") or sport})
-          for row in (result.get("detected_unverified") or [])),
-    ]
+    # Normalize candidates individually. A non-object provider candidate must
+    # not crash the entire scan before the per-row publish safety boundary.
+    rows: list[tuple[str, Dict[str, Any]]] = []
+    errors = 0
+    for candidates, forced_status in (
+        (result.get("hits") or [], None),
+        (result.get("detected_unverified") or [], "HELD_BACK"),
+    ):
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                errors += 1
+                continue
+            status = forced_status or (
+                "VERIFIED" if _is_verified_executable(candidate) else "HELD_BACK"
+            )
+            rows.append((status, {**candidate, "sport": candidate.get("sport") or sport}))
     client = boto3.client("sns")
-    published = deduped = errors = 0
+    published = deduped = 0
     ttl = int(os.environ.get("ARB_OPPORTUNITY_ALERT_DEDUPE_SECONDS", "21600"))
     for status, row in rows:
         claim_token = uuid.uuid4().hex
