@@ -113,7 +113,10 @@ def claim_once(namespace: str, identity: str, *, ttl_seconds: int = 21600,
     """
     table = _table()
     if table is None:
-        return False
+        # Missing durable dedupe storage is not an existing claim. Failing
+        # closed as an error preserves the distinction between unavailable
+        # persistence and a genuinely duplicate opportunity.
+        raise RuntimeError("ARB_OPPORTUNITY_CLAIM_STORE_UNAVAILABLE")
     now = int(time.time())
     pk = "CLAIM#" + (str(namespace).strip().upper() or "DEFAULT")
     sk = str(identity).strip()
