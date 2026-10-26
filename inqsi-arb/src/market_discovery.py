@@ -208,13 +208,22 @@ def _probe_market_batch(
         # any usable price was returned. Only count markets for which the
         # normalizer retained actual numeric-price quotes; keep the complete
         # normalized rows unchanged for the downstream ARB engine.
-        normalized = normalize_games([payload], sport_key=sport_key)
+        # Do not treat a valid quote for an unrequested market as evidence
+        # of requested coverage or pass it to downstream ARB calculations.
+        # Retain correctly scoped requested-market quotes from the same reply.
+        normalized_all = normalize_games([payload], sport_key=sport_key)
+        requested = {str(key).strip() for key in markets}
+        normalized = [row for row in normalized_all if row.get("market") in requested]
+        unsolicited = len(normalized) != len(normalized_all)
         returned = list(dict.fromkeys(
             str(row.get("market") or "").strip()
             for row in normalized
             if isinstance(row, dict) and str(row.get("market") or "").strip()
         ))
-        if not returned:
+        if unsolicited:
+            evidence[0]["ok"] = False
+            evidence[0]["error"] = "UNREQUESTED_PROVIDER_MARKET_ODDS"
+        elif not returned:
             evidence[0]["ok"] = False
             evidence[0]["error"] = "NO_USABLE_PROVIDER_MARKET_ODDS"
         return returned, normalized, evidence
@@ -400,7 +409,9 @@ def fetch_all_discovered_markets(
             "fallback_used": fallback_used,
             # An inventory response alone cannot prove full price coverage when
             # one or more requested market keys failed to return usable odds.
-            "partial": fallback_used or len(observed) > len(candidates) or bool(set(candidates) - set(accepted)),
+            "partial": (fallback_used or len(observed) > len(candidates)
+                        or bool(set(candidates) - set(accepted))
+                        or any(not probe.get("ok") for probe in evidence)),
         })
     good = sum(1 for x in details if x.get("ok"))
     return normalized, {
