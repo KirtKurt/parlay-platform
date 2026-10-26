@@ -137,3 +137,44 @@ def test_featured_only_unsolicited_market_cannot_claim_requested_coverage(monkey
     assert meta["error"] == "UNREQUESTED_PROVIDER_MARKET_ODDS"
     assert meta["n_games_unpriced"] == 1
     assert meta["n_market_objects_unrequested"] == 1
+
+
+def test_invalid_explicit_market_points_are_excluded_and_coverage_is_partial(monkeypatch):
+    game = _valid_game()
+    market = game["bookmakers"][0]["markets"][0]
+    market["key"] = "spreads"
+    market["outcomes"] = [
+        {"name": "Home", "point": -1.5, "price": -110},
+        {"name": "Away", "point": 1.5, "price": 110},
+        {"name": "Home", "point": float("nan"), "price": 125},
+        {"name": "Away", "point": float("inf"), "price": -120},
+        {"name": "Away", "point": True, "price": 105},
+    ]
+    monkeypatch.setattr(provider, "api_key", lambda: "test-key")
+    monkeypatch.setattr(provider, "_get", lambda *args, **kwargs: ([game], {"ok": True, "status": 200}))
+    rows, meta = provider.fetch_featured_odds("baseball_mlb", markets=["spreads"], regions="us")
+    assert len(rows) == 1
+    assert len(rows[0]["quotes"]) == 2
+    assert {quote["point"] for quote in rows[0]["quotes"]} == {-1.5, 1.5}
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["error"] == "INVALID_PROVIDER_MARKET_POINT"
+    assert meta["n_outcomes_invalid_point"] == 3
+
+
+def test_all_invalid_explicit_market_points_cannot_certify_coverage(monkeypatch):
+    game = _valid_game()
+    market = game["bookmakers"][0]["markets"][0]
+    market["key"] = "totals"
+    market["outcomes"] = [
+        {"name": "Over", "point": "not-a-number", "price": -110},
+        {"name": "Under", "point": float("-inf"), "price": 110},
+    ]
+    monkeypatch.setattr(provider, "api_key", lambda: "test-key")
+    monkeypatch.setattr(provider, "_get", lambda *args, **kwargs: ([game], {"ok": True, "status": 200}))
+    rows, meta = provider.fetch_featured_odds("baseball_mlb", markets=["totals"], regions="us")
+    assert rows == []
+    assert meta["ok"] is False
+    assert meta["partial"] is True
+    assert meta["error"] == "INVALID_PROVIDER_MARKET_POINT"
+    assert meta["n_outcomes_invalid_point"] == 2
