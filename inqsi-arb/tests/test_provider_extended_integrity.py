@@ -142,3 +142,35 @@ def test_extended_only_unsolicited_market_fails_closed(monkeypatch):
     assert meta["partial"] is True
     assert meta["errors"][0]["error"] == "UNREQUESTED_PROVIDER_MARKET_ODDS"
     assert len(calls) == 2
+
+
+def test_extended_invalid_explicit_market_points_keep_valid_peers_and_mark_partial(monkeypatch):
+    game = _game()
+    game["bookmakers"][0]["markets"][0]["outcomes"].extend([
+        {"name": "Over", "description": "Player", "point": "nan", "price": 125},
+        {"name": "Under", "description": "Player", "point": float("inf"), "price": -125},
+    ])
+    rows, meta, calls = _fetch(monkeypatch, [{"id": "event-1"}], {"event-1": game})
+    assert len(rows) == 1
+    assert len(rows[0]["quotes"]) == 2
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["n_outcomes_invalid_point"] == 2
+    assert meta["errors"][0]["error"] == "INVALID_PROVIDER_MARKET_POINT"
+    assert meta["errors"][0]["n_outcomes_invalid_point"] == 2
+    assert len(calls) == 2
+
+
+def test_extended_all_invalid_points_cannot_be_reported_as_complete(monkeypatch):
+    game = _game()
+    game["bookmakers"][0]["markets"][0]["outcomes"] = [
+        {"name": "Over", "description": "Player", "point": "invalid", "price": -110},
+        {"name": "Under", "description": "Player", "point": float("-inf"), "price": 110},
+    ]
+    rows, meta, calls = _fetch(monkeypatch, [{"id": "event-1"}], {"event-1": game})
+    assert rows == []
+    assert meta["ok"] is False
+    assert meta["partial"] is True
+    assert meta["n_outcomes_invalid_point"] == 2
+    assert meta["errors"][0]["error"] == "INVALID_PROVIDER_MARKET_POINT"
+    assert len(calls) == 2
