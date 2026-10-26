@@ -112,3 +112,33 @@ def test_extended_odds_without_usable_quotes_and_event_cap_mark_partial(monkeypa
     assert meta["partial"] is True
     assert meta["n_events_requested"] == 1
     assert len(calls) == 2
+
+
+def test_extended_ignores_unsolicited_market_but_keeps_requested_quotes(monkeypatch):
+    game = _game()
+    game["bookmakers"][0]["markets"].append({
+        "key": "player_assists",
+        "outcomes": [
+            {"name": "Over", "description": "Player", "point": 4.5, "price": -110},
+            {"name": "Under", "description": "Player", "point": 4.5, "price": +110},
+        ],
+    })
+    rows, meta, calls = _fetch(monkeypatch, [{"id": "event-1"}], {"event-1": game})
+    assert len(rows) == 1
+    assert rows[0]["market"] == "player_points"
+    assert len(rows[0]["quotes"]) == 2
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["errors"][0]["error"] == "UNREQUESTED_PROVIDER_MARKET_ODDS"
+    assert len(calls) == 2
+
+
+def test_extended_only_unsolicited_market_fails_closed(monkeypatch):
+    game = _game()
+    game["bookmakers"][0]["markets"][0]["key"] = "player_assists"
+    rows, meta, calls = _fetch(monkeypatch, [{"id": "event-1"}], {"event-1": game})
+    assert rows == []
+    assert meta["ok"] is False
+    assert meta["partial"] is True
+    assert meta["errors"][0]["error"] == "UNREQUESTED_PROVIDER_MARKET_ODDS"
+    assert len(calls) == 2
