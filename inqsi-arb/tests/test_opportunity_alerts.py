@@ -448,3 +448,43 @@ def test_local_sms_formatting_failure_releases_claim_without_sending(monkeypatch
     assert len(sns.calls) == 1
     msg = json.loads(json.loads(sns.calls[0]["Message"])["default"])
     assert msg["event_id"] == "event-1"
+
+
+def test_malformed_candidate_collections_do_not_suppress_valid_opportunities(monkeypatch):
+    """A malformed hits container cannot crash the scan or suppress held alerts."""
+    sns = _setup(monkeypatch)
+    held = {
+        "sport": "basketball_nba", "event_id": "held-event",
+        "market": "spreads", "reason": "RULE_UNKNOWN", "legs": [],
+    }
+    result = alerts.publish_scan_opportunities({
+        "hits": 42,
+        "detected_unverified": [held],
+    })
+    assert result == {"published": 1, "deduped": 0, "errors": 1}
+    message = json.loads(json.loads(sns.calls[0]["Message"])["default"])
+    assert message["event_id"] == "held-event"
+    assert message["status"] == "HELD_BACK"
+
+    sns.calls.clear()
+    result = alerts.publish_scan_opportunities({
+        "hits": [_verified_row()],
+        "detected_unverified": {"unexpected": "object"},
+    })
+    assert result == {"published": 1, "deduped": 0, "errors": 1}
+    message = json.loads(json.loads(sns.calls[0]["Message"])["default"])
+    assert message["status"] == "VERIFIED"
+
+
+def test_invalid_dedupe_ttl_fails_closed_without_claims_or_sns(monkeypatch, capsys):
+    """Invalid TTL must not crash a completed scan or publish without dedupe."""
+    sns = _setup(monkeypatch)
+    claims = []
+    monkeypatch.setattr(alerts, "claim_once", lambda *args, **kwargs: claims.append(args) or True)
+    for ttl in ("not-a-number", "0", "-5"):
+        monkeypatch.setenv("ARB_OPPORTUNITY_ALERT_DEDUPE_SECONDS", ttl)
+        result = alerts.publish_scan_opportunities({"hits": [_verified_row()]})
+        assert result == {"published": 0, "deduped": 0, "errors": 1}
+    assert sns.calls == []
+    assert claims == []
+    assert capsys.readouterr().out.count("ARB_SNS_DEDUPE_CONFIG_INVALID") == 3
