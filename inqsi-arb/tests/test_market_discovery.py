@@ -1253,3 +1253,68 @@ def test_event_odds_rejects_wrong_sport_with_matching_event_id(monkeypatch):
     assert accepted == ["h2h"]
     assert rows and rows[0]["market"] == "h2h"
     assert evidence[0]["ok"] is True
+
+
+def test_probe_excludes_unrequested_market_prices_and_keeps_valid_peers(monkeypatch):
+    # Provider HTTP 200 can contain valid but unsolicited market quotes.
+    # Those quotes must not reach ARB math or certify complete coverage.
+    monkeypatch.setattr(discovery, "_request_event_odds", lambda *_args, **_kwargs: (
+        {
+            "id": "event-mixed-market-keys",
+            "home_team": "Home", "away_team": "Away",
+            "bookmakers": [{
+                "key": "book_a",
+                "markets": [
+                    {"key": "h2h", "outcomes": [
+                        {"name": "Home", "price": -110},
+                        {"name": "Away", "price": 110},
+                    ]},
+                    {"key": "totals", "outcomes": [
+                        {"name": "Over", "price": -105, "point": 8.5},
+                        {"name": "Under", "price": -115, "point": 8.5},
+                    ]},
+                ],
+            }],
+        },
+        {"ok": True, "status": 200},
+    ))
+    accepted, rows, evidence = discovery._probe_market_batch(
+        "baseball_mlb", "event-mixed-market-keys", ["h2h"],
+        regions="us", bookmakers=None,
+    )
+    assert accepted == ["h2h"]
+    assert [row["market"] for row in rows] == ["h2h"]
+    assert evidence[0]["ok"] is False
+    assert evidence[0]["error"] == "UNREQUESTED_PROVIDER_MARKET_ODDS"
+
+
+def test_unrequested_market_only_cannot_certify_discovered_coverage(monkeypatch):
+    monkeypatch.setattr(discovery, "discover_events", lambda *_args: (
+        [{"id": "event-unsolicited"}], {"ok": True, "partial": False},
+    ))
+    monkeypatch.setattr(discovery, "_discover_event_markets_direct",
+                        lambda *_args, **_kwargs: (
+                            ["h2h"], {"ok": True, "status": 200},
+                        ))
+    monkeypatch.setattr(discovery, "_request_event_odds", lambda *_args, **_kwargs: (
+        {
+            "id": "event-unsolicited",
+            "home_team": "Home", "away_team": "Away",
+            "bookmakers": [{"key": "book_a", "markets": [
+                {"key": "totals", "outcomes": [
+                    {"name": "Over", "price": -110, "point": 8.5},
+                    {"name": "Under", "price": 110, "point": 8.5},
+                ]},
+            ]}],
+        },
+        {"ok": True, "status": 200},
+    ))
+    rows, report = discovery.fetch_all_discovered_markets(
+        "baseball_mlb", regions="us",
+    )
+    assert rows == []
+    assert report["ok"] is False
+    assert report["partial"] is True
+    assert report["event_details"][0]["markets"] == []
+    assert report["event_details"][0]["error"] == "UNREQUESTED_PROVIDER_MARKET_ODDS"
+    assert report["event_details"][0]["partial"] is True
