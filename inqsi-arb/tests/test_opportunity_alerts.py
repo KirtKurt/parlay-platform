@@ -214,6 +214,32 @@ def test_native_american_odds_and_margin_changes_realert():
     assert alerts._identity("VERIFIED", original) != alerts._identity("VERIFIED", margin_changed)
 
 
+def test_material_stake_and_profit_changes_realert_without_odds_movement():
+    original = _verified_row()
+    stake_changed = _verified_row()
+    stake_changed["allocated_stake"] = 850.0
+    profit_changed = _verified_row()
+    profit_changed["minimum_profit"] = 10.25
+
+    assert alerts._identity("VERIFIED", original) != alerts._identity("VERIFIED", stake_changed)
+    assert alerts._identity("VERIFIED", original) != alerts._identity("VERIFIED", profit_changed)
+
+    # Harmless sub-cent floating point noise is not a new opportunity.
+    jitter = _verified_row()
+    jitter["minimum_profit"] += 0.0000001
+    jitter["allocated_stake"] += 0.0000001
+    assert alerts._identity("VERIFIED", original) == alerts._identity("VERIFIED", jitter)
+
+
+def test_zero_line_is_not_confused_with_fallback_point():
+    original = _verified_row()
+    original["point"] = 1.5
+    zero_line = _verified_row()
+    zero_line["point"] = 1.5
+    zero_line["line"] = 0
+    assert alerts._identity("HELD_BACK", original) != alerts._identity("HELD_BACK", zero_line)
+
+
 def test_zero_native_fields_are_not_discarded():
     row = _verified_row()
     row["margin_pct"] = 0
