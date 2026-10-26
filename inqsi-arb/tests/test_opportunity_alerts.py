@@ -356,3 +356,22 @@ def test_malformed_first_candidate_does_not_suppress_later_verified_sms(monkeypa
     message = json.loads(json.loads(sns.calls[0]["Message"])["default"])
     assert message["event_id"] == "event-1"
     assert message["status"] == "VERIFIED"
+
+
+def test_non_object_candidates_do_not_abort_later_valid_sms(monkeypatch):
+    """Invalid provider rows fail closed without suppressing valid opportunities."""
+    sns = _setup(monkeypatch)
+    held = {
+        "sport": "basketball_nba", "event_id": "event-held",
+        "market": "spreads", "reason": "RULE_UNKNOWN", "legs": [],
+    }
+    result = alerts.publish_scan_opportunities({
+        "hits": [None, _verified_row(), "invalid-row"],
+        "detected_unverified": [False, held],
+    })
+    assert result == {"published": 2, "deduped": 0, "errors": 3}
+    assert len(sns.calls) == 2
+    messages = [json.loads(json.loads(call["Message"])["default"]) for call in sns.calls]
+    assert [(m["event_id"], m["status"]) for m in messages] == [
+        ("event-1", "VERIFIED"), ("event-held", "HELD_BACK"),
+    ]
