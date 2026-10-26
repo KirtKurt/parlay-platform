@@ -59,6 +59,25 @@ def _setup(monkeypatch):
     return sns
 
 
+def test_sns_client_initialization_failure_preserves_scan_and_does_not_claim(monkeypatch, capsys):
+    class BrokenBoto:
+        def client(self, name):
+            assert name == "sns"
+            raise RuntimeError("sns-client-not-configured")
+
+    claimed = []
+    monkeypatch.setenv("ARB_OPPORTUNITY_TOPIC_ARN", "arn:aws:sns:us-east-1:123:arb")
+    monkeypatch.setattr(alerts, "boto3", BrokenBoto())
+    monkeypatch.setattr(alerts, "claim_once", lambda *args, **kwargs: claimed.append(args) or True)
+    result = alerts.publish_scan_opportunities({
+        "hits": [_verified_row()],
+        "detected_unverified": [{"event_id": "event-2", "market": "h2h", "reason": "RULE_UNKNOWN"}],
+    }, audit_event_id="audit-1")
+    assert result == {"published": 0, "deduped": 0, "errors": 2}
+    assert claimed == []
+    assert "ARB_SNS_CLIENT_INIT_FAILED" in capsys.readouterr().out
+
+
 def test_verified_and_held_candidates_publish_immediately(monkeypatch):
     sns = _setup(monkeypatch)
     held = {

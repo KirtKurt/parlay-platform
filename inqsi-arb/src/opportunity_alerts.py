@@ -206,7 +206,20 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
                 "VERIFIED" if _is_verified_executable(candidate) else "HELD_BACK"
             )
             rows.append((status, {**candidate, "sport": candidate.get("sport") or sport}))
-    client = boto3.client("sns")
+    # Client construction can fail before any SNS call (for example when
+    # region configuration is unavailable). Do not turn an otherwise audited
+    # scan into an API failure or acquire claims for messages never attempted.
+    if not rows:
+        return {"published": 0, "deduped": 0, "errors": errors}
+    try:
+        client = boto3.client("sns")
+    except Exception as exc:
+        print(json.dumps({
+            "event": "ARB_SNS_CLIENT_INIT_FAILED",
+            "error_type": type(exc).__name__,
+            "n_candidates": len(rows),
+        }, sort_keys=True))
+        return {"published": 0, "deduped": 0, "errors": errors + len(rows)}
     published = deduped = 0
     ttl = int(os.environ.get("ARB_OPPORTUNITY_ALERT_DEDUPE_SECONDS", "21600"))
     for status, row in rows:
