@@ -488,3 +488,14 @@ def test_invalid_dedupe_ttl_fails_closed_without_claims_or_sns(monkeypatch, caps
     assert sns.calls == []
     assert claims == []
     assert capsys.readouterr().out.count("ARB_SNS_DEDUPE_CONFIG_INVALID") == 3
+
+
+def test_unavailable_claim_store_is_error_not_duplicate_or_publish(monkeypatch):
+    """SMS failure is visible, never silently classified as deduplication."""
+    import audit_store
+    sns = _setup(monkeypatch)
+    monkeypatch.setattr(audit_store, "_table", lambda: None)
+    monkeypatch.setattr(alerts, "claim_once", audit_store.claim_once)
+    out = alerts.publish_scan_opportunities({"hits": [_verified_row()]})
+    assert out == {"published": 0, "deduped": 0, "errors": 1}
+    assert sns.calls == []
