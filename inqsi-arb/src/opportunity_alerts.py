@@ -73,6 +73,12 @@ def _holdback_reason(row: Dict[str, Any]) -> str:
     )
 
 
+def _money_identity(value: Any) -> Any:
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+        return round(value, 2)
+    return value
+
+
 def _identity(status: str, row: Dict[str, Any]) -> str:
     # Include material price/edge state so a changed opportunity can re-alert,
     # while identical repeated scans and Lambda retries deduplicate.
@@ -84,8 +90,13 @@ def _identity(status: str, row: Dict[str, Any]) -> str:
         "sport": row.get("sport"),
         "event_id": row.get("event_id") or row.get("event"),
         "market": row.get("market"),
-        "line": row.get("line") or row.get("point"),
+        "line": row.get("line") if row.get("line") is not None else row.get("point"),
         "margin": row.get("margin_pct") if row.get("margin_pct") is not None else (row.get("margin") or row.get("edge") or row.get("arb_pct")),
+        # A changed feasible stake or guaranteed profit is material even when
+        # the displayed book prices and percentage margin stay unchanged.
+        # Normalize currency to cents to avoid alerts for float jitter.
+        "stake_total": _money_identity(row.get("allocated_stake")),
+        "minimum_profit": _money_identity(row.get("minimum_profit")),
         "legs": [
             {
                 "outcome": leg.get("outcome") or leg.get("name"),
