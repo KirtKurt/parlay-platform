@@ -1168,3 +1168,88 @@ def test_missing_event_id_in_successful_odds_response_fails_closed(monkeypatch):
     assert evidence[0]["ok"] is False
     assert evidence[0]["status"] == 200
     assert evidence[0]["error"] == "MISMATCHED_PROVIDER_EVENT_ID"
+
+
+def test_event_catalog_rejects_cross_sport_rows_without_dropping_valid_peers(monkeypatch):
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    monkeypatch.setattr(discovery, "_get", lambda *_args, **_kwargs: (
+        [
+            {"id": "correct", "sport_key": "baseball_mlb"},
+            {"id": "wrong", "sport_key": "basketball_nba"},
+            {"id": "legacy-no-sport"},
+        ],
+        {"ok": True, "status": 200},
+    ))
+    events, meta = discovery.discover_events("baseball_mlb")
+    assert [event["id"] for event in events] == ["correct", "legacy-no-sport"]
+    assert meta["n_events_received"] == 3
+    assert meta["n_events_invalid"] == 1
+    assert meta["partial"] is True
+
+
+def test_market_inventory_rejects_wrong_event_or_sport_identity(monkeypatch):
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    for identity in (
+        {"id": "other-event", "sport_key": "baseball_mlb"},
+        {"id": "event-1", "sport_key": "basketball_nba"},
+    ):
+        monkeypatch.setattr(discovery, "_get", lambda *_args, **_kwargs: (
+            {**identity, "bookmakers": [{"key": "book", "markets": [{"key": "h2h"}]}]},
+            {"ok": True, "status": 200},
+        ))
+        keys, meta = discovery._discover_event_markets_direct(
+            "baseball_mlb", "event-1", regions="us",
+        )
+        assert keys == []
+        assert meta["ok"] is False
+        assert meta["error"] == "MISMATCHED_PROVIDER_MARKET_INVENTORY_ID"
+
+    # Correctly scoped provider inventories remain usable.
+    monkeypatch.setattr(discovery, "_get", lambda *_args, **_kwargs: (
+        {"id": "event-1", "sport_key": "baseball_mlb",
+         "bookmakers": [{"key": "book", "markets": [{"key": "h2h"}]}]},
+        {"ok": True, "status": 200},
+    ))
+    keys, meta = discovery._discover_event_markets_direct(
+        "baseball_mlb", "event-1", regions="us",
+    )
+    assert keys == ["h2h"]
+    assert meta["ok"] is True
+
+
+def test_event_odds_rejects_wrong_sport_with_matching_event_id(monkeypatch):
+    payload = {
+        "id": "event-1",
+        "sport_key": "basketball_nba",
+        "home_team": "Home", "away_team": "Away",
+        "bookmakers": [{"key": "book", "markets": [
+            {"key": "h2h", "outcomes": [
+                {"name": "Home", "price": -110},
+                {"name": "Away", "price": 110},
+            ]}
+        ]}],
+    }
+    calls = []
+    def fake_request(_sport, _event, markets, *, regions, bookmakers=None):
+        calls.append(tuple(markets))
+        return payload, {"ok": True, "status": 200}
+    monkeypatch.setattr(discovery, "_request_event_odds", fake_request)
+    accepted, rows, evidence = discovery._probe_market_batch(
+        "baseball_mlb", "event-1", ["h2h", "totals"],
+        regions="us", bookmakers=None,
+    )
+    assert accepted == []
+    assert rows == []
+    assert len(calls) == 1
+    assert evidence[0]["error"] == "MISMATCHED_PROVIDER_SPORT_KEY"
+    assert evidence[0]["ok"] is False
+
+    # A matching sport must retain usable odds without changing market math.
+    payload["sport_key"] = "baseball_mlb"
+    accepted, rows, evidence = discovery._probe_market_batch(
+        "baseball_mlb", "event-1", ["h2h"],
+        regions="us", bookmakers=None,
+    )
+    assert accepted == ["h2h"]
+    assert rows and rows[0]["market"] == "h2h"
+    assert evidence[0]["ok"] is True
