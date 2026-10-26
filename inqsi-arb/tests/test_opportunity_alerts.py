@@ -401,3 +401,31 @@ def test_non_object_candidates_do_not_abort_later_valid_sms(monkeypatch):
     assert [(m["event_id"], m["status"]) for m in messages] == [
         ("event-1", "VERIFIED"), ("event-held", "HELD_BACK"),
     ]
+
+def test_local_sms_formatting_failure_releases_claim_without_sending(monkeypatch):
+    """A local error must not poison dedupe or suppress a later valid SMS."""
+    sns = _setup(monkeypatch)
+    claimed = []
+    released = []
+    monkeypatch.setattr(alerts, "claim_once", lambda *args, **kwargs: claimed.append((args, kwargs)) or True)
+    monkeypatch.setattr(alerts, "release_claim", lambda *args, **kwargs: released.append((args, kwargs)))
+    original_sms_text = alerts._sms_text
+
+    def fail_first(status, row, message):
+        if row.get("event_id") == "event-bad":
+            raise ValueError("malformed local SMS field")
+        return original_sms_text(status, row, message)
+
+    monkeypatch.setattr(alerts, "_sms_text", fail_first)
+    bad = _verified_row()
+    bad["event_id"] = "event-bad"
+    out = alerts.publish_scan_opportunities({"hits": [bad, _verified_row()]})
+
+    assert out == {"published": 1, "deduped": 0, "errors": 1}
+    assert len(claimed) == 2
+    assert len(released) == 1
+    assert released[0][0][1] == claimed[0][0][1]
+    assert released[0][1]["claim_token"] == claimed[0][1]["claim_token"]
+    assert len(sns.calls) == 1
+    msg = json.loads(json.loads(sns.calls[0]["Message"])["default"])
+    assert msg["event_id"] == "event-1"

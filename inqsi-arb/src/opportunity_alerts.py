@@ -212,6 +212,7 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
     for status, row in rows:
         claim_token = uuid.uuid4().hex
         claimed = False
+        publish_attempted = False
         try:
             # A malformed candidate must not abort publication of subsequent
             # independently qualified opportunities. Fail this row closed
@@ -223,19 +224,24 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
                 continue
             claimed = True
             message = _message(status, row, audit_event_id=audit_event_id)
-            response = client.publish(
-                TopicArn=_topic_arn(),
-                Subject=f"Inqsi ARB {status}: {message.get('sport') or 'sport'} {message.get('market') or 'market'}"[:100],
-                MessageStructure="json",
-                Message=json.dumps({
+            # Prepare every local field before attempting SNS. If malformed
+            # provider data makes formatting fail, SNS was definitely not
+            # called and the dedupe claim can safely be released for a retry.
+            publish_kwargs = {
+                "TopicArn": _topic_arn(),
+                "Subject": f"Inqsi ARB {status}: {message.get('sport') or 'sport'} {message.get('market') or 'market'}"[:100],
+                "MessageStructure": "json",
+                "Message": json.dumps({
                     "default": json.dumps(message, sort_keys=True, default=str),
                     "sms": _sms_text(status, row, message),
                 }, sort_keys=True),
-                MessageAttributes={
+                "MessageAttributes": {
                     "status": {"DataType": "String", "StringValue": status},
                     "sport": {"DataType": "String", "StringValue": str(message.get("sport") or "unknown")},
                 },
-            )
+            }
+            publish_attempted = True
+            response = client.publish(**publish_kwargs)
             message_id = response.get("MessageId") if isinstance(response, dict) else None
             if not isinstance(message_id, str) or not message_id.strip():
                 # A successful SNS publication must return a MessageId. Do not
@@ -249,9 +255,9 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
             }, sort_keys=True))
             published += 1
         except Exception as exc:
-            # Only definitive SNS rejections may release the dedupe claim.
-            # Ambiguous network failures and missing MessageId keep the claim,
-            # avoiding duplicate SMS if SNS accepted the original request.
+            # Local pre-publish formatting failures definitely sent nothing,
+            # so release only our claim. Once SNS was attempted, release only
+            # on definitive rejections; ambiguous outcomes retain the claim.
             response = getattr(exc, "response", {}) or {}
             code = str((response.get("Error") or {}).get("Code") or "")
             rejected = code in {
@@ -260,7 +266,7 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
                 "NotFound", "NotFoundException", "TopicLimitExceeded",
                 "Throttling", "ThrottlingException", "TooManyRequestsException",
             }
-            if claimed and rejected:
+            if claimed and (not publish_attempted or rejected):
                 try:
                     release_claim("ARB_OPPORTUNITY", identity, claim_token=claim_token)
                 except Exception:
