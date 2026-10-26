@@ -195,6 +195,21 @@ def _valid_featured_game_shape(game: Any) -> bool:
     return True
 
 
+def _unrequested_market_count(games: Sequence[Mapping[str, Any]], requested: set[str]) -> int:
+    """Count provider market objects not authorized by this request's market keys.
+
+    Called only after nested response-shape validation. Even unpriced unsolicited
+    markets make the provider response incomplete, not proof of requested coverage.
+    """
+    return sum(
+        1
+        for game in games
+        for book in game.get("bookmakers") or []
+        for market in book.get("markets") or []
+        if str(market.get("key") or "").strip() not in requested
+    )
+
+
 def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str, bookmakers: Optional[str] = None) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     key = api_key()
     if not key:
@@ -226,16 +241,24 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
         if not game.get("sport_key") or game["sport_key"] == sport_key
     ]
     wrong_sport = len(well_formed) - len(valid)
-    normalized = normalize_games(valid, sport_key=sport_key)
+    # A successful provider response may contain prices for markets that were
+    # never requested. Do not allow those rows into ARB or certify full coverage.
+    requested_set = set(requested)
+    unsolicited = _unrequested_market_count(valid, requested_set)
+    normalized = [
+        row for row in normalize_games(valid, sport_key=sport_key)
+        if row.get("market") in requested_set
+    ]
     priced_events = {str(row.get("event_id")) for row in normalized}
     # A structurally valid event with no usable American-odds quote cannot
     # establish priced coverage. Keep correctly priced peers without marking
     # the entire provider response as complete.
     unpriced = sum(1 for game in valid if str(game["id"]) not in priced_events)
-    incomplete = bool(malformed or wrong_sport or unpriced)
+    incomplete = bool(malformed or wrong_sport or unsolicited or unpriced)
     error = (
         "MALFORMED_PROVIDER_FEATURED_ODDS" if malformed
         else "MISMATCHED_PROVIDER_SPORT_KEY" if wrong_sport
+        else "UNREQUESTED_PROVIDER_MARKET_ODDS" if unsolicited
         else "NO_USABLE_PROVIDER_FEATURED_ODDS" if unpriced
         else meta.get("error")
     )
@@ -249,6 +272,7 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
         "n_games_invalid": malformed + wrong_sport,
         "n_games_wrong_sport": wrong_sport,
         "n_games_unpriced": unpriced,
+        "n_market_objects_unrequested": unsolicited,
         "markets": requested,
     }
 
@@ -279,7 +303,9 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
     errors: List[Dict[str, Any]] = []
     metas: List[Dict[str, Any]] = []
     invalid_events = 0
-    market_csv = ",".join(m.strip() for m in market_keys if m.strip())
+    requested = [m.strip() for m in market_keys if m.strip()]
+    requested_set = set(requested)
+    market_csv = ",".join(requested)
     for event in selected:
         if not isinstance(event, dict) or not str(event.get("id") or "").strip():
             invalid_events += 1
@@ -316,10 +342,25 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
         if payload.get("sport_key") and payload["sport_key"] != sport_key:
             errors.append({"event_id": event_id, "error": "MISMATCHED_PROVIDER_SPORT_KEY", "status": meta.get("status")})
             continue
-        normalized = normalize_games([payload], sport_key=sport_key)
+        unsolicited = _unrequested_market_count([payload], requested_set)
+        normalized = [
+            row for row in normalize_games([payload], sport_key=sport_key)
+            if row.get("market") in requested_set
+        ]
         if not normalized:
-            errors.append({"event_id": event_id, "error": "NO_USABLE_PROVIDER_MARKET_ODDS", "status": meta.get("status")})
+            errors.append({
+                "event_id": event_id,
+                "error": ("UNREQUESTED_PROVIDER_MARKET_ODDS" if unsolicited
+                          else "NO_USABLE_PROVIDER_MARKET_ODDS"),
+                "status": meta.get("status"),
+            })
             continue
+        if unsolicited:
+            errors.append({
+                "event_id": event_id,
+                "error": "UNREQUESTED_PROVIDER_MARKET_ODDS",
+                "status": meta.get("status"),
+            })
         results.extend(normalized)
     return results, {
         "ok": not errors or bool(results),
