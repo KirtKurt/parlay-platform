@@ -79,10 +79,14 @@ def list_sports(*, all_sports: bool = False) -> Tuple[List[Dict[str, Any]], Dict
 
 
 def _canon_number(value: Any) -> Optional[float]:
-    try:
-        return round(float(value), 6)
-    except (TypeError, ValueError):
+    # A malformed or nonfinite point must never become a market identity.
+    if isinstance(value, bool):
         return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return round(number, 6) if math.isfinite(number) else None
 
 
 def _bucket_identity(market_key: str, outcome: Mapping[str, Any]) -> Tuple[str, str]:
@@ -132,6 +136,11 @@ def normalize_games(games: Sequence[Mapping[str, Any]], *, sport_key: str, provi
                     name = str(outcome.get("name") or "").strip()
                     desc = str(outcome.get("description") or "").strip()
                     point = _canon_number(outcome.get("point"))
+                    # Missing points are legitimate for moneyline/yes-no markets.
+                    # Explicitly malformed points are not: treating one as an
+                    # absent line could combine unrelated settlement outcomes.
+                    if outcome.get("point") is not None and point is None:
+                        continue
                     sub_id, outcome_id = _bucket_identity(market_key, outcome)
                     market_id = f"{event_id}|{sub_id}"
                     bucket = buckets.setdefault(market_id, {
@@ -210,6 +219,19 @@ def _unrequested_market_count(games: Sequence[Mapping[str, Any]], requested: set
     )
 
 
+def _invalid_point_count(games: Sequence[Mapping[str, Any]], requested: set[str]) -> int:
+    """Count explicitly malformed market lines in already shape-checked data."""
+    return sum(
+        1
+        for game in games
+        for book in game.get("bookmakers") or []
+        for market in book.get("markets") or []
+        if str(market.get("key") or "").strip() in requested
+        for outcome in market.get("outcomes") or []
+        if outcome.get("point") is not None and _canon_number(outcome["point"]) is None
+    )
+
+
 def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str, bookmakers: Optional[str] = None) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     key = api_key()
     if not key:
@@ -245,6 +267,7 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
     # never requested. Do not allow those rows into ARB or certify full coverage.
     requested_set = set(requested)
     unsolicited = _unrequested_market_count(valid, requested_set)
+    invalid_points = _invalid_point_count(valid, requested_set)
     normalized = [
         row for row in normalize_games(valid, sport_key=sport_key)
         if row.get("market") in requested_set
@@ -254,11 +277,12 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
     # establish priced coverage. Keep correctly priced peers without marking
     # the entire provider response as complete.
     unpriced = sum(1 for game in valid if str(game["id"]) not in priced_events)
-    incomplete = bool(malformed or wrong_sport or unsolicited or unpriced)
+    incomplete = bool(malformed or wrong_sport or unsolicited or invalid_points or unpriced)
     error = (
         "MALFORMED_PROVIDER_FEATURED_ODDS" if malformed
         else "MISMATCHED_PROVIDER_SPORT_KEY" if wrong_sport
         else "UNREQUESTED_PROVIDER_MARKET_ODDS" if unsolicited
+        else "INVALID_PROVIDER_MARKET_POINT" if invalid_points
         else "NO_USABLE_PROVIDER_FEATURED_ODDS" if unpriced
         else meta.get("error")
     )
@@ -273,6 +297,7 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
         "n_games_wrong_sport": wrong_sport,
         "n_games_unpriced": unpriced,
         "n_market_objects_unrequested": unsolicited,
+        "n_outcomes_invalid_point": invalid_points,
         "markets": requested,
     }
 
@@ -303,6 +328,7 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
     errors: List[Dict[str, Any]] = []
     metas: List[Dict[str, Any]] = []
     invalid_events = 0
+    invalid_points_total = 0
     requested = [m.strip() for m in market_keys if m.strip()]
     requested_set = set(requested)
     market_csv = ",".join(requested)
@@ -343,6 +369,8 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
             errors.append({"event_id": event_id, "error": "MISMATCHED_PROVIDER_SPORT_KEY", "status": meta.get("status")})
             continue
         unsolicited = _unrequested_market_count([payload], requested_set)
+        invalid_points = _invalid_point_count([payload], requested_set)
+        invalid_points_total += invalid_points
         normalized = [
             row for row in normalize_games([payload], sport_key=sport_key)
             if row.get("market") in requested_set
@@ -351,6 +379,7 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
             errors.append({
                 "event_id": event_id,
                 "error": ("UNREQUESTED_PROVIDER_MARKET_ODDS" if unsolicited
+                          else "INVALID_PROVIDER_MARKET_POINT" if invalid_points
                           else "NO_USABLE_PROVIDER_MARKET_ODDS"),
                 "status": meta.get("status"),
             })
@@ -361,12 +390,20 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
                 "error": "UNREQUESTED_PROVIDER_MARKET_ODDS",
                 "status": meta.get("status"),
             })
+        if invalid_points:
+            errors.append({
+                "event_id": event_id,
+                "error": "INVALID_PROVIDER_MARKET_POINT",
+                "n_outcomes_invalid_point": invalid_points,
+                "status": meta.get("status"),
+            })
         results.extend(normalized)
     return results, {
         "ok": not errors or bool(results),
         "n_events_discovered": len(events),
         "n_events_requested": len(selected),
         "n_events_invalid": invalid_events,
+        "n_outcomes_invalid_point": invalid_points_total,
         "n_markets": len(results),
         "partial": bool(errors) or len(selected) < len(events),
         "errors": errors[:20],
