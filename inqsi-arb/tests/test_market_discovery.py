@@ -1318,3 +1318,36 @@ def test_unrequested_market_only_cannot_certify_discovered_coverage(monkeypatch)
     assert report["event_details"][0]["markets"] == []
     assert report["event_details"][0]["error"] == "UNREQUESTED_PROVIDER_MARKET_ODDS"
     assert report["event_details"][0]["partial"] is True
+
+
+def test_unpriced_unrequested_market_object_marks_probe_partial(monkeypatch):
+    # An unsolicited market with no usable prices disappears during
+    # normalization. Its raw presence must still prevent a false claim of
+    # complete provider-visible coverage; keep the requested valid quotes.
+    monkeypatch.setattr(discovery, "_request_event_odds", lambda *_args, **_kwargs: (
+        {
+            "id": "event-unpriced-unrequested",
+            "home_team": "Home", "away_team": "Away",
+            "bookmakers": [{
+                "key": "book_a",
+                "markets": [
+                    {"key": "h2h", "outcomes": [
+                        {"name": "Home", "price": -110},
+                        {"name": "Away", "price": 110},
+                    ]},
+                    {"key": "player_points", "outcomes": [
+                        {"name": "Over", "price": None, "point": 19.5},
+                    ]},
+                ],
+            }],
+        },
+        {"ok": True, "status": 200},
+    ))
+    accepted, rows, evidence = discovery._probe_market_batch(
+        "basketball_nba", "event-unpriced-unrequested", ["h2h"],
+        regions="us", bookmakers=None,
+    )
+    assert accepted == ["h2h"]
+    assert [row["market"] for row in rows] == ["h2h"]
+    assert evidence[0]["ok"] is False
+    assert evidence[0]["error"] == "UNREQUESTED_PROVIDER_MARKET_ODDS"
