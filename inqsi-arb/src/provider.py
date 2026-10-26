@@ -234,6 +234,11 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
 
 
 def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: str, bookmakers: Optional[str] = None, max_events: int = 100) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Fetch extended markets without accepting mismatched or malformed provider data.
+
+    Keep correctly scoped peers and existing request caps. A successful HTTP
+    status alone is not proof of provider-visible odds coverage.
+    """
     key = api_key()
     if not key:
         return [], {"ok": False, "error": "ODDS_API_KEY_MISSING"}
@@ -241,16 +246,29 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
         f"{BASE}/sports/{urllib.parse.quote(sport_key, safe='')}/events/",
         {"apiKey": key, "dateFormat": "iso"},
     )
-    if not events_meta.get("ok") or not isinstance(events, list):
-        return [], {"ok": False, "events": events_meta}
+    if not events_meta.get("ok"):
+        return [], {"ok": False, "events": events_meta, "partial": True}
+    if not isinstance(events, list):
+        return [], {
+            "ok": False, "partial": True,
+            "events": {**events_meta, "ok": False, "error": "MALFORMED_PROVIDER_EVENT_CATALOG"},
+        }
+
     selected = events[:max(0, int(max_events))]
     results: List[Dict[str, Any]] = []
     errors: List[Dict[str, Any]] = []
     metas: List[Dict[str, Any]] = []
+    invalid_events = 0
     market_csv = ",".join(m.strip() for m in market_keys if m.strip())
     for event in selected:
-        event_id = str(event.get("id") or "")
-        if not event_id:
+        if not isinstance(event, dict) or not str(event.get("id") or "").strip():
+            invalid_events += 1
+            errors.append({"event_id": None, "error": "MALFORMED_PROVIDER_EVENT_CATALOG_RECORD"})
+            continue
+        event_id = str(event["id"]).strip()
+        if event.get("sport_key") and event["sport_key"] != sport_key:
+            invalid_events += 1
+            errors.append({"event_id": event_id, "error": "MISMATCHED_PROVIDER_SPORT_KEY"})
             continue
         payload, meta = _get(
             f"{BASE}/sports/{urllib.parse.quote(sport_key, safe='')}/events/{urllib.parse.quote(event_id, safe='')}/odds",
@@ -266,15 +284,30 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
             },
         )
         metas.append(meta)
-        if meta.get("ok") and isinstance(payload, dict):
-            results.extend(normalize_games([payload], sport_key=sport_key))
-        else:
+        if not meta.get("ok"):
             errors.append({"event_id": event_id, "error": meta.get("error"), "status": meta.get("status")})
+            continue
+        if not _valid_featured_game_shape(payload):
+            errors.append({"event_id": event_id, "error": "MALFORMED_PROVIDER_EVENT_ODDS", "status": meta.get("status")})
+            continue
+        if str(payload.get("id") or "").strip() != event_id:
+            errors.append({"event_id": event_id, "error": "MISMATCHED_PROVIDER_EVENT_ID", "status": meta.get("status")})
+            continue
+        if payload.get("sport_key") and payload["sport_key"] != sport_key:
+            errors.append({"event_id": event_id, "error": "MISMATCHED_PROVIDER_SPORT_KEY", "status": meta.get("status")})
+            continue
+        normalized = normalize_games([payload], sport_key=sport_key)
+        if not normalized:
+            errors.append({"event_id": event_id, "error": "NO_USABLE_PROVIDER_MARKET_ODDS", "status": meta.get("status")})
+            continue
+        results.extend(normalized)
     return results, {
         "ok": not errors or bool(results),
         "n_events_discovered": len(events),
         "n_events_requested": len(selected),
+        "n_events_invalid": invalid_events,
         "n_markets": len(results),
+        "partial": bool(errors) or len(selected) < len(events),
         "errors": errors[:20],
         "request_meta": metas[-1] if metas else events_meta,
     }
