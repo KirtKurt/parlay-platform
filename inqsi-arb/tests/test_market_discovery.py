@@ -1109,3 +1109,62 @@ def test_all_sports_featured_scan_reports_failed_sport_and_catalog_cap(monkeypat
     assert body["status"]["partial"] is True
     assert body["status"]["n_sports_scanned"] == 1
     assert body["status"]["n_sports_catalog"] == 2
+
+
+def test_event_odds_response_identity_must_match_requested_event(monkeypatch):
+    # A successful HTTP 200 from another event must not be accepted as
+    # coverage for the requested event or passed to downstream ARB math.
+    calls = []
+
+    def fake_request(_sport, event_id, markets, *, regions, bookmakers=None):
+        calls.append((event_id, tuple(markets)))
+        return {
+            "id": "different-event",
+            "home_team": "Home",
+            "away_team": "Away",
+            "bookmakers": [{
+                "key": "book_a",
+                "markets": [{"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -110},
+                    {"name": "Away", "price": 110},
+                ]}],
+            }],
+        }, {"ok": True, "status": 200}
+
+    monkeypatch.setattr(discovery, "_request_event_odds", fake_request)
+    accepted, rows, evidence = discovery._probe_market_batch(
+        "baseball_mlb", "expected-event", ["h2h", "totals"],
+        regions="us", bookmakers=None,
+    )
+    assert accepted == []
+    assert rows == []
+    assert calls == [("expected-event", ("h2h", "totals"))]
+    assert evidence == [{
+        "markets": ["h2h", "totals"], "ok": False, "status": 200,
+        "error": "MISMATCHED_PROVIDER_EVENT_ID", "depth": 0,
+    }]
+
+
+def test_missing_event_id_in_successful_odds_response_fails_closed(monkeypatch):
+    monkeypatch.setattr(
+        discovery, "_request_event_odds",
+        lambda *_args, **_kwargs: (
+            {"bookmakers": [{
+                "key": "book_a",
+                "markets": [{"key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -110},
+                    {"name": "Away", "price": 110},
+                ]}],
+            }]},
+            {"ok": True, "status": 200},
+        ),
+    )
+    accepted, rows, evidence = discovery._probe_market_batch(
+        "baseball_mlb", "expected-event", ["h2h"],
+        regions="us", bookmakers=None,
+    )
+    assert accepted == []
+    assert rows == []
+    assert evidence[0]["ok"] is False
+    assert evidence[0]["status"] == 200
+    assert evidence[0]["error"] == "MISMATCHED_PROVIDER_EVENT_ID"
