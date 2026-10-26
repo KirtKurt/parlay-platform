@@ -89,6 +89,17 @@ def _canon_number(value: Any) -> Optional[float]:
     return round(number, 6) if math.isfinite(number) else None
 
 
+def _valid_american_price(value: Any) -> bool:
+    """Finite, non-boolean American odds must have absolute value >= 100."""
+    if isinstance(value, bool):
+        return False
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return math.isfinite(number) and abs(number) >= 100
+
+
 def _bucket_identity(market_key: str, outcome: Mapping[str, Any]) -> Tuple[str, str]:
     name = str(outcome.get("name") or "").strip()
     desc = str(outcome.get("description") or "").strip()
@@ -123,15 +134,8 @@ def normalize_games(games: Sequence[Mapping[str, Any]], *, sport_key: str, provi
                 market_update = market.get("last_update") or book_update
                 for outcome in market.get("outcomes") or []:
                     price = outcome.get("price")
-                    try:
-                        numeric_price = float(price)
-                    except (TypeError, ValueError):
-                        continue
-                    # All ARB provider requests explicitly use American odds.
-                    # NaN/Infinity and decimal-sized or otherwise impossible
-                    # American prices cannot establish an executable quote.
-                    if (isinstance(price, bool) or not math.isfinite(numeric_price)
-                            or -100 < numeric_price < 100):
+                    # Keep quote acceptance and coverage diagnostics identical.
+                    if not _valid_american_price(price):
                         continue
                     name = str(outcome.get("name") or "").strip()
                     desc = str(outcome.get("description") or "").strip()
@@ -232,6 +236,19 @@ def _invalid_point_count(games: Sequence[Mapping[str, Any]], requested: set[str]
     )
 
 
+def _invalid_price_count(games: Sequence[Mapping[str, Any]], requested: set[str]) -> int:
+    """Count unusable American prices in requested, shape-checked markets."""
+    return sum(
+        1
+        for game in games
+        for book in game.get("bookmakers") or []
+        for market in book.get("markets") or []
+        if str(market.get("key") or "").strip() in requested
+        for outcome in market.get("outcomes") or []
+        if not _valid_american_price(outcome.get("price"))
+    )
+
+
 def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str, bookmakers: Optional[str] = None) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     key = api_key()
     if not key:
@@ -268,6 +285,7 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
     requested_set = set(requested)
     unsolicited = _unrequested_market_count(valid, requested_set)
     invalid_points = _invalid_point_count(valid, requested_set)
+    invalid_prices = _invalid_price_count(valid, requested_set)
     normalized = [
         row for row in normalize_games(valid, sport_key=sport_key)
         if row.get("market") in requested_set
@@ -277,13 +295,14 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
     # establish priced coverage. Keep correctly priced peers without marking
     # the entire provider response as complete.
     unpriced = sum(1 for game in valid if str(game["id"]) not in priced_events)
-    incomplete = bool(malformed or wrong_sport or unsolicited or invalid_points or unpriced)
+    incomplete = bool(malformed or wrong_sport or unsolicited or invalid_points or invalid_prices or unpriced)
     error = (
         "MALFORMED_PROVIDER_FEATURED_ODDS" if malformed
         else "MISMATCHED_PROVIDER_SPORT_KEY" if wrong_sport
         else "UNREQUESTED_PROVIDER_MARKET_ODDS" if unsolicited
         else "INVALID_PROVIDER_MARKET_POINT" if invalid_points
         else "NO_USABLE_PROVIDER_FEATURED_ODDS" if unpriced
+        else "INVALID_PROVIDER_AMERICAN_ODDS" if invalid_prices
         else meta.get("error")
     )
     return normalized, {
@@ -298,6 +317,7 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
         "n_games_unpriced": unpriced,
         "n_market_objects_unrequested": unsolicited,
         "n_outcomes_invalid_point": invalid_points,
+        "n_outcomes_invalid_price": invalid_prices,
         "markets": requested,
     }
 
@@ -329,6 +349,7 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
     metas: List[Dict[str, Any]] = []
     invalid_events = 0
     invalid_points_total = 0
+    invalid_prices_total = 0
     requested = [m.strip() for m in market_keys if m.strip()]
     requested_set = set(requested)
     market_csv = ",".join(requested)
@@ -371,6 +392,8 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
         unsolicited = _unrequested_market_count([payload], requested_set)
         invalid_points = _invalid_point_count([payload], requested_set)
         invalid_points_total += invalid_points
+        invalid_prices = _invalid_price_count([payload], requested_set)
+        invalid_prices_total += invalid_prices
         normalized = [
             row for row in normalize_games([payload], sport_key=sport_key)
             if row.get("market") in requested_set
@@ -397,6 +420,13 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
                 "n_outcomes_invalid_point": invalid_points,
                 "status": meta.get("status"),
             })
+        if invalid_prices and normalized:
+            errors.append({
+                "event_id": event_id,
+                "error": "INVALID_PROVIDER_AMERICAN_ODDS",
+                "n_outcomes_invalid_price": invalid_prices,
+                "status": meta.get("status"),
+            })
         results.extend(normalized)
     return results, {
         "ok": not errors or bool(results),
@@ -404,6 +434,7 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
         "n_events_requested": len(selected),
         "n_events_invalid": invalid_events,
         "n_outcomes_invalid_point": invalid_points_total,
+        "n_outcomes_invalid_price": invalid_prices_total,
         "n_markets": len(results),
         "partial": bool(errors) or len(selected) < len(events),
         "errors": errors[:20],

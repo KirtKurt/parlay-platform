@@ -174,3 +174,21 @@ def test_extended_all_invalid_points_cannot_be_reported_as_complete(monkeypatch)
     assert meta["n_outcomes_invalid_point"] == 2
     assert meta["errors"][0]["error"] == "INVALID_PROVIDER_MARKET_POINT"
     assert len(calls) == 2
+
+
+def test_extended_mixed_invalid_american_prices_preserve_good_quotes_and_mark_partial(monkeypatch):
+    game = _game()
+    game["bookmakers"][0]["markets"][0]["outcomes"].extend([
+        {"name": "Over", "description": "Player", "point": 12.5, "price": "nan"},
+        {"name": "Under", "description": "Player", "point": 12.5, "price": 1.91},
+        {"name": "Under", "description": "Player", "point": 12.5, "price": 10 ** 400},
+    ])
+    rows, meta, calls = _fetch(monkeypatch, [{"id": "event-1"}], {"event-1": game})
+    assert len(rows) == 1
+    assert len(rows[0]["quotes"]) == 2
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["n_outcomes_invalid_price"] == 3
+    assert meta["errors"][0]["error"] == "INVALID_PROVIDER_AMERICAN_ODDS"
+    assert meta["errors"][0]["n_outcomes_invalid_price"] == 3
+    assert len(calls) == 2

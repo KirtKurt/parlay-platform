@@ -178,3 +178,20 @@ def test_all_invalid_explicit_market_points_cannot_certify_coverage(monkeypatch)
     assert meta["partial"] is True
     assert meta["error"] == "INVALID_PROVIDER_MARKET_POINT"
     assert meta["n_outcomes_invalid_point"] == 2
+
+
+def test_featured_mixed_invalid_american_prices_preserve_good_quotes_and_mark_partial(monkeypatch):
+    game = _valid_game()
+    game["bookmakers"][0]["markets"][0]["outcomes"].extend([
+        {"name": "NaN", "price": float("nan")},
+        {"name": "Decimal", "price": 1.91},
+        {"name": "Boolean", "price": True},
+        {"name": "Overflow", "price": 10 ** 400},
+    ])
+    rows, meta = _fetch(monkeypatch, [game])
+    assert len(rows) == 1
+    assert len(rows[0]["quotes"]) == 2
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["error"] == "INVALID_PROVIDER_AMERICAN_ODDS"
+    assert meta["n_outcomes_invalid_price"] == 4
