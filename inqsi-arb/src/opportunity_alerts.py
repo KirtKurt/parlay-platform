@@ -189,10 +189,13 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
     published = deduped = errors = 0
     ttl = int(os.environ.get("ARB_OPPORTUNITY_ALERT_DEDUPE_SECONDS", "21600"))
     for status, row in rows:
-        identity = _identity(status, row)
         claim_token = uuid.uuid4().hex
         claimed = False
         try:
+            # A malformed candidate must not abort publication of subsequent
+            # independently qualified opportunities. Fail this row closed
+            # before claiming a dedupe identity or contacting SNS.
+            identity = _identity(status, row)
             if not claim_once("ARB_OPPORTUNITY", identity, ttl_seconds=ttl,
                               claim_token=claim_token):
                 deduped += 1

@@ -341,3 +341,18 @@ def test_held_back_sms_shows_reason_and_converts_decimal_odds(monkeypatch):
     assert "book-b away -110" in payload["sms"]
     assert json.loads(payload["default"])["holdback_reason"] == "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
 
+
+
+def test_malformed_first_candidate_does_not_suppress_later_verified_sms(monkeypatch):
+    """A broken quote must fail closed without aborting the remaining scan."""
+    sns = _setup(monkeypatch)
+    malformed = _verified_row()
+    malformed["event_id"] = "event-malformed"
+    malformed["legs"] = ["not-a-quote"]
+    valid = _verified_row()
+    result = alerts.publish_scan_opportunities({"hits": [malformed, valid]})
+    assert result == {"published": 1, "deduped": 0, "errors": 1}
+    assert len(sns.calls) == 1
+    message = json.loads(json.loads(sns.calls[0]["Message"])["default"])
+    assert message["event_id"] == "event-1"
+    assert message["status"] == "VERIFIED"
