@@ -106,3 +106,34 @@ def test_all_unpriced_featured_events_fail_closed_not_empty_slate(monkeypatch):
     assert meta["partial"] is True
     assert meta["n_games_unpriced"] == 1
     assert meta["error"] == "NO_USABLE_PROVIDER_FEATURED_ODDS"
+
+
+def test_featured_ignores_unsolicited_market_but_keeps_requested_quotes(monkeypatch):
+    game = _valid_game()
+    game["bookmakers"][0]["markets"].append({
+        "key": "spreads",
+        "outcomes": [
+            {"name": "Home", "point": -1.5, "price": +120},
+            {"name": "Away", "point": +1.5, "price": -140},
+        ],
+    })
+    rows, meta = _fetch(monkeypatch, [game])
+    assert len(rows) == 1
+    assert rows[0]["market"] == "h2h"
+    assert len(rows[0]["quotes"]) == 2
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["error"] == "UNREQUESTED_PROVIDER_MARKET_ODDS"
+    assert meta["n_market_objects_unrequested"] == 1
+
+
+def test_featured_only_unsolicited_market_cannot_claim_requested_coverage(monkeypatch):
+    game = _valid_game()
+    game["bookmakers"][0]["markets"][0]["key"] = "spreads"
+    rows, meta = _fetch(monkeypatch, [game])
+    assert rows == []
+    assert meta["ok"] is False
+    assert meta["partial"] is True
+    assert meta["error"] == "UNREQUESTED_PROVIDER_MARKET_ODDS"
+    assert meta["n_games_unpriced"] == 1
+    assert meta["n_market_objects_unrequested"] == 1
