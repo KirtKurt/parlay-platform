@@ -173,6 +173,28 @@ def normalize_games(games: Sequence[Mapping[str, Any]], *, sport_key: str, provi
     return out
 
 
+def _valid_featured_game_shape(game: Any) -> bool:
+    """Reject malformed HTTP-200 odds records before normalizing valid peers."""
+    if not isinstance(game, dict) or not str(game.get("id") or "").strip():
+        return False
+    books = game.get("bookmakers", [])
+    if not isinstance(books, list):
+        return False
+    for book in books:
+        if not isinstance(book, dict):
+            return False
+        markets = book.get("markets", [])
+        if not isinstance(markets, list):
+            return False
+        for market in markets:
+            if not isinstance(market, dict):
+                return False
+            outcomes = market.get("outcomes", [])
+            if not isinstance(outcomes, list) or any(not isinstance(o, dict) for o in outcomes):
+                return False
+    return True
+
+
 def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str, bookmakers: Optional[str] = None) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     key = api_key()
     if not key:
@@ -191,9 +213,24 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
             "includeBetLimits": "true",
         },
     )
-    if not meta.get("ok") or not isinstance(payload, list):
+    if not meta.get("ok"):
         return [], meta
-    return normalize_games(payload, sport_key=sport_key), {**meta, "n_games": len(payload), "markets": requested}
+    if not isinstance(payload, list):
+        return [], {**meta, "ok": False, "error": "MALFORMED_PROVIDER_FEATURED_ODDS", "partial": True}
+    valid = [game for game in payload if _valid_featured_game_shape(game)]
+    invalid = len(payload) - len(valid)
+    # Retain valid odds while explicitly flagging incomplete provider coverage.
+    # An entirely malformed HTTP-200 payload must not be a successful empty slate.
+    return normalize_games(valid, sport_key=sport_key), {
+        **meta,
+        "ok": bool(valid) or not payload,
+        "error": "MALFORMED_PROVIDER_FEATURED_ODDS" if invalid else meta.get("error"),
+        "partial": bool(invalid),
+        "n_games": len(valid),
+        "n_games_received": len(payload),
+        "n_games_invalid": invalid,
+        "markets": requested,
+    }
 
 
 def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: str, bookmakers: Optional[str] = None, max_events: int = 100) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
