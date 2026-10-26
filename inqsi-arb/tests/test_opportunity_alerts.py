@@ -499,3 +499,33 @@ def test_unavailable_claim_store_is_error_not_duplicate_or_publish(monkeypatch):
     out = alerts.publish_scan_opportunities({"hits": [_verified_row()]})
     assert out == {"published": 0, "deduped": 0, "errors": 1}
     assert sns.calls == []
+
+
+def test_reordered_provider_legs_are_one_opportunity_but_price_changes_realert(monkeypatch):
+    """Stable identity ignores provider ordering, not sportsbook prices."""
+    sns = _setup(monkeypatch)
+    seen = set()
+
+    def claim_once(_kind, identity, **_kwargs):
+        if identity in seen:
+            return False
+        seen.add(identity)
+        return True
+
+    monkeypatch.setattr(alerts, "claim_once", claim_once)
+    first = _verified_row()
+    reordered = _verified_row()
+    reordered["legs"].reverse()
+    assert alerts._identity("VERIFIED", first) == alerts._identity("VERIFIED", reordered)
+
+    result = alerts.publish_scan_opportunities({"hits": [first, reordered]})
+    assert result == {"published": 1, "deduped": 1, "errors": 0}
+    assert len(sns.calls) == 1
+
+    changed = _verified_row()
+    changed["legs"].reverse()
+    changed["legs"][1]["american"] = 120
+    assert alerts._identity("VERIFIED", first) != alerts._identity("VERIFIED", changed)
+    result = alerts.publish_scan_opportunities({"hits": [changed]})
+    assert result == {"published": 1, "deduped": 0, "errors": 0}
+    assert len(sns.calls) == 2

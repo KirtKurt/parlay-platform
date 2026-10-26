@@ -97,15 +97,22 @@ def _identity(status: str, row: Dict[str, Any]) -> str:
         # Normalize currency to cents to avoid alerts for float jitter.
         "stake_total": _money_identity(row.get("allocated_stake")),
         "minimum_profit": _money_identity(row.get("minimum_profit")),
-        "legs": [
-            {
-                "outcome": leg.get("outcome") or leg.get("name"),
-                "book": leg.get("book") or leg.get("bookmaker"),
-                "price": leg.get("american") if leg.get("american") is not None else (leg.get("american_odds") or leg.get("price") or leg.get("odds") or leg.get("decimal")),
-                "point": leg.get("point"),
-            }
-            for leg in _legs(row)
-        ],
+        # Provider ordering is not part of the betting opportunity. Sorting
+        # canonical leg values prevents duplicate SMS when the same books and
+        # outcomes arrive in a different order on a later scan. Price, point,
+        # and book changes remain material and generate a new identity.
+        "legs": sorted(
+            [
+                {
+                    "outcome": leg.get("outcome") or leg.get("name"),
+                    "book": leg.get("book") or leg.get("bookmaker"),
+                    "price": leg.get("american") if leg.get("american") is not None else (leg.get("american_odds") or leg.get("price") or leg.get("odds") or leg.get("decimal")),
+                    "point": leg.get("point"),
+                }
+                for leg in _legs(row)
+            ],
+            key=lambda leg: json.dumps(leg, sort_keys=True, separators=(",", ":"), default=str),
+        ),
     }
     raw = json.dumps(material, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
