@@ -217,18 +217,38 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
         return [], meta
     if not isinstance(payload, list):
         return [], {**meta, "ok": False, "error": "MALFORMED_PROVIDER_FEATURED_ODDS", "partial": True}
-    valid = [game for game in payload if _valid_featured_game_shape(game)]
-    invalid = len(payload) - len(valid)
-    # Retain valid odds while explicitly flagging incomplete provider coverage.
-    # An entirely malformed HTTP-200 payload must not be a successful empty slate.
-    return normalize_games(valid, sport_key=sport_key), {
+    well_formed = [game for game in payload if _valid_featured_game_shape(game)]
+    malformed = len(payload) - len(well_formed)
+    # An explicit sport identity from another sport must not enter this
+    # sport's normalized prices, even when the rest of the schema is valid.
+    valid = [
+        game for game in well_formed
+        if not game.get("sport_key") or game["sport_key"] == sport_key
+    ]
+    wrong_sport = len(well_formed) - len(valid)
+    normalized = normalize_games(valid, sport_key=sport_key)
+    priced_events = {str(row.get("event_id")) for row in normalized}
+    # A structurally valid event with no usable American-odds quote cannot
+    # establish priced coverage. Keep correctly priced peers without marking
+    # the entire provider response as complete.
+    unpriced = sum(1 for game in valid if str(game["id"]) not in priced_events)
+    incomplete = bool(malformed or wrong_sport or unpriced)
+    error = (
+        "MALFORMED_PROVIDER_FEATURED_ODDS" if malformed
+        else "MISMATCHED_PROVIDER_SPORT_KEY" if wrong_sport
+        else "NO_USABLE_PROVIDER_FEATURED_ODDS" if unpriced
+        else meta.get("error")
+    )
+    return normalized, {
         **meta,
-        "ok": bool(valid) or not payload,
-        "error": "MALFORMED_PROVIDER_FEATURED_ODDS" if invalid else meta.get("error"),
-        "partial": bool(invalid),
+        "ok": bool(normalized) or not payload,
+        "error": error,
+        "partial": incomplete,
         "n_games": len(valid),
         "n_games_received": len(payload),
-        "n_games_invalid": invalid,
+        "n_games_invalid": malformed + wrong_sport,
+        "n_games_wrong_sport": wrong_sport,
+        "n_games_unpriced": unpriced,
         "markets": requested,
     }
 
