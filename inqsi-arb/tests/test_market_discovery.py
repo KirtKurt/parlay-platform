@@ -1031,7 +1031,9 @@ def test_valid_american_prices_survive_invalid_neighbor_prices(monkeypatch):
     assert len(rows) == 1
     assert len(rows[0]["quotes"]) == 2
     assert {str(q["american"]) for q in rows[0]["quotes"]} == {"-110", "+125"}
-    assert evidence[0]["ok"] is True
+    assert evidence[0]["ok"] is False
+    assert evidence[0]["error"] == "INVALID_PROVIDER_AMERICAN_ODDS"
+    assert evidence[0]["n_outcomes_invalid_price"] == 2
 
 
 def test_all_sports_all_markets_propagates_partial_provider_coverage(monkeypatch):
@@ -1351,3 +1353,65 @@ def test_unpriced_unrequested_market_object_marks_probe_partial(monkeypatch):
     assert [row["market"] for row in rows] == ["h2h"]
     assert evidence[0]["ok"] is False
     assert evidence[0]["error"] == "UNREQUESTED_PROVIDER_MARKET_ODDS"
+
+def test_probe_invalid_explicit_point_keeps_valid_quotes_but_marks_partial(monkeypatch):
+    monkeypatch.setattr(discovery, "_request_event_odds", lambda *_args, **_kwargs: (
+        {
+            "id": "event-mixed-points",
+            "home_team": "Home", "away_team": "Away",
+            "bookmakers": [{"key": "book_a", "markets": [{
+                "key": "h2h", "outcomes": [
+                    {"name": "Home", "price": -110},
+                    {"name": "Away", "price": 110},
+                    {"name": "bad-line", "price": 125, "point": "nan"},
+                ],
+            }]}],
+        },
+        {"ok": True, "status": 200},
+    ))
+    accepted, rows, evidence = discovery._probe_market_batch(
+        "baseball_mlb", "event-mixed-points", ["h2h"],
+        regions="us", bookmakers=None,
+    )
+    assert accepted == ["h2h"]
+    assert len(rows) == 1
+    assert len(rows[0]["quotes"]) == 2
+    assert evidence[0]["ok"] is False
+    assert evidence[0]["error"] == "INVALID_PROVIDER_MARKET_POINT"
+    assert evidence[0]["n_outcomes_invalid_point"] == 1
+
+
+def test_full_market_report_marks_mixed_invalid_prices_partial(monkeypatch):
+    monkeypatch.setattr(discovery, "discover_events", lambda *_args: (
+        [{"id": "event-mixed-price-report"}], {"ok": True, "partial": False},
+    ))
+    monkeypatch.setattr(discovery, "_discover_event_markets_direct",
+                        lambda *_args, **_kwargs: (
+                            ["h2h"], {"ok": True, "status": 200},
+                        ))
+    monkeypatch.setattr(discovery, "_request_event_odds",
+                        lambda *_args, **_kwargs: (
+                            {
+                                "id": "event-mixed-price-report",
+                                "home_team": "Home", "away_team": "Away",
+                                "bookmakers": [{"key": "book_a", "markets": [{
+                                    "key": "h2h", "outcomes": [
+                                        {"name": "Home", "price": -110},
+                                        {"name": "Away", "price": 110},
+                                        {"name": "bad-price", "price": float("inf")},
+                                    ],
+                                }]}],
+                            },
+                            {"ok": True, "status": 200},
+                        ))
+    rows, report = discovery.fetch_all_discovered_markets(
+        "baseball_mlb", regions="us",
+    )
+    assert len(rows) == 1
+    assert len(rows[0]["quotes"]) == 2
+    assert report["ok"] is True
+    assert report["partial"] is True
+    detail = report["event_details"][0]
+    assert detail["markets"] == ["h2h"]
+    assert detail["partial"] is True
+    assert detail["error"] == "INVALID_PROVIDER_AMERICAN_ODDS"
