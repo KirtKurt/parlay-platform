@@ -214,7 +214,15 @@ def _probe_market_batch(
         normalized_all = normalize_games([payload], sport_key=sport_key)
         requested = {str(key).strip() for key in markets}
         normalized = [row for row in normalized_all if row.get("market") in requested]
-        unsolicited = len(normalized) != len(normalized_all)
+        # An unsolicited market object is still unsolicited when all of its
+        # prices are invalid or absent and normalization produces no row.
+        # Inspect the already-validated raw response to avoid falsely
+        # certifying a complete requested-market probe.
+        unsolicited = any(
+            str(market.get("key") or "").strip() not in requested
+            for book in books
+            for market in book["markets"]
+        )
         returned = list(dict.fromkeys(
             str(row.get("market") or "").strip()
             for row in normalized
