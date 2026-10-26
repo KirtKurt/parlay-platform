@@ -61,3 +61,48 @@ def test_legitimate_empty_featured_slate_is_not_malformed(monkeypatch):
     assert meta["partial"] is False
     assert meta["n_games_received"] == 0
     assert meta["n_games_invalid"] == 0
+
+
+def test_cross_sport_featured_odds_are_excluded_without_losing_valid_peer(monkeypatch):
+    correct = _valid_game()
+    correct["sport_key"] = "baseball_mlb"
+    wrong = _valid_game()
+    wrong["id"] = "event-other"
+    wrong["sport_key"] = "basketball_nba"
+    rows, meta = _fetch(monkeypatch, [correct, wrong])
+    assert len(rows) == 1
+    assert rows[0]["event_id"] == "event-1"
+    assert rows[0]["sport"] == "baseball_mlb"
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["n_games_wrong_sport"] == 1
+    assert meta["n_games_invalid"] == 1
+    assert meta["error"] == "MISMATCHED_PROVIDER_SPORT_KEY"
+
+
+def test_unpriced_featured_event_does_not_certify_complete_coverage(monkeypatch):
+    valid = _valid_game()
+    unpriced = _valid_game()
+    unpriced["id"] = "event-unpriced"
+    unpriced["bookmakers"][0]["markets"][0]["outcomes"] = [
+        {"name": "Home", "price": float("nan")},
+        {"name": "Away", "price": 1.91},
+    ]
+    rows, meta = _fetch(monkeypatch, [valid, unpriced])
+    assert len(rows) == 1
+    assert rows[0]["event_id"] == "event-1"
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["n_games_unpriced"] == 1
+    assert meta["error"] == "NO_USABLE_PROVIDER_FEATURED_ODDS"
+
+
+def test_all_unpriced_featured_events_fail_closed_not_empty_slate(monkeypatch):
+    unpriced = _valid_game()
+    unpriced["bookmakers"] = []
+    rows, meta = _fetch(monkeypatch, [unpriced])
+    assert rows == []
+    assert meta["ok"] is False
+    assert meta["partial"] is True
+    assert meta["n_games_unpriced"] == 1
+    assert meta["error"] == "NO_USABLE_PROVIDER_FEATURED_ODDS"
