@@ -926,3 +926,33 @@ def test_explicit_invalid_decimal_cannot_be_verified_even_with_valid_american(mo
     assert [m["status"] for m in messages] == ["HELD_BACK"] * (len(rows) - 1) + ["VERIFIED"]
     assert all(m["holdback_reason"] == "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS"
                for m in messages[:-1])
+
+
+def test_invalid_explicit_betting_line_is_held_back_despite_optimistic_flags(monkeypatch):
+    """Nonfinite or malformed spread points cannot be VERIFIED EXECUTABLE."""
+    sns = _setup(monkeypatch)
+    rows = []
+    for index, point in enumerate((float("nan"), float("inf"), True, "not-a-line")):
+        row = _verified_row()
+        row["event_id"] = f"invalid-point-{index}"
+        row["market"] = "spreads"
+        row["legs"][0]["point"] = point
+        row["legs"][1]["point"] = 1.5
+        assert not alerts._is_verified_executable(row)
+        assert alerts._holdback_reason(row) == "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS"
+        rows.append(row)
+
+    valid = _verified_row()
+    valid["event_id"] = "valid-spread-points"
+    valid["market"] = "spreads"
+    valid["legs"][0]["point"] = "-1.5"
+    valid["legs"][1]["point"] = 1.5
+    assert alerts._is_verified_executable(valid)
+    rows.append(valid)
+
+    result = alerts.publish_scan_opportunities({"hits": rows})
+    assert result == {"published": len(rows), "deduped": 0, "errors": 0}
+    messages = [json.loads(json.loads(call["Message"])["default"]) for call in sns.calls]
+    assert [item["status"] for item in messages] == ["HELD_BACK"] * 4 + ["VERIFIED"]
+    assert all(item["holdback_reason"] == "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS"
+               for item in messages[:4])
