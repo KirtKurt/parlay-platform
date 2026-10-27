@@ -195,3 +195,47 @@ def test_featured_mixed_invalid_american_prices_preserve_good_quotes_and_mark_pa
     assert meta["partial"] is True
     assert meta["error"] == "INVALID_PROVIDER_AMERICAN_ODDS"
     assert meta["n_outcomes_invalid_price"] == 4
+
+
+
+def test_sport_scan_marks_partial_when_featured_section_is_partial(monkeypatch):
+    # The all-sports endpoint relies on status["partial"], not nested metadata.
+    featured = [{"id": "featured-market"}]
+    extended = [{"id": "extended-market"}]
+    monkeypatch.setattr(provider, "fetch_featured_odds",
+                        lambda *args, **kwargs: (featured, {"ok": True, "partial": True}))
+    monkeypatch.setattr(provider, "fetch_event_markets",
+                        lambda *args, **kwargs: (extended, {"ok": True, "partial": False}))
+    result = provider.scan_sport_payload(
+        "baseball_mlb", bankroll=100, markets=["h2h", "player_points"], regions="us"
+    )
+    assert result["events"] == featured + extended
+    assert result["status"]["ok"] is True
+    assert result["status"]["partial"] is True
+
+
+def test_sport_scan_marks_partial_when_one_provider_section_fails(monkeypatch):
+    featured = [{"id": "featured-market"}]
+    monkeypatch.setattr(provider, "fetch_featured_odds",
+                        lambda *args, **kwargs: (featured, {"ok": True, "partial": False}))
+    monkeypatch.setattr(provider, "fetch_event_markets",
+                        lambda *args, **kwargs: ([], {"ok": False, "error": "PROVIDER_HTTP_401"}))
+    result = provider.scan_sport_payload(
+        "baseball_mlb", bankroll=100, markets=["h2h", "player_points"], regions="us"
+    )
+    assert result["events"] == featured
+    assert result["status"]["ok"] is True
+    assert result["status"]["partial"] is True
+    assert result["status"]["extended"]["error"] == "PROVIDER_HTTP_401"
+
+
+def test_sport_scan_certifies_complete_only_when_all_requested_sections_succeed(monkeypatch):
+    monkeypatch.setattr(provider, "fetch_featured_odds",
+                        lambda *args, **kwargs: ([], {"ok": True, "partial": False}))
+    monkeypatch.setattr(provider, "fetch_event_markets",
+                        lambda *args, **kwargs: ([], {"ok": True, "partial": False}))
+    result = provider.scan_sport_payload(
+        "baseball_mlb", bankroll=100, markets=["h2h", "player_points"], regions="us"
+    )
+    assert result["status"]["ok"] is True
+    assert result["status"]["partial"] is False
