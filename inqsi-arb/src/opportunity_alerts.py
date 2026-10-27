@@ -26,7 +26,14 @@ def enabled() -> bool:
 
 
 def _legs(row: Dict[str, Any]) -> list:
-    return list(row.get("legs") or row.get("quotes") or [])
+    # Alert presentation is best-effort for malformed held-back candidates.
+    # Keep only mapping legs so identity, timestamp, and SMS formatting cannot
+    # suppress the candidate or subsequent valid alerts. Executable proof
+    # still checks the original unfiltered legs in _verified_legs_present.
+    raw = row.get("legs") or row.get("quotes") or []
+    if not isinstance(raw, list):
+        return []
+    return [leg for leg in raw if isinstance(leg, dict)]
 
 
 def _positive_finite(value: Any) -> bool:
