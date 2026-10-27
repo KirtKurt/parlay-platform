@@ -95,7 +95,7 @@ jobs:
 
           status, catalog = get('/v1/arb/catalog')
           checkpoint_observation('catalog', status, catalog)
-          assert status == 200 and catalog.get('ok') is True, catalog
+          assert status == 200 and catalog.get('ok') is True, 'PROVIDER_SPORTS_CATALOG_UNHEALTHY (see sanitized observation artifact)'
           sports = [str(row.get('key') or '').strip() for row in catalog.get('sports', []) if isinstance(row, dict)]
           sports = [sport for sport in sports if sport]
           assert sports, 'EMPTY_PROVIDER_SPORTS_CATALOG (see sanitized observation artifact)'
