@@ -664,3 +664,54 @@ def test_incomplete_or_ambiguous_legs_cannot_claim_verified_executable(monkeypat
         "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS",
         "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS",
     ]
+
+
+def test_sns_failure_diagnostics_redact_sensitive_exception_messages(monkeypatch, capsys):
+    """Failed SNS attempts are diagnosable without leaking exception payloads."""
+    sns = _setup(monkeypatch)
+    released = []
+    monkeypatch.setattr(alerts, "release_claim", lambda *args, **kwargs: released.append(args))
+
+    class Rejected(Exception):
+        response = {"Error": {"Code": "AuthorizationError"}}
+
+    def rejected(**kwargs):
+        raise Rejected("secret-token-never-log")
+
+    sns.publish = rejected
+    result = alerts.publish_scan_opportunities({"hits": [_verified_row()]})
+    assert result == {"published": 0, "deduped": 0, "errors": 1}
+    output = capsys.readouterr().out
+    assert "secret-token-never-log" not in output
+    assert "ARB_SNS_PUBLISH_CONFIRMED" not in output
+    event = json.loads(output.strip().splitlines()[-1])
+    assert event["event"] == "ARB_SNS_PUBLISH_FAILED"
+    assert event["status"] == "VERIFIED"
+    assert event["error_type"] == "Rejected"
+    assert event["error_code"] == "AuthorizationError"
+    assert event["publish_attempted"] is True
+    assert event["claim_released"] is True
+    assert len(event["identity"]) == 64
+    assert len(released) == 1
+
+
+def test_ambiguous_sns_failure_is_logged_without_releasing_claim(monkeypatch, capsys):
+    sns = _setup(monkeypatch)
+    released = []
+    monkeypatch.setattr(alerts, "release_claim", lambda *args, **kwargs: released.append(args))
+
+    def timeout(**kwargs):
+        raise TimeoutError("sensitive-network-detail")
+
+    sns.publish = timeout
+    result = alerts.publish_scan_opportunities({"hits": [_verified_row()]})
+    assert result == {"published": 0, "deduped": 0, "errors": 1}
+    output = capsys.readouterr().out
+    assert "sensitive-network-detail" not in output
+    event = json.loads(output.strip().splitlines()[-1])
+    assert event["event"] == "ARB_SNS_PUBLISH_FAILED"
+    assert event["error_type"] == "TimeoutError"
+    assert event["error_code"] == ""
+    assert event["publish_attempted"] is True
+    assert event["claim_released"] is False
+    assert released == []
