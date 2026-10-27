@@ -902,3 +902,27 @@ def test_sms_omits_invalid_points_without_affecting_held_back_classification(mon
     payload = json.loads(sns.calls[0]["Message"])
     assert "HELD BACK" in payload["sms"]
     assert "line nan" not in payload["sms"].lower()
+
+
+def test_explicit_invalid_decimal_cannot_be_verified_even_with_valid_american(monkeypatch):
+    """Both supplied price representations must be valid before an executable alert."""
+    sns = _setup(monkeypatch)
+    rows = []
+    for index, decimal in enumerate((0, 1, -1, float("nan"), float("inf"), True, "not-a-price")):
+        row = _verified_row()
+        row["event_id"] = f"event-bad-decimal-{index}"
+        row["legs"][0]["decimal"] = decimal
+        assert not alerts._is_verified_executable(row)
+        rows.append(row)
+    valid = _verified_row()
+    valid["event_id"] = "event-valid-dual-price"
+    valid["legs"][0]["decimal"] = 2.15
+    assert alerts._is_verified_executable(valid)
+    rows.append(valid)
+
+    out = alerts.publish_scan_opportunities({"hits": rows})
+    assert out == {"published": len(rows), "deduped": 0, "errors": 0}
+    messages = [json.loads(json.loads(call["Message"])["default"]) for call in sns.calls]
+    assert [m["status"] for m in messages] == ["HELD_BACK"] * (len(rows) - 1) + ["VERIFIED"]
+    assert all(m["holdback_reason"] == "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS"
+               for m in messages[:-1])
