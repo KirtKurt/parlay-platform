@@ -750,3 +750,43 @@ def test_sms_verified_requires_real_priced_legs_and_declared_outcome_universe(mo
                for message in messages[:-1])
     assert messages[-1]["status"] == "VERIFIED"
     assert "book-a home +115" in json.loads(sns.calls[-1]["Message"])["sms"]
+
+
+def test_sms_quote_age_requires_all_valid_provider_timestamps():
+    """Unknown, malformed, or future timestamps must never claim a known age."""
+    from datetime import datetime, timezone
+    now = datetime(2026, 10, 27, 14, 0, tzinfo=timezone.utc)
+    row = _verified_row()
+    assert alerts._oldest_quote_age_seconds(row, as_of=now) is None
+    row["legs"][0]["last_update"] = "2026-10-27T13:59:30Z"
+    row["legs"][1]["last_update"] = "2026-10-27T13:58:00+00:00"
+    assert alerts._oldest_quote_age_seconds(row, as_of=now) == 120
+    row["legs"][1]["last_update"] = "2026-10-27T14:00:01Z"
+    assert alerts._oldest_quote_age_seconds(row, as_of=now) is None
+    row["legs"][1]["last_update"] = "2026-10-27T13:58:00"
+    assert alerts._oldest_quote_age_seconds(row, as_of=now) is None
+    row["legs"][1]["last_update"] = "bad timestamp"
+    assert alerts._oldest_quote_age_seconds(row, as_of=now) is None
+
+
+def test_sns_sms_and_structured_payload_include_conservative_oldest_quote_age(monkeypatch):
+    """Quote age is informative only; never changes verified status or identity."""
+    from datetime import datetime, timedelta, timezone
+    sns = _setup(monkeypatch)
+    now = datetime.now(timezone.utc)
+    row = _verified_row()
+    row["legs"][0]["last_update"] = (now - timedelta(seconds=60)).isoformat()
+    row["legs"][1]["last_update"] = (now - timedelta(seconds=135)).isoformat()
+    baseline_identity = alerts._identity("VERIFIED", row)
+    result = alerts.publish_scan_opportunities({"hits": [row]})
+    assert result == {"published": 1, "deduped": 0, "errors": 0}
+    payload = json.loads(sns.calls[0]["Message"])
+    message = json.loads(payload["default"])
+    assert message["status"] == "VERIFIED"
+    assert message["quote_last_updates"] == [
+        row["legs"][0]["last_update"], row["legs"][1]["last_update"],
+    ]
+    assert 134 <= message["quote_age_seconds"] <= 150
+    assert "oldest quote age " in payload["sms"]
+    assert alerts._identity("VERIFIED", row) == baseline_identity
+    assert len(payload["sms"]) <= 1000
