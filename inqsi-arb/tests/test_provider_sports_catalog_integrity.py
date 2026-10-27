@@ -66,3 +66,29 @@ def test_provider_authentication_failure_preserves_original_evidence(monkeypatch
     sports, meta = _catalog(monkeypatch, None, upstream)
     assert sports == []
     assert meta == upstream
+
+
+def test_duplicate_sport_keys_are_deduplicated_and_coverage_is_partial(monkeypatch):
+    sports, meta = _catalog(monkeypatch, [
+        {"key": "basketball_nba", "title": "NBA", "active": True},
+        {"key": "basketball_nba", "title": "Duplicate", "active": False},
+        {"key": "soccer_epl", "active": True},
+    ])
+    assert [row["key"] for row in sports] == ["basketball_nba", "soccer_epl"]
+    assert sports[0]["title"] == "NBA"
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["error"] == "DUPLICATE_PROVIDER_SPORT_KEY"
+    assert meta["n_sports_received"] == 3
+    assert meta["n_sports_invalid"] == 0
+    assert meta["n_sports_duplicates"] == 1
+
+
+def test_duplicate_keys_after_canonical_whitespace_normalization(monkeypatch):
+    sports, meta = _catalog(monkeypatch, [
+        {"key": "icehockey_nhl"},
+        {"key": " icehockey_nhl "},
+    ])
+    assert [row["key"] for row in sports] == ["icehockey_nhl"]
+    assert meta["partial"] is True
+    assert meta["n_sports_duplicates"] == 1
