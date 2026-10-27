@@ -78,6 +78,33 @@ def test_sns_client_initialization_failure_preserves_scan_and_does_not_claim(mon
     assert "ARB_SNS_CLIENT_INIT_FAILED" in capsys.readouterr().out
 
 
+def test_malformed_held_back_legs_do_not_suppress_other_opportunity_alerts(monkeypatch):
+    """Broken quote collections stay HELD BACK; neighboring alerts still publish."""
+    sns = _setup(monkeypatch)
+    mixed = _verified_row()
+    mixed["event_id"] = "event-mixed-legs"
+    mixed["legs"] = [None, {"outcome": "home", "book": "book-a", "american": 115}, "bad-leg"]
+    wrong_type = _verified_row()
+    wrong_type["event_id"] = "event-nonlist-legs"
+    wrong_type["legs"] = {"book": "book-a", "outcome": "home", "american": 115}
+    valid = _verified_row()
+
+    assert not alerts._is_verified_executable(mixed)
+    assert not alerts._is_verified_executable(wrong_type)
+    result = alerts.publish_scan_opportunities({"hits": [mixed, wrong_type, valid]})
+    assert result == {"published": 3, "deduped": 0, "errors": 0}
+    payloads = [json.loads(call["Message"]) for call in sns.calls]
+    messages = [json.loads(payload["default"]) for payload in payloads]
+    assert [message["status"] for message in messages] == ["HELD_BACK", "HELD_BACK", "VERIFIED"]
+    assert messages[0]["legs"] == [{"outcome": "home", "book": "book-a", "american": 115}]
+    assert messages[1]["legs"] == []
+    assert all(message["holdback_reason"] == "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS"
+               for message in messages[:2])
+    assert all("HELD BACK" in payload["sms"] for payload in payloads[:2])
+    assert "VERIFIED EXECUTABLE" in payloads[2]["sms"]
+    assert mixed["legs"][0] is None  # audited source rows are never mutated
+
+
 def test_verified_and_held_candidates_publish_immediately(monkeypatch):
     sns = _setup(monkeypatch)
     held = {
