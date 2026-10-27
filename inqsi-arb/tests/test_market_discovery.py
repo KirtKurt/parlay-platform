@@ -259,19 +259,21 @@ def test_failed_fallback_preserves_provider_error_for_event_discovery(monkeypatc
             [], {"ok": False, "status": 401, "error": "PROVIDER_HTTP_401"}
         ),
     )
-    monkeypatch.setattr(
-        discovery,
-        "_probe_market_batch",
-        lambda *_args, **_kwargs: (
-            [], [], [{"ok": False, "status": 401, "error": "PROVIDER_HTTP_401", "depth": 0}]
-        ),
-    )
+    # A 401 from the live inventory must not trigger another request with
+    # the same rejected provider credential.
+    def unexpected_probe(*_args, **_kwargs):
+        raise AssertionError("HTTP 401 must not trigger static market probes")
+
+    monkeypatch.setattr(discovery, "_probe_market_batch", unexpected_probe)
     keys, meta = discovery.discover_event_market_keys("baseball_mlb", "event-401")
     assert keys == []
     assert meta["ok"] is False
     assert meta["error"] == "PROVIDER_HTTP_401"
     assert meta["status"] == 401
     assert meta["event_markets_error"] == "PROVIDER_HTTP_401"
+    assert meta["fallback_used"] is False
+    assert meta["partial"] is True
+    assert meta["probe_requests"] == 0
 
     report = discovery.discover_sport_event_markets(
         "baseball_mlb", [{"id": "event-401"}]
@@ -299,13 +301,12 @@ def test_full_market_fetch_retains_per_event_failure_evidence(monkeypatch):
             [], {"ok": False, "status": 401, "error": "PROVIDER_HTTP_401"}
         ),
     )
-    monkeypatch.setattr(
-        discovery,
-        "_probe_market_batch",
-        lambda *_args, **_kwargs: (
-            [], [], [{"ok": False, "status": 401, "error": "PROVIDER_HTTP_401", "depth": 0}]
-        ),
-    )
+    # A 401 from the live inventory must not trigger another request with
+    # the same rejected provider credential.
+    def unexpected_probe(*_args, **_kwargs):
+        raise AssertionError("HTTP 401 must not trigger static market probes")
+
+    monkeypatch.setattr(discovery, "_probe_market_batch", unexpected_probe)
     rows, report = discovery.fetch_all_discovered_markets(
         "baseball_mlb", regions="us"
     )
@@ -318,7 +319,9 @@ def test_full_market_fetch_retains_per_event_failure_evidence(monkeypatch):
     assert detail["status"] == 401
     assert detail["event_markets_error"] == "PROVIDER_HTTP_401"
     assert detail["event_markets_status"] == 401
-    assert detail["probe_requests"] == 1
+    assert detail["probe_requests"] == 0
+    assert detail["fallback_used"] is False
+    assert detail["partial"] is True
 
 
 def test_nested_auth_failure_not_masked_by_initial_unsupported_market(monkeypatch):
