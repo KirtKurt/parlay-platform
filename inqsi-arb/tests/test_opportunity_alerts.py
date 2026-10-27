@@ -585,3 +585,20 @@ def test_doubleheader_games_do_not_share_an_sms_dedupe_identity(monkeypatch):
     result = alerts.publish_scan_opportunities({"hits": [first, second, retry]})
     assert result == {"published": 2, "deduped": 1, "errors": 0}
     assert len(sns.calls) == 2
+
+
+def test_zero_fallback_alert_values_are_preserved_and_deduped_correctly():
+    """A real zero cannot be silently replaced by a lower-priority field."""
+    row = _verified_row()
+    row.pop("margin_pct")
+    row.pop("minimum_profit")
+    row.pop("allocated_stake")
+    row.update({"margin": 0, "edge": 1.25, "profit": 0, "min_profit": 12.5,
+                "stake_total": 0, "bankroll": 1000})
+    message = alerts._message("HELD_BACK", row, audit_event_id=None)
+    assert message["margin"] == 0
+    assert message["profit"] == 0
+    assert message["stake_total"] == 0
+    changed = {**row, "margin": 1.25}
+    assert alerts._identity("HELD_BACK", row) != alerts._identity("HELD_BACK", changed)
+    assert alerts._identity("HELD_BACK", row) == alerts._identity("HELD_BACK", dict(row))
