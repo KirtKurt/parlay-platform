@@ -251,6 +251,7 @@ def _message(status: str, row: Dict[str, Any], *, audit_event_id: str | None) ->
         "audit_event_id": audit_event_id,
         "sport": row.get("sport"),
         "event_id": row.get("event_id") or row.get("event"),
+        "commence_time": row.get("commence_time"),
         "market": row.get("market"),
         "margin": _first_not_none(row, "margin_pct", "margin", "edge", "arb_pct"),
         "profit": _first_not_none(row, "minimum_profit", "profit", "min_profit", "guaranteed_profit"),
@@ -285,17 +286,34 @@ def _sms_text(status: str, row: Dict[str, Any], message: Dict[str, Any]) -> str:
         if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and abs(value) >= 100:
             return f"{value:+.0f}" if value > 0 else f"{value:.0f}"
         decimal = leg.get("decimal")
+        if isinstance(decimal, str):
+            try:
+                decimal = float(decimal.strip())
+            except (ValueError, OverflowError):
+                decimal = None
         if isinstance(decimal, (int, float)) and not isinstance(decimal, bool) and math.isfinite(decimal) and decimal > 1:
             odds = 100 * (decimal - 1) if decimal >= 2 else -100 / (decimal - 1)
             return f"{odds:+.0f}" if odds > 0 else f"{odds:.0f}"
         return "odds?"
+
+    def line_text(leg: Dict[str, Any]) -> str:
+        # A spread/total price without its handicap can describe a different
+        # selection. Only show a finite numeric point; never invent a line.
+        value = leg.get("point")
+        if isinstance(value, bool) or value is None:
+            return ""
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return ""
+        return f" line {numeric:+g}" if math.isfinite(numeric) else ""
 
     title = "Inqsi ARB VERIFIED EXECUTABLE" if status == "VERIFIED" else "Inqsi ARB HELD BACK"
     event = row.get("event") or message.get("event_id") or "event?"
     parts = [title, clean(message.get("sport"), 40), clean(event, 100), clean(message.get("market"), 60)]
     legs = [
         f"{clean(leg.get('book') or leg.get('bookmaker'), 30)} "
-        f"{clean(leg.get('outcome') or leg.get('name'), 30)} {american(leg)}"
+        f"{clean(leg.get('outcome') or leg.get('name'), 30)}{line_text(leg)} {american(leg)}"
         for leg in _legs(row)[:6]
         if isinstance(leg, dict)
     ]
@@ -308,6 +326,8 @@ def _sms_text(status: str, row: Dict[str, Any], message: Dict[str, Any]) -> str:
         parts.append(f"stake {clean(message['stake_total'], 24)}")
     if message.get("profit") is not None:
         parts.append(f"profit {clean(message['profit'], 24)}")
+    if message.get('commence_time'):
+        parts.append(f"starts {clean(message['commence_time'], 40)}")
     parts.append(f"detected {clean(message.get('detected_at'), 40)}")
     if message.get("quote_last_updates"):
         parts.append(f"quote {clean(message['quote_last_updates'][0], 40)}")

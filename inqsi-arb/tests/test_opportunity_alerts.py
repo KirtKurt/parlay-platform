@@ -860,3 +860,45 @@ def test_declared_three_way_market_accepts_three_distinct_priced_legs():
     assert alerts._verified_legs_present(row)
     row["market"] = "h2h"
     assert alerts._verified_legs_present(row)
+
+
+def test_sms_preserves_event_start_and_handicap_per_leg(monkeypatch):
+    """Do not hide the priced point on spread/total opportunities."""
+    sns = _setup(monkeypatch)
+    row = _verified_row()
+    row["market"] = "spreads"
+    row["commence_time"] = "2026-10-28T19:30:00Z"
+    row["legs"][0]["point"] = -1.5
+    row["legs"][1]["point"] = 1.5
+    assert alerts._is_verified_executable(row)
+    assert alerts.publish_scan_opportunities({"hits": [row]})["published"] == 1
+    payload = json.loads(sns.calls[0]["Message"])
+    structured = json.loads(payload["default"])
+    assert structured["commence_time"] == "2026-10-28T19:30:00Z"
+    assert "starts 2026-10-28T19:30:00Z" in payload["sms"]
+    assert "book-a home line -1.5 +115" in payload["sms"]
+    assert "book-b away line +1.5 +105" in payload["sms"]
+
+
+def test_sms_formats_decimal_string_odds_as_american_without_weakening_proof(monkeypatch):
+    sns = _setup(monkeypatch)
+    row = _verified_row()
+    row["legs"][0].pop("american")
+    row["legs"][0]["decimal"] = "2.15"
+    assert alerts._is_verified_executable(row)
+    assert alerts.publish_scan_opportunities({"hits": [row]})["published"] == 1
+    payload = json.loads(sns.calls[0]["Message"])
+    assert "book-a home +115" in payload["sms"]
+    assert "odds?" not in payload["sms"]
+
+
+def test_sms_omits_invalid_points_without_affecting_held_back_classification(monkeypatch):
+    sns = _setup(monkeypatch)
+    row = _verified_row()
+    row["legs"][0]["point"] = float("nan")
+    row["validation"]["rules_compatible"] = False
+    assert not alerts._is_verified_executable(row)
+    assert alerts.publish_scan_opportunities({"hits": [row]})["published"] == 1
+    payload = json.loads(sns.calls[0]["Message"])
+    assert "HELD BACK" in payload["sms"]
+    assert "line nan" not in payload["sms"].lower()
