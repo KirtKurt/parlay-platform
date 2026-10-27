@@ -73,12 +73,21 @@ def list_sports(*, all_sports: bool = False) -> Tuple[List[Dict[str, Any]], Dict
         }
     sports = []
     invalid = 0
+    duplicates = 0
+    seen_keys = set()
     for s in payload:
         if not isinstance(s, dict) or not isinstance(s.get("key"), str) or not s["key"].strip():
             invalid += 1
             continue
+        # A duplicate provider sport is not another covered competition.
+        # Retain the first valid row and flag the inventory as incomplete.
+        sport_key = s["key"].strip()
+        if sport_key in seen_keys:
+            duplicates += 1
+            continue
+        seen_keys.add(sport_key)
         sports.append({
-            "key": s["key"].strip(),
+            "key": sport_key,
             "group": s.get("group"),
             "title": s.get("title"),
             "description": s.get("description"),
@@ -88,10 +97,15 @@ def list_sports(*, all_sports: bool = False) -> Tuple[List[Dict[str, Any]], Dict
     return sports, {
         **meta,
         "ok": bool(sports) or not payload,
-        "partial": bool(invalid),
-        "error": "MALFORMED_PROVIDER_SPORT_CATALOG" if invalid else meta.get("error"),
+        "partial": bool(invalid or duplicates),
+        "error": (
+            "MALFORMED_PROVIDER_SPORT_CATALOG" if invalid
+            else "DUPLICATE_PROVIDER_SPORT_KEY" if duplicates
+            else meta.get("error")
+        ),
         "n_sports_received": len(payload),
         "n_sports_invalid": invalid,
+        "n_sports_duplicates": duplicates,
     }
 
 
