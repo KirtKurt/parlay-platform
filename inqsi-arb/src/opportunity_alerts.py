@@ -350,12 +350,26 @@ def publish_scan_opportunities(result: Dict[str, Any], *, audit_event_id: str | 
                 "NotFound", "NotFoundException", "TopicLimitExceeded",
                 "Throttling", "ThrottlingException", "TooManyRequestsException",
             }
+            claim_released = False
             if claimed and (not publish_attempted or rejected):
                 try:
                     release_claim("ARB_OPPORTUNITY", identity, claim_token=claim_token)
+                    claim_released = True
                 except Exception:
                     # Preserve the original publish failure; never pretend
                     # the failed release proves the SMS was delivered.
                     pass
+            # Log only bounded diagnostic metadata. Exception messages can
+            # contain credentials, provider payloads, or customer details.
+            # An attempted publish without MessageId is never delivery proof.
+            print(json.dumps({
+                "event": "ARB_SNS_PUBLISH_FAILED" if publish_attempted else "ARB_SNS_PREPARE_FAILED",
+                "identity": identity if claimed else None,
+                "status": status,
+                "error_type": type(exc).__name__,
+                "error_code": code[:80],
+                "publish_attempted": publish_attempted,
+                "claim_released": claim_released,
+            }, sort_keys=True))
             errors += 1
     return {"published": published, "deduped": deduped, "errors": errors}
