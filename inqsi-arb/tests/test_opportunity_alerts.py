@@ -112,6 +112,30 @@ def test_unverified_hit_is_held_even_if_math_positive(monkeypatch):
     assert msg["holdback_reason"] == "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
 
 
+def test_top_level_candidate_rejection_prevents_false_verified_sms(monkeypatch):
+    """A contradictory candidate-level reason must not be labeled executable."""
+    sns = _setup(monkeypatch)
+    row = _verified_row()
+    row["reason"] = "SPORTSBOOK_SETTLEMENT_RULES_UNVERIFIED"
+    assert alerts._is_verified_executable(row) is False
+    result = alerts.publish_scan_opportunities({"hits": [row]})
+    assert result == {"published": 1, "deduped": 0, "errors": 0}
+    payload = json.loads(sns.calls[0]["Message"])
+    message = json.loads(payload["default"])
+    assert message["status"] == "HELD_BACK"
+    assert message["holdback_reason"] == "SPORTSBOOK_SETTLEMENT_RULES_UNVERIFIED"
+    assert "HELD BACK" in payload["sms"]
+    assert "VERIFIED EXECUTABLE" not in payload["sms"]
+
+
+def test_top_level_holdback_reason_change_is_material():
+    initial = _verified_row()
+    initial["reason"] = "SPORTSBOOK_SETTLEMENT_RULES_UNVERIFIED"
+    updated = _verified_row()
+    updated["reason"] = "SETTLEMENT_STATE_MISMATCH"
+    assert alerts._identity("HELD_BACK", initial) != alerts._identity("HELD_BACK", updated)
+
+
 def test_missing_settlement_proof_is_held(monkeypatch):
     sns = _setup(monkeypatch)
     row = _verified_row()
