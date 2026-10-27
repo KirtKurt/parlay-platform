@@ -1415,3 +1415,66 @@ def test_full_market_report_marks_mixed_invalid_prices_partial(monkeypatch):
     assert detail["markets"] == ["h2h"]
     assert detail["partial"] is True
     assert detail["error"] == "INVALID_PROVIDER_AMERICAN_ODDS"
+
+
+def test_inventory_missing_bookmaker_identity_cannot_certify_coverage(monkeypatch):
+    # A provider inventory with a missing book key is malformed even if
+    # its market keys are otherwise valid; do not label it complete.
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        discovery, "_get",
+        lambda *_args, **_kwargs: (
+            {"bookmakers": [
+                {"key": "book-a", "markets": [{"key": "h2h"}]},
+                {"markets": [{"key": "totals"}]},
+            ]},
+            {"ok": True, "status": 200},
+        ),
+    )
+    keys, meta = discovery._discover_event_markets_direct(
+        "baseball_mlb", "event-1", regions="us",
+    )
+    assert keys == []
+    assert meta["ok"] is False
+    assert meta["error"] == "MALFORMED_PROVIDER_MARKET_INVENTORY"
+
+
+def test_mixed_missing_bookmaker_identity_keeps_quotes_but_marks_partial(monkeypatch):
+    # A valid neighboring book must remain available to the ARB engine,
+    # while the malformed peer prevents a claim of exhaustive coverage.
+    monkeypatch.setattr(
+        discovery, "_request_event_odds",
+        lambda *_args, **_kwargs: (
+            {
+                "id": "event-1",
+                "home_team": "Home",
+                "away_team": "Away",
+                "bookmakers": [
+                    {"key": "book-a", "markets": [{
+                        "key": "h2h", "outcomes": [
+                            {"name": "Home", "price": -110},
+                            {"name": "Away", "price": 110},
+                        ],
+                    }]},
+                    {"markets": [{
+                        "key": "h2h", "outcomes": [
+                            {"name": "Home", "price": -105},
+                            {"name": "Away", "price": 105},
+                        ],
+                    }]},
+                ],
+            },
+            {"ok": True, "status": 200},
+        ),
+    )
+    accepted, rows, evidence = discovery._probe_market_batch(
+        "baseball_mlb", "event-1", ["h2h"], regions="us", bookmakers=None,
+    )
+    assert accepted == ["h2h"]
+    assert any(row.get("market") == "h2h" for row in rows)
+    assert evidence[0]["ok"] is False
+    assert evidence[0]["error"] == "INVALID_PROVIDER_BOOKMAKER_IDENTITY"
+    assert evidence[0]["n_bookmakers_invalid_identity"] == 1
+    assert discovery._primary_probe_failure(evidence, terminal_only=True)["error"] == (
+        "INVALID_PROVIDER_BOOKMAKER_IDENTITY"
+    )
