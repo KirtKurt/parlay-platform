@@ -94,6 +94,15 @@ def _verified_legs_present(row: Dict[str, Any]) -> bool:
                 return False
         elif american is None:
             return False
+        # Two individually valid price formats can still describe different
+        # wagers. Allow ordinary two-decimal provider rounding, but never
+        # certify a contradictory American/decimal pair as executable.
+        if american is not None and decimal is not None:
+            american_price = float(american)
+            expected_decimal = (1 + american_price / 100 if american_price > 0
+                                else 1 + 100 / abs(american_price))
+            if abs(numeric - expected_decimal) > 0.025:
+                return False
         # A malformed explicit spread/total point is contradictory selection
         # evidence. Never promote an invalid handicap to an executable SMS,
         # even when optimistic upstream validation flags claim it is safe.
