@@ -36,17 +36,36 @@ def discover_events(sport_key: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any
     # An event belonging to another sport must never be treated as a live
     # event for this sport. Preserve correctly scoped peers and report partial
     # coverage when a provider catalog mixes sports.
-    rows = [
-        x for x in payload
-        if isinstance(x, dict) and x.get("id")
-        and (not x.get("sport_key") or x.get("sport_key") == sport_key)
-    ]
-    # Never certify full provider-visible coverage after silently discarding
-    # malformed event records from an otherwise successful response.
-    invalid = len(payload) - len(rows)
+    # Keep only well-formed provider event identities. Duplicate event IDs
+    # cannot establish additional coverage and must not trigger duplicate
+    # market scans or inflate the event count. Preserve the first valid row.
+    rows = []
+    seen_ids = set()
+    invalid = 0
+    duplicates = 0
+    for event in payload:
+        if not isinstance(event, dict):
+            invalid += 1
+            continue
+        event_id = event.get("id")
+        if (
+            not isinstance(event_id, str)
+            or not event_id.strip()
+            or event_id != event_id.strip()
+            or (event.get("sport_key") and event["sport_key"] != sport_key)
+        ):
+            invalid += 1
+            continue
+        if event_id in seen_ids:
+            duplicates += 1
+            continue
+        seen_ids.add(event_id)
+        rows.append(event)
+    # A mixed or duplicate inventory is partial even when valid events survive.
     return rows, {
         **meta, "n_events": len(rows), "n_events_received": len(payload),
-        "n_events_invalid": invalid, "partial": bool(invalid),
+        "n_events_invalid": invalid, "n_events_duplicates": duplicates,
+        "partial": bool(invalid or duplicates),
     }
 
 
@@ -496,4 +515,5 @@ def fetch_all_discovered_markets(
         "event_details": details[:100],
         "partial": bool(events_meta.get("partial")) or len(selected) < len(events) or any(bool(x.get("partial")) for x in details),
         "n_events_invalid": events_meta.get("n_events_invalid", 0),
+        "n_events_duplicates": events_meta.get("n_events_duplicates", 0),
     }
