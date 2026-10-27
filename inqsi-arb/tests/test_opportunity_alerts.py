@@ -626,3 +626,37 @@ def test_zero_fallback_alert_values_are_preserved_and_deduped_correctly():
     changed = {**row, "margin": 1.25}
     assert alerts._identity("HELD_BACK", row) != alerts._identity("HELD_BACK", changed)
     assert alerts._identity("HELD_BACK", row) == alerts._identity("HELD_BACK", dict(row))
+
+
+def test_incomplete_or_ambiguous_legs_cannot_claim_verified_executable(monkeypatch):
+    """Optimistic upstream flags cannot override missing/ambiguous bet legs."""
+    sns = _setup(monkeypatch)
+    missing = _verified_row()
+    missing["event_id"] = "missing-legs"
+    missing["legs"] = []
+
+    unnamed = _verified_row()
+    unnamed["event_id"] = "unnamed-book"
+    unnamed["legs"][0]["book"] = " "
+
+    duplicate = _verified_row()
+    duplicate["event_id"] = "duplicate-outcome"
+    duplicate["legs"][1]["outcome"] = "home"
+
+    valid = _verified_row()
+    for row in (missing, unnamed, duplicate):
+        assert not alerts._is_verified_executable(row)
+    assert alerts._is_verified_executable(valid)
+
+    result = alerts.publish_scan_opportunities({
+        "hits": [missing, unnamed, duplicate, valid],
+    })
+    assert result == {"published": 4, "deduped": 0, "errors": 0}
+    messages = [
+        json.loads(json.loads(call["Message"])["default"])
+        for call in sns.calls
+    ]
+    assert [message["status"] for message in messages] == [
+        "HELD_BACK", "HELD_BACK", "HELD_BACK", "VERIFIED",
+    ]
+    assert all(message["holdback_reason"] for message in messages[:3])
