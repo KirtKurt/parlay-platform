@@ -956,3 +956,35 @@ def test_invalid_explicit_betting_line_is_held_back_despite_optimistic_flags(mon
     assert [item["status"] for item in messages] == ["HELD_BACK"] * 4 + ["VERIFIED"]
     assert all(item["holdback_reason"] == "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS"
                for item in messages[:4])
+
+
+def test_contradictory_dual_format_odds_are_held_back_despite_optimistic_flags(monkeypatch):
+    """A valid American price plus a different valid decimal is not a proven bet."""
+    sns = _setup(monkeypatch)
+    rows = []
+    for index, (american, decimal) in enumerate(((115, 1.50), (-120, 2.15),
+                                                  ("+105", "1.75"))):
+        row = _verified_row()
+        row["event_id"] = f"contradictory-dual-price-{index}"
+        row["legs"][0]["american"] = american
+        row["legs"][0]["decimal"] = decimal
+        assert not alerts._is_verified_executable(row)
+        assert alerts._holdback_reason(row) == "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS"
+        rows.append(row)
+
+    result = alerts.publish_scan_opportunities({"hits": rows})
+    assert result == {"published": len(rows), "deduped": 0, "errors": 0}
+    messages = [json.loads(json.loads(call["Message"])["default"]) for call in sns.calls]
+    assert all(message["status"] == "HELD_BACK" for message in messages)
+    assert all(message["holdback_reason"] == "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS"
+               for message in messages)
+
+
+def test_consistent_dual_format_odds_allow_provider_rounding():
+    """Standard American/decimal conversion and two-decimal rounding stay valid."""
+    for american, decimal in ((115, 2.15), (-120, 1.83),
+                              ("+105", "2.05"), (-105, 1.95)):
+        row = _verified_row()
+        row["legs"][0]["american"] = american
+        row["legs"][0]["decimal"] = decimal
+        assert alerts._is_verified_executable(row)
