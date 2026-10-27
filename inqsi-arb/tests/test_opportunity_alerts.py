@@ -250,6 +250,33 @@ def test_material_stake_and_profit_changes_realert_without_odds_movement():
     assert alerts._identity("VERIFIED", original) == alerts._identity("VERIFIED", jitter)
 
 
+
+def test_displayed_fallback_stake_and_profit_changes_realert():
+    """A displayed change must not be hidden by a dedupe key omitting fallback fields."""
+    original = _verified_row()
+    original.pop("allocated_stake")
+    original["stake_total"] = 1000.0
+    stake_changed = {**original, "stake_total": 850.0}
+    assert alerts._message("VERIFIED", original, audit_event_id=None)["stake_total"] == 1000.0
+    assert alerts._identity("VERIFIED", original) != alerts._identity("VERIFIED", stake_changed)
+
+    # Unqualified candidates may report profit under a fallback field.
+    held = _verified_row()
+    held.pop("minimum_profit")
+    held["profit"] = 12.50
+    profit_changed = {**held, "profit": 10.25}
+    assert not alerts._is_verified_executable(held)
+    assert alerts._message("HELD_BACK", held, audit_event_id=None)["profit"] == 12.50
+    assert alerts._identity("HELD_BACK", held) != alerts._identity("HELD_BACK", profit_changed)
+
+    # Alternate fallback fields and harmless float jitter retain their semantics.
+    alternate = {**held, "profit": None, "min_profit": 12.50, "bankroll": 500.0}
+    alternate_changed = {**alternate, "min_profit": 11.00}
+    assert alerts._identity("HELD_BACK", alternate) != alerts._identity("HELD_BACK", alternate_changed)
+    jitter = {**original, "stake_total": 1000.0000001}
+    assert alerts._identity("VERIFIED", original) == alerts._identity("VERIFIED", jitter)
+
+
 def test_zero_line_is_not_confused_with_fallback_point():
     original = _verified_row()
     original["point"] = 1.5
