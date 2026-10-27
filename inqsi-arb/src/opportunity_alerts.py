@@ -198,6 +198,35 @@ def _identity(status: str, row: Dict[str, Any]) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _oldest_quote_age_seconds(row: Dict[str, Any], *, as_of: datetime) -> int | None:
+    """Report quote age only when every leg has a valid UTC-aware timestamp.
+
+    This is diagnostic metadata, not a replacement for upstream freshness gates.
+    An incomplete or future-dated provider clock cannot establish quote age.
+    """
+    legs = row.get("legs") or row.get("quotes")
+    if not isinstance(legs, list) or not legs:
+        return None
+    ages = []
+    for leg in legs:
+        if not isinstance(leg, dict):
+            return None
+        stamp = leg.get("last_update")
+        if not isinstance(stamp, str) or not stamp.strip():
+            return None
+        try:
+            updated = datetime.fromisoformat(stamp.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if updated.tzinfo is None:
+            return None
+        seconds = (as_of - updated).total_seconds()
+        if not math.isfinite(seconds) or seconds < 0:
+            return None
+        ages.append(int(seconds))
+    return max(ages)
+
+
 def _message(status: str, row: Dict[str, Any], *, audit_event_id: str | None) -> Dict[str, Any]:
     return {
         "type": "ARB_OPPORTUNITY",
@@ -211,6 +240,7 @@ def _message(status: str, row: Dict[str, Any], *, audit_event_id: str | None) ->
         "stake_total": _first_not_none(row, "allocated_stake", "stake_total", "bankroll"),
         "detected_at": row.get("detected_at") or row.get("fetched_at") or row.get("timestamp") or datetime.now(timezone.utc).isoformat(),
         "quote_last_updates": [leg["last_update"] for leg in _legs(row) if leg.get("last_update")],
+        "quote_age_seconds": _oldest_quote_age_seconds(row, as_of=datetime.now(timezone.utc)),
         "holdback_reason": _holdback_reason(row) if status == "HELD_BACK" else None,
         "legs": _legs(row),
         "places_bets": False,
@@ -264,6 +294,8 @@ def _sms_text(status: str, row: Dict[str, Any], message: Dict[str, Any]) -> str:
     parts.append(f"detected {clean(message.get('detected_at'), 40)}")
     if message.get("quote_last_updates"):
         parts.append(f"quote {clean(message['quote_last_updates'][0], 40)}")
+    if message.get("quote_age_seconds") is not None:
+        parts.append(f"oldest quote age {clean(message['quote_age_seconds'], 20)}s")
     if status != "VERIFIED":
         parts.append(f"reason {clean(message.get('holdback_reason'), 120)}")
     # SNS permits up to 1,600 characters for a single SMS publish; keep the
