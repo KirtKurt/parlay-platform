@@ -715,3 +715,38 @@ def test_ambiguous_sns_failure_is_logged_without_releasing_claim(monkeypatch, ca
     assert event["publish_attempted"] is True
     assert event["claim_released"] is False
     assert released == []
+
+
+def test_sms_verified_requires_real_priced_legs_and_declared_outcome_universe(monkeypatch):
+    """Contradictory upstream VERIFIED flags cannot conceal unpriced or missing outcomes."""
+    sns = _setup(monkeypatch)
+    rows = []
+    for index, invalid in enumerate((None, 0, 99, -99, float("nan"), "invalid", True)):
+        row = _verified_row()
+        row["event_id"] = f"bad-odds-{index}"
+        row["legs"][0]["american"] = invalid
+        assert not alerts._is_verified_executable(row)
+        assert alerts._holdback_reason(row) == "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS"
+        rows.append(row)
+
+    missing_draw = _verified_row()
+    missing_draw["event_id"] = "three-way-missing-draw"
+    missing_draw["outcomes"] = ["home", "away", "draw"]
+    assert not alerts._is_verified_executable(missing_draw)
+    rows.append(missing_draw)
+
+    decimal_only = _verified_row()
+    decimal_only["event_id"] = "valid-decimal"
+    decimal_only["legs"][0].pop("american")
+    decimal_only["legs"][0]["decimal"] = 2.15
+    decimal_only["outcomes"] = ["away", "home"]
+    assert alerts._is_verified_executable(decimal_only)
+
+    result = alerts.publish_scan_opportunities({"hits": rows + [decimal_only]})
+    assert result == {"published": len(rows) + 1, "deduped": 0, "errors": 0}
+    messages = [json.loads(json.loads(call["Message"])["default"]) for call in sns.calls]
+    assert all(message["status"] == "HELD_BACK" for message in messages[:-1])
+    assert all(message["holdback_reason"] == "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS"
+               for message in messages[:-1])
+    assert messages[-1]["status"] == "VERIFIED"
+    assert "book-a home +115" in json.loads(sns.calls[-1]["Message"])["sms"]
