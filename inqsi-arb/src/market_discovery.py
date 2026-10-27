@@ -108,6 +108,8 @@ def _discover_event_markets_direct(
         or not isinstance(payload.get("bookmakers"), list)
         or any(
             not isinstance(book, dict)
+            or not isinstance(book.get("key"), str)
+            or not book["key"].strip()
             or not isinstance(book.get("markets"), list)
             or any(
                 not isinstance(market, dict)
@@ -231,8 +233,17 @@ def _probe_market_batch(
         # Quote normalization drops malformed explicit lines and prices.
         # A surviving valid quote must not certify complete provider-visible
         # coverage when neighboring requested quotes were discarded.
+        # A malformed bookmaker identity can disappear during normalization
+        # while valid neighboring quotes survive. Preserve those quotes, but
+        # never certify the mixed response as complete provider coverage.
+        invalid_books = sum(
+            not isinstance(book.get("key"), str) or not book["key"].strip()
+            for book in books
+        )
         invalid_points = _invalid_point_count([payload], requested)
         invalid_prices = _invalid_price_count([payload], requested)
+        if invalid_books:
+            evidence[0]["n_bookmakers_invalid_identity"] = invalid_books
         if invalid_points:
             evidence[0]["n_outcomes_invalid_point"] = invalid_points
         if invalid_prices:
@@ -243,6 +254,9 @@ def _probe_market_batch(
         elif not returned:
             evidence[0]["ok"] = False
             evidence[0]["error"] = "NO_USABLE_PROVIDER_MARKET_ODDS"
+        elif invalid_books:
+            evidence[0]["ok"] = False
+            evidence[0]["error"] = "INVALID_PROVIDER_BOOKMAKER_IDENTITY"
         elif invalid_points:
             evidence[0]["ok"] = False
             evidence[0]["error"] = "INVALID_PROVIDER_MARKET_POINT"
@@ -294,6 +308,7 @@ def _primary_probe_failure(
                 "INVALID_PROVIDER_MARKET_POINT",
                 "INVALID_PROVIDER_AMERICAN_ODDS",
                 "UNREQUESTED_PROVIDER_MARKET_ODDS",
+                "INVALID_PROVIDER_BOOKMAKER_IDENTITY",
             }:
                 return row
         return {}
