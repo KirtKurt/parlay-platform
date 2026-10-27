@@ -504,7 +504,14 @@ def scan_sport_payload(sport_key: str, *, bankroll: float, markets: Sequence[str
         rows, meta = fetch_event_markets(sport_key, extended, regions=regions, bookmakers=bookmakers, max_events=max_events)
         events.extend(rows)
         status["extended"] = meta
-    status["ok"] = any((section or {}).get("ok") for section in (status["featured"], status["extended"]))
+    sections = [section for section in (status["featured"], status["extended"]) if section is not None]
+    status["ok"] = any(section.get("ok") for section in sections)
+    # A successful featured or extended section cannot conceal partial/failed
+    # coverage in its peer. The all-sports API reads this top-level flag,
+    # rather than inspecting each nested provider section independently.
+    status["partial"] = not sections or any(
+        not section.get("ok") or bool(section.get("partial")) for section in sections
+    )
     status["ts"] = datetime.now(timezone.utc).isoformat()
     status["n_normalized_markets"] = len(events)
     return {"bankroll": bankroll, "events": events, "status": status}
