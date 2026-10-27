@@ -36,7 +36,7 @@ def _positive_finite(value: Any) -> bool:
 
 
 def _verified_legs_present(row: Dict[str, Any]) -> bool:
-    """Never label a malformed or incomplete set of bet legs executable."""
+    """Require identified, priced, complete outcomes before an executable SMS."""
     legs = row.get("legs")
     if not isinstance(legs, list) or len(legs) < 2:
         return False
@@ -49,8 +49,43 @@ def _verified_legs_present(row: Dict[str, Any]) -> bool:
             return False
         if not isinstance(book, str) or not book.strip():
             return False
+        # The upstream executable flag cannot make an unpriced or invalid
+        # sportsbook leg executable. Reject contradictory explicit prices,
+        # including NaN, bools, zero and impossible American odds.
+        american = leg.get("american")
+        if american is None:
+            american = leg.get("american_odds")
+        if american is None:
+            american = leg.get("price")
+        if american is not None:
+            try:
+                numeric = float(american)
+            except (TypeError, ValueError, OverflowError):
+                return False
+            if isinstance(american, bool) or not math.isfinite(numeric) or abs(numeric) < 100:
+                return False
+        else:
+            decimal = leg.get("decimal")
+            try:
+                numeric = float(decimal)
+            except (TypeError, ValueError, OverflowError):
+                return False
+            if isinstance(decimal, bool) or not math.isfinite(numeric) or numeric <= 1:
+                return False
         outcomes.append(outcome.strip())
-    return len(set(outcomes)) == len(outcomes)
+    if len(set(outcomes)) != len(outcomes):
+        return False
+    # A three-way market with only two priced legs is not executable, even
+    # when a contradictory upstream row says outcome_coverage=complete.
+    expected = row.get("outcomes")
+    if expected is not None:
+        if (not isinstance(expected, list) or len(expected) < 2
+                or any(not isinstance(item, str) or not item.strip() for item in expected)):
+            return False
+        normalized = [item.strip() for item in expected]
+        if len(set(normalized)) != len(normalized) or set(normalized) != set(outcomes):
+            return False
+    return True
 
 
 def _is_verified_executable(row: Dict[str, Any]) -> bool:
