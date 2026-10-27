@@ -92,3 +92,36 @@ def test_duplicate_keys_after_canonical_whitespace_normalization(monkeypatch):
     assert [row["key"] for row in sports] == ["icehockey_nhl"]
     assert meta["partial"] is True
     assert meta["n_sports_duplicates"] == 1
+
+
+def test_string_false_active_flag_is_not_coerced_to_true(monkeypatch):
+    sports, meta = _catalog(monkeypatch, [
+        {"key": "basketball_nba", "active": "false"},
+        {"key": "icehockey_nhl", "active": False},
+        {"key": "soccer_epl", "active": True},
+    ])
+    assert [row["key"] for row in sports] == ["icehockey_nhl", "soccer_epl"]
+    assert sports[0]["active"] is False
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["error"] == "MALFORMED_PROVIDER_SPORT_CATALOG"
+    assert meta["n_sports_invalid"] == 1
+
+
+def test_all_malformed_active_flags_cannot_claim_complete_empty_catalog(monkeypatch):
+    sports, meta = _catalog(monkeypatch, [
+        {"key": "basketball_nba", "active": "true"},
+        {"key": "soccer_epl", "active": 1},
+        {"key": "icehockey_nhl", "active": None},
+    ])
+    assert sports == []
+    assert meta["ok"] is False
+    assert meta["partial"] is True
+    assert meta["n_sports_invalid"] == 3
+
+
+def test_absent_active_flag_keeps_provider_default(monkeypatch):
+    sports, meta = _catalog(monkeypatch, [{"key": "basketball_nba"}])
+    assert sports[0]["active"] is True
+    assert meta["ok"] is True
+    assert meta["partial"] is False
