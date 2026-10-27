@@ -83,7 +83,7 @@ jobs:
                           evidence['provider_error_code'] = error
               with open('arb-observation-proof.json', 'w', encoding='utf-8') as handle:
                   json.dump(evidence, handle, indent=2, sort_keys=True)
-                  handle.write('\\n')
+                  handle.write('\n')
 
           checkpoint_observation('started', None, {})
           status, health = get('/v1/arb/health')
