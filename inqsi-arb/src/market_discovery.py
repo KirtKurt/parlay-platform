@@ -340,6 +340,24 @@ def discover_event_market_keys(
             "fallback_used": False,
         }
 
+    # An HTTP 401 is a credential failure, not an unsupported market key.
+    # Probing a static catalog with the same rejected key wastes provider
+    # requests and cannot restore coverage; preserve the original error.
+    if observed_meta.get("status") == 401:
+        return [], {
+            **observed_meta,
+            "ok": False,
+            "discovery": "event_markets_endpoint",
+            "n_candidates": 0,
+            "n_market_keys": 0,
+            "partial": True,
+            "probe_requests": 0,
+            "evidence": [],
+            "fallback_used": False,
+            "event_markets_error": observed_meta.get("error"),
+            "event_markets_status": observed_meta.get("status"),
+        }
+
     candidates = candidate_markets_for_sport(sport_key)[:limit]
     accepted, _rows, evidence = _probe_market_batch(
         sport_key, event_id, candidates, regions=regions, bookmakers=bookmakers,
@@ -432,11 +450,14 @@ def fetch_all_discovered_markets(
         observed, discovery_meta = _discover_event_markets_direct(
             sport_key, event_id, regions=regions, bookmakers=bookmakers,
         )
-        fallback_used = not discovery_meta.get("ok")
+        # Invalid credentials cannot be fixed by a second odds request.
+        # Retain the event's 401 evidence and do not amplify auth failures.
+        auth_failed = discovery_meta.get("status") == 401
+        fallback_used = not discovery_meta.get("ok") and not auth_failed
         candidates = (
-            observed[:limit]
-            if not fallback_used
-            else candidate_markets_for_sport(sport_key)[:limit]
+            [] if auth_failed else
+            observed[:limit] if discovery_meta.get("ok") else
+            candidate_markets_for_sport(sport_key)[:limit]
         )
         accepted, rows, evidence = _probe_market_batch(
             sport_key, event_id, candidates, regions=regions, bookmakers=bookmakers,
@@ -445,7 +466,7 @@ def fetch_all_discovered_markets(
         probe_failure = _primary_probe_failure(evidence, terminal_only=bool(accepted))
         details.append({
             "event_id": event_id,
-            "ok": bool(accepted) or (not fallback_used and not candidates),
+            "ok": bool(accepted) or (bool(discovery_meta.get("ok")) and not candidates),
             "error": probe_failure.get("error") or (discovery_meta.get("error") if not accepted else None),
             "status": probe_failure.get("status") if probe_failure else (discovery_meta.get("status") if not accepted else None),
             "event_markets_error": discovery_meta.get("error"),
@@ -459,7 +480,7 @@ def fetch_all_discovered_markets(
             "fallback_used": fallback_used,
             # An inventory response alone cannot prove full price coverage when
             # one or more requested market keys failed to return usable odds.
-            "partial": (fallback_used or len(observed) > len(candidates)
+            "partial": (not discovery_meta.get("ok") or fallback_used or len(observed) > len(candidates)
                         or bool(set(candidates) - set(accepted))
                         or any(not probe.get("ok") for probe in evidence)),
         })
