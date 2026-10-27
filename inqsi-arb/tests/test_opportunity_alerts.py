@@ -659,4 +659,8 @@ def test_incomplete_or_ambiguous_legs_cannot_claim_verified_executable(monkeypat
     assert [message["status"] for message in messages] == [
         "HELD_BACK", "HELD_BACK", "HELD_BACK", "VERIFIED",
     ]
-    assert all(message["holdback_reason"] for message in messages[:3])
+    assert [message["holdback_reason"] for message in messages[:3]] == [
+        "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS",
+        "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS",
+        "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS",
+    ]
