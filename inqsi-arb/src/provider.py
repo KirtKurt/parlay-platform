@@ -79,6 +79,11 @@ def list_sports(*, all_sports: bool = False) -> Tuple[List[Dict[str, Any]], Dict
         if not isinstance(s, dict) or not isinstance(s.get("key"), str) or not s["key"].strip():
             invalid += 1
             continue
+        # Never coerce provider strings such as "false" to True. An
+        # untrusted active flag must not activate an unproven sport scan.
+        if "active" in s and not isinstance(s["active"], bool):
+            invalid += 1
+            continue
         # A duplicate provider sport is not another covered competition.
         # Retain the first valid row and flag the inventory as incomplete.
         sport_key = s["key"].strip()
