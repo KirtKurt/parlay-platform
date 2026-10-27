@@ -154,6 +154,28 @@ def _discover_event_markets_direct(
             **meta, "ok": False, "error": "MISMATCHED_PROVIDER_MARKET_INVENTORY_ID",
             "discovery": "event_markets_endpoint",
         }
+    # A repeated bookmaker or market identity is not evidence of additional
+    # provider-visible coverage. The endpoint cannot certify a complete live
+    # inventory when its own identity records conflict. Keep the existing
+    # bounded fallback path and its explicit partial-coverage classification.
+    seen_books = set()
+    for book in payload["bookmakers"]:
+        book_key = book["key"].strip()
+        if book_key in seen_books:
+            return [], {
+                **meta, "ok": False, "error": "DUPLICATE_PROVIDER_BOOKMAKER_KEY",
+                "discovery": "event_markets_endpoint",
+            }
+        seen_books.add(book_key)
+        seen_markets = set()
+        for market in book["markets"]:
+            market_key = market["key"].strip()
+            if market_key in seen_markets:
+                return [], {
+                    **meta, "ok": False, "error": "DUPLICATE_PROVIDER_MARKET_KEY",
+                    "discovery": "event_markets_endpoint",
+                }
+            seen_markets.add(market_key)
     keys: List[str] = []
     for book in payload["bookmakers"]:
         for market in book.get("markets") or []:
