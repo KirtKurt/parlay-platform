@@ -92,6 +92,7 @@ def _holdback_reason(row: Dict[str, Any]) -> str:
         or validation.get("settlement_state_reason")
         or validation.get("settlement_advisory")
         or ("SPORTSBOOK_SETTLEMENT_RULES_MISSING" if validation.get("missing_books") else None)
+        or ("OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS" if not _verified_legs_present(row) else None)
         or "EXECUTABLE_QUALIFICATION_NOT_PROVEN"
     )
 
