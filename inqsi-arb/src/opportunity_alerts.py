@@ -34,6 +34,25 @@ def _positive_finite(value: Any) -> bool:
             and math.isfinite(value) and value > 0)
 
 
+
+def _verified_legs_present(row: Dict[str, Any]) -> bool:
+    """Never label a malformed or incomplete set of bet legs executable."""
+    legs = row.get("legs")
+    if not isinstance(legs, list) or len(legs) < 2:
+        return False
+    outcomes = []
+    for leg in legs:
+        if not isinstance(leg, dict):
+            return False
+        outcome, book = leg.get("outcome"), leg.get("book")
+        if not isinstance(outcome, str) or not outcome.strip():
+            return False
+        if not isinstance(book, str) or not book.strip():
+            return False
+        outcomes.append(outcome.strip())
+    return len(set(outcomes)) == len(outcomes)
+
+
 def _is_verified_executable(row: Dict[str, Any]) -> bool:
     """Require the same strict profit and settlement proof as the ARB console."""
     validation = row.get("validation")
@@ -42,6 +61,7 @@ def _is_verified_executable(row: Dict[str, Any]) -> bool:
     settlement = validation.get("settlement_states")
     return bool(
         row.get("arb") is True
+        and _verified_legs_present(row)
         and row.get("math_arb") is True
         and row.get("executable") is True
         and validation.get("outcome_coverage") == "complete"
