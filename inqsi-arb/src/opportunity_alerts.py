@@ -73,6 +73,15 @@ def _holdback_reason(row: Dict[str, Any]) -> str:
     )
 
 
+def _first_not_none(row: Dict[str, Any], *keys: str) -> Any:
+    """Preserve zero-valued provider fields in alert details and identities."""
+    for key in keys:
+        value = row.get(key)
+        if value is not None:
+            return value
+    return None
+
+
 def _money_identity(value: Any) -> Any:
     if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
         return round(value, 2)
@@ -95,7 +104,7 @@ def _identity(status: str, row: Dict[str, Any]) -> str:
         "commence_time": row.get("commence_time"),
         "market": row.get("market"),
         "line": row.get("line") if row.get("line") is not None else row.get("point"),
-        "margin": row.get("margin_pct") if row.get("margin_pct") is not None else (row.get("margin") or row.get("edge") or row.get("arb_pct")),
+        "margin": _first_not_none(row, "margin_pct", "margin", "edge", "arb_pct"),
         # A changed feasible stake or guaranteed profit is material even when
         # the displayed book prices and percentage margin stay unchanged.
         # Normalize currency to cents to avoid alerts for float jitter.
@@ -138,9 +147,9 @@ def _message(status: str, row: Dict[str, Any], *, audit_event_id: str | None) ->
         "sport": row.get("sport"),
         "event_id": row.get("event_id") or row.get("event"),
         "market": row.get("market"),
-        "margin": row.get("margin_pct") if row.get("margin_pct") is not None else (row.get("margin") or row.get("edge") or row.get("arb_pct")),
-        "profit": row.get("minimum_profit") if row.get("minimum_profit") is not None else (row.get("profit") or row.get("min_profit") or row.get("guaranteed_profit")),
-        "stake_total": row.get("allocated_stake") if row.get("allocated_stake") is not None else (row.get("stake_total") or row.get("bankroll")),
+        "margin": _first_not_none(row, "margin_pct", "margin", "edge", "arb_pct"),
+        "profit": _first_not_none(row, "minimum_profit", "profit", "min_profit", "guaranteed_profit"),
+        "stake_total": _first_not_none(row, "allocated_stake", "stake_total", "bankroll"),
         "detected_at": row.get("detected_at") or row.get("fetched_at") or row.get("timestamp") or datetime.now(timezone.utc).isoformat(),
         "quote_last_updates": [leg["last_update"] for leg in _legs(row) if leg.get("last_update")],
         "holdback_reason": _holdback_reason(row) if status == "HELD_BACK" else None,
