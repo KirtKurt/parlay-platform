@@ -94,6 +94,18 @@ def _verified_legs_present(row: Dict[str, Any]) -> bool:
                 return False
         elif american is None:
             return False
+        # A malformed explicit spread/total point is contradictory selection
+        # evidence. Never promote an invalid handicap to an executable SMS,
+        # even when optimistic upstream validation flags claim it is safe.
+        # Absent points remain legitimate for straight moneyline markets.
+        point = leg.get("point")
+        if point is not None:
+            try:
+                numeric_point = float(point)
+            except (TypeError, ValueError, OverflowError):
+                return False
+            if isinstance(point, bool) or not math.isfinite(numeric_point):
+                return False
         outcomes.append(outcome.strip())
     if len(set(outcomes)) != len(outcomes):
         return False
