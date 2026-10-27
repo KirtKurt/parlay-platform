@@ -474,11 +474,15 @@ def test_malformed_first_candidate_does_not_suppress_later_verified_sms(monkeypa
     malformed["legs"] = ["not-a-quote"]
     valid = _verified_row()
     result = alerts.publish_scan_opportunities({"hits": [malformed, valid]})
-    assert result == {"published": 1, "deduped": 0, "errors": 1}
-    assert len(sns.calls) == 1
-    message = json.loads(json.loads(sns.calls[0]["Message"])["default"])
-    assert message["event_id"] == "event-1"
-    assert message["status"] == "VERIFIED"
+    assert result == {"published": 2, "deduped": 0, "errors": 0}
+    assert len(sns.calls) == 2
+    messages = [json.loads(json.loads(call["Message"])["default"]) for call in sns.calls]
+    assert messages[0]["event_id"] == "event-malformed"
+    assert messages[0]["status"] == "HELD_BACK"
+    assert messages[0]["holdback_reason"] == "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS"
+    assert messages[0]["legs"] == []
+    assert messages[1]["event_id"] == "event-1"
+    assert messages[1]["status"] == "VERIFIED"
 
 
 def test_non_object_candidates_do_not_abort_later_valid_sms(monkeypatch):
