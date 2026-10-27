@@ -50,7 +50,7 @@ def test_featured_title_only_book_keeps_quotes_but_cannot_certify_coverage(monke
 
 def test_extended_mixed_unkeyed_book_keeps_valid_prices_and_marks_partial(monkeypatch):
     game = _game("player_points")
-    game["bookmakers"].append(_book("player_points", key="  ", title="Title Only"))
+    game["bookmakers"].append(_book("player_points", key=None, title="Title Only"))
     monkeypatch.setattr(provider, "api_key", lambda: "test-key")
 
     def fake_get(url, _params):
