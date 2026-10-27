@@ -748,6 +748,55 @@ def test_discover_events_preserves_partial_coverage_for_malformed_provider_rows(
     assert meta["partial"] is True
 
 
+def test_discover_events_deduplicates_provider_ids_and_marks_coverage_partial(monkeypatch):
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        discovery, "_get",
+        lambda *_args, **_kwargs: (
+            [
+                {"id": "event-1", "home_team": "A"},
+                {"id": "event-1", "home_team": "duplicate"},
+                {"id": "event-2", "home_team": "B"},
+            ],
+            {"ok": True, "status": 200},
+        ),
+    )
+    events, meta = discovery.discover_events("baseball_mlb")
+    assert events == [
+        {"id": "event-1", "home_team": "A"},
+        {"id": "event-2", "home_team": "B"},
+    ]
+    assert meta["n_events_received"] == 3
+    assert meta["n_events"] == 2
+    assert meta["n_events_invalid"] == 0
+    assert meta["n_events_duplicates"] == 1
+    assert meta["partial"] is True
+
+
+def test_discover_events_rejects_nonstring_and_whitespace_ids(monkeypatch):
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        discovery, "_get",
+        lambda *_args, **_kwargs: (
+            [
+                {"id": {"bad": "identity"}},
+                {"id": ["bad"]},
+                {"id": "  "},
+                {"id": " event-1 "},
+                {"id": "event-1", "sport_key": "basketball_nba"},
+                {"id": "event-1", "sport_key": "baseball_mlb"},
+            ],
+            {"ok": True, "status": 200},
+        ),
+    )
+    events, meta = discovery.discover_events("baseball_mlb")
+    assert events == [{"id": "event-1", "sport_key": "baseball_mlb"}]
+    assert meta["n_events_received"] == 6
+    assert meta["n_events_invalid"] == 5
+    assert meta["n_events_duplicates"] == 0
+    assert meta["partial"] is True
+
+
 def test_full_market_report_inherits_partial_event_catalog(monkeypatch):
     monkeypatch.setattr(
         discovery, "discover_events",
