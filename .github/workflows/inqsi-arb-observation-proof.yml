@@ -38,7 +38,7 @@ jobs:
           API_URL: ${{ steps.endpoint.outputs.api_url }}
         run: |
           python - <<'PY'
-          import json, os, time, urllib.error, urllib.parse, urllib.request
+          import json, os, re, time, urllib.error, urllib.parse, urllib.request
           from datetime import datetime, timezone
 
           base = os.environ['API_URL'].rstrip('/')
@@ -58,13 +58,43 @@ jobs:
                       body = {'text': raw.decode('utf-8','replace')[:1000]}
                   return exc.code, body
 
+          def checkpoint_observation(stage, http_status, payload):
+              # Always leave a sanitized artifact, even when a fail-closed
+              # assertion below detects an unhealthy production provider.
+              evidence = {
+                  'checked_at': datetime.now(timezone.utc).isoformat(),
+                  'service': 'inqsi-arb',
+                  'stage': stage,
+                  'http_status': http_status,
+                  'ok': isinstance(payload, dict) and payload.get('ok') is True,
+                  'places_bets': False,
+              }
+              if isinstance(payload, dict):
+                  count = payload.get('n_sports')
+                  if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+                      evidence['n_sports'] = count
+                  provider = payload.get('provider')
+                  if isinstance(provider, dict):
+                      code = provider.get('status')
+                      if isinstance(code, int) and not isinstance(code, bool):
+                          evidence['provider_status'] = code
+                      error = provider.get('error')
+                      if isinstance(error, str) and re.fullmatch(r'[A-Z0-9_]{1,80}', error):
+                          evidence['provider_error_code'] = error
+              with open('arb-observation-proof.json', 'w', encoding='utf-8') as handle:
+                  json.dump(evidence, handle, indent=2, sort_keys=True)
+                  handle.write('\\n')
+
+          checkpoint_observation('started', None, {})
           status, health = get('/v1/arb/health')
+          checkpoint_observation('health', status, health)
           assert status == 200 and health.get('ok') is True, health
           assert health.get('places_bets') is False, health
           assert health.get('audit_persistence') is True, health
           assert health.get('automatic_market_discovery') is True, health
 
           status, catalog = get('/v1/arb/catalog')
+          checkpoint_observation('catalog', status, catalog)
           assert status == 200 and catalog.get('ok') is True, catalog
           sports = [str(row.get('key') or '').strip() for row in catalog.get('sports', []) if isinstance(row, dict)]
           sports = [sport for sport in sports if sport]
