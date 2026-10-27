@@ -40,6 +40,16 @@ def _verified_legs_present(row: Dict[str, Any]) -> bool:
     legs = row.get("legs")
     if not isinstance(legs, list) or len(legs) < 2:
         return False
+    # A declared three-outcome market cannot be verified using only two
+    # priced outcomes, even if upstream coverage flags contradict the legs.
+    # Draw-no-bet and ordinary two-way markets remain unaffected.
+    market = row.get("market") or row.get("market_key")
+    if isinstance(market, str):
+        key = market.strip().lower().replace("-", "_")
+        three_way = (key in {"1x2", "3_way", "three_way", "h2h_3_way"}
+                     or key.endswith("_1x2") or key.startswith("h2h_3_way_"))
+        if three_way and len(legs) != 3:
+            return False
     outcomes = []
     for leg in legs:
         if not isinstance(leg, dict):

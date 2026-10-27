@@ -790,3 +790,42 @@ def test_sns_sms_and_structured_payload_include_conservative_oldest_quote_age(mo
     assert "oldest quote age " in payload["sms"]
     assert alerts._identity("VERIFIED", row) == baseline_identity
     assert len(payload["sms"]) <= 1000
+
+
+def test_declared_three_way_market_cannot_verify_two_outcome_legs(monkeypatch):
+    """An optimistic upstream complete flag cannot hide a missing draw leg."""
+    sns = _setup(monkeypatch)
+    rows = []
+    for index, market in enumerate(("h2h_3_way", "h2h_3_way_h1", "corners_1x2", "1x2", "3-way")):
+        row = _verified_row()
+        row["event_id"] = f"three-way-{index}"
+        row["market"] = market
+        # Deliberately omit the expected-outcomes inventory: this is the
+        # contradiction the upstream coverage flag alone cannot resolve.
+        row.pop("outcomes", None)
+        assert not alerts._is_verified_executable(row)
+        assert alerts._holdback_reason(row) == "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS"
+        rows.append(row)
+
+    result = alerts.publish_scan_opportunities({"hits": rows})
+    assert result == {"published": len(rows), "deduped": 0, "errors": 0}
+    payloads = [json.loads(json.loads(call["Message"])["default"]) for call in sns.calls]
+    assert all(item["status"] == "HELD_BACK" for item in payloads)
+    assert all(item["holdback_reason"] == "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS"
+               for item in payloads)
+
+
+def test_declared_three_way_market_accepts_three_distinct_priced_legs():
+    """Three-way proof is additive; ordinary two-way and draw-no-bet survive."""
+    row = _verified_row()
+    row["market"] = "h2h_3_way"
+    row["legs"].append({"book": "book-c", "outcome": "draw", "american": 230})
+    assert alerts._verified_legs_present(row)
+    row["market"] = "corners_1x2"
+    assert alerts._verified_legs_present(row)
+    row["legs"].pop()
+    assert not alerts._verified_legs_present(row)
+    row["market"] = "draw_no_bet"
+    assert alerts._verified_legs_present(row)
+    row["market"] = "h2h"
+    assert alerts._verified_legs_present(row)
