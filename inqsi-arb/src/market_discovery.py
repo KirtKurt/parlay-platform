@@ -283,6 +283,33 @@ def _probe_market_batch(
         )
         invalid_points = _invalid_point_count([payload], requested)
         invalid_prices = _invalid_price_count([payload], requested)
+        # A successful provider odds response can repeat a bookmaker or a
+        # market within the same bookmaker. Preserve the normalized quotes for
+        # candidate retention, but never certify duplicated inventory as
+        # complete provider-visible coverage. A market shared across different
+        # books is legitimate and must not count as a duplicate.
+        seen_books = set()
+        duplicate_books = 0
+        duplicate_markets = 0
+        for book in books:
+            book_key = book.get("key")
+            if isinstance(book_key, str) and book_key.strip():
+                book_key = book_key.strip()
+                if book_key in seen_books:
+                    duplicate_books += 1
+                seen_books.add(book_key)
+            seen_markets = set()
+            for market in book["markets"]:
+                market_key = market.get("key")
+                if isinstance(market_key, str) and market_key.strip():
+                    market_key = market_key.strip()
+                    if market_key in seen_markets:
+                        duplicate_markets += 1
+                    seen_markets.add(market_key)
+        if duplicate_books:
+            evidence[0]["n_bookmakers_duplicate_identity"] = duplicate_books
+        if duplicate_markets:
+            evidence[0]["n_markets_duplicate_identity"] = duplicate_markets
         if invalid_books:
             evidence[0]["n_bookmakers_invalid_identity"] = invalid_books
         if invalid_points:
@@ -304,6 +331,12 @@ def _probe_market_batch(
         elif invalid_prices:
             evidence[0]["ok"] = False
             evidence[0]["error"] = "INVALID_PROVIDER_AMERICAN_ODDS"
+        elif duplicate_books:
+            evidence[0]["ok"] = False
+            evidence[0]["error"] = "DUPLICATE_PROVIDER_BOOKMAKER_ODDS_KEY"
+        elif duplicate_markets:
+            evidence[0]["ok"] = False
+            evidence[0]["error"] = "DUPLICATE_PROVIDER_MARKET_ODDS_KEY"
         return returned, normalized, evidence
     # Only malformed/unsupported market combinations can benefit from bisection.
     # Authentication, throttling and provider outages affect every sub-batch;
@@ -350,6 +383,8 @@ def _primary_probe_failure(
                 "INVALID_PROVIDER_AMERICAN_ODDS",
                 "UNREQUESTED_PROVIDER_MARKET_ODDS",
                 "INVALID_PROVIDER_BOOKMAKER_IDENTITY",
+                "DUPLICATE_PROVIDER_BOOKMAKER_ODDS_KEY",
+                "DUPLICATE_PROVIDER_MARKET_ODDS_KEY",
             }:
                 return row
         return {}
