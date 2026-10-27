@@ -81,14 +81,19 @@ def _verified_legs_present(row: Dict[str, Any]) -> bool:
                 return False
             if isinstance(american, bool) or not math.isfinite(numeric) or abs(numeric) < 100:
                 return False
-        else:
-            decimal = leg.get("decimal")
+        # Some provider rows contain both American and decimal prices.
+        # An invalid explicit decimal is contradictory pricing evidence even
+        # when the American field looks valid; never label that leg verified.
+        decimal = leg.get("decimal")
+        if decimal is not None:
             try:
                 numeric = float(decimal)
             except (TypeError, ValueError, OverflowError):
                 return False
             if isinstance(decimal, bool) or not math.isfinite(numeric) or numeric <= 1:
                 return False
+        elif american is None:
+            return False
         outcomes.append(outcome.strip())
     if len(set(outcomes)) != len(outcomes):
         return False
