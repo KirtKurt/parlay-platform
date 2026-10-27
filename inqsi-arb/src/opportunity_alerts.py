@@ -89,6 +89,10 @@ def _identity(status: str, row: Dict[str, Any]) -> str:
         "holdback_reason": _holdback_reason(row) if status == "HELD_BACK" else None,
         "sport": row.get("sport"),
         "event_id": row.get("event_id") or row.get("event"),
+        # Team labels can repeat (e.g. doubleheaders); preserve provider
+        # market identity and scheduled start in the deduplication key.
+        "market_id": row.get("market_id"),
+        "commence_time": row.get("commence_time"),
         "market": row.get("market"),
         "line": row.get("line") if row.get("line") is not None else row.get("point"),
         "margin": row.get("margin_pct") if row.get("margin_pct") is not None else (row.get("margin") or row.get("edge") or row.get("arb_pct")),
