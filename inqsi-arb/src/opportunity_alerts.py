@@ -99,8 +99,16 @@ def _identity(status: str, row: Dict[str, Any]) -> str:
         # A changed feasible stake or guaranteed profit is material even when
         # the displayed book prices and percentage margin stay unchanged.
         # Normalize currency to cents to avoid alerts for float jitter.
-        "stake_total": _money_identity(row.get("allocated_stake")),
-        "minimum_profit": _money_identity(row.get("minimum_profit")),
+        "stake_total": _money_identity(
+            row.get("allocated_stake") if row.get("allocated_stake") is not None
+            else (row.get("stake_total") if row.get("stake_total") is not None else row.get("bankroll"))
+        ),
+        "minimum_profit": _money_identity(
+            row.get("minimum_profit") if row.get("minimum_profit") is not None
+            else (row.get("profit") if row.get("profit") is not None
+                  else (row.get("min_profit") if row.get("min_profit") is not None
+                        else row.get("guaranteed_profit")))
+        ),
         # Provider ordering is not part of the betting opportunity. Sorting
         # canonical leg values prevents duplicate SMS when the same books and
         # outcomes arrive in a different order on a later scan. Price, point,
