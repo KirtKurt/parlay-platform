@@ -529,3 +529,32 @@ def test_reordered_provider_legs_are_one_opportunity_but_price_changes_realert(m
     result = alerts.publish_scan_opportunities({"hits": [changed]})
     assert result == {"published": 1, "deduped": 0, "errors": 0}
     assert len(sns.calls) == 2
+
+
+def test_doubleheader_games_do_not_share_an_sms_dedupe_identity(monkeypatch):
+    """Distinct provider markets with identical teams and odds need two alerts."""
+    sns = _setup(monkeypatch)
+    seen = set()
+
+    def claim_once(_kind, identity, **_kwargs):
+        if identity in seen:
+            return False
+        seen.add(identity)
+        return True
+
+    monkeypatch.setattr(alerts, "claim_once", claim_once)
+    first = _verified_row()
+    first.pop("event_id")
+    first["event"] = "Yankees @ Red Sox"
+    first["market_id"] = "game-one:h2h"
+    first["commence_time"] = "2026-10-27T17:00:00Z"
+    second = {**first, "market_id": "game-two:h2h"}
+    moved_start = {**first, "commence_time": "2026-10-27T20:00:00Z"}
+    retry = {**first, "detected_at": "2026-10-27T16:59:59Z"}
+
+    assert alerts._identity("VERIFIED", first) != alerts._identity("VERIFIED", second)
+    assert alerts._identity("VERIFIED", first) != alerts._identity("VERIFIED", moved_start)
+    assert alerts._identity("VERIFIED", first) == alerts._identity("VERIFIED", retry)
+    result = alerts.publish_scan_opportunities({"hits": [first, second, retry]})
+    assert result == {"published": 2, "deduped": 1, "errors": 0}
+    assert len(sns.calls) == 2
