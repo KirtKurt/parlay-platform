@@ -51,6 +51,9 @@ def _is_verified_executable(row: Dict[str, Any]) -> bool:
         and settlement.get("strict_arbitrage") is True
         and _positive_finite(row.get("minimum_profit"))
         and _positive_finite(settlement.get("minimum_net_pnl"))
+        # A top-level candidate rejection is contradictory evidence even when
+        # a malformed upstream row also carries optimistic validation flags.
+        and not row.get("reason")
         and not validation.get("qualification_reason")
         and not validation.get("settlement_reason")
         and not validation.get("settlement_state_reason")
