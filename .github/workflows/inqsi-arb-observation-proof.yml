@@ -98,7 +98,7 @@ jobs:
           assert status == 200 and catalog.get('ok') is True, catalog
           sports = [str(row.get('key') or '').strip() for row in catalog.get('sports', []) if isinstance(row, dict)]
           sports = [sport for sport in sports if sport]
-          assert sports, catalog
+          assert sports, 'EMPTY_PROVIDER_SPORTS_CATALOG (see sanitized observation artifact)'
 
           preferred = [
               'baseball_mlb', 'americanfootball_nfl', 'basketball_nba',
