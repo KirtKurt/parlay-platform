@@ -651,10 +651,20 @@ def fetch_all_discovered_markets(
                         or bool(set(candidates) - set(accepted))
                         or any(not probe.get("ok") for probe in evidence)),
         })
-        if discovery_meta.get("status") in (401, 429) and not discovery_meta.get("ok"):
+        # A provider-wide 401 or 429 can first surface in the event-odds
+        # probe, even when event-market inventory succeeded. This includes
+        # child probes after a 400/422 market-key bisection. Stop subsequent
+        # event requests while retaining earlier valid quotes and diagnostics.
+        odds_access_failure = next(
+            (probe for probe in evidence
+             if not probe.get("ok") and probe.get("status") in (401, 429)),
+            None,
+        )
+        if (discovery_meta.get("status") in (401, 429) and not discovery_meta.get("ok")) or odds_access_failure:
+            failure = odds_access_failure or discovery_meta
             blocked_access = {
-                "event_id": event_id, "status": discovery_meta["status"],
-                "error": discovery_meta.get("error"),
+                "event_id": event_id, "status": failure.get("status"),
+                "error": failure.get("error"),
             }
     good = sum(1 for x in details if x.get("ok"))
     return normalized, {
