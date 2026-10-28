@@ -100,3 +100,49 @@ def test_featured_valid_bookmaker_identity_stays_complete(monkeypatch):
     assert meta["ok"] is True
     assert meta["partial"] is False
     assert meta["n_bookmakers_invalid_identity"] == 0
+
+
+def test_featured_padded_bookmaker_key_preserves_quotes_but_marks_partial(monkeypatch):
+    monkeypatch.setattr(provider, "api_key", lambda: "test-key")
+    for padded_key in (" book-two", "book-two ", " book-two "):
+        game = _game()
+        game["bookmakers"].append(_book(key=padded_key))
+        monkeypatch.setattr(provider, "_get", lambda *_args, _game=game, **_kwargs: (
+            [_game], {"ok": True, "status": 200},
+        ))
+        rows, meta = provider.fetch_featured_odds(
+            "baseball_mlb", markets=["h2h"], regions="us",
+        )
+        assert len(rows) == 1
+        assert {q["book"] for q in rows[0]["quotes"]} == {"book-one", "book-two"}
+        assert meta["ok"] is True
+        assert meta["partial"] is True
+        assert meta["n_bookmakers_invalid_identity"] == 1
+        assert meta["error"] == "INVALID_PROVIDER_BOOKMAKER_IDENTITY"
+
+
+def test_extended_padded_bookmaker_key_preserves_quotes_but_marks_partial(monkeypatch):
+    monkeypatch.setattr(provider, "api_key", lambda: "test-key")
+    for padded_key in (" book-two", "book-two ", " book-two "):
+        game = _game("player_points")
+        game["bookmakers"].append(_book("player_points", key=padded_key))
+
+        def fake_get(url, _params):
+            if url.endswith("/events/"):
+                return [{"id": "event-1"}], {"ok": True, "status": 200}
+            return game, {"ok": True, "status": 200}
+
+        monkeypatch.setattr(provider, "_get", fake_get)
+        rows, meta = provider.fetch_event_markets(
+            "baseball_mlb", ["player_points"], regions="us",
+        )
+        assert len(rows) == 1
+        assert {q["book"] for q in rows[0]["quotes"]} == {"book-one", "book-two"}
+        assert meta["ok"] is True
+        assert meta["partial"] is True
+        assert meta["n_bookmakers_invalid_identity"] == 1
+        assert any(
+            error["error"] == "INVALID_PROVIDER_BOOKMAKER_IDENTITY"
+            and error["n_bookmakers_invalid_identity"] == 1
+            for error in meta["errors"]
+        )
