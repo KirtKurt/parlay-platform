@@ -988,3 +988,27 @@ def test_consistent_dual_format_odds_allow_provider_rounding():
         row["legs"][0]["american"] = american
         row["legs"][0]["decimal"] = decimal
         assert alerts._is_verified_executable(row)
+
+
+def test_conflicting_explicit_american_odds_aliases_are_held_back(monkeypatch):
+    """Optimistic upstream flags cannot override two contradictory American prices."""
+    sns = _setup(monkeypatch)
+    rows = []
+    for index, alternate in enumerate((-120, 130, True, "bad-price")):
+        row = _verified_row()
+        row["event_id"] = f"contradictory-american-alias-{index}"
+        row["legs"][0]["american_odds"] = alternate
+        assert not alerts._is_verified_executable(row)
+        assert alerts._holdback_reason(row) == "OPPORTUNITY_LEGS_INCOMPLETE_OR_AMBIGUOUS"
+        rows.append(row)
+
+    consistent = _verified_row()
+    consistent["event_id"] = "consistent-american-alias"
+    consistent["legs"][0]["american_odds"] = "+115"
+    assert alerts._is_verified_executable(consistent)
+    rows.append(consistent)
+
+    result = alerts.publish_scan_opportunities({"hits": rows})
+    assert result == {"published": len(rows), "deduped": 0, "errors": 0}
+    payloads = [json.loads(json.loads(call["Message"])["default"]) for call in sns.calls]
+    assert [item["status"] for item in payloads] == ["HELD_BACK"] * 4 + ["VERIFIED"]
