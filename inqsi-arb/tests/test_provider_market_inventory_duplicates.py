@@ -70,3 +70,39 @@ def test_duplicate_inventory_uses_bounded_partial_fallback(monkeypatch):
     assert meta["fallback_used"] is True
     assert meta["partial"] is True
     assert meta["event_markets_error"] == "DUPLICATE_PROVIDER_MARKET_KEY"
+
+
+def test_whitespace_padded_inventory_keys_fail_closed_and_fallback_stays_partial(monkeypatch):
+    # The provider's exact book and market identities must not be silently
+    # rewritten. A padded key can otherwise collapse distinct inventories or
+    # make an unsupported market appear to be verified provider coverage.
+    monkeypatch.setattr(discovery, "candidate_markets_for_sport", lambda _sport: ["h2h"])
+    monkeypatch.setattr(
+        discovery, "_probe_market_batch",
+        lambda *_args, **_kwargs: (
+            ["h2h"], [], [{"ok": True, "status": 200, "error": None}],
+        ),
+    )
+    for book_key, market_key in (
+        (" book-a", "h2h"),
+        ("book-a ", "h2h"),
+        ("book-a", " h2h"),
+        ("book-a", "h2h "),
+    ):
+        _inventory(monkeypatch, [
+            {"key": book_key, "markets": [{"key": market_key}]},
+        ])
+        direct_keys, direct_meta = discovery._discover_event_markets_direct(
+            "baseball_mlb", "event-1", regions="us",
+        )
+        assert direct_keys == []
+        assert direct_meta["ok"] is False
+        assert direct_meta["error"] == "MALFORMED_PROVIDER_MARKET_INVENTORY"
+
+        fallback_keys, fallback_meta = discovery.discover_event_market_keys(
+            "baseball_mlb", "event-1",
+        )
+        assert fallback_keys == ["h2h"]
+        assert fallback_meta["fallback_used"] is True
+        assert fallback_meta["partial"] is True
+        assert fallback_meta["event_markets_error"] == "MALFORMED_PROVIDER_MARKET_INVENTORY"
