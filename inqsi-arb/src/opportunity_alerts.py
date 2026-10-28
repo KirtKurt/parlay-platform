@@ -74,6 +74,21 @@ def _verified_legs_present(row: Dict[str, Any]) -> bool:
             american = leg.get("american_odds")
         if american is None:
             american = leg.get("price")
+        # Two explicit American-price aliases must agree. A conflicting
+        # alternate price is not executable proof, even when one value is
+        # individually valid and upstream qualification flags are optimistic.
+        primary_american = leg.get("american")
+        alternate_american = leg.get("american_odds")
+        if primary_american is not None and alternate_american is not None:
+            try:
+                primary_number = float(primary_american)
+                alternate_number = float(alternate_american)
+            except (TypeError, ValueError, OverflowError):
+                return False
+            if (isinstance(primary_american, bool) or isinstance(alternate_american, bool)
+                    or not math.isfinite(primary_number) or not math.isfinite(alternate_number)
+                    or primary_number != alternate_number):
+                return False
         if american is not None:
             try:
                 numeric = float(american)
