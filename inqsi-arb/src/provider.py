@@ -281,7 +281,9 @@ def _invalid_bookmaker_identity_count(games: Sequence[Mapping[str, Any]]) -> int
         1
         for game in games
         for book in game.get("bookmakers") or []
-        if not isinstance(book.get("key"), str) or not book["key"].strip()
+        if (not isinstance(book.get("key"), str)
+            or not book["key"].strip()
+            or book["key"] != book["key"].strip())
     )
 
 
