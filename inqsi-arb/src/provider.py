@@ -222,9 +222,14 @@ def normalize_games(games: Sequence[Mapping[str, Any]], *, sport_key: str, provi
     return out
 
 
+def _valid_provider_event_id(value: Any) -> bool:
+    """Provider event IDs are exact nonempty strings, never coerced scalars."""
+    return isinstance(value, str) and bool(value.strip()) and value == value.strip()
+
+
 def _valid_featured_game_shape(game: Any) -> bool:
     """Reject malformed HTTP-200 odds records before normalizing valid peers."""
-    if not isinstance(game, dict) or not str(game.get("id") or "").strip():
+    if not isinstance(game, dict) or not _valid_provider_event_id(game.get("id")):
         return False
     books = game.get("bookmakers", [])
     if not isinstance(books, list):
@@ -414,7 +419,7 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
     requested_set = set(requested)
     market_csv = ",".join(requested)
     for event in selected:
-        if not isinstance(event, dict) or not str(event.get("id") or "").strip():
+        if not isinstance(event, dict) or not _valid_provider_event_id(event.get("id")):
             invalid_events += 1
             errors.append({"event_id": None, "error": "MALFORMED_PROVIDER_EVENT_CATALOG_RECORD"})
             continue
