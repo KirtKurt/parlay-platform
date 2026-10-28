@@ -287,8 +287,19 @@ def _probe_market_batch(
         # while valid neighboring quotes survive. Preserve those quotes, but
         # never certify the mixed response as complete provider coverage.
         invalid_books = sum(
-            not isinstance(book.get("key"), str) or not book["key"].strip()
+            not isinstance(book.get("key"), str)
+            or not book["key"].strip()
+            or book["key"] != book["key"].strip()
             for book in books
+        )
+        # Provider market identities must be exact, not silently repaired by
+        # normalization. Retain valid quotes but do not certify full coverage.
+        invalid_market_keys = sum(
+            not isinstance(market.get("key"), str)
+            or not market["key"].strip()
+            or market["key"] != market["key"].strip()
+            for book in books
+            for market in book["markets"]
         )
         invalid_points = _invalid_point_count([payload], requested)
         invalid_prices = _invalid_price_count([payload], requested)
@@ -321,6 +332,8 @@ def _probe_market_batch(
             evidence[0]["n_markets_duplicate_identity"] = duplicate_markets
         if invalid_books:
             evidence[0]["n_bookmakers_invalid_identity"] = invalid_books
+        if invalid_market_keys:
+            evidence[0]["n_markets_invalid_identity"] = invalid_market_keys
         if invalid_points:
             evidence[0]["n_outcomes_invalid_point"] = invalid_points
         if invalid_prices:
@@ -334,6 +347,9 @@ def _probe_market_batch(
         elif invalid_books:
             evidence[0]["ok"] = False
             evidence[0]["error"] = "INVALID_PROVIDER_BOOKMAKER_IDENTITY"
+        elif invalid_market_keys:
+            evidence[0]["ok"] = False
+            evidence[0]["error"] = "INVALID_PROVIDER_MARKET_IDENTITY"
         elif invalid_points:
             evidence[0]["ok"] = False
             evidence[0]["error"] = "INVALID_PROVIDER_MARKET_POINT"
@@ -392,6 +408,7 @@ def _primary_probe_failure(
                 "INVALID_PROVIDER_AMERICAN_ODDS",
                 "UNREQUESTED_PROVIDER_MARKET_ODDS",
                 "INVALID_PROVIDER_BOOKMAKER_IDENTITY",
+                "INVALID_PROVIDER_MARKET_IDENTITY",
                 "DUPLICATE_PROVIDER_BOOKMAKER_ODDS_KEY",
                 "DUPLICATE_PROVIDER_MARKET_ODDS_KEY",
                 # A valid sibling quote must not hide a failed integrity check
