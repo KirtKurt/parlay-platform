@@ -12,7 +12,7 @@ import urllib.parse
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from market_catalog import candidate_markets_for_sport
-from provider import BASE, _get, _invalid_point_count, _invalid_price_count, api_key, normalize_games
+from provider import BASE, _get, _invalid_point_count, _invalid_price_count, _matches_optional_sport_key, _valid_provider_event_id, api_key, normalize_games
 
 
 def discover_events(sport_key: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -478,14 +478,25 @@ def discover_sport_event_markets(
     # This summary must not imply exhaustive provider coverage when an event
     # was capped, failed, or relied on a static catalog instead of live inventory.
     partial = len(selected) < len(events or [])
+    seen_ids = set()
     for event in selected:
-        if not isinstance(event, dict):
+        # This entry point may receive caller-supplied events rather than the
+        # validated provider catalog. Never coerce malformed IDs into live
+        # provider requests or scan a different sport's event.
+        if not isinstance(event, dict) or not _valid_provider_event_id(event.get("id")):
             partial = True
+            errors.append({"event_id": None, "error": "MALFORMED_PROVIDER_EVENT_CATALOG_RECORD"})
             continue
-        event_id = str(event.get("id") or "").strip()
-        if not event_id:
+        event_id = event["id"]
+        if not _matches_optional_sport_key(event, sport_key):
             partial = True
+            errors.append({"event_id": event_id, "error": "MISMATCHED_PROVIDER_SPORT_KEY"})
             continue
+        if event_id in seen_ids:
+            partial = True
+            errors.append({"event_id": event_id, "error": "DUPLICATE_PROVIDER_EVENT_ID"})
+            continue
+        seen_ids.add(event_id)
         keys, meta = discover_event_market_keys(
             sport_key, event_id, regions=regions, bookmakers=bookmakers, max_markets=max_markets,
         )
