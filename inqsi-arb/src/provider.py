@@ -287,6 +287,23 @@ def _invalid_bookmaker_identity_count(games: Sequence[Mapping[str, Any]]) -> int
     )
 
 
+def _invalid_market_identity_count(games: Sequence[Mapping[str, Any]]) -> int:
+    """Count malformed exact provider market keys in shape-checked odds data.
+
+    Normalization may retain correctly requested quotes after trimming a key,
+    but those repaired identities cannot certify complete provider coverage.
+    """
+    return sum(
+        1
+        for game in games
+        for book in game.get("bookmakers") or []
+        for market in book.get("markets") or []
+        if (not isinstance(market.get("key"), str)
+            or not market["key"].strip()
+            or market["key"] != market["key"].strip())
+    )
+
+
 def _invalid_point_count(games: Sequence[Mapping[str, Any]], requested: set[str]) -> int:
     """Count explicitly malformed market lines in already shape-checked data."""
     return sum(
@@ -364,6 +381,7 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
     requested_set = set(requested)
     unsolicited = _unrequested_market_count(valid, requested_set)
     invalid_books = _invalid_bookmaker_identity_count(valid)
+    invalid_markets = _invalid_market_identity_count(valid)
     invalid_points = _invalid_point_count(valid, requested_set)
     invalid_prices = _invalid_price_count(valid, requested_set)
     normalized = [
@@ -375,13 +393,14 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
     # establish priced coverage. Keep correctly priced peers without marking
     # the entire provider response as complete.
     unpriced = sum(1 for game in valid if str(game["id"]) not in priced_events)
-    incomplete = bool(malformed or wrong_sport or duplicate_events or unsolicited or invalid_books or invalid_points or invalid_prices or unpriced)
+    incomplete = bool(malformed or wrong_sport or duplicate_events or unsolicited or invalid_books or invalid_markets or invalid_points or invalid_prices or unpriced)
     error = (
         "MALFORMED_PROVIDER_FEATURED_ODDS" if malformed
         else "MISMATCHED_PROVIDER_SPORT_KEY" if wrong_sport
         else "DUPLICATE_PROVIDER_FEATURED_EVENT_ID" if duplicate_events
         else "UNREQUESTED_PROVIDER_MARKET_ODDS" if unsolicited
         else "INVALID_PROVIDER_BOOKMAKER_IDENTITY" if invalid_books
+        else "INVALID_PROVIDER_MARKET_IDENTITY" if invalid_markets
         else "INVALID_PROVIDER_MARKET_POINT" if invalid_points
         else "NO_USABLE_PROVIDER_FEATURED_ODDS" if unpriced
         else "INVALID_PROVIDER_AMERICAN_ODDS" if invalid_prices
@@ -400,6 +419,7 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
         "n_games_unpriced": unpriced,
         "n_market_objects_unrequested": unsolicited,
         "n_bookmakers_invalid_identity": invalid_books,
+        "n_markets_invalid_identity": invalid_markets,
         "n_outcomes_invalid_point": invalid_points,
         "n_outcomes_invalid_price": invalid_prices,
         "markets": requested,
@@ -452,6 +472,7 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
     duplicate_events = 0
     seen_event_ids = set()
     invalid_books_total = 0
+    invalid_markets_total = 0
     invalid_points_total = 0
     invalid_prices_total = 0
     requested = [m.strip() for m in market_keys if m.strip()]
@@ -503,6 +524,8 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
         unsolicited = _unrequested_market_count([payload], requested_set)
         invalid_books = _invalid_bookmaker_identity_count([payload])
         invalid_books_total += invalid_books
+        invalid_markets = _invalid_market_identity_count([payload])
+        invalid_markets_total += invalid_markets
         invalid_points = _invalid_point_count([payload], requested_set)
         invalid_points_total += invalid_points
         invalid_prices = _invalid_price_count([payload], requested_set)
@@ -516,6 +539,7 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
                 "event_id": event_id,
                 "error": ("UNREQUESTED_PROVIDER_MARKET_ODDS" if unsolicited
                           else "INVALID_PROVIDER_BOOKMAKER_IDENTITY" if invalid_books
+                          else "INVALID_PROVIDER_MARKET_IDENTITY" if invalid_markets
                           else "INVALID_PROVIDER_MARKET_POINT" if invalid_points
                           else "NO_USABLE_PROVIDER_MARKET_ODDS"),
                 "status": meta.get("status"),
@@ -532,6 +556,13 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
                 "event_id": event_id,
                 "error": "INVALID_PROVIDER_BOOKMAKER_IDENTITY",
                 "n_bookmakers_invalid_identity": invalid_books,
+                "status": meta.get("status"),
+            })
+        if invalid_markets:
+            errors.append({
+                "event_id": event_id,
+                "error": "INVALID_PROVIDER_MARKET_IDENTITY",
+                "n_markets_invalid_identity": invalid_markets,
                 "status": meta.get("status"),
             })
         if invalid_points:
@@ -558,6 +589,7 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
         "n_events_invalid": invalid_events,
         "n_events_duplicates": duplicate_events,
         "n_bookmakers_invalid_identity": invalid_books_total,
+        "n_markets_invalid_identity": invalid_markets_total,
         "n_outcomes_invalid_point": invalid_points_total,
         "n_outcomes_invalid_price": invalid_prices_total,
         "n_markets": len(results),
