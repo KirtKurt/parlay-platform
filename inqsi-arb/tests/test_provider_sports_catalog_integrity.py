@@ -125,3 +125,37 @@ def test_absent_active_flag_keeps_provider_default(monkeypatch):
     assert sports[0]["active"] is True
     assert meta["ok"] is True
     assert meta["partial"] is False
+
+
+def test_malformed_has_outrights_flag_is_not_coerced_to_true(monkeypatch):
+    sports, meta = _catalog(monkeypatch, [
+        {"key": "basketball_nba", "active": True, "has_outrights": "false"},
+        {"key": "soccer_epl", "active": True, "has_outrights": 0},
+        {"key": "icehockey_nhl", "active": True, "has_outrights": None},
+        {"key": "baseball_mlb", "active": True, "has_outrights": False},
+        {"key": "golf_pga", "active": True, "has_outrights": True},
+    ])
+    assert [row["key"] for row in sports] == ["baseball_mlb", "golf_pga"]
+    assert [row["has_outrights"] for row in sports] == [False, True]
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["error"] == "MALFORMED_PROVIDER_SPORT_CATALOG"
+    assert meta["n_sports_invalid"] == 3
+
+
+def test_all_malformed_has_outrights_flags_cannot_certify_coverage(monkeypatch):
+    sports, meta = _catalog(monkeypatch, [
+        {"key": "basketball_nba", "has_outrights": "true"},
+        {"key": "soccer_epl", "has_outrights": []},
+    ])
+    assert sports == []
+    assert meta["ok"] is False
+    assert meta["partial"] is True
+    assert meta["n_sports_invalid"] == 2
+
+
+def test_absent_has_outrights_flag_preserves_default_false(monkeypatch):
+    sports, meta = _catalog(monkeypatch, [{"key": "basketball_nba"}])
+    assert sports[0]["has_outrights"] is False
+    assert meta["ok"] is True
+    assert meta["partial"] is False
