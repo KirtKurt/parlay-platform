@@ -496,6 +496,11 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
     invalid_events = 0
     duplicate_events = 0
     seen_event_ids = set()
+    # A provider-wide auth/quota failure applies to subsequent event-odds
+    # requests. Preserve valid prior quotes and classify unprobed peers.
+    access_failure: Optional[Dict[str, Any]] = None
+    odds_request_count = 0
+    skipped_access_failure = 0
     invalid_books_total = 0
     invalid_markets_total = 0
     invalid_points_total = 0
@@ -521,6 +526,17 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
             errors.append({"event_id": event_id, "error": "DUPLICATE_PROVIDER_EVENT_ID"})
             continue
         seen_event_ids.add(event_id)
+        if access_failure is not None:
+            skipped_access_failure += 1
+            errors.append({
+                "event_id": event_id,
+                "error": "SKIPPED_AFTER_PROVIDER_ACCESS_FAILURE",
+                "provider_error": access_failure["error"],
+                "status": access_failure["status"],
+                "blocking_event_id": access_failure["event_id"],
+            })
+            continue
+        odds_request_count += 1
         payload, meta = _get(
             f"{BASE}/sports/{urllib.parse.quote(sport_key, safe='')}/events/{urllib.parse.quote(event_id, safe='')}/odds",
             {
@@ -537,6 +553,14 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
         metas.append(meta)
         if not meta.get("ok"):
             errors.append({"event_id": event_id, "error": meta.get("error"), "status": meta.get("status")})
+            # HTTP 403 can be event-specific, but 401 and 429 are
+            # provider-wide credential/quota failures for this scan.
+            if meta.get("status") in (401, 429):
+                access_failure = {
+                    "event_id": event_id,
+                    "status": meta.get("status"),
+                    "error": meta.get("error"),
+                }
             continue
         if not _valid_featured_game_shape(payload):
             errors.append({"event_id": event_id, "error": "MALFORMED_PROVIDER_EVENT_ODDS", "status": meta.get("status")})
@@ -620,7 +644,8 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
         "ok": not errors or bool(results),
         "n_events_discovered": len(events),
         "n_events_requested": len(selected),
-        "n_event_odds_requests": len(seen_event_ids),
+        "n_event_odds_requests": odds_request_count,
+        "n_events_skipped_access_failure": skipped_access_failure,
         "n_event_request_cap": event_request_limit,
         "n_events_invalid": invalid_events,
         "n_events_duplicates": duplicate_events,
