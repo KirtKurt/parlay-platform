@@ -239,3 +239,28 @@ def test_sport_scan_certifies_complete_only_when_all_requested_sections_succeed(
     )
     assert result["status"]["ok"] is True
     assert result["status"]["partial"] is False
+
+
+def test_duplicate_featured_event_id_preserves_quotes_but_cannot_certify_coverage(monkeypatch):
+    first = _valid_game()
+    second = _valid_game()
+    second["bookmakers"][0]["key"] = "book-two"
+    rows, meta = _fetch(monkeypatch, [first, second])
+    assert len(rows) == 1
+    assert rows[0]["event_id"] == "event-1"
+    assert {q["book"] for q in rows[0]["quotes"]} == {"book-one", "book-two"}
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["n_games_duplicate_event_id"] == 1
+    assert meta["error"] == "DUPLICATE_PROVIDER_FEATURED_EVENT_ID"
+
+
+def test_distinct_featured_event_ids_remain_complete(monkeypatch):
+    first = _valid_game()
+    second = _valid_game()
+    second["id"] = "event-2"
+    rows, meta = _fetch(monkeypatch, [first, second])
+    assert len(rows) == 2
+    assert meta["ok"] is True
+    assert meta["partial"] is False
+    assert meta["n_games_duplicate_event_id"] == 0
