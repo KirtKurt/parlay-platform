@@ -59,3 +59,53 @@ def test_event_market_summary_deduplicates_provider_event_ids(monkeypatch):
     assert report["errors"] == [
         {"event_id": "one", "error": "DUPLICATE_PROVIDER_EVENT_ID"}
     ]
+
+
+def test_event_market_request_cap_skips_invalid_duplicates_and_wrong_sport(monkeypatch):
+    calls = []
+
+    def fake_discover(sport, event_id, **kwargs):
+        calls.append(event_id)
+        return ["h2h"], {"ok": True, "partial": False, "fallback_used": False}
+
+    monkeypatch.setattr(discovery, "discover_event_market_keys", fake_discover)
+    events = [
+        {"id": False},
+        {"id": "first", "sport_key": "baseball_mlb"},
+        {"id": "first"},
+        {"id": "wrong", "sport_key": "basketball_nba"},
+        {"id": "second"},
+        {"id": "third"},
+    ]
+    report = discovery.discover_sport_event_markets(
+        "baseball_mlb", events, max_events=2,
+    )
+    assert calls == ["first", "second"]
+    assert report["events"] == {"first": ["h2h"], "second": ["h2h"]}
+    assert report["n_events_requested"] == 5  # raw rows inspected
+    assert report["n_event_market_requests"] == 2
+    assert report["n_event_request_cap"] == 2
+    assert report["n_events_available"] == 6
+    assert report["partial"] is True
+    assert {item["error"] for item in report["errors"]} == {
+        "MALFORMED_PROVIDER_EVENT_CATALOG_RECORD",
+        "DUPLICATE_PROVIDER_EVENT_ID",
+        "MISMATCHED_PROVIDER_SPORT_KEY",
+    }
+
+
+def test_event_market_zero_request_cap_is_fail_closed(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        discovery, "discover_event_market_keys",
+        lambda *args, **kwargs: calls.append(args),
+    )
+    report = discovery.discover_sport_event_markets(
+        "baseball_mlb", [{"id": "first"}], max_events=0,
+    )
+    assert calls == []
+    assert report["events"] == {}
+    assert report["n_events_requested"] == 0
+    assert report["n_event_market_requests"] == 0
+    assert report["n_event_request_cap"] == 0
+    assert report["partial"] is True
