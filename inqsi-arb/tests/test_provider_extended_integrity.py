@@ -192,3 +192,23 @@ def test_extended_mixed_invalid_american_prices_preserve_good_quotes_and_mark_pa
     assert meta["errors"][0]["error"] == "INVALID_PROVIDER_AMERICAN_ODDS"
     assert meta["errors"][0]["n_outcomes_invalid_price"] == 3
     assert len(calls) == 2
+
+
+def test_extended_duplicate_catalog_id_is_probed_once_and_marks_partial(monkeypatch):
+    # Duplicate provider event identities must not double-count live odds or
+    # silently claim complete provider-visible event coverage.
+    catalog = [
+        {"id": "event-1", "sport_key": "baseball_mlb"},
+        {"id": "event-1", "sport_key": "baseball_mlb"},
+        {"id": "event-2", "sport_key": "baseball_mlb"},
+    ]
+    rows, meta, calls = _fetch(monkeypatch, catalog)
+    assert len(calls) == 3  # catalog + each unique event once
+    assert len(rows) == 2
+    assert {row["event_id"] for row in rows} == {"event-1", "event-2"}
+    assert all(len(row["quotes"]) == 2 for row in rows)
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["n_events_requested"] == 3
+    assert meta["n_events_duplicates"] == 1
+    assert [error["error"] for error in meta["errors"]] == ["DUPLICATE_PROVIDER_EVENT_ID"]
