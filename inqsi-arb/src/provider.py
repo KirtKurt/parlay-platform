@@ -300,6 +300,11 @@ def _invalid_price_count(games: Sequence[Mapping[str, Any]], requested: set[str]
     )
 
 
+def _matches_optional_sport_key(record: Mapping[str, Any], sport_key: str) -> bool:
+    """Only an absent sport key is legacy-compatible; explicit invalid keys fail closed."""
+    return "sport_key" not in record or record["sport_key"] == sport_key
+
+
 def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str, bookmakers: Optional[str] = None) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     key = api_key()
     if not key:
@@ -328,7 +333,7 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
     # sport's normalized prices, even when the rest of the schema is valid.
     valid = [
         game for game in well_formed
-        if not game.get("sport_key") or game["sport_key"] == sport_key
+        if _matches_optional_sport_key(game, sport_key)
     ]
     wrong_sport = len(well_formed) - len(valid)
     # A successful provider response may contain prices for markets that were
@@ -414,7 +419,7 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
             errors.append({"event_id": None, "error": "MALFORMED_PROVIDER_EVENT_CATALOG_RECORD"})
             continue
         event_id = str(event["id"]).strip()
-        if event.get("sport_key") and event["sport_key"] != sport_key:
+        if not _matches_optional_sport_key(event, sport_key):
             invalid_events += 1
             errors.append({"event_id": event_id, "error": "MISMATCHED_PROVIDER_SPORT_KEY"})
             continue
@@ -441,7 +446,7 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
         if str(payload.get("id") or "").strip() != event_id:
             errors.append({"event_id": event_id, "error": "MISMATCHED_PROVIDER_EVENT_ID", "status": meta.get("status")})
             continue
-        if payload.get("sport_key") and payload["sport_key"] != sport_key:
+        if not _matches_optional_sport_key(payload, sport_key):
             errors.append({"event_id": event_id, "error": "MISMATCHED_PROVIDER_SPORT_KEY", "status": meta.get("status")})
             continue
         unsolicited = _unrequested_market_count([payload], requested_set)
