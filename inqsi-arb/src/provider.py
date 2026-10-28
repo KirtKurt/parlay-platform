@@ -412,7 +412,24 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
             "events": {**events_meta, "ok": False, "error": "MALFORMED_PROVIDER_EVENT_CATALOG"},
         }
 
-    selected = events[:max(0, int(max_events))]
+    # Count only unique, correctly scoped event identities against the
+    # provider-request cap. Invalid and duplicate catalog rows must not
+    # consume the available slots and hide valid neighboring events.
+    # Inspect in provider order and never issue more than the configured
+    # number of event-odds requests.
+    event_request_limit = max(0, int(max_events))
+    selected: List[Any] = []
+    eligible_ids: set[str] = set()
+    for event in events:
+        if len(eligible_ids) >= event_request_limit:
+            break
+        selected.append(event)
+        if (
+            isinstance(event, dict)
+            and _valid_provider_event_id(event.get("id"))
+            and _matches_optional_sport_key(event, sport_key)
+        ):
+            eligible_ids.add(event["id"])
     results: List[Dict[str, Any]] = []
     errors: List[Dict[str, Any]] = []
     metas: List[Dict[str, Any]] = []
@@ -521,6 +538,8 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
         "ok": not errors or bool(results),
         "n_events_discovered": len(events),
         "n_events_requested": len(selected),
+        "n_event_odds_requests": len(seen_event_ids),
+        "n_event_request_cap": event_request_limit,
         "n_events_invalid": invalid_events,
         "n_events_duplicates": duplicate_events,
         "n_bookmakers_invalid_identity": invalid_books_total,
