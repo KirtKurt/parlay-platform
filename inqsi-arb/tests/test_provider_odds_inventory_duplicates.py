@@ -80,3 +80,30 @@ def test_same_market_at_distinct_books_remains_complete(monkeypatch):
     assert evidence[0]["ok"] is True
     assert evidence[0].get("n_bookmakers_duplicate_identity") is None
     assert evidence[0].get("n_markets_duplicate_identity") is None
+
+
+def test_padded_bookmaker_key_retains_quotes_but_not_complete_coverage(monkeypatch):
+    accepted, rows, evidence = _probe(monkeypatch, [_book(" book-a ")])
+    assert accepted == ["h2h"]
+    assert rows
+    assert evidence[0]["ok"] is False
+    assert evidence[0]["error"] == "INVALID_PROVIDER_BOOKMAKER_IDENTITY"
+    assert evidence[0]["n_bookmakers_invalid_identity"] == 1
+    assert discovery._primary_probe_failure(
+        evidence, terminal_only=True,
+    )["error"] == "INVALID_PROVIDER_BOOKMAKER_IDENTITY"
+
+
+def test_padded_market_key_retains_quotes_but_not_complete_coverage(monkeypatch):
+    market = _book("book-a")["markets"][0]
+    accepted, rows, evidence = _probe(monkeypatch, [
+        _book("book-a", [{**market, "key": " h2h "}]),
+    ])
+    assert accepted == ["h2h"]
+    assert rows
+    assert evidence[0]["ok"] is False
+    assert evidence[0]["error"] == "INVALID_PROVIDER_MARKET_IDENTITY"
+    assert evidence[0]["n_markets_invalid_identity"] == 1
+    assert discovery._primary_probe_failure(
+        evidence, terminal_only=True,
+    )["error"] == "INVALID_PROVIDER_MARKET_IDENTITY"
