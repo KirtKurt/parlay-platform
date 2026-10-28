@@ -71,3 +71,41 @@ def test_event_odds_rejects_falsey_explicit_sport_keys(monkeypatch):
         assert rows == []
         assert evidence[0]["ok"] is False
         assert evidence[0]["error"] == "MISMATCHED_PROVIDER_SPORT_KEY"
+
+
+def test_event_market_inventory_rejects_explicit_invalid_event_ids(monkeypatch):
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    for value in ("", None, False, [], 0, "another-event", " event-1 "):
+        payload = {
+            "id": value, "sport_key": "baseball_mlb",
+            "bookmakers": [{"key": "book-a", "markets": [{"key": "h2h"}]}],
+        }
+        monkeypatch.setattr(
+            discovery, "_get",
+            lambda *_args, **_kwargs: (payload, {"ok": True, "status": 200}),
+        )
+        keys, meta = discovery._discover_event_markets_direct(
+            "baseball_mlb", "event-1", regions="us",
+        )
+        assert keys == []
+        assert meta["ok"] is False
+        assert meta["error"] == "MISMATCHED_PROVIDER_MARKET_INVENTORY_ID"
+
+
+def test_event_market_inventory_accepts_matching_and_legacy_missing_event_id(monkeypatch):
+    monkeypatch.setattr(discovery, "api_key", lambda: "test-key")
+    for payload in (
+        {"id": "event-1", "sport_key": "baseball_mlb",
+         "bookmakers": [{"key": "book-a", "markets": [{"key": "h2h"}]}]},
+        {"sport_key": "baseball_mlb",
+         "bookmakers": [{"key": "book-a", "markets": [{"key": "h2h"}]}]},
+    ):
+        monkeypatch.setattr(
+            discovery, "_get",
+            lambda *_args, **_kwargs: (payload, {"ok": True, "status": 200}),
+        )
+        keys, meta = discovery._discover_event_markets_direct(
+            "baseball_mlb", "event-1", regions="us",
+        )
+        assert keys == ["h2h"]
+        assert meta["ok"] is True
