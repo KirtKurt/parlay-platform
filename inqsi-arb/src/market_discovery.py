@@ -147,7 +147,12 @@ def _discover_event_markets_direct(
         }
     # A provider inventory for a different event or sport cannot establish
     # coverage for the requested event, even when its market list is valid.
-    if (payload.get("id") and str(payload["id"]).strip() != str(event_id).strip()) or (
+    # A missing event id is permitted for legacy provider responses, but an
+    # explicitly supplied malformed or contradictory id cannot certify that
+    # this market inventory belongs to the requested event.
+    if ("id" in payload and (
+        not isinstance(payload["id"], str) or payload["id"] != event_id
+    )) or (
         "sport_key" in payload and payload["sport_key"] != sport_key
     ):
         return [], {
