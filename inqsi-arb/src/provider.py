@@ -417,6 +417,8 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
     errors: List[Dict[str, Any]] = []
     metas: List[Dict[str, Any]] = []
     invalid_events = 0
+    duplicate_events = 0
+    seen_event_ids = set()
     invalid_books_total = 0
     invalid_points_total = 0
     invalid_prices_total = 0
@@ -433,6 +435,13 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
             invalid_events += 1
             errors.append({"event_id": event_id, "error": "MISMATCHED_PROVIDER_SPORT_KEY"})
             continue
+        # Duplicate catalog IDs must not trigger duplicate provider requests,
+        # inflate normalized quotes, or certify independent event coverage.
+        if event_id in seen_event_ids:
+            duplicate_events += 1
+            errors.append({"event_id": event_id, "error": "DUPLICATE_PROVIDER_EVENT_ID"})
+            continue
+        seen_event_ids.add(event_id)
         payload, meta = _get(
             f"{BASE}/sports/{urllib.parse.quote(sport_key, safe='')}/events/{urllib.parse.quote(event_id, safe='')}/odds",
             {
@@ -513,6 +522,7 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
         "n_events_discovered": len(events),
         "n_events_requested": len(selected),
         "n_events_invalid": invalid_events,
+        "n_events_duplicates": duplicate_events,
         "n_bookmakers_invalid_identity": invalid_books_total,
         "n_outcomes_invalid_point": invalid_points_total,
         "n_outcomes_invalid_price": invalid_prices_total,
