@@ -1530,3 +1530,45 @@ def test_mixed_missing_bookmaker_identity_keeps_quotes_but_marks_partial(monkeyp
     assert discovery._primary_probe_failure(evidence, terminal_only=True)["error"] == (
         "INVALID_PROVIDER_BOOKMAKER_IDENTITY"
     )
+
+
+def test_event_odds_rejects_nonstring_and_padded_event_identity(monkeypatch):
+    # HTTP 200 does not certify event ownership when the provider's ID has
+    # been coerced or whitespace-normalized. Reject before quote normalization.
+    for invalid_id, requested_id in [
+        (" event-1", "event-1"),
+        ("event-1 ", "event-1"),
+        (123, "123"),
+        (True, "True"),
+        (["event-1"], "event-1"),
+    ]:
+        monkeypatch.setattr(
+            discovery, "_request_event_odds",
+            lambda *_args, **_kwargs: (
+                {
+                    "id": invalid_id,
+                    "bookmakers": [{
+                        "key": "book_a",
+                        "markets": [{"key": "h2h", "outcomes": [
+                            {"name": "Home", "price": -110},
+                            {"name": "Away", "price": 110},
+                        ]}],
+                    }],
+                },
+                {"ok": True, "status": 200},
+            ),
+        )
+        monkeypatch.setattr(
+            discovery, "normalize_games",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("Malformed event identity must not reach normalization")
+            ),
+        )
+        accepted, rows, evidence = discovery._probe_market_batch(
+            "baseball_mlb", requested_id, ["h2h"],
+            regions="us", bookmakers=None,
+        )
+        assert accepted == []
+        assert rows == []
+        assert evidence[0]["ok"] is False
+        assert evidence[0]["error"] == "MISMATCHED_PROVIDER_EVENT_ID"
