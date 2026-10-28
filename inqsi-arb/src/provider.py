@@ -349,6 +349,16 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
         if _matches_optional_sport_key(game, sport_key)
     ]
     wrong_sport = len(well_formed) - len(valid)
+    # Repeated event IDs in the featured catalog cannot establish independent
+    # provider-visible event coverage. Retain every valid quote for candidate
+    # diagnostics, but do not certify the inventory as complete.
+    seen_event_ids: set[str] = set()
+    duplicate_events = 0
+    for game in valid:
+        if game["id"] in seen_event_ids:
+            duplicate_events += 1
+        else:
+            seen_event_ids.add(game["id"])
     # A successful provider response may contain prices for markets that were
     # never requested. Do not allow those rows into ARB or certify full coverage.
     requested_set = set(requested)
@@ -365,10 +375,11 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
     # establish priced coverage. Keep correctly priced peers without marking
     # the entire provider response as complete.
     unpriced = sum(1 for game in valid if str(game["id"]) not in priced_events)
-    incomplete = bool(malformed or wrong_sport or unsolicited or invalid_books or invalid_points or invalid_prices or unpriced)
+    incomplete = bool(malformed or wrong_sport or duplicate_events or unsolicited or invalid_books or invalid_points or invalid_prices or unpriced)
     error = (
         "MALFORMED_PROVIDER_FEATURED_ODDS" if malformed
         else "MISMATCHED_PROVIDER_SPORT_KEY" if wrong_sport
+        else "DUPLICATE_PROVIDER_FEATURED_EVENT_ID" if duplicate_events
         else "UNREQUESTED_PROVIDER_MARKET_ODDS" if unsolicited
         else "INVALID_PROVIDER_BOOKMAKER_IDENTITY" if invalid_books
         else "INVALID_PROVIDER_MARKET_POINT" if invalid_points
@@ -385,6 +396,7 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
         "n_games_received": len(payload),
         "n_games_invalid": malformed + wrong_sport,
         "n_games_wrong_sport": wrong_sport,
+        "n_games_duplicate_event_id": duplicate_events,
         "n_games_unpriced": unpriced,
         "n_market_objects_unrequested": unsolicited,
         "n_bookmakers_invalid_identity": invalid_books,
