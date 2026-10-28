@@ -212,3 +212,43 @@ def test_extended_duplicate_catalog_id_is_probed_once_and_marks_partial(monkeypa
     assert meta["n_events_requested"] == 3
     assert meta["n_events_duplicates"] == 1
     assert [error["error"] for error in meta["errors"]] == ["DUPLICATE_PROVIDER_EVENT_ID"]
+
+
+def test_extended_event_request_cap_preserves_valid_peers_after_bad_catalog_rows(monkeypatch):
+    # The cap bounds provider requests, not invalid or repeated catalog rows.
+    # Previously the first two entries consumed the entire cap and no valid
+    # event odds could be observed despite valid events later in the catalog.
+    catalog = [
+        {"id": None},
+        {"id": "event-1", "sport_key": "baseball_mlb"},
+        {"id": "event-1", "sport_key": "baseball_mlb"},
+        {"id": "wrong-sport", "sport_key": "basketball_nba"},
+        {"id": "event-2", "sport_key": "baseball_mlb"},
+        {"id": "event-3", "sport_key": "baseball_mlb"},
+    ]
+    rows, meta, calls = _fetch(monkeypatch, catalog, max_events=2)
+    assert {row["event_id"] for row in rows} == {"event-1", "event-2"}
+    assert len(calls) == 3  # one catalog plus at most two event-odds requests
+    assert meta["n_event_request_cap"] == 2
+    assert meta["n_event_odds_requests"] == 2
+    assert meta["n_events_requested"] == 5  # catalog rows examined
+    assert meta["n_events_invalid"] == 2
+    assert meta["n_events_duplicates"] == 1
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert {error["error"] for error in meta["errors"]} == {
+        "MALFORMED_PROVIDER_EVENT_CATALOG_RECORD",
+        "MISMATCHED_PROVIDER_SPORT_KEY",
+        "DUPLICATE_PROVIDER_EVENT_ID",
+    }
+
+
+def test_zero_extended_event_request_cap_never_probes_odds(monkeypatch):
+    rows, meta, calls = _fetch(
+        monkeypatch, [{"id": "event-1"}, {"id": "event-2"}], max_events=0,
+    )
+    assert rows == []
+    assert len(calls) == 1
+    assert meta["n_event_request_cap"] == 0
+    assert meta["n_event_odds_requests"] == 0
+    assert meta["partial"] is True
