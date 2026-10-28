@@ -589,8 +589,31 @@ def fetch_all_discovered_markets(
     normalized: List[Dict[str, Any]] = []
     details: List[Dict[str, Any]] = []
     limit = max(1, int(max_markets_per_event))
+    # A 401 credential rejection or 429 provider quota response applies to the
+    # remaining requests in this bounded scan. Do not multiply failed calls
+    # across every event; retain earlier quotes and record skipped coverage.
+    # A 403 may be event-specific, so it still fails closed per event without
+    # suppressing neighboring events.
+    blocked_access = None
+    skipped_access = 0
     for event in selected:
         event_id = str(event["id"])
+        if blocked_access is not None:
+            skipped_access += 1
+            details.append({
+                "event_id": event_id, "ok": False,
+                "error": "SKIPPED_AFTER_PROVIDER_ACCESS_FAILURE",
+                "status": blocked_access["status"],
+                "blocking_event_id": blocked_access["event_id"],
+                "event_markets_error": blocked_access["error"],
+                "event_markets_status": blocked_access["status"],
+                "n_candidates": 0, "n_observed": 0, "n_discovered": 0,
+                "markets": [], "probe_requests": 0,
+                "discovery": "event_markets_endpoint",
+                "fallback_used": False, "partial": True,
+                "skipped_after_access_failure": True,
+            })
+            continue
         observed, discovery_meta = _discover_event_markets_direct(
             sport_key, event_id, regions=regions, bookmakers=bookmakers,
         )
@@ -628,6 +651,11 @@ def fetch_all_discovered_markets(
                         or bool(set(candidates) - set(accepted))
                         or any(not probe.get("ok") for probe in evidence)),
         })
+        if discovery_meta.get("status") in (401, 429) and not discovery_meta.get("ok"):
+            blocked_access = {
+                "event_id": event_id, "status": discovery_meta["status"],
+                "error": discovery_meta.get("error"),
+            }
     good = sum(1 for x in details if x.get("ok"))
     return normalized, {
         "ok": good > 0,
@@ -635,6 +663,8 @@ def fetch_all_discovered_markets(
         "discovery": "documented_catalog_runtime_probe",
         "n_events_discovered": len(events),
         "n_events_requested": len(selected),
+        "n_event_market_requests": len(selected) - skipped_access,
+        "n_events_skipped_access_failure": skipped_access,
         "n_events_succeeded": good,
         "n_normalized_markets": len(normalized),
         "event_details": details[:100],
