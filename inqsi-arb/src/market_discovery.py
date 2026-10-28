@@ -246,7 +246,7 @@ def _probe_market_batch(
             return [], [], evidence
         # Check identity after structural validation so malformed nested odds
         # retain their more actionable diagnostic rather than being masked.
-        if str(payload.get("id") or "").strip() != str(event_id).strip():
+        # Require an exact string identity: coercion or trimming can turn an\n        # explicitly malformed provider event ID into apparent coverage.\n        if not isinstance(payload.get("id"), str) or payload["id"] != event_id:
             evidence[0]["ok"] = False
             evidence[0]["error"] = "MISMATCHED_PROVIDER_EVENT_ID"
             return [], [], evidence
