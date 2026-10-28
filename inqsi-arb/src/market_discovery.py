@@ -448,10 +448,10 @@ def discover_event_market_keys(
             "fallback_used": False,
         }
 
-    # An HTTP 401 is a credential failure, not an unsupported market key.
-    # Probing a static catalog with the same rejected key wastes provider
-    # requests and cannot restore coverage; preserve the original error.
-    if observed_meta.get("status") == 401:
+    # Authentication/authorization failures and quota throttling cannot be
+    # fixed by probing a static market catalog with the same provider access.
+    # Preserve the terminal inventory error without generating more requests.
+    if observed_meta.get("status") in (401, 403, 429):
         return [], {
             **observed_meta,
             "ok": False,
@@ -587,12 +587,12 @@ def fetch_all_discovered_markets(
         observed, discovery_meta = _discover_event_markets_direct(
             sport_key, event_id, regions=regions, bookmakers=bookmakers,
         )
-        # Invalid credentials cannot be fixed by a second odds request.
-        # Retain the event's 401 evidence and do not amplify auth failures.
-        auth_failed = discovery_meta.get("status") == 401
-        fallback_used = not discovery_meta.get("ok") and not auth_failed
+        # Provider access failures and throttling cannot be repaired by a
+        # second odds request. Preserve the terminal event-market evidence.
+        terminal_access_failure = discovery_meta.get("status") in (401, 403, 429)
+        fallback_used = not discovery_meta.get("ok") and not terminal_access_failure
         candidates = (
-            [] if auth_failed else
+            [] if terminal_access_failure else
             observed[:limit] if discovery_meta.get("ok") else
             candidate_markets_for_sport(sport_key)[:limit]
         )
