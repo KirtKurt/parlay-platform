@@ -209,3 +209,52 @@ def test_adapter_extended_odds_rejects_explicit_falsey_sport_keys(monkeypatch):
         error["error"] == "MISMATCHED_PROVIDER_SPORT_KEY"
         for error in meta["errors"]
     )
+
+
+def test_adapter_featured_rejects_coerced_or_padded_event_ids(monkeypatch):
+    # A successful HTTP 200 must not turn booleans, numbers, collections,
+    # or whitespace-padded identities into legitimate event market IDs.
+    invalid_ids = (None, False, True, 0, 1, [], ["event"], {}, " ", " padded ")
+    games = [_adapter_game("valid-event")] + [
+        _adapter_game(value) for value in invalid_ids
+    ]
+    monkeypatch.setattr(adapter, "api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        adapter, "_get",
+        lambda *_args, **_kwargs: (games, {"ok": True, "status": 200}),
+    )
+    rows, meta = adapter.fetch_featured_odds(
+        "baseball_mlb", markets=["h2h"], regions="us",
+    )
+    assert {row["event_id"] for row in rows} == {"valid-event"}
+    assert meta["n_games_invalid"] == len(invalid_ids)
+    assert meta["partial"] is True
+    assert meta["error"] == "MALFORMED_PROVIDER_FEATURED_ODDS"
+
+
+def test_adapter_extended_catalog_does_not_probe_invalid_event_ids(monkeypatch):
+    invalid_ids = (None, False, True, 0, 1, [], ["event"], {}, " ", " padded ")
+    catalog = [{"id": "valid-event"}] + [
+        {"id": value} for value in invalid_ids
+    ]
+    calls = []
+
+    def fake_get(url, _params):
+        calls.append(url)
+        if url.endswith("/events/"):
+            return catalog, {"ok": True, "status": 200}
+        return _adapter_game("valid-event"), {"ok": True, "status": 200}
+
+    monkeypatch.setattr(adapter, "api_key", lambda: "test-key")
+    monkeypatch.setattr(adapter, "_get", fake_get)
+    rows, meta = adapter.fetch_event_markets(
+        "baseball_mlb", ["h2h"], regions="us",
+    )
+    assert {row["event_id"] for row in rows} == {"valid-event"}
+    assert meta["n_events_invalid"] == len(invalid_ids)
+    assert meta["partial"] is True
+    assert len(calls) == 2  # catalog and only the valid event
+    assert all(
+        error["error"] == "MALFORMED_PROVIDER_EVENT_CATALOG_RECORD"
+        for error in meta["errors"]
+    )
