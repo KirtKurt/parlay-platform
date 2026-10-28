@@ -84,6 +84,11 @@ def list_sports(*, all_sports: bool = False) -> Tuple[List[Dict[str, Any]], Dict
         if "active" in s and not isinstance(s["active"], bool):
             invalid += 1
             continue
+        # A malformed has_outrights flag must not activate unproven
+        # futures coverage: bool("false") and bool("0") are both True.
+        if "has_outrights" in s and not isinstance(s["has_outrights"], bool):
+            invalid += 1
+            continue
         # A duplicate provider sport is not another covered competition.
         # Retain the first valid row and flag the inventory as incomplete.
         sport_key = s["key"].strip()
