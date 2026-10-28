@@ -482,10 +482,26 @@ def discover_sport_event_markets(
     discovered: Dict[str, List[str]] = {}
     errors: List[Dict[str, Any]] = []
     fallback_events: List[str] = []
-    selected = (events or [])[:max(0, int(max_events))]
+    # Apply the cap to unique eligible event-market requests, not raw
+    # provider rows. Malformed, duplicate, and cross-sport entries must not
+    # crowd valid later events out of a bounded discovery window.
+    available = events or []
+    event_limit = max(0, int(max_events))
+    selected = []
+    eligible_ids = set()
+    for event in available:
+        if len(eligible_ids) >= event_limit:
+            break
+        selected.append(event)
+        if (
+            isinstance(event, dict)
+            and _valid_provider_event_id(event.get("id"))
+            and _matches_optional_sport_key(event, sport_key)
+        ):
+            eligible_ids.add(event["id"])
     # This summary must not imply exhaustive provider coverage when an event
     # was capped, failed, or relied on a static catalog instead of live inventory.
-    partial = len(selected) < len(events or [])
+    partial = len(selected) < len(available)
     seen_ids = set()
     for event in selected:
         # This entry point may receive caller-supplied events rather than the
@@ -522,7 +538,9 @@ def discover_sport_event_markets(
         "events": discovered,
         "n_events": len(discovered),
         "n_events_requested": len(selected),
-        "n_events_available": len(events or []),
+        "n_event_market_requests": len(seen_ids),
+        "n_event_request_cap": event_limit,
+        "n_events_available": len(available),
         "partial": partial,
         "fallback_events": fallback_events[:20],
         "unique_markets": sorted({k for values in discovered.values() for k in values}),
