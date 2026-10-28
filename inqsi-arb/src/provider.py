@@ -76,7 +76,8 @@ def list_sports(*, all_sports: bool = False) -> Tuple[List[Dict[str, Any]], Dict
     duplicates = 0
     seen_keys = set()
     for s in payload:
-        if not isinstance(s, dict) or not isinstance(s.get("key"), str) or not s["key"].strip():
+        if (not isinstance(s, dict) or not isinstance(s.get("key"), str)
+                or not s["key"].strip() or s["key"] != s["key"].strip()):
             invalid += 1
             continue
         # Never coerce provider strings such as "false" to True. An
@@ -91,7 +92,7 @@ def list_sports(*, all_sports: bool = False) -> Tuple[List[Dict[str, Any]], Dict
             continue
         # A duplicate provider sport is not another covered competition.
         # Retain the first valid row and flag the inventory as incomplete.
-        sport_key = s["key"].strip()
+        sport_key = s["key"]
         if sport_key in seen_keys:
             duplicates += 1
             continue
