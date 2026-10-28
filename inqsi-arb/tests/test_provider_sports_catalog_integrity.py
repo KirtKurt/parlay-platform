@@ -84,14 +84,29 @@ def test_duplicate_sport_keys_are_deduplicated_and_coverage_is_partial(monkeypat
     assert meta["n_sports_duplicates"] == 1
 
 
-def test_duplicate_keys_after_canonical_whitespace_normalization(monkeypatch):
+def test_padded_sport_key_is_invalid_not_canonicalized(monkeypatch):
     sports, meta = _catalog(monkeypatch, [
         {"key": "icehockey_nhl"},
         {"key": " icehockey_nhl "},
+        {"key": "soccer_epl "},
+        {"key": " basketball_nba"},
     ])
     assert [row["key"] for row in sports] == ["icehockey_nhl"]
+    assert meta["ok"] is True
     assert meta["partial"] is True
-    assert meta["n_sports_duplicates"] == 1
+    assert meta["n_sports_invalid"] == 3
+    assert meta["n_sports_duplicates"] == 0
+    assert meta["error"] == "MALFORMED_PROVIDER_SPORT_CATALOG"
+
+
+def test_only_padded_sport_keys_fail_closed(monkeypatch):
+    sports, meta = _catalog(monkeypatch, [
+        {"key": " baseball_mlb "}, {"key": " soccer_epl"},
+    ])
+    assert sports == []
+    assert meta["ok"] is False
+    assert meta["partial"] is True
+    assert meta["n_sports_invalid"] == 2
 
 
 def test_string_false_active_flag_is_not_coerced_to_true(monkeypatch):
