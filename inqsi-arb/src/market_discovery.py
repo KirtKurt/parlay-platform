@@ -52,7 +52,7 @@ def discover_events(sport_key: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any
             not isinstance(event_id, str)
             or not event_id.strip()
             or event_id != event_id.strip()
-            or (event.get("sport_key") and event["sport_key"] != sport_key)
+            or ("sport_key" in event and event["sport_key"] != sport_key)
         ):
             invalid += 1
             continue
@@ -148,7 +148,7 @@ def _discover_event_markets_direct(
     # A provider inventory for a different event or sport cannot establish
     # coverage for the requested event, even when its market list is valid.
     if (payload.get("id") and str(payload["id"]).strip() != str(event_id).strip()) or (
-        payload.get("sport_key") and payload["sport_key"] != sport_key
+        "sport_key" in payload and payload["sport_key"] != sport_key
     ):
         return [], {
             **meta, "ok": False, "error": "MISMATCHED_PROVIDER_MARKET_INVENTORY_ID",
@@ -243,7 +243,7 @@ def _probe_market_batch(
             evidence[0]["ok"] = False
             evidence[0]["error"] = "MISMATCHED_PROVIDER_EVENT_ID"
             return [], [], evidence
-        if payload.get("sport_key") and payload["sport_key"] != sport_key:
+        if "sport_key" in payload and payload["sport_key"] != sport_key:
             evidence[0]["ok"] = False
             evidence[0]["error"] = "MISMATCHED_PROVIDER_SPORT_KEY"
             return [], [], evidence
