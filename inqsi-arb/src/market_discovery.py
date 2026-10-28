@@ -390,6 +390,12 @@ def _primary_probe_failure(
                 "INVALID_PROVIDER_BOOKMAKER_IDENTITY",
                 "DUPLICATE_PROVIDER_BOOKMAKER_ODDS_KEY",
                 "DUPLICATE_PROVIDER_MARKET_ODDS_KEY",
+                # A valid sibling quote must not hide a failed integrity check
+                # on another requested market during 400/422 bisection.
+                "MALFORMED_PROVIDER_EVENT_ODDS",
+                "MISMATCHED_PROVIDER_EVENT_ID",
+                "MISMATCHED_PROVIDER_SPORT_KEY",
+                "NO_USABLE_PROVIDER_MARKET_ODDS",
             }:
                 return row
         return {}
