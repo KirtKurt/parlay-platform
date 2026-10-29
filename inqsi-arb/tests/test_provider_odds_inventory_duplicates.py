@@ -193,3 +193,33 @@ def test_distinct_books_sharing_market_remain_complete_across_adapters(monkeypat
         assert meta["partial"] is False
         assert meta["n_bookmakers_duplicate_identity"] == 0
         assert meta["n_markets_duplicate_identity"] == 0
+
+
+def test_case_variant_bookmaker_keys_are_duplicate_in_market_probe(monkeypatch):
+    # Quote normalization lowercases both keys to one book; a case-variant
+    # duplicate cannot establish independent provider-visible coverage.
+    accepted, rows, evidence = _probe(monkeypatch, [
+        _book("book-a"), _book("BOOK-A"),
+    ])
+    assert accepted == ["h2h"]
+    assert rows and {q["book"] for q in rows[0]["quotes"]} == {"book-a"}
+    assert evidence[0]["ok"] is False
+    assert evidence[0]["error"] == "DUPLICATE_PROVIDER_BOOKMAKER_ODDS_KEY"
+    assert evidence[0]["n_bookmakers_duplicate_identity"] == 1
+
+
+def test_case_variant_bookmaker_keys_are_partial_in_both_odds_adapters(monkeypatch):
+    books = [_book("book-a"), _book("BOOK-A")]
+    for fetch in (_featured, _extended):
+        rows, meta = fetch(monkeypatch, books)
+        assert rows and {q["book"] for q in rows[0]["quotes"]} == {"book-a"}
+        assert len(rows[0]["quotes"]) == 4
+        assert meta["ok"] is True
+        assert meta["partial"] is True
+        assert meta["n_bookmakers_duplicate_identity"] == 1
+        if fetch is _featured:
+            assert meta["error"] == "DUPLICATE_PROVIDER_BOOKMAKER_ODDS_KEY"
+        else:
+            assert "DUPLICATE_PROVIDER_BOOKMAKER_ODDS_KEY" in {
+                error["error"] for error in meta["errors"]
+            }
