@@ -6,6 +6,7 @@ keys are accepted; unsupported markets fail closed.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import math
 import os
@@ -49,7 +50,8 @@ def _get(url: str, params: Mapping[str, Any], timeout: int = 15) -> Tuple[Any, D
             }
     except urllib.error.HTTPError as exc:
         return None, {"ok": False, "status": exc.code, "error": f"PROVIDER_HTTP_{exc.code}"}
-    except (urllib.error.URLError, TimeoutError, OSError, UnicodeDecodeError, json.JSONDecodeError):
+    except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException,
+            UnicodeDecodeError, json.JSONDecodeError):
         return None, {"ok": False, "error": "PROVIDER_UNAVAILABLE"}
 
 
