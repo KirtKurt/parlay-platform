@@ -223,3 +223,24 @@ def test_case_variant_bookmaker_keys_are_partial_in_both_odds_adapters(monkeypat
             assert "DUPLICATE_PROVIDER_BOOKMAKER_ODDS_KEY" in {
                 error["error"] for error in meta["errors"]
             }
+
+
+def test_case_variant_bookmaker_keys_are_duplicate_in_direct_market_inventory(monkeypatch):
+    # Direct market-key inventory must use the same canonical bookmaker identity
+    # as the odds normalizer, otherwise duplicate books can certify completeness.
+    monkeypatch.setattr(
+        discovery, "_get",
+        lambda *_args, **_kwargs: (
+            {"id": "event-duplicate-odds", "bookmakers": [
+                {"key": "book-a", "markets": [{"key": "h2h"}]},
+                {"key": "BOOK-A", "markets": [{"key": "h2h"}]},
+            ]},
+            {"ok": True, "status": 200},
+        ),
+    )
+    keys, meta = discovery._discover_event_markets_direct(
+        "baseball_mlb", "event-duplicate-odds", regions="us",
+    )
+    assert keys == []
+    assert meta["ok"] is False
+    assert meta["error"] == "DUPLICATE_PROVIDER_BOOKMAKER_KEY"
