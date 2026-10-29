@@ -12,7 +12,7 @@ import urllib.parse
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from market_catalog import candidate_markets_for_sport
-from provider import BASE, _get, _invalid_point_count, _invalid_price_count, _invalid_outcome_name_count, _matches_optional_sport_key, _valid_provider_event_id, api_key, normalize_games
+from provider import BASE, _get, _invalid_point_count, _invalid_price_count, _invalid_outcome_name_count, _invalid_outcome_description_count, _matches_optional_sport_key, _valid_provider_event_id, api_key, normalize_games
 
 
 def discover_events(sport_key: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -304,6 +304,7 @@ def _probe_market_batch(
         invalid_points = _invalid_point_count([payload], requested)
         invalid_prices = _invalid_price_count([payload], requested)
         invalid_names = _invalid_outcome_name_count([payload], requested)
+        invalid_descriptions = _invalid_outcome_description_count([payload], requested)
         # A successful provider odds response can repeat a bookmaker or a
         # market within the same bookmaker. Preserve the normalized quotes for
         # candidate retention, but never certify duplicated inventory as
@@ -341,6 +342,8 @@ def _probe_market_batch(
             evidence[0]["n_outcomes_invalid_price"] = invalid_prices
         if invalid_names:
             evidence[0]["n_outcomes_invalid_identity"] = invalid_names
+        if invalid_descriptions:
+            evidence[0]["n_outcomes_invalid_description"] = invalid_descriptions
         if unsolicited:
             evidence[0]["ok"] = False
             evidence[0]["error"] = "UNREQUESTED_PROVIDER_MARKET_ODDS"
@@ -362,6 +365,9 @@ def _probe_market_batch(
         elif invalid_names:
             evidence[0]["ok"] = False
             evidence[0]["error"] = "INVALID_PROVIDER_OUTCOME_IDENTITY"
+        elif invalid_descriptions:
+            evidence[0]["ok"] = False
+            evidence[0]["error"] = "INVALID_PROVIDER_OUTCOME_DESCRIPTION"
         elif duplicate_books:
             evidence[0]["ok"] = False
             evidence[0]["error"] = "DUPLICATE_PROVIDER_BOOKMAKER_ODDS_KEY"
