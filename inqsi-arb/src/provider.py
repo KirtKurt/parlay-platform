@@ -349,7 +349,10 @@ def _duplicate_odds_identity_counts(games: Sequence[Mapping[str, Any]]) -> Tuple
         for book in game.get("bookmakers") or []:
             book_key = book.get("key")
             if isinstance(book_key, str) and book_key.strip():
-                canonical_book = book_key.strip()
+                # normalize_games lowercases sportsbook keys before attaching
+                # quotes. Two case variants therefore refer to the same book
+                # and must not count as independent provider coverage.
+                canonical_book = book_key.strip().lower()
                 if canonical_book in seen_books:
                     duplicate_books += 1
                 seen_books.add(canonical_book)
