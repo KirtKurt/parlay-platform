@@ -49,7 +49,7 @@ def _get(url: str, params: Mapping[str, Any], timeout: int = 15) -> Tuple[Any, D
             }
     except urllib.error.HTTPError as exc:
         return None, {"ok": False, "status": exc.code, "error": f"PROVIDER_HTTP_{exc.code}"}
-    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError):
+    except (urllib.error.URLError, TimeoutError, OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None, {"ok": False, "error": "PROVIDER_UNAVAILABLE"}
 
 
