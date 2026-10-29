@@ -147,6 +147,15 @@ def _valid_outcome_name(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip()) and value == value.strip()
 
 
+def _valid_outcome_description(value: Any) -> bool:
+    """Optional provider player/selection descriptions must be exact strings.
+
+    Never silently stringify a numeric player identity or trim a padded one.
+    A missing, null, or empty description is valid for ordinary moneylines.
+    """
+    return value is None or (isinstance(value, str) and value == value.strip())
+
+
 def _bucket_identity(market_key: str, outcome: Mapping[str, Any]) -> Tuple[str, str]:
     name = str(outcome.get("name") or "").strip()
     desc = str(outcome.get("description") or "").strip()
@@ -189,6 +198,8 @@ def normalize_games(games: Sequence[Mapping[str, Any]], *, sport_key: str, provi
                     if not _valid_outcome_name(outcome.get("name")):
                         continue
                     name = outcome["name"]
+                    if not _valid_outcome_description(outcome.get("description")):
+                        continue
                     desc = str(outcome.get("description") or "").strip()
                     point = _canon_number(outcome.get("point"))
                     # Missing points are legitimate for moneyline/yes-no markets.
@@ -352,6 +363,19 @@ def _invalid_outcome_name_count(games: Sequence[Mapping[str, Any]], requested: s
     )
 
 
+def _invalid_outcome_description_count(games: Sequence[Mapping[str, Any]], requested: set[str]) -> int:
+    """Count malformed provider description identities in requested markets."""
+    return sum(
+        1
+        for game in games
+        for book in game.get("bookmakers") or []
+        for market in book.get("markets") or []
+        if str(market.get("key") or "").strip() in requested
+        for outcome in market.get("outcomes") or []
+        if not _valid_outcome_description(outcome.get("description"))
+    )
+
+
 def _matches_optional_sport_key(record: Mapping[str, Any], sport_key: str) -> bool:
     """Only an absent sport key is legacy-compatible; explicit invalid keys fail closed."""
     return "sport_key" not in record or record["sport_key"] == sport_key
@@ -407,6 +431,7 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
     invalid_points = _invalid_point_count(valid, requested_set)
     invalid_prices = _invalid_price_count(valid, requested_set)
     invalid_names = _invalid_outcome_name_count(valid, requested_set)
+    invalid_descriptions = _invalid_outcome_description_count(valid, requested_set)
     normalized = [
         row for row in normalize_games(valid, sport_key=sport_key)
         if row.get("market") in requested_set
@@ -416,7 +441,7 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
     # establish priced coverage. Keep correctly priced peers without marking
     # the entire provider response as complete.
     unpriced = sum(1 for game in valid if str(game["id"]) not in priced_events)
-    incomplete = bool(malformed or wrong_sport or duplicate_events or unsolicited or invalid_books or invalid_markets or invalid_points or invalid_prices or invalid_names or unpriced)
+    incomplete = bool(malformed or wrong_sport or duplicate_events or unsolicited or invalid_books or invalid_markets or invalid_points or invalid_prices or invalid_names or invalid_descriptions or unpriced)
     error = (
         "MALFORMED_PROVIDER_FEATURED_ODDS" if malformed
         else "MISMATCHED_PROVIDER_SPORT_KEY" if wrong_sport
@@ -426,6 +451,7 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
         else "INVALID_PROVIDER_MARKET_IDENTITY" if invalid_markets
         else "INVALID_PROVIDER_MARKET_POINT" if invalid_points
         else "INVALID_PROVIDER_OUTCOME_IDENTITY" if invalid_names
+        else "INVALID_PROVIDER_OUTCOME_DESCRIPTION" if invalid_descriptions
         else "NO_USABLE_PROVIDER_FEATURED_ODDS" if unpriced
         else "INVALID_PROVIDER_AMERICAN_ODDS" if invalid_prices
         else meta.get("error")
@@ -447,6 +473,7 @@ def fetch_featured_odds(sport_key: str, *, markets: Iterable[str], regions: str,
         "n_outcomes_invalid_point": invalid_points,
         "n_outcomes_invalid_price": invalid_prices,
         "n_outcomes_invalid_identity": invalid_names,
+        "n_outcomes_invalid_description": invalid_descriptions,
         "markets": requested,
     }
 
@@ -506,6 +533,7 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
     invalid_points_total = 0
     invalid_prices_total = 0
     invalid_names_total = 0
+    invalid_descriptions_total = 0
     requested = [m.strip() for m in market_keys if m.strip()]
     requested_set = set(requested)
     market_csv = ",".join(requested)
@@ -582,6 +610,8 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
         invalid_prices_total += invalid_prices
         invalid_names = _invalid_outcome_name_count([payload], requested_set)
         invalid_names_total += invalid_names
+        invalid_descriptions = _invalid_outcome_description_count([payload], requested_set)
+        invalid_descriptions_total += invalid_descriptions
         normalized = [
             row for row in normalize_games([payload], sport_key=sport_key)
             if row.get("market") in requested_set
@@ -594,6 +624,7 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
                           else "INVALID_PROVIDER_MARKET_IDENTITY" if invalid_markets
                           else "INVALID_PROVIDER_MARKET_POINT" if invalid_points
                           else "INVALID_PROVIDER_OUTCOME_IDENTITY" if invalid_names
+                          else "INVALID_PROVIDER_OUTCOME_DESCRIPTION" if invalid_descriptions
                           else "NO_USABLE_PROVIDER_MARKET_ODDS"),
                 "status": meta.get("status"),
             })
@@ -632,6 +663,13 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
                 "n_outcomes_invalid_identity": invalid_names,
                 "status": meta.get("status"),
             })
+        if invalid_descriptions:
+            errors.append({
+                "event_id": event_id,
+                "error": "INVALID_PROVIDER_OUTCOME_DESCRIPTION",
+                "n_outcomes_invalid_description": invalid_descriptions,
+                "status": meta.get("status"),
+            })
         if invalid_prices and normalized:
             errors.append({
                 "event_id": event_id,
@@ -654,6 +692,7 @@ def fetch_event_markets(sport_key: str, market_keys: Iterable[str], *, regions: 
         "n_outcomes_invalid_point": invalid_points_total,
         "n_outcomes_invalid_price": invalid_prices_total,
         "n_outcomes_invalid_identity": invalid_names_total,
+        "n_outcomes_invalid_description": invalid_descriptions_total,
         "n_markets": len(results),
         "partial": bool(errors) or len(selected) < len(events),
         "errors": errors[:20],
