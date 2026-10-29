@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -132,13 +133,18 @@ def _canon_number(value: Any) -> Optional[float]:
 
 
 def _valid_american_price(value: Any) -> bool:
-    """Accept only integral JSON numeric American odds with absolute value >= 100.
+    """Allow integral American odds, including canonical signed integer strings.
 
-    The Odds API returns American prices as numbers, not decimal-odds strings
-    or fractional American prices. Never silently coerce a malformed quote
-    into a candidate or use it to certify provider-visible coverage.
+    Preserve the existing +125 string-odds contract, but do not silently
+    coerce decimal-odds strings, padded strings, or fractional American
+    prices into executable quotes or complete provider-coverage evidence.
     """
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, str):
+        if re.fullmatch(r"[+-]?[0-9]+", value) is None:
+            return False
+    elif not isinstance(value, (int, float)):
         return False
     try:
         number = float(value)
