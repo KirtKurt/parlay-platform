@@ -270,7 +270,7 @@ def test_featured_fractional_and_stringified_american_odds_are_not_executable(mo
     game = _valid_game()
     game["bookmakers"][0]["markets"][0]["outcomes"].extend([
         {"name": "FractionalAmerican", "price": 110.5},
-        {"name": "StringAmerican", "price": "+110"},
+        {"name": "DecimalString", "price": "+110.5"},
     ])
     rows, meta = _fetch(monkeypatch, [game])
     assert len(rows) == 1
