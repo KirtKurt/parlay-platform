@@ -132,14 +132,19 @@ def _canon_number(value: Any) -> Optional[float]:
 
 
 def _valid_american_price(value: Any) -> bool:
-    """Finite, non-boolean American odds must have absolute value >= 100."""
-    if isinstance(value, bool):
+    """Accept only integral JSON numeric American odds with absolute value >= 100.
+
+    The Odds API returns American prices as numbers, not decimal-odds strings
+    or fractional American prices. Never silently coerce a malformed quote
+    into a candidate or use it to certify provider-visible coverage.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
     try:
         number = float(value)
     except (TypeError, ValueError, OverflowError):
         return False
-    return math.isfinite(number) and abs(number) >= 100
+    return math.isfinite(number) and number.is_integer() and abs(number) >= 100
 
 
 def _valid_outcome_name(value: Any) -> bool:
