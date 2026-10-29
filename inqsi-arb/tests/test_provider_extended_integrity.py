@@ -252,3 +252,30 @@ def test_zero_extended_event_request_cap_never_probes_odds(monkeypatch):
     assert meta["n_event_request_cap"] == 0
     assert meta["n_event_odds_requests"] == 0
     assert meta["partial"] is True
+
+
+def test_extended_fractional_and_stringified_american_odds_preserve_valid_peers(monkeypatch):
+    game = _game()
+    game["bookmakers"][0]["markets"][0]["outcomes"].extend([
+        {"name": "Over", "description": "Another Player", "point": 8.5, "price": -120.5},
+        {"name": "Under", "description": "Another Player", "point": 8.5, "price": "-120"},
+    ])
+    rows, meta, calls = _fetch(monkeypatch, [{"id": "event-1"}], {"event-1": game})
+    assert len(rows) == 1
+    assert len(rows[0]["quotes"]) == 2
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["n_outcomes_invalid_price"] == 2
+    assert meta["errors"][0]["error"] == "INVALID_PROVIDER_AMERICAN_ODDS"
+    assert len(calls) == 2
+
+
+def test_extended_integral_numeric_float_american_odds_remain_usable(monkeypatch):
+    game = _game()
+    game["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = -110.0
+    rows, meta, calls = _fetch(monkeypatch, [{"id": "event-1"}], {"event-1": game})
+    assert len(rows) == 1
+    assert len(rows[0]["quotes"]) == 2
+    assert meta["ok"] is True
+    assert meta["partial"] is False
+    assert len(calls) == 2
