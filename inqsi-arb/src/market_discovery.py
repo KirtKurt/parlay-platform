@@ -167,7 +167,7 @@ def _discover_event_markets_direct(
     # bounded fallback path and its explicit partial-coverage classification.
     seen_books = set()
     for book in payload["bookmakers"]:
-        book_key = book["key"].strip()
+        book_key = book["key"].strip().lower()
         if book_key in seen_books:
             return [], {
                 **meta, "ok": False, "error": "DUPLICATE_PROVIDER_BOOKMAKER_KEY",
@@ -316,7 +316,7 @@ def _probe_market_batch(
         for book in books:
             book_key = book.get("key")
             if isinstance(book_key, str) and book_key.strip():
-                book_key = book_key.strip()
+                book_key = book_key.strip().lower()
                 if book_key in seen_books:
                     duplicate_books += 1
                 seen_books.add(book_key)
