@@ -1012,3 +1012,29 @@ def test_conflicting_explicit_american_odds_aliases_are_held_back(monkeypatch):
     assert result == {"published": len(rows), "deduped": 0, "errors": 0}
     payloads = [json.loads(json.loads(call["Message"])["default"]) for call in sns.calls]
     assert [item["status"] for item in payloads] == ["HELD_BACK"] * 4 + ["VERIFIED"]
+
+
+def test_verified_sms_requires_integral_canonical_american_odds():
+    """The SMS verifier must not be looser than the provider price adapter."""
+    for invalid in (110.5, -110.5, "+110.5", "-110.5", " +110", "+110 ",
+                    "1.91", "1e2", True, float("nan"), float("inf")):
+        row = _verified_row()
+        row["legs"][0]["american"] = invalid
+        assert not alerts._is_verified_executable(row), invalid
+    for valid in (110, 110.0, "+110", "-110", "110"):
+        row = _verified_row()
+        row["legs"][0]["american"] = valid
+        assert alerts._is_verified_executable(row), valid
+
+
+def test_invalid_alternate_american_price_is_held_back_in_sns(monkeypatch):
+    sns = _setup(monkeypatch)
+    row = _verified_row()
+    row["legs"][0]["american_odds"] = "+115.5"
+    assert not alerts._is_verified_executable(row)
+    result = alerts.publish_scan_opportunities({"hits": [row]})
+    assert result == {"published": 1, "deduped": 0, "errors": 0}
+    payload = json.loads(sns.calls[0]["Message"])
+    assert json.loads(payload["default"])["status"] == "HELD_BACK"
+    assert "HELD BACK" in payload["sms"]
+    assert "VERIFIED EXECUTABLE" not in payload["sms"]
