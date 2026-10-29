@@ -264,3 +264,28 @@ def test_distinct_featured_event_ids_remain_complete(monkeypatch):
     assert meta["ok"] is True
     assert meta["partial"] is False
     assert meta["n_games_duplicate_event_id"] == 0
+
+
+def test_featured_fractional_and_stringified_american_odds_are_not_executable(monkeypatch):
+    game = _valid_game()
+    game["bookmakers"][0]["markets"][0]["outcomes"].extend([
+        {"name": "FractionalAmerican", "price": 110.5},
+        {"name": "StringAmerican", "price": "+110"},
+    ])
+    rows, meta = _fetch(monkeypatch, [game])
+    assert len(rows) == 1
+    assert len(rows[0]["quotes"]) == 2
+    assert meta["ok"] is True
+    assert meta["partial"] is True
+    assert meta["error"] == "INVALID_PROVIDER_AMERICAN_ODDS"
+    assert meta["n_outcomes_invalid_price"] == 2
+
+
+def test_featured_integral_numeric_float_american_odds_remain_usable(monkeypatch):
+    game = _valid_game()
+    game["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = -110.0
+    rows, meta = _fetch(monkeypatch, [game])
+    assert len(rows) == 1
+    assert len(rows[0]["quotes"]) == 2
+    assert meta["ok"] is True
+    assert meta["partial"] is False
