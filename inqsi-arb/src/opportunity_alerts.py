@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable
@@ -40,6 +41,26 @@ def _positive_finite(value: Any) -> bool:
     return (isinstance(value, (int, float)) and not isinstance(value, bool)
             and math.isfinite(value) and value > 0)
 
+
+
+def _valid_american_price(value: Any) -> bool:
+    """Accept only integral American odds, including signed integer strings.
+
+    Mirror the provider's strict price contract: fractional, padded, or
+    decimal-form string odds cannot certify an executable SMS opportunity.
+    """
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, str):
+        if re.fullmatch(r"[+-]?[0-9]+", value) is None:
+            return False
+    elif not isinstance(value, (int, float)):
+        return False
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return math.isfinite(numeric) and numeric.is_integer() and abs(numeric) >= 100
 
 
 def _verified_legs_present(row: Dict[str, Any]) -> bool:
@@ -80,22 +101,12 @@ def _verified_legs_present(row: Dict[str, Any]) -> bool:
         primary_american = leg.get("american")
         alternate_american = leg.get("american_odds")
         if primary_american is not None and alternate_american is not None:
-            try:
-                primary_number = float(primary_american)
-                alternate_number = float(alternate_american)
-            except (TypeError, ValueError, OverflowError):
+            if (not _valid_american_price(primary_american)
+                    or not _valid_american_price(alternate_american)
+                    or float(primary_american) != float(alternate_american)):
                 return False
-            if (isinstance(primary_american, bool) or isinstance(alternate_american, bool)
-                    or not math.isfinite(primary_number) or not math.isfinite(alternate_number)
-                    or primary_number != alternate_number):
-                return False
-        if american is not None:
-            try:
-                numeric = float(american)
-            except (TypeError, ValueError, OverflowError):
-                return False
-            if isinstance(american, bool) or not math.isfinite(numeric) or abs(numeric) < 100:
-                return False
+        if american is not None and not _valid_american_price(american):
+            return False
         # Some provider rows contain both American and decimal prices.
         # An invalid explicit decimal is contradictory pricing evidence even
         # when the American field looks valid; never label that leg verified.
