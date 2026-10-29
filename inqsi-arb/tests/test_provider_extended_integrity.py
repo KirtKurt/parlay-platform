@@ -258,7 +258,7 @@ def test_extended_fractional_and_stringified_american_odds_preserve_valid_peers(
     game = _game()
     game["bookmakers"][0]["markets"][0]["outcomes"].extend([
         {"name": "Over", "description": "Another Player", "point": 8.5, "price": -120.5},
-        {"name": "Under", "description": "Another Player", "point": 8.5, "price": "-120"},
+        {"name": "Under", "description": "Another Player", "point": 8.5, "price": "-120.5"},
     ])
     rows, meta, calls = _fetch(monkeypatch, [{"id": "event-1"}], {"event-1": game})
     assert len(rows) == 1
