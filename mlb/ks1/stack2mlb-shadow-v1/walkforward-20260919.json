@@ -1,0 +1,46 @@
+{
+  "promoted": false,
+  "system": "2stackMLB-v1",
+  "as_of": "2026-09-19T21:16:00+00:00",
+  "source_run": 35468117399,
+  "source_artifact": "ks1-nightly-35468117399",
+  "note": "Shadow attach only. Official KS1 p_home/locks/ledgers untouched. No model train. BBS isolate-skip already on main via #953; PR 713 remains draft/do-not-merge. PR 712 watchdog not activated.",
+  "official_ks1_baseline": {
+    "brier": 0.23539992709690316,
+    "logloss": 0.6625431668181644,
+    "n": 110,
+    "new_grades": 0,
+    "locked_rows": 114,
+    "eligible_graded_rows": 110,
+    "excluded_no_bound_final": ["824788", "822921", "823571", "824545"],
+    "accuracy": 0.5727272727272728,
+    "hits": 63,
+    "status": "no_new_final_grades"
+  },
+  "challenger": {
+    "name": "2stackMLB",
+    "promoted": false,
+    "walk_forward_brier": null,
+    "blocked_on": "full graded_ledger.json absent from nightly artifact; only official_metrics summary present"
+  },
+  "sits": ["NYY", "NYM", "CWS"],
+  "slate": {
+    "date": "2026-09-19",
+    "rows": 15,
+    "confirmed": 9,
+    "projected": 6,
+    "bbs_matched": 15,
+    "bbs_identity_exclusions": [],
+    "sits_today": ["PHI@NYM 823571 confirmed", "DET@CWS 824545 confirmed", "NYY@ARI 825029 projected"]
+  },
+  "taxonomy_rule": "Do not refit on a single miss. Promote only after a repeated failure bucket.",
+  "ingest": {
+    "latest_schedule_id": 35468117399,
+    "conclusion": "success",
+    "duration_s": 322,
+    "ks1_daily": "ks1-daily-35468117399",
+    "ks1_nightly": "ks1-nightly-35468117399",
+    "latest_push_id": 35464367778,
+    "cron_gap": false
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "promoted": false,
+  "champion": "KS1-LGB+dual-Poisson",
+  "challenger": "2stackMLB",
+  "authority": "shadow-only",
+  "source_run": 37912202508,
+  "night_date": "2026-10-09",
+  "official_brier": 0.2367980082815068,
+  "official_logloss": 0.6668646297093749,
+  "n": 241,
+  "new_grades": 0,
+  "locked_rows_admission": 242,
+  "excluded_no_bound_final": ["823490"],
+  "slate_rows": 0,
+  "confirmed_lineups": 0,
+  "projected_lineups": 0,
+  "unmatched_bbs_isolated": ["e53688da-cc6b-4175-8bcb-a47c2766a26c"],
+  "failure_taxonomy": {
+    "no_new_final_grades": "nightly status no_new_final_grades; calibration deferred",
+    "empty_official_slate": "official_games=0; one unmatched BBS event isolate-skipped, slate not failed",
+    "unbound_final": "823490 excluded no_bound_final; do not rewrite ledger",
+    "thin_edge": "pick accuracy 0.5809 on 241; not a promotion signal"
+  },
+  "walk_forward": "not refit; attach blocked until a non-empty official slate exists",
+  "do_not": ["merge", "dispatch mlb-research-ingestion", "rewrite p_home", "rewrite locks", "rewrite ledgers", "activate PR 712 watchdog", "train official model"]
+}
