@@ -104,7 +104,8 @@ def recent(kind: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
     return out[:wanted]
 
 
-def claim_once(namespace: str, identity: str, *, ttl_seconds: int = 21600) -> bool:
+def claim_once(namespace: str, identity: str, *, ttl_seconds: int = 21600,
+               claim_token: str | None = None) -> bool:
     """Atomically claim an alert identity.
 
     Returns True only for the first claimant during the TTL window. This keeps
@@ -112,22 +113,60 @@ def claim_once(namespace: str, identity: str, *, ttl_seconds: int = 21600) -> bo
     """
     table = _table()
     if table is None:
-        return False
+        # Missing durable dedupe storage is not an existing claim. Failing
+        # closed as an error preserves the distinction between unavailable
+        # persistence and a genuinely duplicate opportunity.
+        raise RuntimeError("ARB_OPPORTUNITY_CLAIM_STORE_UNAVAILABLE")
     now = int(time.time())
     pk = "CLAIM#" + (str(namespace).strip().upper() or "DEFAULT")
     sk = str(identity).strip()
     if not sk:
         return False
     try:
+        item = {
+            "pk": pk,
+            "sk": sk,
+            "kind": "CLAIM",
+            "created_at_ms": now * 1000,
+            "ttl": now + max(60, int(ttl_seconds)),
+        }
+        if claim_token:
+            item["claim_token"] = str(claim_token)
         table.put_item(
-            Item={
-                "pk": pk,
-                "sk": sk,
-                "kind": "CLAIM",
-                "created_at_ms": now * 1000,
-                "ttl": now + max(60, int(ttl_seconds)),
-            },
-            ConditionExpression="attribute_not_exists(pk) AND attribute_not_exists(sk)",
+            Item=item,
+            # DynamoDB TTL deletion is asynchronous. Expired claims must be
+            # atomically reclaimable without waiting for background deletion.
+            ConditionExpression="attribute_not_exists(pk) OR #ttl <= :now",
+            ExpressionAttributeNames={"#ttl": "ttl"},
+            ExpressionAttributeValues={":now": now},
+        )
+        return True
+    except Exception as exc:
+        response = getattr(exc, "response", {}) or {}
+        code = str((response.get("Error") or {}).get("Code") or "")
+        if code == "ConditionalCheckFailedException":
+            return False
+        raise
+
+
+
+def release_claim(namespace: str, identity: str, *, claim_token: str) -> bool:
+    """Release only a claim still owned by this publisher.
+
+    Use only after a definitive SNS rejection. A timeout or missing receipt
+    is ambiguous and must not free a claim that might already be published.
+    """
+    table = _table()
+    token = str(claim_token or "").strip()
+    sk = str(identity or "").strip()
+    if table is None or not token or not sk:
+        return False
+    pk = "CLAIM#" + (str(namespace).strip().upper() or "DEFAULT")
+    try:
+        table.delete_item(
+            Key={"pk": pk, "sk": sk},
+            ConditionExpression="claim_token = :token",
+            ExpressionAttributeValues={":token": token},
         )
         return True
     except Exception as exc:
