@@ -44,18 +44,19 @@ def degraded_odds_capture(receipt):
     return {"payload": payload, "receipt": stamped}
 
 
-def bbs_rate_limited(receipt):
-    """429 cannot supply BBS identities. Do not kill official scoring."""
+def bbs_unavailable(receipt):
+    """429/403 cannot supply BBS identities. Do not kill official scoring."""
     return (isinstance(receipt, dict) and receipt.get("provider") == "bbs"
-            and receipt.get("status") == 429)
+            and receipt.get("status") in (429, 403))
 
 
 def degraded_bbs_capture(receipt):
     """Empty BBS catalogue. Official games without BBS become exclusions."""
     payload = {"data": []}
+    status = receipt.get("status", 429)
     stamped = {**receipt, "as_of": datetime.now(timezone.utc).isoformat(),
                "sha256": hashlib.sha256(encode(payload)).hexdigest(),
-               "degraded": "bbs_rate_limited", "status": 429}
+               "degraded": "bbs_unavailable", "status": status}
     return {"payload": payload, "receipt": stamped}
 
 
@@ -105,6 +106,8 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
                 body_shape = 'non_json'
             receipt = {'provider': provider, 'endpoint': base+path, 'status': exc.code, 'body_shape': body_shape}
             # Never log URL/query/header strings: Odds credentials live in query.
+            if exc.code in (429, 403) and provider == 'bbs':
+                raise ProviderFailure(receipt) from None
             if exc.code == 429:
                 raise ProviderFailure(receipt) from None
             if exc.code >= 500 and attempt == 0:
@@ -183,7 +186,7 @@ def capture(target_date, output):
         bbs = bbs_catalogue(target_date, official_games, os.environ.get('BBS_API_KEY'))
         (output / 'bbs.json').write_bytes(encode(bbs)); print(json.dumps(bbs['receipt']))
     except ProviderFailure as exc:
-        if bbs_rate_limited(exc.receipt):
+        if bbs_unavailable(exc.receipt):
             value = degraded_bbs_capture(exc.receipt)
             (output / 'bbs.json').write_bytes(encode(value))
             print(json.dumps(value['receipt']))
