@@ -45,17 +45,18 @@ def degraded_odds_capture(receipt):
 
 
 def bbs_rate_limited(receipt):
-    """429 cannot supply BBS identities. Do not kill official scoring."""
+    """429 or 403 cannot supply BBS identities. Do not kill official scoring."""
     return (isinstance(receipt, dict) and receipt.get("provider") == "bbs"
-            and receipt.get("status") == 429)
+            and receipt.get("status") in (429, 403))
 
 
 def degraded_bbs_capture(receipt):
     """Empty BBS catalogue. Official games without BBS become exclusions."""
     payload = {"data": []}
+    status = receipt.get("status", 429)
     stamped = {**receipt, "as_of": datetime.now(timezone.utc).isoformat(),
                "sha256": hashlib.sha256(encode(payload)).hexdigest(),
-               "degraded": "bbs_rate_limited", "status": 429}
+               "degraded": "bbs_rate_limited", "status": status}
     return {"payload": payload, "receipt": stamped}
 
 
@@ -105,7 +106,7 @@ def fetch(provider, base, path, params, *, key=None, opener=urlopen):
                 body_shape = 'non_json'
             receipt = {'provider': provider, 'endpoint': base+path, 'status': exc.code, 'body_shape': body_shape}
             # Never log URL/query/header strings: Odds credentials live in query.
-            if exc.code == 429:
+            if exc.code in (429, 403):
                 raise ProviderFailure(receipt) from None
             if exc.code >= 500 and attempt == 0:
                 time.sleep(1)
