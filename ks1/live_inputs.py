@@ -44,10 +44,12 @@ def degraded_odds_capture(receipt):
     return {"payload": payload, "receipt": stamped}
 
 
-def bbs_rate_limited(receipt):
-    """429 cannot supply BBS identities. Do not kill official scoring."""
-    return (isinstance(receipt, dict) and receipt.get("provider") == "bbs"
-            and receipt.get("status") == 429)
+def bbs_unavailable(receipt):
+    """429/403/missing-key/network cannot supply BBS identities. Do not kill official scoring."""
+    if not isinstance(receipt, dict) or receipt.get("provider") != "bbs":
+        return False
+    status = receipt.get("status")
+    return status in (429, 403, "BBS_API_KEY_MISSING", "NETWORK_ERROR")
 
 
 def degraded_bbs_capture(receipt):
@@ -55,7 +57,7 @@ def degraded_bbs_capture(receipt):
     payload = {"data": []}
     stamped = {**receipt, "as_of": datetime.now(timezone.utc).isoformat(),
                "sha256": hashlib.sha256(encode(payload)).hexdigest(),
-               "degraded": "bbs_rate_limited", "status": 429}
+               "degraded": "bbs_unavailable"}
     return {"payload": payload, "receipt": stamped}
 
 
@@ -183,7 +185,7 @@ def capture(target_date, output):
         bbs = bbs_catalogue(target_date, official_games, os.environ.get('BBS_API_KEY'))
         (output / 'bbs.json').write_bytes(encode(bbs)); print(json.dumps(bbs['receipt']))
     except ProviderFailure as exc:
-        if bbs_rate_limited(exc.receipt):
+        if bbs_unavailable(exc.receipt):
             value = degraded_bbs_capture(exc.receipt)
             (output / 'bbs.json').write_bytes(encode(value))
             print(json.dumps(value['receipt']))
