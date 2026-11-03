@@ -829,6 +829,7 @@ def scan_market(*, market_id: str, event: str, market: str, quotes: Iterable[Map
             })
     if math_arb and not rules_compatible:
         validation["qualification_reason"] = "SETTLEMENT_RULES_NOT_VERIFIED_COMPATIBLE"
+        validation["settlement_advisory"] = "SPORTSBOOK_RULES_MAY_AFFECT_SETTLEMENT"
     elif math_arb and settlement_state_reason:
         validation["qualification_reason"] = settlement_state_reason
     elif math_arb and not executable:
