@@ -1,6 +1,6 @@
-"""BBS rate-limit degrade. Does not rewrite probabilities, locks, or ledgers.
+"""BBS unavailable degrade. Does not rewrite probabilities, locks, or ledgers.
 
-A 429 or transport failure is a missing catalogue, not an identity collision.
+A 403, 429, or transport failure is a missing catalogue, not an identity collision.
 Daily isolate-skip must turn official games without a BBS row into
 missing_bbs_identity exclusions. Truncation and schema errors stay fatal
 in bbs_catalogue and are not handled here.
@@ -10,7 +10,7 @@ import hashlib
 
 from ks1.inventory import encode
 
-UNAVAILABLE = (429, 'NETWORK_ERROR', 'BBS_API_KEY_MISSING')
+UNAVAILABLE = (403, 429, 'NETWORK_ERROR', 'BBS_API_KEY_MISSING')
 
 
 def bbs_unavailable(receipt):
