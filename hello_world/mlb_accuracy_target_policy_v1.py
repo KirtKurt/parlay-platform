@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict
 
-VERSION = "MLB-ACCURACY-TARGET-POLICY-v4-dashboard-only-v2-manual-first"
+VERSION = "MLB-ACCURACY-TARGET-POLICY-v5-dashboard-only-v2-manual-first-70pct-admission"
 ROLLING_24H_ALL_GAMES_AUDIT_TARGET_PCT = 90.0
 RECOMMENDATION_RELIABILITY_THRESHOLD_PCT = 90.0
 MIN_OUTCOME_UNTOUCHED_ACCURACY_PCT = 90.0
@@ -14,6 +14,10 @@ MIN_EXACT_ODDS_COVERAGE_PCT = 90.0
 MAX_RELIABILITY_CALIBRATION_ERROR = 0.10
 MIN_ROLLING_24H_SLATE_ACCURACY_PCT = 90.0
 INDIVIDUAL_GAME_OFFICIAL_PICK_PROBABILITY_FLOOR_PCT = 60.0
+MIN_OFFICIAL_SIGNAL_FAMILY_WILSON_LOWER_BOUND_PCT = 70.0
+MIN_OFFICIAL_SIGNAL_FAMILY_HOLDOUT_GAMES = 50
+MIN_OFFICIAL_SIGNAL_FAMILY_DISTINCT_SLATE_DATES = 20
+MIN_OFFICIAL_SIGNAL_FAMILY_CHRONOLOGICAL_FOLDS = 3
 RELIABILITY_PROGRESS_MILESTONES_PCT = (50.0, 60.0, 70.0, 80.0)
 RUNTIME_SAFETY_VERSION = "MLB-ML-RUNTIME-SAFETY-v5-90pct-exact-odds-calibrated"
 CHAMPION_GATE_VERSION = "MLB-ML-CHAMPION-CHALLENGER-v1.6-retired-shadow-only"
@@ -42,6 +46,13 @@ def install() -> Dict[str, Any]:
     )
     os.environ["INQSI_MLB_INDIVIDUAL_GAME_OFFICIAL_PICK_PROBABILITY_FLOOR_PCT"] = str(
         INDIVIDUAL_GAME_OFFICIAL_PICK_PROBABILITY_FLOOR_PCT
+    )
+    os.environ["INQSI_MLB_ENFORCE_70_PRECISION_ADMISSION"] = "true"
+    os.environ["INQSI_MLB_MIN_OFFICIAL_SIGNAL_FAMILY_WILSON_LOWER_BOUND_PCT"] = str(
+        MIN_OFFICIAL_SIGNAL_FAMILY_WILSON_LOWER_BOUND_PCT
+    )
+    os.environ["INQSI_MLB_MIN_OFFICIAL_SIGNAL_FAMILY_HOLDOUT_GAMES"] = str(
+        MIN_OFFICIAL_SIGNAL_FAMILY_HOLDOUT_GAMES
     )
 
     patched = []
@@ -96,7 +107,7 @@ def install() -> Dict[str, Any]:
         import mlb_real_world_accuracy_patch as accuracy
 
         official_gate.apply(accuracy)
-        patched.append("official_lock_60pct_confirmed_direction_gate")
+        patched.append("official_lock_70pct_empirical_precision_admission")
     except Exception as exc:
         errors.append(f"official_lock_quality:{exc}")
 
@@ -125,13 +136,18 @@ def install() -> Dict[str, Any]:
         "everyGameRetainsVisibleLockedPrediction": True,
         "playabilitySeparateFromOfficialPick": True,
         "individualGameOfficialPickProbabilityFloorPct": INDIVIDUAL_GAME_OFFICIAL_PICK_PROBABILITY_FLOOR_PCT,
+        "officialRecommendationRequiresPrecisionAdmission": True,
+        "minimumOfficialSignalFamilyWilsonLowerBoundPct": MIN_OFFICIAL_SIGNAL_FAMILY_WILSON_LOWER_BOUND_PCT,
+        "minimumOfficialSignalFamilyHoldoutGames": MIN_OFFICIAL_SIGNAL_FAMILY_HOLDOUT_GAMES,
+        "minimumOfficialSignalFamilyDistinctSlateDates": MIN_OFFICIAL_SIGNAL_FAMILY_DISTINCT_SLATE_DATES,
+        "minimumOfficialSignalFamilyChronologicalFolds": MIN_OFFICIAL_SIGNAL_FAMILY_CHRONOLOGICAL_FOLDS,
         "multipleReversalsRequireIndependentConfirmationForOfficialStatus": True,
         "patched": patched,
         "errors": errors,
         "policy": (
-            "Every game retains a visible immutable winner record. Audit-target eligibility begins at 60% and "
-            "requires direction integrity; multi-reversal, divergent, compressed, resistance, or late-conflict rows "
-            "require independent book agreement plus steam or run-line confirmation. The 90% values are dashboard "
-            "aspirations only. V2 promotion uses fixed prospective market-skill gates and manual first review."
+            "Every game retains a visible immutable winner record. The 60% model-probability floor remains a "
+            "direction-quality check, not an accuracy promise. Official recommendation eligibility additionally "
+            "requires frozen prospective signal-family evidence with a 95% Wilson lower precision bound of at least "
+            "70%; otherwise the system abstains. The 90% values are dashboard aspirations only."
         ),
     }
