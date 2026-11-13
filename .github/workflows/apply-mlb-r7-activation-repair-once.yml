@@ -1,0 +1,111 @@
+name: Apply MLB R7 Activation Repair Once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-mlb-r7-activation-repair-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-mlb-r7-activation-repair-once
+  cancel-in-progress: false
+
+jobs:
+  repair-and-prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Move prospective cohort to a valid future activation boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          old_id='mlb-v2-2026-08-02-future-prospective-r6'
+          new_id='mlb-v2-2026-08-03-future-prospective-r7'
+          old_cutoff='2026-08-02T04:00:00+00:00'
+          new_cutoff='2026-08-03T04:00:00+00:00'
+          changed=[]
+          targets=[Path('template.yaml'),*Path('hello_world').rglob('*.py'),*Path('scripts').rglob('*.py'),*Path('tests/unit').rglob('*.py')]
+          for target in targets:
+              text=target.read_text(encoding='utf-8')
+              updated=text.replace(old_id,new_id).replace(old_cutoff,new_cutoff)
+              if updated != text:
+                  target.write_text(updated,encoding='utf-8')
+                  changed.append(str(target))
+
+          old_contract=Path('tests/unit/test_mlb_r6_recovery_contract.py')
+          new_contract=Path('tests/unit/test_mlb_r7_recovery_contract.py')
+          if old_contract.exists():
+              text=old_contract.read_text(encoding='utf-8')
+              text=text.replace('r6','r7').replace('R6','R7').replace('August 2','August 3')
+              new_contract.write_text(text,encoding='utf-8')
+              old_contract.unlink()
+              changed.extend([str(old_contract),str(new_contract)])
+
+          clean=Path('tests/unit/test_mlb_ml_r5_clean_cutover.py')
+          if clean.exists():
+              text=clean.read_text(encoding='utf-8')
+              text=text.replace('test_r6_','test_r7_').replace('r6 ','r7 ').replace('pre-r6','pre-r7')
+              clean.write_text(text,encoding='utf-8')
+              changed.append(str(clean))
+
+          print({'changedFiles':sorted(set(changed))})
+          PY
+
+      - name: Verify complete MLB contracts
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'requests>=2.31,<3' 'PyYAML>=6,<7' -r hello_world/requirements.txt
+          python scripts/stabilize_mlb_deploy_source.py
+          python scripts/patch_template_mlb_v1.py
+          python scripts/patch_template_mlb_security.py
+          python scripts/patch_template_mlb_results_routes.py
+          python - <<'PY'
+          from pathlib import Path
+          text=Path('template.yaml').read_text()
+          assert "MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-08-03-future-prospective-r7'" in text
+          assert "MLB_ML_RELEASE_CONTRACT_ID: 'mlb-v2-2026-08-03-future-prospective-r7'" in text
+          assert "MLB_ML_RELEASE_CUTOFF_UTC: '2026-08-03T04:00:00+00:00'" in text
+          assert "INQSI_MLB_ML_AUTO_PROMOTE: 'false'" in text
+          start=text.index('  MLBResultsSchedulerFunction:\n')
+          end=text.index('\n  MLBMLTrainingFunction:\n',start)
+          block=text[start:end]
+          assert 'Timeout: 600' in block and 'MemorySize: 2048' in block
+          PY
+          python -m compileall -q hello_world scripts
+          sam validate --template-file template.yaml
+          git diff --check
+          mapfile -t tests < <(find tests/unit -maxdepth 1 -type f -name 'test_mlb_*.py' -print | sort)
+          test ${#tests[@]} -gt 0
+          python -m pytest -q --tb=short "${tests[@]}"
+          rm -rf .aws-sam
+          sam build --no-cached --template-file template.yaml
+          python scripts/verify_mlb_schedule_invariants.py --template .aws-sam/build/template.yaml
+
+      - name: Commit r7 repair
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add template.yaml hello_world scripts tests/unit
+          git diff --cached --quiet && exit 0
+          git commit -m 'Move MLB prospective activation to valid r7 boundary'
+          git push origin HEAD:"$HEAD_BRANCH"
