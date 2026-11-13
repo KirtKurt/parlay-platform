@@ -1,0 +1,157 @@
+name: Diagnose isolated Tennis V2.4 lock failures
+
+on:
+  push:
+    branches: [agent/tennis-polymarket-mlb-parity-v2-4]
+    paths:
+      - ".github/workflows/diagnose-tennis-lock-v2-4.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-tennis-v2-4-lock
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-tennis-ml-prod
+  LOCK_FUNCTION: parlay-platform-tennis-ml-prod-tennis-lock
+  LOCK_ALARM: parlay-platform-tennis-ml-prod-tennis-lock-errors
+  LOCK_LOG_GROUP: /aws/lambda/parlay-platform-tennis-ml-prod-tennis-lock
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify exact isolated target
+        run: |
+          set -Eeuo pipefail
+          account=$(aws sts get-caller-identity --query Account --output text)
+          test "$account" = "735707987003"
+          stack_status=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" --region "$AWS_REGION" \
+            --query 'Stacks[0].StackStatus' --output text)
+          test "$stack_status" = "UPDATE_COMPLETE"
+          resolved=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" --logical-resource-id TennisLockFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          test "$resolved" = "$LOCK_FUNCTION"
+          test "$STACK_NAME" != "parlay-platform-tennis-learning"
+          test "$STACK_NAME" != "parlay-platform-dev"
+
+      - name: Collect narrow lock diagnostics
+        run: |
+          set -Eeuo pipefail
+          mkdir -p /tmp/tennis-lock-diagnostic
+          aws lambda get-function-configuration \
+            --function-name "$LOCK_FUNCTION" --region "$AWS_REGION" \
+            --query '{FunctionName:FunctionName,CodeSha256:CodeSha256,LastModified:LastModified,LastUpdateStatus:LastUpdateStatus,State:State,Timeout:Timeout,MemorySize:MemorySize}' \
+            --output json > /tmp/tennis-lock-diagnostic/function.json
+          rule=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" --logical-resource-id TennisLockSchedule \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          aws events describe-rule --name "$rule" --region "$AWS_REGION" \
+            --query '{Name:Name,State:State,ScheduleExpression:ScheduleExpression}' \
+            --output json > /tmp/tennis-lock-diagnostic/rule.json
+          aws events list-targets-by-rule --rule "$rule" --region "$AWS_REGION" \
+            --query 'Targets[].{Id:Id,Arn:Arn,RetryPolicy:RetryPolicy,DeadLetterConfig:DeadLetterConfig}' \
+            --output json > /tmp/tennis-lock-diagnostic/targets.json
+          aws cloudwatch describe-alarms --alarm-names "$LOCK_ALARM" --region "$AWS_REGION" \
+            --query 'MetricAlarms[0].{State:StateValue,Reason:StateReason,Updated:StateUpdatedTimestamp,Metric:MetricName,Namespace:Namespace,Period:Period,EvaluationPeriods:EvaluationPeriods,Threshold:Threshold,TreatMissingData:TreatMissingData}' \
+            --output json > /tmp/tennis-lock-diagnostic/alarm.json
+
+          start_epoch=$(($(date +%s) - 10800))
+          start_ms=$((start_epoch * 1000))
+          aws logs filter-log-events \
+            --log-group-name "$LOCK_LOG_GROUP" \
+            --start-time "$start_ms" \
+            --region "$AWS_REGION" \
+            --limit 10000 \
+            --output json > /tmp/tennis-lock-events.json
+
+          START_EPOCH="$start_epoch" python - <<'PY'
+          import json
+          import os
+          import re
+          from collections import Counter
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          raw = json.loads(Path("/tmp/tennis-lock-events.json").read_text())
+          patterns = {
+              "timeout": re.compile(r"Task timed out|Status:\s*timeout", re.I),
+              "throttle": re.compile(r"Throttl|ProvisionedThroughputExceeded", re.I),
+              "no_complete_manifest": re.compile(r"NO_COMPLETE_TENNIS_MANIFEST_FOR_SLATE", re.I),
+              "access_denied": re.compile(r"AccessDenied", re.I),
+              "resource_missing": re.compile(r"ResourceNotFound|NoSuchBucket", re.I),
+              "attribute_error": re.compile(r"AttributeError|has no attribute", re.I),
+              "scheduled_failure": re.compile(r"TENNIS_SCHEDULED_LOCK_FAILED", re.I),
+              "runtime_error": re.compile(r"Runtime\.|Traceback|\[ERROR\]", re.I),
+          }
+          counts = Counter()
+          evidence = []
+          for row in raw.get("events") or []:
+              message = str(row.get("message") or "")
+              matched = [name for name, pattern in patterns.items() if pattern.search(message)]
+              if not matched:
+                  continue
+              counts.update(matched)
+              sanitized = re.sub(r"[\r\n\t]+", " ", message)
+              sanitized = re.sub(r"\s+", " ", sanitized).strip()
+              evidence.append({
+                  "timestamp": row.get("timestamp"),
+                  "classes": matched,
+                  "excerpt": sanitized[:1200],
+              })
+          summary = {
+              "checkedAtUtc": datetime.now(timezone.utc).isoformat(),
+              "windowStartEpoch": int(os.environ["START_EPOCH"]),
+              "eventCount": len(raw.get("events") or []),
+              "classCounts": dict(sorted(counts.items())),
+              "evidence": evidence[-100:],
+          }
+          Path("/tmp/tennis-lock-diagnostic/log-summary.json").write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + "\n"
+          )
+          print(json.dumps({
+              "checkedAtUtc": summary["checkedAtUtc"],
+              "eventCount": summary["eventCount"],
+              "classCounts": summary["classCounts"],
+              "evidenceCount": len(summary["evidence"]),
+          }, indent=2, sort_keys=True))
+          if not counts:
+              raise SystemExit("No classified lock failure evidence found in the three-hour window")
+          PY
+
+          end_time=$(date -u +%FT%TZ)
+          start_time=$(date -u -d '3 hours ago' +%FT%TZ)
+          : > /tmp/tennis-lock-diagnostic/metrics.ndjson
+          for metric in Invocations Errors Throttles Duration; do
+            aws cloudwatch get-metric-statistics \
+              --namespace AWS/Lambda --metric-name "$metric" \
+              --dimensions Name=FunctionName,Value="$LOCK_FUNCTION" \
+              --start-time "$start_time" --end-time "$end_time" \
+              --period 300 --statistics Sum Maximum \
+              --region "$AWS_REGION" --output json |
+              python -c 'import json,sys; value=json.load(sys.stdin); value["metric"]=sys.argv[1]; print(json.dumps(value,sort_keys=True,default=str))' "$metric" \
+              >> /tmp/tennis-lock-diagnostic/metrics.ndjson
+          done
+
+      - name: Upload isolated diagnostic evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: tennis-v2-4-lock-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          path: /tmp/tennis-lock-diagnostic/
