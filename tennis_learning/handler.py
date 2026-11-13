@@ -110,7 +110,25 @@ def settle(payload: Mapping[str, Any]) -> Dict[str, Any]:
     new_weights = [w + LEARNING_RATE * (error * x - L2 * w) for w, x in zip(old_weights, vector)]
     new_bias = Decimal(str(state["bias"])) + LEARNING_RATE * error
     now = _now()
-    settlement = {"PK": f"SETTLEMENT#{match_id}", "SK": "RECORD", "player": str(payload["player"]), "opponent": str(payload["opponent"]), "event_time": str(payload["event_time"]), "features": {k: Decimal(str(v)) for k, v in f.items()}, "label": label, "trained_at": now}
+    settlement = {
+        "PK": f"SETTLEMENT#{match_id}",
+        "SK": "RECORD",
+        "player": str(payload["player"]),
+        "opponent": str(payload["opponent"]),
+        "event_time": str(payload["event_time"]),
+        "features": {k: Decimal(str(v)) for k, v in f.items()},
+        "label": label,
+        "trained_at": now,
+        "source": str(payload.get("source") or ""),
+        "source_mode": str(payload.get("source_mode") or ""),
+        "source_event_id": str(payload.get("source_event_id") or match_id),
+        "source_sport_key": str(payload.get("source_sport_key") or ""),
+        "source_commence_time": str(payload.get("source_commence_time") or payload["event_time"]),
+        "source_completed": bool(payload.get("source_completed", True)),
+        "source_scores": payload.get("source_scores") or [],
+        "source_score_receipt_sha256": str(payload.get("source_score_receipt_sha256") or ""),
+        "participant_date_identity_sha256": str(payload.get("participant_date_identity_sha256") or ""),
+    }
     client = boto3.client("dynamodb")
     try:
         client.transact_write_items(TransactItems=[
@@ -121,8 +139,18 @@ def settle(payload: Mapping[str, Any]) -> Dict[str, Any]:
         code = exc.response.get("Error", {}).get("Code")
         existing = table.get_item(Key={"PK": f"SETTLEMENT#{match_id}", "SK": "RECORD"}, ConsistentRead=True).get("Item")
         if existing:
+            incoming_receipt = str(settlement.get("source_score_receipt_sha256") or "")
+            existing_receipt = str(existing.get("source_score_receipt_sha256") or "")
+            if incoming_receipt and existing_receipt and incoming_receipt != existing_receipt:
+                raise RuntimeError("settlement provenance conflict for immutable provider event")
             latest = _state()
-            return {"trained": False, "duplicate": True, "model_version": int(latest["version"]), "training_samples": int(latest["training_samples"])}
+            return {
+                "trained": False,
+                "duplicate": True,
+                "provenance_verified": bool(incoming_receipt and existing_receipt and incoming_receipt == existing_receipt),
+                "model_version": int(latest["version"]),
+                "training_samples": int(latest["training_samples"]),
+            }
         if code == "TransactionCanceledException":
             raise RuntimeError("model state changed concurrently; retry settlement") from exc
         raise
