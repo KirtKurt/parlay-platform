@@ -6,6 +6,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 
 VERSION = "MLB-TEMPORAL-FEATURES-v1-lock-bounded-multi-horizon"
+REVERSAL_PATH_METRICS_VERSION = "MLB-REVERSAL-PATH-METRICS-v1-leg-amplitude-efficiency"
 HORIZONS: Tuple[Tuple[str, Optional[int]], ...] = (
     ("15m", 15),
     ("60m", 60),
@@ -14,6 +15,7 @@ HORIZONS: Tuple[Tuple[str, Optional[int]], ...] = (
 )
 PULL_INTERVAL_MINUTES = 15
 REVERSAL_EPSILON = 0.0005
+REVERSAL_EPSILON_PP = REVERSAL_EPSILON * 100.0
 
 
 def parse_dt(value: Any) -> Optional[datetime]:
@@ -112,6 +114,62 @@ def _std(values: Sequence[float]) -> float:
     return sqrt(sum((value - average) ** 2 for value in values) / len(values))
 
 
+def _sign(value: float, epsilon: float = REVERSAL_EPSILON_PP) -> int:
+    return 1 if value > epsilon else -1 if value < -epsilon else 0
+
+
+def _directional_legs(changes_pp: Sequence[float]) -> List[float]:
+    """Aggregate adjacent interval changes into signed directional legs.
+
+    Tiny changes within the same epsilon used by reversalCount are ignored. That
+    keeps leg amplitude and reversal count on the same mathematical definition.
+    """
+
+    legs: List[float] = []
+    for change in changes_pp:
+        direction = _sign(change)
+        if not direction:
+            continue
+        if legs and _sign(legs[-1]) == direction:
+            legs[-1] += change
+        else:
+            legs.append(change)
+    return legs
+
+
+def _path_metrics(changes_pp: Sequence[float]) -> Dict[str, Any]:
+    gross = sum(abs(value) for value in changes_pp)
+    net = sum(changes_pp)
+    legs = _directional_legs(changes_pp)
+    leg_sizes = [abs(value) for value in legs]
+    reversal_swings = [
+        abs(previous) + abs(current)
+        for previous, current in zip(legs, legs[1:])
+    ]
+    latest_leg = legs[-1] if legs else 0.0
+    return {
+        "reversalPathMetricsVersion": REVERSAL_PATH_METRICS_VERSION,
+        "netMovePp": round(net, 6),
+        "grossMovePp": round(gross, 6),
+        "pathEfficiency": round(abs(net) / gross, 6) if gross > 0 else 0.0,
+        "meanAbsIntervalMovePp": round(sum(abs(value) for value in changes_pp) / len(changes_pp), 6)
+        if changes_pp
+        else 0.0,
+        "maxIntervalMovePp": round(max((abs(value) for value in changes_pp), default=0.0), 6),
+        "directionalLegCount": len(legs),
+        "meanDirectionalLegMovePp": round(sum(leg_sizes) / len(leg_sizes), 6) if leg_sizes else 0.0,
+        "maxDirectionalLegMovePp": round(max(leg_sizes), 6) if leg_sizes else 0.0,
+        "meanReversalSwingPp": round(sum(reversal_swings) / len(reversal_swings), 6)
+        if reversal_swings
+        else 0.0,
+        "maxReversalSwingPp": round(max(reversal_swings), 6) if reversal_swings else 0.0,
+        "latestLegMovePp": round(latest_leg, 6),
+        "latestLegDirection": _sign(latest_leg),
+        "dominantLegShare": round(max(leg_sizes) / gross, 6) if gross > 0 and leg_sizes else 0.0,
+        "latestLegShare": round(abs(latest_leg) / gross, 6) if gross > 0 else 0.0,
+    }
+
+
 def _reversals(values: Sequence[float]) -> int:
     signs = []
     for previous, current in zip(values, values[1:]):
@@ -145,6 +203,7 @@ def _summarize(points: Sequence[Tuple[datetime, float]]) -> Dict[str, Any]:
         "accelerationPpHr2": round(_slope(midpoints, velocities), 6),
         "volatilityPpPerPull": round(_std(changes), 6),
         "reversalCount": _reversals([point[1] for point in points]),
+        **_path_metrics(changes),
     }
 
 
@@ -156,6 +215,7 @@ def summarize_side(series: Iterable[Dict[str, Any]], side: str, cutoff_at: Any) 
     as_of = observations[-1][0] if observations else None
     return {
         "version": VERSION,
+        "reversalPathMetricsVersion": REVERSAL_PATH_METRICS_VERSION,
         "side": side,
         "available": bool(observations),
         "asOfUtc": as_of.isoformat() if as_of else None,
@@ -187,6 +247,20 @@ def flatten(summary: Any, prefix: str) -> Dict[str, float]:
         ("velocityPpHr", "VelocityPpHr"),
         ("volatilityPpPerPull", "VolatilityPpPerPull"),
         ("reversalCount", "ReversalCount"),
+        ("netMovePp", "NetMovePp"),
+        ("grossMovePp", "GrossMovePp"),
+        ("pathEfficiency", "PathEfficiency"),
+        ("meanAbsIntervalMovePp", "MeanAbsIntervalMovePp"),
+        ("maxIntervalMovePp", "MaxIntervalMovePp"),
+        ("directionalLegCount", "DirectionalLegCount"),
+        ("meanDirectionalLegMovePp", "MeanDirectionalLegMovePp"),
+        ("maxDirectionalLegMovePp", "MaxDirectionalLegMovePp"),
+        ("meanReversalSwingPp", "MeanReversalSwingPp"),
+        ("maxReversalSwingPp", "MaxReversalSwingPp"),
+        ("latestLegMovePp", "LatestLegMovePp"),
+        ("latestLegDirection", "LatestLegDirection"),
+        ("dominantLegShare", "DominantLegShare"),
+        ("latestLegShare", "LatestLegShare"),
     )
     for label, _ in HORIZONS:
         values = horizons.get(label) or {}
