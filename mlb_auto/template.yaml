@@ -1,0 +1,366 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Isolated autonomous MLB Auto game-winner platform modeled on Tennis lifecycle
+
+Parameters:
+  OddsApiKey:
+    Type: String
+    NoEcho: true
+  ScheduleState:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+  DeployGitSha:
+    Type: String
+    Default: unknown
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 600
+    MemorySize: 1536
+    Environment:
+      Variables:
+        MLB_AUTO_ODDS_API_KEY: !Ref OddsApiKey
+        MLB_AUTO_ODDS_REGIONS: 'us,us2,uk,eu,au'
+        MLB_AUTO_STATE_TABLE: !Ref StateTable
+        MLB_AUTO_SNAPSHOTS_TABLE: !Ref SnapshotsTable
+        MLB_AUTO_PREDICTIONS_TABLE: !Ref PredictionsTable
+        MLB_AUTO_LOCKS_TABLE: !Ref LocksTable
+        MLB_AUTO_OUTCOMES_TABLE: !Ref OutcomesTable
+        MLB_AUTO_MODELS_TABLE: !Ref ModelsTable
+        MLB_AUTO_ARCHIVE_BUCKET: !Ref ArchiveBucket
+        MLB_AUTO_DEPLOY_GIT_SHA: !Ref DeployGitSha
+        MLB_AUTO_MIN_TRAINING_EXAMPLES: '250'
+        MLB_AUTO_MIN_VALIDATION_EXAMPLES: '50'
+        MLB_AUTO_MIN_NEW_EXAMPLES: '25'
+        MLB_AUTO_LOCK_MINUTES: '10'
+        MLB_AUTO_MIN_OFFICIAL_PROBABILITY: '0.58'
+        MLB_AUTO_MIN_OFFICIAL_AUDIT_SELECTIONS: '10'
+        MLB_AUTO_MIN_OFFICIAL_AUDIT_ACCURACY: '0.58'
+        MLB_AUTO_MIN_OFFICIAL_AUDIT_WILSON: '0.42'
+        MLB_AUTO_HISTORICAL_DAYS_PER_RUN: '1'
+        MLB_AUTO_LLM_MODEL_IDS: 'us.anthropic.claude-opus-4-6-v1,us.anthropic.claude-sonnet-4-6,us.anthropic.claude-sonnet-4-5-20250929-v1:0,amazon.nova-premier-v1:0,amazon.nova-pro-v1:0,us.amazon.nova-2-lite-v1:0,amazon.nova-lite-v1:0,amazon.nova-micro-v1:0'
+        MLB_AUTO_LLM_MIN_EXAMPLES: '75'
+        MLB_AUTO_LLM_INTERVAL_SECONDS: '14400'
+        MLB_AUTO_LLM_MAX_FEATURES: '8'
+        MLB_AUTO_LLM_MAX_OUTPUT_TOKENS: '2200'
+        MLB_AUTO_LLM_HTTP_TIMEOUT_SECONDS: '180'
+
+Resources:
+  StateTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+  SnapshotsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+  PredictionsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+  LocksTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+  OutcomesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+  ModelsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+  ArchiveBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VersioningConfiguration: {Status: Enabled}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+  AutoApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+  AutoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: mlb_auto.autonomous_handler.handler
+      Policies:
+        - DynamoDBCrudPolicy: {TableName: !Ref StateTable}
+        - DynamoDBCrudPolicy: {TableName: !Ref SnapshotsTable}
+        - DynamoDBCrudPolicy: {TableName: !Ref PredictionsTable}
+        - DynamoDBCrudPolicy: {TableName: !Ref OutcomesTable}
+        - DynamoDBCrudPolicy: {TableName: !Ref ModelsTable}
+        - S3CrudPolicy: {BucketName: !Ref ArchiveBucket}
+        - Statement:
+            - Sid: ImmutableLockLedger
+              Effect: Allow
+              Action:
+                - dynamodb:DescribeTable
+                - dynamodb:GetItem
+                - dynamodb:Query
+                - dynamodb:PutItem
+              Resource: !GetAtt LocksTable.Arn
+            - Sid: InvokeBedrockModels
+              Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource: '*'
+            - Sid: UseShortTermBedrockTokens
+              Effect: Allow
+              Action:
+                - bedrock:CallWithBearerToken
+                - bedrock-mantle:CallWithBearerToken
+              Resource: '*'
+            - Sid: InvokeBedrockMantleDefaultProject
+              Effect: Allow
+              Action:
+                - bedrock-mantle:CreateInference
+              Resource: !Sub 'arn:${AWS::Partition}:bedrock-mantle:${AWS::Region}:${AWS::AccountId}:project/default'
+      Events:
+        StatusApi:
+          Type: HttpApi
+          Properties: {ApiId: !Ref AutoApi, Path: /v1/mlb-auto/status, Method: GET}
+        PredictionsApi:
+          Type: HttpApi
+          Properties: {ApiId: !Ref AutoApi, Path: /v1/mlb-auto/predictions, Method: GET}
+        AuditApi:
+          Type: HttpApi
+          Properties: {ApiId: !Ref AutoApi, Path: /v1/mlb-auto/audit, Method: GET}
+        Heartbeat:
+          Type: Schedule
+          Properties:
+            Name: !Sub '${AWS::StackName}-heartbeat-5m'
+            Schedule: rate(5 minutes)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_HEARTBEAT"}'
+            RetryPolicy: {MaximumRetryAttempts: 1, MaximumEventAgeInSeconds: 300}
+        LockCheck:
+          Type: Schedule
+          Properties:
+            Name: !Sub '${AWS::StackName}-lock-1m'
+            Schedule: rate(1 minute)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_LOCK"}'
+            RetryPolicy: {MaximumRetryAttempts: 1, MaximumEventAgeInSeconds: 60}
+        Settlement:
+          Type: Schedule
+          Properties:
+            Name: !Sub '${AWS::StackName}-settle-30m'
+            Schedule: rate(30 minutes)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_SETTLE"}'
+            RetryPolicy: {MaximumRetryAttempts: 1, MaximumEventAgeInSeconds: 1800}
+        Training:
+          Type: Schedule
+          Properties:
+            Name: !Sub '${AWS::StackName}-train-1h'
+            Schedule: rate(1 hour)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_TRAIN"}'
+            RetryPolicy: {MaximumRetryAttempts: 1, MaximumEventAgeInSeconds: 3600}
+        Repair:
+          Type: Schedule
+          Properties:
+            Name: !Sub '${AWS::StackName}-repair-5m'
+            Schedule: rate(5 minutes)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_REPAIR"}'
+            RetryPolicy: {MaximumRetryAttempts: 1, MaximumEventAgeInSeconds: 300}
+        HistoricalBackfill:
+          Type: Schedule
+          Properties:
+            Name: !Sub '${AWS::StackName}-history-15m'
+            Schedule: rate(15 minutes)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_HISTORICAL_BACKFILL"}'
+            RetryPolicy: {MaximumRetryAttempts: 1, MaximumEventAgeInSeconds: 900}
+  AutoFunctionErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB Auto Lambda reported at least one execution error in five minutes
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - {Name: FunctionName, Value: !Ref AutoFunction}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+  AutoFunctionThrottlesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB Auto Lambda was throttled in five minutes
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - {Name: FunctionName, Value: !Ref AutoFunction}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+  HeartbeatFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB Auto heartbeat schedule failed to invoke its target
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - {Name: RuleName, Value: !Sub '${AWS::StackName}-heartbeat-5m'}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+  LockFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB Auto lock schedule failed to invoke its target
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - {Name: RuleName, Value: !Sub '${AWS::StackName}-lock-1m'}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+  SettlementFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB Auto settlement schedule failed to invoke its target
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - {Name: RuleName, Value: !Sub '${AWS::StackName}-settle-30m'}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+  TrainingFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB Auto training schedule failed to invoke its target
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - {Name: RuleName, Value: !Sub '${AWS::StackName}-train-1h'}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+  RepairFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB Auto repair schedule failed to invoke its target
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - {Name: RuleName, Value: !Sub '${AWS::StackName}-repair-5m'}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+  HistoricalBackfillFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB Auto historical backfill schedule failed to invoke its target
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - {Name: RuleName, Value: !Sub '${AWS::StackName}-history-15m'}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  ApiUrl:
+    Value: !Sub 'https://${AutoApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/prod'
+  FunctionName:
+    Value: !Ref AutoFunction
+  ArchiveBucketName:
+    Value: !Ref ArchiveBucket

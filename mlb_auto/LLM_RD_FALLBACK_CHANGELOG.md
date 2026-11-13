@@ -1,0 +1,1 @@
+MLB Auto LLM R&D fallback hardening: unavailable account models are not required; configured Bedrock fallbacks remain isolated to mlb_auto. Successful model selection and fallback errors are persisted.
