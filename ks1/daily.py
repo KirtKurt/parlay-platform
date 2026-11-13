@@ -395,7 +395,9 @@ def market_for(game, events, crosswalk, as_of):
 
 def load_inputs(folder):
     manifest = json.loads((folder/'capture.json').read_bytes())
-    if manifest.get('system') != 'KS1' or manifest.get('errors'):
+    # Odds 401/403 is recorded but must not block the official slate.
+    from ks1.live_inputs import fatal_provider_errors
+    if manifest.get('system') != 'KS1' or fatal_provider_errors(manifest.get('errors') or []):
         raise ValueError('incomplete KS1 capture')
     required = {'bbs.json', 'odds.json', 'official.json', 'history.json.gz', 'model.txt'}
     if manifest.get('phase', 4) >= 5:
