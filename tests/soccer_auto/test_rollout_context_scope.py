@@ -86,6 +86,22 @@ def test_current_context_api_is_explicit_and_missing_pointer_fails(monkeypatch):
     assert api.api_handler(request, None)["statusCode"] == 400
 
 
+def test_current_context_api_rejects_pointer_change_during_readback(monkeypatch):
+    from soccer_auto import api, kss1_training_runtime
+    store = Store()
+    store.row["goals_context_as_of"] = context()["context_as_of"]
+    monkeypatch.setattr(api, "SoccerStore", lambda: store)
+    newer = {**context(), "context_as_of": "2026-09-14T18:01:00Z",
+             "artifact_uri": "s3://soccer/newer-context"}
+    reads = iter(({"training_context": context()}, {"training_context": newer}))
+    monkeypatch.setattr(kss1_training_runtime, "goals_status", lambda _: next(reads))
+    request = {"path": "/v1/soccer-auto/kss1/picks",
+               "queryStringParameters": {"date": "2026-09-14", "context": "current"}}
+    reply = api.api_handler(request, None)
+    assert reply["statusCode"] == 400
+    assert json.loads(reply["body"])["error"] == "GOALS_CONTEXT_POINTER_MOVED_DURING_READBACK"
+
+
 def test_training_workflows_share_non_cancelling_group_and_scope_readback():
     root = Path(__file__).resolve().parents[2]
     workflows = [yaml.safe_load((root / ".github/workflows" / name).read_text()) for name in
