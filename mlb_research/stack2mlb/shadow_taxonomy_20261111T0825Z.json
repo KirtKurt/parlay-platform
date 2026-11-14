@@ -1,0 +1,24 @@
+{
+  "promoted": false,
+  "champion": "KS1-LGB+dual-Poisson",
+  "challenger": "2stackMLB",
+  "authority": "shadow-only",
+  "source_run": 42978807901,
+  "night_date": "2026-11-11",
+  "official_brier": 0.23750452432767744,
+  "official_logloss": 0.6682938749491157,
+  "n": 250,
+  "new_grades": 0,
+  "ledger_rows": 250,
+  "slate_rows": 0,
+  "confirmed_lineups": 0,
+  "projected_lineups": 0,
+  "bbs_matched_games": 0,
+  "failure_taxonomy": {
+    "no_new_final_grades": "nightly status completed; new_grades=0; calibration deferred",
+    "empty_official_slate": "predictions.parquet 0 rows; official_games=0; offseason empty slate",
+    "thin_edge": "pick accuracy 0.572 on 250; not a promotion signal"
+  },
+  "walk_forward": "not refit; attach blocked until non-empty official slate exists",
+  "do_not": ["merge", "dispatch mlb-research-ingestion", "rewrite p_home", "rewrite locks", "rewrite ledgers", "activate PR 712 watchdog", "train official model", "promote 2stackMLB"]
+}
