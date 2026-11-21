@@ -1,0 +1,23 @@
+{
+  "system": "2stackMLB-shadow",
+  "promoted": false,
+  "trained": false,
+  "source": "ks1-nightly-37265041423 committed_ledger",
+  "champion_brier": 0.235321,
+  "n": 233,
+  "new_grades_2026_10_05": 1,
+  "taxonomy": [
+    {"bin": "[0.0,0.4)", "n": 41, "brier": 0.1811, "home_win_rate": 0.2195, "mean_p": 0.3503, "side_misses": 9},
+    {"bin": "[0.4,0.5)", "n": 62, "brier": 0.2622, "home_win_rate": 0.5806, "mean_p": 0.4551, "side_misses": 36},
+    {"bin": "[0.5,0.6)", "n": 84, "brier": 0.2483, "home_win_rate": 0.5595, "mean_p": 0.5453, "side_misses": 37},
+    {"bin": "[0.6,1.0)", "n": 46, "brier": 0.2238, "home_win_rate": 0.6957, "mean_p": 0.6775, "side_misses": 14}
+  ],
+  "expanding_holdout_no_fit": [
+    {"through_n": 80, "hold_n": 40, "hold_brier": 0.218, "cum_brier": 0.2434},
+    {"through_n": 120, "hold_n": 40, "hold_brier": 0.2402, "cum_brier": 0.2349},
+    {"through_n": 160, "hold_n": 40, "hold_brier": 0.2342, "cum_brier": 0.2363},
+    {"through_n": 200, "hold_n": 33, "hold_brier": 0.2321, "cum_brier": 0.2359}
+  ],
+  "failure_note": "Worst calibration is the 0.40-0.50 band (home win rate 0.58 vs mean p 0.46). Coin-flip band is the largest side-miss pile. Tails are better. One miss is not a retrain.",
+  "note": "Champion p_home only. No shadow model fit. No p_home/lock/ledger rewrite."
+}

@@ -1,0 +1,46 @@
+{
+  "promoted": false,
+  "system": "2stackMLB-v1",
+  "as_of": "2026-09-19T23:10:00+00:00",
+  "source_run": 35473793326,
+  "source_event": "workflow_dispatch",
+  "source_artifact": "ks1-nightly-35473793326",
+  "note": "Shadow attach only. Official KS1 p_home/locks/ledgers untouched. No model train. BBS isolate-skip already on main. PR 713 remains draft/do-not-merge. PR 712 watchdog not activated.",
+  "official_ks1_baseline": {
+    "brier": 0.2353943005278515,
+    "logloss": 0.6625552601714055,
+    "n": 112,
+    "new_grades": 1,
+    "newest_grade_game_id": "824788",
+    "newest_grade_home_win": 0,
+    "newest_grade_p_home": 0.5110196383289413,
+    "locked_rows": 112,
+    "status": "graded"
+  },
+  "challenger": {
+    "name": "2stackMLB",
+    "promoted": false,
+    "walk_forward_brier": null,
+    "blocked_on": "full per-row 2stack attach not computed this cycle; official ledger rows used only as KS1 baseline"
+  },
+  "sits": ["NYY", "NYM", "CWS"],
+  "slate": {
+    "date": "2026-09-19",
+    "rows": 15,
+    "confirmed": 14,
+    "projected": 1,
+    "bbs_matched": 15,
+    "bbs_identity_exclusions": [],
+    "sits_today": ["PHI@NYM 823571", "DET@CWS 824545", "NYY@ARI 825029"]
+  },
+  "taxonomy_rule": "Do not refit on a single miss. Promote only after a repeated failure bucket.",
+  "ingest": {
+    "latest_schedule_id": 35475143642,
+    "latest_schedule_status": "in_progress",
+    "latest_completed_schedule_id": 35468117399,
+    "latest_completed_schedule_conclusion": "success",
+    "latest_push_id": 35470871929,
+    "latest_completed_dispatch_id": 35473793326,
+    "cron_gap": false
+  }
+}
