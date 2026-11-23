@@ -108,7 +108,7 @@ jobs:
           # A failed or incomplete simulation is a hard stop, never an implicit allow.
           aws iam simulate-principal-policy \
             --policy-source-arn "$PRINCIPAL_ARN" \
-            --action-names sns:CreateTopic sns:GetTopicAttributes sns:SetTopicAttributes sns:DeleteTopic sns:Subscribe sns:Unsubscribe sns:Publish \
+            --action-names sns:CreateTopic sns:GetTopicAttributes sns:SetTopicAttributes sns:DeleteTopic sns:Subscribe sns:ListSubscriptionsByTopic sns:Unsubscribe sns:Publish \
             --resource-arns "$TOPIC_ARN" \
             --output json > "$RESULT_FILE"
           python - "$RESULT_FILE" <<'PY'
@@ -118,7 +118,7 @@ jobs:
 
           required = {
               "sns:CreateTopic", "sns:GetTopicAttributes", "sns:SetTopicAttributes",
-              "sns:DeleteTopic", "sns:Subscribe", "sns:Unsubscribe", "sns:Publish",
+              "sns:DeleteTopic", "sns:Subscribe", "sns:ListSubscriptionsByTopic", "sns:Unsubscribe", "sns:Publish",
           }
           try:
               payload = json.loads(Path(sys.argv[1]).read_text())
@@ -139,7 +139,7 @@ jobs:
               print("ARB SNS authority preflight: denied actions: " + ", ".join(denied))
               print("An authorized AWS administrator must attach the bounded deployment policy.")
               sys.exit(1)
-          print("ARB SNS authority preflight: all seven required actions explicitly allowed.")
+          print("ARB SNS authority preflight: all eight required actions explicitly allowed.")
           PY
       - name: Deploy isolated arb stack
         env:
@@ -157,6 +157,63 @@ jobs:
             --parameter-overrides \
               "OddsApiKey=${ODDS_API_KEY_VALUE}" \
               "ArbRegions=us,us2,us_dfs,us_ex,uk,eu,ca,fr,se,fi,au"
+      - name: Verify ARB SNS topic and SMS subscription infrastructure (no publish)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import subprocess
+
+          region = "${{ secrets.AWS_REGION }}"
+          stack_name = "inqsi-arb-prod"
+
+          def aws(*args):
+              return json.loads(subprocess.check_output(
+                  ["aws", *args, "--region", region, "--output", "json"], text=True
+              ))
+
+          def resource(logical_id):
+              detail = aws(
+                  "cloudformation", "describe-stack-resource",
+                  "--stack-name", stack_name, "--logical-resource-id", logical_id,
+              )["StackResourceDetail"]
+              if detail.get("ResourceStatus") not in {"CREATE_COMPLETE", "UPDATE_COMPLETE"}:
+                  raise RuntimeError(f"{logical_id}: CloudFormation resource not complete")
+              physical_id = detail.get("PhysicalResourceId")
+              if not physical_id:
+                  raise RuntimeError(f"{logical_id}: missing physical resource ID")
+              return physical_id
+
+          topic_arn = resource("ArbOpportunityTopic")
+          subscription_arn = resource("ArbOpportunitySmsSubscription")
+          if not subscription_arn.startswith("arn:aws:sns:"):
+              raise RuntimeError("SMS subscription not confirmed")
+          parameters = {
+              row["ParameterKey"]: row.get("ParameterValue")
+              for row in aws("cloudformation", "describe-stacks", "--stack-name", stack_name)
+              ["Stacks"][0].get("Parameters", [])
+          }
+          expected_endpoint = parameters.get("ArbOpportunitySmsEndpoint")
+          if not expected_endpoint or not expected_endpoint.startswith("+"):
+              raise RuntimeError("SMS endpoint missing or invalid")
+          attributes = aws("sns", "get-topic-attributes", "--topic-arn", topic_arn)
+          if attributes.get("Attributes", {}).get("TopicArn") != topic_arn:
+              raise RuntimeError("SNS topic attributes do not match CloudFormation")
+          subscriptions = aws(
+              "sns", "list-subscriptions-by-topic", "--topic-arn", topic_arn
+          ).get("Subscriptions", [])
+          matches = [
+              row for row in subscriptions
+              if row.get("SubscriptionArn") == subscription_arn
+              and row.get("Protocol") == "sms"
+              and row.get("Endpoint") == expected_endpoint
+              and row.get("TopicArn") == topic_arn
+          ]
+          if len(matches) != 1:
+              raise RuntimeError("CloudFormation SMS subscription not present in SNS")
+          print("ARB SNS topic and exact SMS subscription verified; no publication attempted.")
+          PY
       - name: Verify live v3 health, rules, history, optimization, persistence, completion, UI and infrastructure
         run: |
           set -euo pipefail

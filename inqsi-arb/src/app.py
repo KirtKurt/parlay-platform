@@ -236,7 +236,7 @@ def _finalize_scan(result: Dict[str, Any], *, sport: str, jurisdiction: str) -> 
         })
     if result.get("hits") or result.get("detected_unverified"):
         result["opportunity_alerts"] = publish_scan_opportunities(
-            result, audit_event_id=result.get("audit_event_id")
+            result, audit_event_id=result.get("audit_event_id"), sport=sport
         )
     result.pop("_audit_pack", None)
     result.pop("_audit_licensed_requested", None)
@@ -699,13 +699,18 @@ def lambda_handler(event, context):
                     combined_rows.extend(sport_rows)
                     statuses.append({"sport": row["key"], **sport_status})
                 complete = limit == len(sports) and all(status.get("ok") for status in statuses)
+                # Preserve the existing response/HTTP success contract and
+                # usable rows, but never certify exhaustive provider coverage
+                # when a sport reported partial event/market/quote inventory.
+                partial = (not complete or bool(sports_meta.get("partial"))
+                           or any(bool(status.get("partial")) for status in statuses))
                 return _scan_rows(combined_rows, {
                     "ok": complete,
                     "source": "live",
                     "sports": statuses,
                     "n_sports_scanned": limit,
                     "n_sports_catalog": len(sports),
-                    "partial": not complete,
+                    "partial": partial,
                     "catalog": sports_meta,
                 })
             rows, status = fetch_all_discovered_markets(
@@ -734,7 +739,13 @@ def lambda_handler(event, context):
                 statuses.append(payload["status"])
             return _scan_rows(combined_events, {
                 "ok": True, "source": "live", "sports": statuses,
-                "n_sports_scanned": limit, "catalog": sports_meta,
+                "n_sports_scanned": limit, "n_sports_catalog": len(sports),
+                # A successful subset must not be represented as complete
+                # coverage of all provider-visible sports and market quotes.
+                "partial": (limit < len(sports) or bool(sports_meta.get("partial"))
+                            or any(not status.get("ok") or bool(status.get("partial"))
+                                   for status in statuses)),
+                "catalog": sports_meta,
             })
 
         payload = scan_sport_payload(
