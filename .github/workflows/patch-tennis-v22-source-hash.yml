@@ -1,0 +1,59 @@
+name: Apply exact Tennis V2.2 source fingerprint
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/patch-tennis-v22-source-hash.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/tennis-polymarket-v2-2
+          fetch-depth: 0
+      - name: Pin deterministic reconstruction fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          old = "f6b2f0408cf5eb3b2969243961e414fbab787bb30a2b597323ba7070a2b4f911"
+          new = "9ed4ebcb01596e4dc18a2526dfc54b5a0240be8f6b401f409347b65327929e2a"
+          workflow = Path(".github/workflows/deploy-tennis.yml")
+          text = workflow.read_text()
+          if old not in text and new not in text:
+              raise SystemExit("deployment source fingerprint marker missing")
+          workflow.write_text(text.replace(old, new))
+          manifest = Path("tennis_release_v2_2/MANIFEST.json")
+          mtext = manifest.read_text()
+          if old in mtext:
+              manifest.write_text(mtext.replace(old, new))
+          PY
+          grep -F 'SOURCE_TREE_SHA256: 9ed4ebcb01596e4dc18a2526dfc54b5a0240be8f6b401f409347b65327929e2a' \
+            .github/workflows/deploy-tennis.yml
+          grep -F '"final_source_tree_sha256": "9ed4ebcb01596e4dc18a2526dfc54b5a0240be8f6b401f409347b65327929e2a"' \
+            tennis_release_v2_2/MANIFEST.json
+          rm .github/workflows/patch-tennis-v22-source-hash.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/deploy-tennis.yml \
+                  tennis_release_v2_2/MANIFEST.json \
+                  .github/workflows/patch-tennis-v22-source-hash.yml
+          git diff --cached --check
+          git commit -m 'Pin exact Tennis V2.2 reconstructed source tree'
+          for attempt in 1 2 3 4; do
+            git pull --rebase origin agent/tennis-polymarket-v2-2
+            if git push origin HEAD:agent/tennis-polymarket-v2-2; then
+              exit 0
+            fi
+            sleep $((attempt * 2))
+          done
+          exit 1
