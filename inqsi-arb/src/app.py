@@ -236,7 +236,7 @@ def _finalize_scan(result: Dict[str, Any], *, sport: str, jurisdiction: str) -> 
         })
     if result.get("hits") or result.get("detected_unverified"):
         result["opportunity_alerts"] = publish_scan_opportunities(
-            result, audit_event_id=result.get("audit_event_id")
+            result, audit_event_id=result.get("audit_event_id"), sport=sport
         )
     result.pop("_audit_pack", None)
     result.pop("_audit_licensed_requested", None)
