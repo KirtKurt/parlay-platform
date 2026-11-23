@@ -1,15 +1,16 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { heldBackReason, partitionScanRows } from '@/lib/arbQualification';
 
 type Sport = { key: string; title?: string; group?: string };
 type Leg = { outcome: string; book: string; american: number | string; stake?: number; last_update?: string; link?: string };
-type Hit = { market_id: string; event: string; market: string; margin_pct: number; minimum_profit?: number; commence_time?: string; legs: Leg[]; validation?: { rules_status?: string } };
+type Hit = { market_id: string; event: string; market: string; margin_pct: number; minimum_profit?: number | null; commence_time?: string; legs: Leg[]; arb?: boolean; math_arb?: boolean; executable?: boolean; validation?: { rules_status?: string; rules_compatible?: boolean; outcome_coverage?: string; executable?: boolean; qualification_reason?: string; settlement_reason?: string; settlement_states?: { strict_arbitrage?: boolean; minimum_net_pnl?: number | null } } };
 type Scan = { n_arbs?: number; n_detected_unverified?: number; n_markets?: number; hits?: Hit[]; detected_unverified?: Hit[]; status?: unknown };
 
 const API = (process.env.NEXT_PUBLIC_ARB_API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
 
-function money(value?: number) { return typeof value === 'number' ? `$${value.toFixed(2)}` : '—'; }
+function money(value?: number | null) { return typeof value === 'number' ? `$${value.toFixed(2)}` : '—'; }
 
 export default function ArbConsolePage() {
   const [sports, setSports] = useState<Sport[]>([]);
@@ -32,7 +33,10 @@ export default function ArbConsolePage() {
     }).catch(() => setHealth('ARB service unavailable'));
   }, []);
 
-  const rows = useMemo(() => tab === 'verified' ? (scan?.hits || []) : (scan?.detected_unverified || []), [scan, tab]);
+  // The API's hits/n_arbs are mathematical price opportunities, not necessarily
+  // reviewed settlement-compatible opportunities. Never label all hits verified.
+  const qualified = useMemo(() => partitionScanRows(scan), [scan]);
+  const rows = tab === 'verified' ? qualified.verified : qualified.held;
 
   async function runScan() {
     if (!API || busy) return;
@@ -60,8 +64,8 @@ export default function ArbConsolePage() {
       </section>
 
       {scan && <>
-        <div style={{display:'flex',gap:10,margin:'18px 0',flexWrap:'wrap'}}><button onClick={()=>setTab('verified')} style={{padding:'9px 12px',borderRadius:9,border:'1px solid #bbb',background:tab==='verified'?'#111':'#fff',color:tab==='verified'?'#fff':'#111'}}>Verified ({scan.n_arbs||0})</button><button onClick={()=>setTab('unverified')} style={{padding:'9px 12px',borderRadius:9,border:'1px solid #bbb',background:tab==='unverified'?'#111':'#fff',color:tab==='unverified'?'#fff':'#111'}}>Detected / unverified ({scan.n_detected_unverified||0})</button><span style={{alignSelf:'center',fontSize:13,color:'#666'}}>{scan.n_markets||0} normalized markets evaluated</span></div>
-        <div style={{display:'grid',gap:12}}>{rows.length ? rows.map(h=><article key={h.market_id} style={{border:'1px solid #ddd',borderRadius:14,padding:16}}><div style={{display:'flex',justifyContent:'space-between',gap:16,flexWrap:'wrap'}}><div><strong>{h.event}</strong><div style={{fontSize:12,color:'#666',marginTop:4}}>{h.market} · {h.commence_time || 'start time unavailable'}</div></div><div style={{textAlign:'right'}}><div style={{fontSize:20,fontWeight:900}}>{Number(h.margin_pct||0).toFixed(2)}%</div><div style={{fontSize:12,color:'#666'}}>minimum conditional profit {money(h.minimum_profit)}</div></div></div><div style={{display:'grid',gap:7,marginTop:12}}>{(h.legs||[]).map((l,i)=><div key={`${l.book}-${i}`} style={{padding:10,borderRadius:9,background:'#f6f6f6',display:'flex',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}><span><b>{l.outcome}</b> · {l.book} · {String(l.american)}</span><span style={{fontSize:12,color:'#666'}}>stake {money(l.stake)} · source {l.last_update || 'timestamp unavailable'} {l.link ? <a href={l.link} target="_blank" rel="noreferrer" style={{marginLeft:8}}>open market</a> : null}</span></div>)}</div><div style={{marginTop:10,fontSize:12,fontWeight:700}}>{tab==='verified'?'Settlement rules reviewed and compatible':'Mathematical edge detected; settlement qualification still pending — not presented as a verified arb'}</div></article>) : <div style={{border:'1px dashed #bbb',borderRadius:14,padding:28,textAlign:'center'}}>No {tab==='verified'?'verified':'unverified'} opportunities in this scan.</div>}</div>
+        <div style={{display:'flex',gap:10,margin:'18px 0',flexWrap:'wrap'}}><button onClick={()=>setTab('verified')} style={{padding:'9px 12px',borderRadius:9,border:'1px solid #bbb',background:tab==='verified'?'#111':'#fff',color:tab==='verified'?'#fff':'#111'}}>Verified executable ({qualified.verified.length})</button><button onClick={()=>setTab('unverified')} style={{padding:'9px 12px',borderRadius:9,border:'1px solid #bbb',background:tab==='unverified'?'#111':'#fff',color:tab==='unverified'?'#fff':'#111'}}>Held back ({qualified.held.length})</button><span style={{alignSelf:'center',fontSize:13,color:'#666'}}>{scan.n_markets||0} normalized markets evaluated · {scan.n_arbs||0} mathematical price opportunities</span></div>
+        <div style={{display:'grid',gap:12}}>{rows.length ? rows.map(h=><article key={h.market_id} style={{border:'1px solid #ddd',borderRadius:14,padding:16}}><div style={{display:'flex',justifyContent:'space-between',gap:16,flexWrap:'wrap'}}><div><strong>{h.event}</strong><div style={{fontSize:12,color:'#666',marginTop:4}}>{h.market} · {h.commence_time || 'start time unavailable'}</div></div><div style={{textAlign:'right'}}><div style={{fontSize:20,fontWeight:900}}>{Number(h.margin_pct||0).toFixed(2)}%</div><div style={{fontSize:12,color:'#666'}}>minimum conditional profit {money(h.minimum_profit)}</div></div></div><div style={{display:'grid',gap:7,marginTop:12}}>{(h.legs||[]).map((l,i)=><div key={`${l.book}-${i}`} style={{padding:10,borderRadius:9,background:'#f6f6f6',display:'flex',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}><span><b>{l.outcome}</b> · {l.book} · {String(l.american)}</span><span style={{fontSize:12,color:'#666'}}>stake {money(l.stake)} · source {l.last_update || 'timestamp unavailable'} {l.link ? <a href={l.link} target="_blank" rel="noreferrer" style={{marginLeft:8}}>open market</a> : null}</span></div>)}</div><div style={{marginTop:10,fontSize:12,fontWeight:700}}>{tab==='verified'?'VERIFIED EXECUTABLE · reviewed compatible rules and positive strict settlement payout':`HELD BACK · ${heldBackReason(h)}`}</div></article>) : <div style={{border:'1px dashed #bbb',borderRadius:14,padding:28,textAlign:'center'}}>No {tab==='verified'?'verified executable':'held back'} opportunities in this scan.</div>}</div>
       </>}
     </main>
   );

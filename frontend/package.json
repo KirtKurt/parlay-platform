@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:arb": "node scripts/check-arb-math.mjs && node scripts/check-arb-prototype.mjs"
+    "test:arb": "node scripts/check-arb-math.mjs && node scripts/check-arb-prototype.mjs && npm run test:arb:qualification",
+    "test:arb:qualification": "tsc --target ES2020 --module commonjs --strict --outDir node_modules/.cache/arb-qualification-check lib/arbQualification.ts scripts/checkArbQualification.ts && node node_modules/.cache/arb-qualification-check/scripts/checkArbQualification.js"
   },
   "dependencies": {
     "@types/node": "^20.12.7",
