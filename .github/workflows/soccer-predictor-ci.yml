@@ -1,0 +1,30 @@
+name: Soccer Predictor CI
+
+on:
+  push:
+    paths:
+      - "soccer-predictor/**"
+      - ".github/workflows/soccer-predictor-ci.yml"
+  pull_request:
+    paths:
+      - "soccer-predictor/**"
+      - ".github/workflows/soccer-predictor-ci.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: soccer-predictor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Unit tests
+        run: PYTHONPATH=src python -m unittest discover -s tests -v
+      - name: Import scripts
+        run: |
+          python -c "import sys; sys.path.insert(0,'src'); import soccer_predictor.backtest, soccer_predictor.odds_api, soccer_predictor.bbd"
