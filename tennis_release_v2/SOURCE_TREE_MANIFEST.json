@@ -1,0 +1,30 @@
+{
+  "archive_sha256": "b0141a6dd21b9d6f328e82eb4a9bf4772dbac1a52b94962fb189e160d2d8dac0",
+  "contracts": [
+    "all_active_tennis_keys_and_all_event_roster_matches",
+    "earliest_match_minus_10_hours_floored_to_prior_15_minute_heartbeat",
+    "canonical_15_minute_market_history",
+    "mlb_v2_1_devig_movement_reversal_edge_ev_score_guardrails",
+    "per_match_tminus45_last_persisted_prelock_prediction_no_rescore",
+    "exact_sport_key_plus_provider_event_id_settlement",
+    "tennis_only_autonomous_challenger_training_and_promotion"
+  ],
+  "reference_blobs": {
+    "hello_world/mlb_daily_per_game_lock_patch.py": "072a346cffd319c3646b357cd68884698d52274d",
+    "hello_world/mlb_game_winner_engine.py": "37667544e1a44c47be11468235d4f6f799de463e",
+    "hello_world/mlb_temporal_features_v1.py": "4b372c72fb047979f592b017bcb08f65dff435c5"
+  },
+  "reference_commit": "57a9bf2da314bce8ab6f000fdab73693a67b2500",
+  "reference_repository": "KirtKurt/parlay-platform",
+  "release": "TENNIS_MLB_EXACT_PARITY_V2",
+  "runtime_boundary": {
+    "shared_mlb_locks": false,
+    "shared_mlb_models": false,
+    "shared_mlb_runtime_data": false,
+    "shared_mlb_schedules": false,
+    "shared_mlb_tables": false,
+    "sport": "tennis"
+  },
+  "source_file_count": 61,
+  "source_tree_sha256": "92243a2599847b15cfff3118c4f770fc433dfa679cb418540b3c2e6e65b6f0be"
+}
