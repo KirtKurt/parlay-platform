@@ -1,0 +1,97 @@
+name: Probe ESPN Tennis match schema
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/probe-espn-tennis-match-schema.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Fetch public ESPN Tennis structures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet requests
+          mkdir -p evidence/raw
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from urllib.parse import urlparse
+          import requests
+
+          s=requests.Session(); s.headers['user-agent']='parlay-platform-espn-schema-probe/1.0'
+          report={'scoreboards':{},'followups':{}}
+          for tour in ('atp','wta'):
+              url=f'https://site.api.espn.com/apis/site/v2/sports/tennis/{tour}/scoreboard?dates=20260723&limit=1000'
+              r=s.get(url,timeout=30); r.raise_for_status(); data=r.json()
+              Path(f'evidence/raw/{tour}-scoreboard.json').write_text(json.dumps(data,indent=2,sort_keys=True))
+              events=data.get('events') or []
+              report['scoreboards'][tour]={'eventCount':len(events),'events':[]}
+              for event in events:
+                  comps=event.get('competitions') or []
+                  links=event.get('links') or []
+                  item={
+                      'id':event.get('id'),'uid':event.get('uid'),'name':event.get('name'),'date':event.get('date'),
+                      'eventKeys':sorted(event.keys()),'competitionCount':len(comps),'linkCount':len(links),
+                      'competitionSummaries':[],
+                      'links':[{'rel':x.get('rel'),'href':x.get('href'),'text':x.get('text')} for x in links],
+                  }
+                  for c in comps[:20]:
+                      item['competitionSummaries'].append({
+                          'id':c.get('id'),'uid':c.get('uid'),'date':c.get('date'),'type':c.get('type'),
+                          'keys':sorted(c.keys()),'competitorCount':len(c.get('competitors') or []),
+                          'competitors':[{
+                              'id':x.get('id') or (x.get('competitor') or {}).get('id'),
+                              'name':x.get('displayName') or (x.get('competitor') or {}).get('displayName'),
+                              'winner':x.get('winner'),'score':x.get('score'),'homeAway':x.get('homeAway'),
+                              'keys':sorted(x.keys()),
+                          } for x in (c.get('competitors') or [])],
+                          'odds':c.get('odds'),
+                          'status':c.get('status'),
+                          'detailsCount':len(c.get('details') or []),
+                      })
+                  report['scoreboards'][tour]['events'].append(item)
+
+                  event_id=str(event.get('id') or '')
+                  candidates={
+                      'site_summary':f'https://site.api.espn.com/apis/site/v2/sports/tennis/{tour}/summary?event={event_id}',
+                      'core_event':f'https://sports.core.api.espn.com/v2/sports/tennis/leagues/{tour}/events/{event_id}?lang=en&region=us',
+                      'site_event':f'https://site.api.espn.com/apis/site/v2/sports/tennis/{tour}/summary?event={event_id}&region=us&lang=en',
+                  }
+                  for label,u in candidates.items():
+                      key=f'{tour}:{event_id}:{label}'
+                      try:
+                          rr=s.get(u,timeout=30)
+                          body=None
+                          try:body=rr.json()
+                          except Exception:pass
+                          report['followups'][key]={
+                              'status':rr.status_code,'contentType':rr.headers.get('content-type'),
+                              'topLevelKeys':sorted(body.keys()) if isinstance(body,dict) else None,
+                              'competitionsCount':len(body.get('competitions') or []) if isinstance(body,dict) else None,
+                              'eventsCount':len(body.get('events') or []) if isinstance(body,dict) else None,
+                              'headerCompetitionsCount':len(((body.get('header') or {}).get('competitions') or [])) if isinstance(body,dict) else None,
+                              'bodyPrefix':None if body is not None else rr.text[:200],
+                          }
+                          if body is not None:
+                              Path(f'evidence/raw/{tour}-{event_id}-{label}.json').write_text(json.dumps(body,indent=2,sort_keys=True))
+                      except Exception as exc:
+                          report['followups'][key]={'error':type(exc).__name__+': '+str(exc)[:250]}
+          Path('evidence/schema-report.json').write_text(json.dumps(report,indent=2,sort_keys=True))
+          print(json.dumps(report,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: espn-tennis-schema-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: evidence/

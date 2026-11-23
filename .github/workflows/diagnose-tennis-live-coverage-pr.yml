@@ -1,0 +1,92 @@
+name: Diagnose Tennis coverage on pull request
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/diagnose-tennis-live-coverage-pr.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      LEGACY_KEY: ${{ secrets.TENNIS_ODDS_API_KEY || secrets.ODDS_API_KEY }}
+      GENERIC_KEY: ${{ secrets.TENNIS_GENERIC_ODDS_API_KEY || secrets.THEODDSAPI_KEY || secrets.THE_ODDS_API_KEY || secrets.TENNIS_ODDS_API_KEY || secrets.ODDS_API_KEY }}
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Probe real July 23 Tennis coverage without writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet requests
+          mkdir -p evidence
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          import requests
+
+          s=requests.Session(); s.headers['user-agent']='tennis-coverage-proof/1.0'
+          result={'checkedAtUtc':datetime.now(timezone.utc).isoformat(),'date':'2026-07-23','espn':{},'legacy':{},'generic':{}}
+          for tour in ('atp','wta'):
+              u=f'https://site.api.espn.com/apis/site/v2/sports/tennis/{tour}/scoreboard?dates=20260723&limit=1000'
+              try:
+                  r=s.get(u,timeout=30); d=r.json() if r.ok else {}
+                  events=d.get('events') or []
+                  result['espn'][tour]={
+                      'status':r.status_code,
+                      'eventCount':len(events),
+                      'withOdds':sum(1 for e in events if ((e.get('competitions') or [{}])[0].get('odds') or e.get('odds'))),
+                      'sample':[{'id':e.get('id'),'name':e.get('name') or e.get('shortName'),'date':e.get('date'),'status':(((e.get('status') or {}).get('type') or {}).get('name'))} for e in events[:30]],
+                  }
+              except Exception as e:
+                  result['espn'][tour]={'error':type(e).__name__+': '+str(e)[:200]}
+
+          legacy=os.environ.get('LEGACY_KEY','').strip()
+          for key in ('tennis','tennis_atp','tennis_wta','tennis_atp_kitzbuhel','tennis_atp_estoril','tennis_wta_hamburg','tennis_wta_prague','upcoming'):
+              if not legacy:
+                  result['legacy'][key]={'error':'credential_not_configured'}; continue
+              try:
+                  r=s.get(f'https://api.the-odds-api.com/v4/sports/{key}/odds/',params={'apiKey':legacy,'regions':'us,uk,eu','markets':'h2h','oddsFormat':'american','dateFormat':'iso'},timeout=45)
+                  try:d=r.json()
+                  except Exception:d=None
+                  if isinstance(d,list):
+                      result['legacy'][key]={'status':r.status_code,'eventCount':len(d),'tennisEventCount':sum(str(x.get('sport_key','')).startswith('tennis') for x in d),'sample':[{'sport_key':x.get('sport_key'),'commence_time':x.get('commence_time'),'home_team':x.get('home_team'),'away_team':x.get('away_team'),'bookmakers':len(x.get('bookmakers') or [])} for x in d[:15]]}
+                  else:
+                      result['legacy'][key]={'status':r.status_code,'errorCode':(d or {}).get('error_code') if isinstance(d,dict) else None,'message':str((d or {}).get('message') if isinstance(d,dict) else r.text)[:250]}
+              except Exception as e:
+                  result['legacy'][key]={'error':type(e).__name__+': '+str(e)[:200]}
+
+          generic=os.environ.get('GENERIC_KEY','').strip()
+          for label,path,params in (
+              ('me','/me/',{}),
+              ('events','/events/',{'sport_key':'tennis'}),
+              ('odds','/odds/',{'sport_key':'tennis','markets':'h2h','oddsFormat':'american','regions':'us,uk,eu','commenceTimeFrom':'2026-07-23T00:00:00Z','commenceTimeTo':'2026-07-24T23:59:59Z'}),
+          ):
+              if not generic:
+                  result['generic'][label]={'error':'credential_not_configured'}; continue
+              try:
+                  r=s.get('https://api.theoddsapi.com'+path,headers={'x-api-key':generic},params=params,timeout=45)
+                  try:d=r.json()
+                  except Exception:d=None
+                  payload=d.get('data') if isinstance(d,dict) else None
+                  result['generic'][label]={'status':r.status_code,'success':d.get('success') if isinstance(d,dict) else None,'recordCount':len(payload) if isinstance(payload,list) else None,'tier':d.get('tier') if isinstance(d,dict) else None,'message':str((d or {}).get('message') if isinstance(d,dict) else r.text)[:250]}
+                  if isinstance(payload,list):
+                      result['generic'][label]['sample']=[{'event_id':x.get('event_id') or x.get('id'),'league':x.get('league'),'start_time':x.get('start_time') or x.get('commence_time'),'home_team':x.get('home_team'),'away_team':x.get('away_team'),'books':len(x.get('books') or x.get('bookmakers') or [])} for x in payload[:30]]
+              except Exception as e:
+                  result['generic'][label]={'error':type(e).__name__+': '+str(e)[:200]}
+
+          Path('evidence/coverage.json').write_text(json.dumps(result,indent=2,sort_keys=True))
+          print(json.dumps(result,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tennis-coverage-pr-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: evidence/
