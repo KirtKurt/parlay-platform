@@ -310,7 +310,11 @@ def bbs_assignments(payload, schedule, crosswalk, target_date, *, isolate_unmatc
             crosswalk.bbs_identity_exclusions.append({
                 'bbs_game_id': str(event['id']), 'bbs_start': event['kickoff_utc'],
                 'reason': 'ambiguous_bbs_identity' if len(matches) > 1 else 'unmatched_bbs_identity',
-                'official_candidate_game_ids': [str(g['gamePk']) for g in same_teams]})
+                'official_candidate_game_ids': [str(g['gamePk']) for g in same_teams],
+                'bbs_home_name': event.get('home', {}).get('name'),
+                'bbs_away_name': event.get('away', {}).get('name'),
+                'resolved_home_id': sides.get('home'),
+                'resolved_away_id': sides.get('away')})
             continue
         pk = str(matches[0]['gamePk'])
         if pk in assigned:

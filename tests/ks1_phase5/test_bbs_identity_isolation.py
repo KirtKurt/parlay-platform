@@ -43,7 +43,9 @@ def test_extra_unmatched_event_leaves_matched_predictions_byte_identical(capture
     assert report['bbs_matched_games'] == 2 and report['exclusions'] == []
     assert report['bbs_identity_exclusions'] == [{
         'bbs_game_id': 'unmatched-extra', 'bbs_start': events[0]['kickoff_utc'],
-        'reason': 'unmatched_bbs_identity', 'official_candidate_game_ids': []}]
+        'reason': 'unmatched_bbs_identity', 'official_candidate_game_ids': [],
+        'bbs_home_name': 'Unknown Team', 'bbs_away_name': events[0]['away']['name'],
+        'resolved_home_id': None, 'resolved_away_id': None}]
     crosswalk = json.loads((out/'crosswalk.json').read_bytes())
     assert crosswalk['bbs_identity_exclusions'] == report['bbs_identity_exclusions']
     assert not any(row['bbs_id'] == 'unknown-home' for row in crosswalk['teams'])
