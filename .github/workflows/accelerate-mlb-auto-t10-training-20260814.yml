@@ -1,0 +1,144 @@
+name: Accelerate MLB Auto T10 training 20260814
+
+on:
+  push:
+    branches: [agent/mlb-auto-tennis-lifecycle-v1]
+    paths: ['.github/workflows/accelerate-mlb-auto-t10-training-20260814.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-auto-t10-training-acceleration
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-mlb-auto-prod
+
+jobs:
+  accelerate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Resolve isolated MLB Auto resources and pause only historical scheduler
+        run: |
+          set -euo pipefail
+          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
+          HISTORY_RULE=$(aws events list-rules --name-prefix "${STACK_NAME}-" --query "Rules[?ends_with(Name, 'history-15m')].Name | [0]" --output text)
+          test -n "$FN" && test "$FN" != None
+          test -n "$HISTORY_RULE" && test "$HISTORY_RULE" != None
+          echo "FN=$FN" >> "$GITHUB_ENV"
+          echo "HISTORY_RULE=$HISTORY_RULE" >> "$GITHUB_ENV"
+          aws events disable-rule --name "$HISTORY_RULE"
+
+      - name: Build T10 corpus sequentially to production training gate
+        run: |
+          set -euo pipefail
+          : > backfill-summary.jsonl
+          reached=0
+          for round in $(seq 1 10); do
+            echo "=== T10 historical acceleration round $round ==="
+            aws lambda invoke --cli-read-timeout 600 --cli-connect-timeout 30 \
+              --function-name "$FN" --cli-binary-format raw-in-base64-out \
+              --payload '{"action":"MLB_AUTO_HISTORICAL_BACKFILL","max_games_per_run":12}' \
+              "backfill-${round}.json" >/dev/null
+            python - "$round" <<'PY'
+          import json, sys
+          r = int(sys.argv[1])
+          path = f'backfill-{r}.json'
+          row = json.load(open(path))
+          assert row.get('ok') is True, row
+          assert row.get('action') == 'HISTORICAL_BACKFILL', row
+          assert int(row.get('batch_game_budget') or 0) == 12, row
+          summary = {
+              'round': r,
+              'added': int(row.get('added') or 0),
+              'attempted': int(row.get('attempted') or 0),
+              'training_examples': int(row.get('training_examples') or 0),
+              'all_lock_horizons': int(row.get('training_examples_all_lock_horizons') or 0),
+              'next_cursor_date': row.get('next_cursor_date'),
+              'next_game_index': row.get('next_game_index'),
+              'failure_reasons': row.get('failure_reasons') or {},
+              'waiting_for_finals': bool(row.get('waiting_for_finals')),
+              'training': row.get('training') or {},
+          }
+          print(json.dumps(summary, sort_keys=True))
+          with open('backfill-summary.jsonl','a') as f:
+              f.write(json.dumps(summary, sort_keys=True)+'\n')
+          PY
+            count=$(python -c "import json; print(int(json.load(open('backfill-${round}.json')).get('training_examples') or 0))")
+            if [ "$count" -ge 250 ]; then
+              reached=1
+              break
+            fi
+          done
+          echo "REACHED_GATE=$reached" >> "$GITHUB_ENV"
+          test "$reached" = 1
+
+      - name: Run fresh autonomous trainer and prove current-horizon model state
+        run: |
+          set -euo pipefail
+          aws lambda invoke --cli-read-timeout 600 --cli-connect-timeout 30 \
+            --function-name "$FN" --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"MLB_AUTO_TRAIN"}' train-final.json >/dev/null
+          aws lambda invoke --cli-read-timeout 180 --cli-connect-timeout 30 \
+            --function-name "$FN" --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"STATUS"}' status-final.json >/dev/null
+          python - <<'PY'
+          import json
+          train=json.load(open('train-final.json'))
+          status=json.load(open('status-final.json'))
+          assert train.get('ok') is True, train
+          assert status.get('ok') is True and status.get('sport') == 'mlb_auto', status
+          assert int(status.get('training_examples') or 0) >= 250, status
+          assert status.get('training_lock_minutes') == 10, status
+          assert status.get('lock_minutes') == 10, status
+          assert status.get('public_prediction_authority') == 'IMMUTABLE_LOCK_WHEN_PRESENT', status
+          assert train.get('trained') is True, train
+          assert int(train.get('examples') or train.get('count') or 0) >= 250, train
+          proof={
+              'ok': True,
+              'training_examples': status.get('training_examples'),
+              'all_lock_horizons': status.get('training_examples_all_lock_horizons'),
+              'training_lock_minutes': status.get('training_lock_minutes'),
+              'prediction_mode': status.get('prediction_mode'),
+              'registered_champion_model_id': status.get('registered_champion_model_id'),
+              'active_champion_model_id': status.get('champion_model_id'),
+              'champion_lock_policy_compatible': status.get('champion_lock_policy_compatible'),
+              'train': train,
+              'promotion_gate': status.get('champion_promotion_gate') or {},
+          }
+          with open('mlb-auto-t10-training-proof.json','w') as f:
+              json.dump(proof,f,indent=2,sort_keys=True); f.write('\n')
+          print(json.dumps(proof,indent=2,sort_keys=True))
+          PY
+
+      - name: Re-enable isolated historical scheduler
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          if [ -n "${HISTORY_RULE:-}" ] && [ "$HISTORY_RULE" != None ]; then
+            aws events enable-rule --name "$HISTORY_RULE"
+            state=$(aws events describe-rule --name "$HISTORY_RULE" --query State --output text)
+            test "$state" = ENABLED
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: mlb-auto-t10-training-proof-${{ github.run_id }}
+          path: |
+            backfill-summary.jsonl
+            backfill-*.json
+            train-final.json
+            status-final.json
+            mlb-auto-t10-training-proof.json
+          if-no-files-found: warn
+          retention-days: 30

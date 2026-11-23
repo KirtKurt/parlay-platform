@@ -1,0 +1,523 @@
+name: Deploy isolated MLB Auto V1
+
+on:
+  push:
+    branches: [agent/mlb-auto-tennis-lifecycle-v1]
+    paths: ['mlb_auto/**', '.github/workflows/deploy-mlb-auto-v1.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-auto-v1-isolated-deploy
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-mlb-auto-prod
+
+jobs:
+  validate-deploy-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Validate autonomous implementation
+        working-directory: mlb_auto
+        env:
+          PYTHONPATH: src
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.40,<2' 'PyYAML>=6,<7'
+          python -m pytest -q
+          python scripts/verify_isolation.py
+          python -m compileall -q src
+      - uses: aws-actions/setup-sam@v2
+      - name: Validate and build isolated SAM application
+        working-directory: mlb_auto
+        run: |
+          set -euo pipefail
+          sam validate --template-file template.yaml --lint
+          rm -rf .aws-sam
+          sam build --template-file template.yaml --no-cached
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Verify AWS and provider credential
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity
+          test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
+      - name: Fingerprint protected stacks
+        id: before
+        run: |
+          set -euo pipefail
+          fp() { local s="$1"; if ! aws cloudformation describe-stacks --stack-name "$s" >/dev/null 2>&1; then printf MISSING; return; fi; { aws cloudformation get-template --stack-name "$s" --output json; aws cloudformation list-stack-resources --stack-name "$s" --output json; } | sha256sum | awk '{print $1}'; }
+          echo "mlb=$(fp parlay-platform-dev)" >> "$GITHUB_OUTPUT"
+          echo "tennis=$(fp parlay-platform-tennis-ml-prod)" >> "$GITHUB_OUTPUT"
+          echo "soccer=$(fp parlay-platform-soccer-auto)" >> "$GITHUB_OUTPUT"
+      - name: Deploy schedule-disabled canary
+        working-directory: mlb_auto
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          sam deploy --template-file .aws-sam/build/template.yaml --stack-name "$STACK_NAME" --capabilities CAPABILITY_IAM --resolve-s3 --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}" "ScheduleState=DISABLED" "DeployGitSha=${GITHUB_SHA}"
+      - name: Prove configured Bedrock fallback and LLM R&D state
+        run: |
+          set -euo pipefail
+          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
+          aws lambda invoke --cli-read-timeout 420 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_LLM_RD","force":true}' llm_rd.json >/dev/null
+          aws lambda invoke --cli-read-timeout 120 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"STATUS"}' llm_status.json >/dev/null
+          echo '--- LLM R&D ---'; cat llm_rd.json
+          echo '--- LLM status ---'; cat llm_status.json
+          python - <<'PY'
+          import json
+
+          rd=json.load(open('llm_rd.json'))
+          status=json.load(open('llm_status.json'))
+          layer=status.get('llm_rd') or {}
+          access=status.get('llm_model_access') or {}
+          configured=list(layer.get('configured_model_ids') or [])
+          assert rd.get('ok') is True, rd
+          assert rd.get('action') in {'LLM_RD','LLM_RD_NOT_DUE'}, rd
+          assert status.get('sport') == 'mlb_auto', status
+          assert layer.get('enabled') is True, layer
+          assert layer.get('mode') == 'BEDROCK_LLM_AUTONOMOUS_RD', layer
+          assert layer.get('scope') == 'mlb_auto_only', layer
+          assert layer.get('generated_executable_code') is False, layer
+          assert layer.get('promotion_requires_existing_model_audit_gate') is True, layer
+          assert layer.get('account_model_policy') == 'ACCOUNT_SAFE_AMAZON_GEO_FALLBACK_V1', layer
+          assert configured and all(model.startswith('us.amazon.') for model in configured), configured
+          assert all('anthropic.claude-' not in model for model in configured), configured
+          assert access.get('exact_model_requirement') is False, access
+          assert access.get('runtime_account_enrollment_managed') is False, access
+          assert access.get('account_mutation_attempted') is False, access
+
+          if rd.get('generated') is True:
+              assert str(rd.get('candidate_id') or '').startswith('LLM_RD_'), rd
+              assert 1 <= int(rd.get('feature_count') or 0) <= 8, rd
+              assert rd.get('llm_model_id') in configured, (rd, configured)
+              assert int(rd.get('development_rows') or 0) > 0, rd
+              assert int(rd.get('untouched_audit_reserve_count') or 0) >= 50, rd
+              assert rd.get('provider_available') is True, rd
+              assert rd.get('provider_invocation_ok') is True, rd
+              assert rd.get('degraded') is False, rd
+              assert layer.get('candidate_id') == rd.get('candidate_id'), (layer, rd)
+              assert layer.get('candidate_status') == 'DEVELOPMENT_CANDIDATE', layer
+              assert int(layer.get('candidate_feature_count') or 0) == int(rd.get('feature_count') or 0), (layer, rd)
+              assert layer.get('last_run_ok') is True, layer
+              assert layer.get('last_invocation_ok') is True, layer
+              assert layer.get('provider_available') is True, layer
+              assert layer.get('degraded') is False, layer
+              assert access.get('model_access_verified_by_last_research_run') is True, access
+          else:
+              assert rd.get('reason') in {'INSUFFICIENT_EXAMPLES','NOT_DUE','MODEL_PROVIDER_UNAVAILABLE'}, rd
+              if rd.get('reason') == 'INSUFFICIENT_EXAMPLES':
+                  assert int(rd.get('count') or 0) < int(rd.get('minimum') or 0), rd
+                  assert layer.get('last_result') == 'INSUFFICIENT_EXAMPLES', layer
+                  assert layer.get('last_run_ok') is True, layer
+                  assert layer.get('degraded') is False, layer
+              elif rd.get('reason') == 'MODEL_PROVIDER_UNAVAILABLE':
+                  assert rd.get('degraded') is True, rd
+                  assert rd.get('provider_available') is False, rd
+                  assert rd.get('provider_invocation_ok') is False, rd
+                  assert rd.get('retryable') is True, rd
+                  assert int(rd.get('fallbacks_attempted') or 0) == len(configured), (rd, configured)
+                  assert layer.get('last_result') == 'MODEL_PROVIDER_UNAVAILABLE', layer
+                  assert layer.get('last_run_ok') is True, layer
+                  assert layer.get('last_invocation_ok') is False, layer
+                  assert layer.get('provider_available') is False, layer
+                  assert layer.get('degraded') is True, layer
+                  assert layer.get('retryable') is True, layer
+                  assert access.get('verification_state') == 'PROVIDER_UNAVAILABLE_RETRYABLE', access
+                  assert access.get('model_access_verified_by_last_research_run') is False, access
+          PY
+      - name: Live provider, ingest, all-region historical, and runtime proof
+        run: |
+          set -euo pipefail
+          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
+          invoke_retry() {
+            local timeout="$1" payload="$2" output="$3"
+            local attempt
+            for attempt in $(seq 1 15); do
+              rm -f "$output"
+              if aws lambda invoke --cli-read-timeout "$timeout" --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload "$payload" "$output" >/dev/null 2>invoke.err; then
+                return 0
+              fi
+              cat invoke.err >&2 || true
+              sleep $((attempt < 6 ? attempt * 5 : 30))
+            done
+            return 1
+          }
+          invoke_retry 180 '{"action":"MLB_AUTO_LIVE_PROVIDER_PROOF"}' provider.json
+          invoke_retry 240 '{"action":"MLB_AUTO_MARKET_INVENTORY"}' market_inventory.json
+          invoke_retry 600 '{"action":"MLB_AUTO_HEARTBEAT"}' heartbeat.json
+          invoke_retry 600 '{"action":"MLB_AUTO_HISTORICAL_BACKFILL","max_games_per_run":4}' history.json
+          invoke_retry 120 '{"action":"STATUS"}' status.json
+          echo '--- provider ---'; cat provider.json
+          echo '--- market inventory ---'; cat market_inventory.json
+          echo '--- heartbeat/ingest ---'; cat heartbeat.json
+          echo '--- historical batch ---'; cat history.json
+          echo '--- status ---'; cat status.json
+          python - <<'PY'
+          import json
+          p=json.load(open('provider.json')); m=json.load(open('market_inventory.json')); b=json.load(open('heartbeat.json')); h=json.load(open('history.json')); s=json.load(open('status.json'))
+          c=s.get('controller') or {}; layer=s.get('llm_rd') or {}; access=s.get('llm_model_access') or {}
+          assert p.get('ok') is True and p.get('action')=='LIVE_PROVIDER_PROOF', p
+          assert p.get('provider_sport_key')=='baseball_mlb', p
+          assert set(str(p.get('regions') or '').split(',')) == {'us','us2','uk','eu','au'}, p
+          assert p.get('featured_markets') == ['h2h','spreads','totals'], p
+          assert int(p.get('event_count') or 0)>0 and int(p.get('bookmaker_count') or 0)>0, p
+          assert p.get('raw_metadata_requested') == {'links':True,'source_ids':True,'bet_limits':True,'rotation_numbers':True}, p
+          assert m.get('ok') is True and m.get('action')=='MARKET_INVENTORY', m
+          assert set(str(m.get('regions') or '').split(',')) == {'us','us2','uk','eu','au'}, m
+          assert int(m.get('event_count') or 0)>0 and int(m.get('market_key_count') or 0)>0, m
+          assert isinstance(m.get('market_keys'), list) and len(m['market_keys'])==int(m['market_key_count']), m
+          assert b.get('ok') is True and b.get('action') in {'INGEST','HEARTBEAT_ONLY','INGEST_ALREADY_RUNNING'}, b
+          assert b.get('action') != 'INGEST_FAILED', b
+          assert h.get('ok') is True and h.get('action')=='HISTORICAL_BACKFILL', h
+          assert h.get('resumable_per_game') is True, h
+          assert 1 <= int(h.get('attempted') or 0) <= 4, h
+          assert int(h.get('batch_game_budget') or 0)==4, h
+          assert int(h.get('training_examples') or 0)>0, h
+          assert s.get('ok') is True and s.get('sport')=='mlb_auto', s
+          assert s.get('provider_sport_key')=='baseball_mlb' and s.get('autonomous') is True, s
+          assert s.get('cost_throttling') is False, s
+          assert s.get('official_pick_policy')=='CHAMPION_CONFIDENCE_AT_OR_BEFORE_T10', s
+          assert s.get('expected_value_selection_gate') is False, s
+          assert c.get('last_heartbeat_ok') is True, c
+          assert c.get('last_ingest_ok') is True, c
+          assert c.get('last_ingest_completed_at'), c
+          assert not c.get('last_ingest_error'), c
+          assert layer.get('last_run_ok') is True, layer
+          assert layer.get('last_result') in {'CANDIDATE_GENERATED','INSUFFICIENT_EXAMPLES','MODEL_PROVIDER_UNAVAILABLE'}, layer
+          if layer.get('last_result') == 'MODEL_PROVIDER_UNAVAILABLE':
+              assert layer.get('last_invocation_ok') is False, layer
+              assert layer.get('provider_available') is False, layer
+              assert layer.get('degraded') is True, layer
+              assert layer.get('retryable') is True, layer
+              assert access.get('model_access_verified_by_last_research_run') is False, access
+          if layer.get('candidate_id'):
+              assert layer.get('candidate_status') in {
+                  'DEVELOPMENT_CANDIDATE','AUDIT_NOT_PROMOTED','PROMOTED_WITH_CHAMPION',
+              }, layer
+          PY
+      - name: Enable autonomous schedules
+        working-directory: mlb_auto
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          sam deploy --template-file .aws-sam/build/template.yaml --stack-name "$STACK_NAME" --capabilities CAPABILITY_IAM --resolve-s3 --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}" "ScheduleState=ENABLED" "DeployGitSha=${GITHUB_SHA}"
+      - name: Prove scheduled heartbeat and repair telemetry
+        run: |
+          set -euo pipefail
+          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
+          ENABLED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          export ENABLED_AT
+          fresh=0
+          for attempt in $(seq 1 18); do
+            sleep 30
+            if ! aws lambda invoke --cli-read-timeout 120 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"STATUS"}' post_enable_status.json >/dev/null 2>status.err; then
+              cat status.err >&2 || true
+              continue
+            fi
+            if python - <<'PY'
+          import json, os, sys
+          from datetime import datetime, timezone
+
+          def parse(value):
+              if not value:
+                  return None
+              dt=datetime.fromisoformat(str(value).replace('Z','+00:00'))
+              if dt.tzinfo is None:
+                  dt=dt.replace(tzinfo=timezone.utc)
+              return dt.astimezone(timezone.utc)
+
+          status=json.load(open('post_enable_status.json'))
+          controller=status.get('controller') or {}
+          repair=status.get('repair') or {}
+          layer=status.get('llm_rd') or {}
+          access=status.get('llm_model_access') or {}
+          since=parse(os.environ['ENABLED_AT'])
+          heartbeat=parse(controller.get('heartbeat_at'))
+          repaired=parse(repair.get('last_repair_at'))
+          llm_state_ok=(
+              layer.get('last_run_ok') is True
+              and layer.get('last_result') in {
+                  'CANDIDATE_GENERATED','INSUFFICIENT_EXAMPLES','MODEL_PROVIDER_UNAVAILABLE',
+              }
+          )
+          if layer.get('last_result') == 'MODEL_PROVIDER_UNAVAILABLE':
+              llm_state_ok = llm_state_ok and all((
+                  layer.get('last_invocation_ok') is False,
+                  layer.get('provider_available') is False,
+                  layer.get('degraded') is True,
+                  layer.get('retryable') is True,
+                  access.get('model_access_verified_by_last_research_run') is False,
+              ))
+          checks=[
+              status.get('ok') is True,
+              heartbeat is not None and heartbeat >= since,
+              repaired is not None and repaired >= since,
+              controller.get('last_heartbeat_ok') is True,
+              controller.get('last_ingest_ok') is True,
+              repair.get('last_repair_ok') is True,
+              not controller.get('last_ingest_error'),
+              not repair.get('last_repair_error'),
+              int(controller.get('known_market_key_count') or 0) > 0,
+              bool(controller.get('last_market_inventory_at')),
+              status.get('official_pick_policy') == 'CHAMPION_CONFIDENCE_AT_OR_BEFORE_T10',
+              status.get('expected_value_selection_gate') is False,
+              llm_state_ok,
+              not layer.get('candidate_id') or layer.get('candidate_status') in {
+                  'DEVELOPMENT_CANDIDATE','AUDIT_NOT_PROMOTED','PROMOTED_WITH_CHAMPION',
+              },
+          ]
+          sys.exit(0 if all(checks) else 1)
+          PY
+            then
+              fresh=1
+              break
+            fi
+          done
+          cat post_enable_status.json || true
+          test "$fresh" = 1
+      - name: Prove immutable August 13 public authority and dual-ledger audit
+        run: |
+          set -euo pipefail
+          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
+          API_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+          case "$API_URL" in
+            https://*) ;;
+            *) echo "::error::Invalid MLB Auto API URL: $API_URL"; exit 1 ;;
+          esac
+          curl --fail-with-body --silent --show-error --retry 6 --retry-all-errors --connect-timeout 15 --max-time 120 \
+            "${API_URL%/}/v1/mlb-auto/predictions?date=2026-08-13" \
+            --output aug13_predictions.json
+          audit_ok=0
+          for attempt in $(seq 1 6); do
+            rm -f aug13_audit.json aug13_audit_invoke.json
+            if aws lambda invoke --cli-read-timeout 180 --cli-connect-timeout 30 \
+              --function-name "$FN" --cli-binary-format raw-in-base64-out \
+              --payload '{"action":"MLB_AUTO_AUDIT","date":"2026-08-13"}' \
+              aug13_audit.json > aug13_audit_invoke.json \
+              && python - <<'PY'
+          import json, sys
+          metadata=json.load(open('aug13_audit_invoke.json'))
+          sys.exit(0 if int(metadata.get('StatusCode') or 0) == 200 and not metadata.get('FunctionError') else 1)
+          PY
+            then
+              audit_ok=1
+              break
+            fi
+            sleep $((attempt * 5))
+          done
+          test "$audit_ok" = 1
+          echo '--- immutable public predictions ---'; cat aug13_predictions.json
+          echo '--- dual-ledger audit ---'; cat aug13_audit.json
+          python - <<'PY'
+          import json
+
+          predictions=json.load(open('aug13_predictions.json'))
+          audit=json.load(open('aug13_audit.json'))
+          rows=list(predictions.get('predictions') or [])
+          assert predictions.get('ok') is True, predictions
+          assert predictions.get('sport') == 'mlb_auto', predictions
+          assert predictions.get('slate_date') == '2026-08-13', predictions
+          assert predictions.get('prediction_authority') == 'IMMUTABLE_LOCK_WHEN_PRESENT', predictions
+          assert predictions.get('public_authority_version') == 'MLB_AUTO_IMMUTABLE_PUBLIC_AUTHORITY_V2', predictions
+          assert int(predictions.get('configured_lock_minutes') or 0) == 10, predictions
+          assert int(predictions.get('count') or 0) == len(rows) > 0, predictions
+          assert int(predictions.get('locked_count') or 0) == len(rows), predictions
+          assert all(row.get('locked') is True for row in rows), rows
+          assert all(row.get('public_record_frozen') is True for row in rows), rows
+          assert all(row.get('prediction_authority') == 'IMMUTABLE_T45_LOCK' for row in rows), rows
+
+          assert audit.get('ok') is True, audit
+          assert audit.get('sport') == 'mlb_auto', audit
+          assert audit.get('slate_date') == '2026-08-13', audit
+          assert audit.get('audit_version') == 'MLB_AUTO_DUAL_LEDGER_AUDIT_V1', audit
+          assert audit.get('canonical_authority') == 'IMMUTABLE_LOCK_LEDGER', audit
+          assert int(audit.get('configured_lock_minutes') or 0) == 10, audit
+          assert audit.get('outcome_join') == 'EXACT_PROVIDER_EVENT_ID', audit
+          assert audit.get('historical_predictions_recomputed') is False, audit
+
+          published=audit.get('published_official_picks') or {}
+          canonical=audit.get('canonical_official_picks') or {}
+          published_all=audit.get('published_feed_forecasts') or {}
+          canonical_all=audit.get('canonical_locked_forecasts') or {}
+          published_rows=list(published.get('rows') or [])
+          canonical_rows=list(canonical.get('rows') or [])
+          published_winners={row.get('predicted_winner') for row in published_rows}
+          canonical_winners={row.get('predicted_winner') for row in canonical_rows}
+          assert int(published_all.get('count') or 0) == 9, published_all
+          assert int(published_all.get('graded_count') or 0) == 9, published_all
+          assert int(published_all.get('wins') or 0) == 4 and int(published_all.get('losses') or 0) == 5, published_all
+          assert int(canonical_all.get('count') or 0) == 9, canonical_all
+          assert int(canonical_all.get('graded_count') or 0) == 9, canonical_all
+          assert int(canonical_all.get('wins') or 0) == 2 and int(canonical_all.get('losses') or 0) == 7, canonical_all
+          assert int(published.get('count') or 0) == 2, published
+          assert int(published.get('graded_count') or 0) == 2, published
+          assert int(published.get('wins') or 0) == 1 and int(published.get('losses') or 0) == 1, published
+          assert published_winners == {'Texas Rangers','Milwaukee Brewers'}, published_rows
+          assert int(canonical.get('count') or 0) == 2, canonical
+          assert int(canonical.get('graded_count') or 0) == 2, canonical
+          assert int(canonical.get('wins') or 0) == 0 and int(canonical.get('losses') or 0) == 2, canonical
+          assert canonical_winners == {'Texas Rangers','Los Angeles Dodgers'}, canonical_rows
+          public_official={row.get('predicted_winner') for row in rows if row.get('official_pick')}
+          assert int(predictions.get('official_pick_count') or 0) == 2, predictions
+          assert public_official == canonical_winners, (public_official, canonical_winners)
+          drift=list(audit.get('public_lock_drift') or [])
+          assert int(audit.get('public_lock_drift_count') or 0) == len(drift) > 0, audit
+
+          evidence={
+              'verified': True,
+              'slate_date': '2026-08-13',
+              'public_prediction_authority': predictions.get('prediction_authority'),
+              'public_locked_count': predictions.get('locked_count'),
+              'public_official_predicted_winners': sorted(public_official),
+              'published_all': {
+                  'count': published_all.get('count'),
+                  'wins': published_all.get('wins'), 'losses': published_all.get('losses'),
+              },
+              'published_official': {
+                  'predicted_winners': sorted(published_winners),
+                  'wins': published.get('wins'), 'losses': published.get('losses'),
+              },
+              'historical_canonical_t45_all': {
+                  'count': canonical_all.get('count'),
+                  'wins': canonical_all.get('wins'), 'losses': canonical_all.get('losses'),
+              },
+              'canonical_official': {
+                  'predicted_winners': sorted(canonical_winners),
+                  'wins': canonical.get('wins'), 'losses': canonical.get('losses'),
+              },
+              'public_lock_drift_count': audit.get('public_lock_drift_count'),
+          }
+          with open('aug13_authority_assertions.json','w') as handle:
+              json.dump(evidence, handle, indent=2, sort_keys=True)
+              handle.write('\n')
+          PY
+      - name: Verify Auto runtime and schedule alarms
+        run: |
+          set -euo pipefail
+          : > alarm_names.txt
+          for logical in \
+            AutoFunctionErrorsAlarm AutoFunctionThrottlesAlarm \
+            HeartbeatFailedInvocationsAlarm LockFailedInvocationsAlarm \
+            SettlementFailedInvocationsAlarm TrainingFailedInvocationsAlarm \
+            RepairFailedInvocationsAlarm HistoricalBackfillFailedInvocationsAlarm
+          do
+            aws cloudformation describe-stack-resource \
+              --stack-name "$STACK_NAME" --logical-resource-id "$logical" \
+              --query StackResourceDetail.PhysicalResourceId --output text >> alarm_names.txt
+          done
+          mapfile -t ALARM_NAMES < alarm_names.txt
+          test "${#ALARM_NAMES[@]}" = 8
+          aws cloudwatch describe-alarms --alarm-names "${ALARM_NAMES[@]}" --output json > alarms.json
+          python - <<'PY'
+          import json
+
+          alarms=json.load(open('alarms.json')).get('MetricAlarms') or []
+          expected={line.strip() for line in open('alarm_names.txt') if line.strip()}
+          assert len(expected) == 8 and 'None' not in expected, expected
+          assert {row.get('AlarmName') for row in alarms} == expected, (alarms, expected)
+          assert all(row.get('StateValue') in {'OK','INSUFFICIENT_DATA'} for row in alarms), alarms
+          assert sum(1 for row in alarms if row.get('Namespace') == 'AWS/Lambda') == 2, alarms
+          assert sum(1 for row in alarms if row.get('Namespace') == 'AWS/Events') == 6, alarms
+          PY
+      - name: Verify schedules and protected stacks
+        env:
+          MLB_BEFORE: ${{ steps.before.outputs.mlb }}
+          TENNIS_BEFORE: ${{ steps.before.outputs.tennis }}
+          SOCCER_BEFORE: ${{ steps.before.outputs.soccer }}
+        run: |
+          set -euo pipefail
+          aws events list-rules --name-prefix "${STACK_NAME}-" --output json > rules.json
+          python - <<'PY'
+          import json
+          rows=json.load(open('rules.json')).get('Rules') or []
+          names={r.get('Name'):r.get('State') for r in rows}
+          for suffix in ('heartbeat-5m','lock-1m','settle-30m','train-1h','repair-5m','history-15m'):
+              m=[(n,s) for n,s in names.items() if n and n.endswith(suffix)]
+              assert len(m)==1 and m[0][1]=='ENABLED', (suffix,names)
+          PY
+          fp() { local s="$1"; if ! aws cloudformation describe-stacks --stack-name "$s" >/dev/null 2>&1; then printf MISSING; return; fi; { aws cloudformation get-template --stack-name "$s" --output json; aws cloudformation list-stack-resources --stack-name "$s" --output json; } | sha256sum | awk '{print $1}'; }
+          MLB_AFTER=$(fp parlay-platform-dev)
+          TENNIS_AFTER=$(fp parlay-platform-tennis-ml-prod)
+          SOCCER_AFTER=$(fp parlay-platform-soccer-auto)
+          test "$MLB_BEFORE" = "$MLB_AFTER"
+          test "$TENNIS_BEFORE" = "$TENNIS_AFTER"
+          test "$SOCCER_BEFORE" = "$SOCCER_AFTER"
+          export MLB_AFTER TENNIS_AFTER SOCCER_AFTER
+          python - <<'PY'
+          import json, os
+
+          rows={
+              'parlay-platform-dev': {'before': os.environ['MLB_BEFORE'], 'after': os.environ['MLB_AFTER']},
+              'parlay-platform-tennis-ml-prod': {'before': os.environ['TENNIS_BEFORE'], 'after': os.environ['TENNIS_AFTER']},
+              'parlay-platform-soccer-auto': {'before': os.environ['SOCCER_BEFORE'], 'after': os.environ['SOCCER_AFTER']},
+          }
+          assert all(row['before'] == row['after'] for row in rows.values()), rows
+          with open('protected_stack_fingerprints.json','w') as handle:
+              json.dump(rows, handle, indent=2, sort_keys=True)
+              handle.write('\n')
+          PY
+      - name: Fail-safe restore autonomous schedules
+        if: ${{ failure() || cancelled() }}
+        run: |
+          set -euo pipefail
+          if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+            echo 'AWS credentials were not configured, so the canary could not have disabled schedules; no restore is required.'
+            exit 0
+          fi
+          aws events list-rules --name-prefix "${STACK_NAME}-" --query 'Rules[].Name' --output text \
+            | tr '\t' '\n' \
+            | while read -r rule; do
+                case "$rule" in
+                  *-heartbeat-5m|*-lock-1m|*-settle-30m|*-train-1h|*-repair-5m|*-history-15m)
+                    aws events enable-rule --name "$rule"
+                    ;;
+                esac
+              done
+      - name: Capture deployment evidence
+        run: |
+          set -euo pipefail
+          aws cloudformation describe-stacks --stack-name "$STACK_NAME" --output json > stack.json
+          aws cloudformation list-stack-resources --stack-name "$STACK_NAME" --output json > resources.json
+          sha256sum llm_rd.json llm_status.json provider.json market_inventory.json heartbeat.json history.json status.json post_enable_status.json aug13_predictions.json aug13_audit.json aug13_audit_invoke.json aug13_authority_assertions.json alarm_names.txt alarms.json rules.json protected_stack_fingerprints.json stack.json resources.json > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlb-auto-v1-deployment-evidence-${{ github.run_id }}
+          path: |
+            llm_rd.json
+            llm_status.json
+            provider.json
+            market_inventory.json
+            heartbeat.json
+            history.json
+            status.json
+            post_enable_status.json
+            aug13_predictions.json
+            aug13_audit.json
+            aug13_audit_invoke.json
+            aug13_authority_assertions.json
+            alarm_names.txt
+            alarms.json
+            rules.json
+            protected_stack_fingerprints.json
+            stack.json
+            resources.json
+            SHA256SUMS
+          retention-days: 30
