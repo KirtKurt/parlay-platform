@@ -108,7 +108,7 @@ jobs:
           # A failed or incomplete simulation is a hard stop, never an implicit allow.
           aws iam simulate-principal-policy \
             --policy-source-arn "$PRINCIPAL_ARN" \
-            --action-names sns:CreateTopic sns:GetTopicAttributes sns:SetTopicAttributes sns:DeleteTopic sns:Subscribe sns:Unsubscribe sns:Publish \
+            --action-names sns:CreateTopic sns:GetTopicAttributes sns:SetTopicAttributes sns:DeleteTopic sns:Subscribe sns:ListSubscriptionsByTopic sns:Unsubscribe sns:Publish \
             --resource-arns "$TOPIC_ARN" \
             --output json > "$RESULT_FILE"
           python - "$RESULT_FILE" <<'PY'
@@ -118,7 +118,7 @@ jobs:
 
           required = {
               "sns:CreateTopic", "sns:GetTopicAttributes", "sns:SetTopicAttributes",
-              "sns:DeleteTopic", "sns:Subscribe", "sns:Unsubscribe", "sns:Publish",
+              "sns:DeleteTopic", "sns:Subscribe", "sns:ListSubscriptionsByTopic", "sns:Unsubscribe", "sns:Publish",
           }
           try:
               payload = json.loads(Path(sys.argv[1]).read_text())
@@ -139,7 +139,7 @@ jobs:
               print("ARB SNS authority preflight: denied actions: " + ", ".join(denied))
               print("An authorized AWS administrator must attach the bounded deployment policy.")
               sys.exit(1)
-          print("ARB SNS authority preflight: all seven required actions explicitly allowed.")
+          print("ARB SNS authority preflight: all eight required actions explicitly allowed.")
           PY
       - name: Deploy isolated arb stack
         env:
