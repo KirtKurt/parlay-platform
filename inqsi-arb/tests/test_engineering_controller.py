@@ -165,3 +165,40 @@ def test_workflow_pins_and_verifies_controller_trigger_revision_before_setup():
     assert 'actual_sha=$(git rev-parse --verify HEAD)' in workflow
     assert 'test "$actual_sha" = "$GITHUB_SHA"' in workflow
     assert 'ref: main' not in workflow
+
+
+def test_disabled_repair_dispatch_is_blocked_even_for_unhealthy_production(monkeypatch):
+    gh = FakeGH()
+    c = controller(monkeypatch, gh)
+    c.allow_dispatch = False
+    snap = make_snapshot(production_ok=False, production_failures=["catalog", "sportsbooks"])
+    results = c.execute(c.choose_actions(snap), snap)
+    assert gh.dispatched == []
+    assert results == [{
+        "action": {
+            "kind": "dispatch",
+            "reason": "production_health_failed:catalog,sportsbooks",
+            "target": "inqsi-arb-repair.yml",
+            "destructive": False,
+        },
+        "status": "blocked",
+        "reason": "dispatch_disabled",
+    }]
+
+
+def test_workflow_requires_tests_and_read_only_sns_proof_before_dispatch(monkeypatch):
+    workflow = (ROOT.parent / '.github/workflows/inqsi-arb-engineering-controller.yml').read_text()
+    guard = workflow.index('name: Fail-closed repair dispatch eligibility (read-only)')
+    acting = workflow.index('name: Inspect, prioritize and execute one bounded engineering action')
+    deny = workflow.index('echo "ARB_AEC_ALLOW_DISPATCH=false" >> "$GITHUB_ENV"')
+    suite = workflow.index('python -m pytest -q inqsi-arb/tests > "$RUNNER_TEMP/arb-aec-tests.log"')
+    simulate = workflow.index('aws iam simulate-principal-policy')
+    require_all = workflow.index('assert set(decisions) == required')
+    allow = workflow.index('echo "ARB_AEC_ALLOW_DISPATCH=true" >> "$GITHUB_ENV"')
+    assert guard < deny < suite < simulate < require_all < allow < acting
+    assert 'if ! aws iam simulate-principal-policy' in workflow
+    assert 'if ! python - "$RESULT_FILE"' in workflow
+    assert 'decision != "allowed"' in workflow
+    assert 'sns:Unsubscribe' in workflow
+    assert 'sns:ListSubscriptionsByTopic' in workflow
+    assert 'sns:Subscribe sns:ListSubscriptionsByTopic sns:Unsubscribe' in workflow
